@@ -12,11 +12,14 @@ import {
   countPaidLicenses,
   createInitialStats,
   createWeaponLicense,
+  ensureZeroingProfile,
   formatPermitFee,
   grantStarterGear,
   resolvePlayerItem,
+  saveZeroing,
   unusedLicenseCount,
   type PlayerStats,
+  type ZeroingProfile,
 } from "@/lib/player";
 import type { ShopItem } from "@/lib/shop/types";
 import { StatsFrame } from "@/components/hud/StatsFrame";
@@ -72,6 +75,7 @@ export function IntroScreen() {
     null,
   );
   const [musicEnabled, setMusicEnabled] = useState(true);
+  const [hunterStatusEnabled, setHunterStatusEnabled] = useState(true);
   const statsRef = useRef(stats);
 
   const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
@@ -91,6 +95,10 @@ export function IntroScreen() {
       writeMusicEnabled(next);
       return next;
     });
+  }
+
+  function toggleHunterStatus() {
+    setHunterStatusEnabled((prev) => !prev);
   }
   // Weather HUD only during mission — not town / shop / sheriff / home.
   const showWeather = false;
@@ -192,6 +200,44 @@ export function IntroScreen() {
     return true;
   }, []);
 
+  const ensureComboZero = useCallback(
+    (
+      rifleId: string,
+      scopeId: string,
+      ammoId: string,
+    ): ZeroingProfile => {
+      const ensured = ensureZeroingProfile(
+        statsRef.current.zeroingProfiles,
+        rifleId,
+        scopeId,
+        ammoId,
+      );
+      if (ensured.rolled) {
+        setStats((prev) => ({
+          ...prev,
+          zeroingProfiles: ensured.map,
+        }));
+      }
+      return ensured.profile;
+    },
+    [],
+  );
+
+  const saveComboZero = useCallback(
+    (key: string, sessionXMm: number, sessionYMm: number) => {
+      setStats((prev) => ({
+        ...prev,
+        zeroingProfiles: saveZeroing(
+          prev.zeroingProfiles,
+          key,
+          sessionXMm,
+          sessionYMm,
+        ),
+      }));
+    },
+    [],
+  );
+
   function toggleKit(itemId: string) {
     setStats((prev) => ({
       ...prev,
@@ -226,8 +272,10 @@ export function IntroScreen() {
           <StatusBar
             musicEnabled={musicEnabled}
             onMusicToggle={toggleMusic}
+            hunterStatusEnabled={hunterStatusEnabled}
+            onHunterStatusToggle={toggleHunterStatus}
           />
-          <StatsFrame stats={stats} />
+          {hunterStatusEnabled ? <StatsFrame stats={stats} /> : null}
         </div>
       ) : null}
 
@@ -355,10 +403,13 @@ export function IntroScreen() {
               .filter((x): x is ShopItem => x != null)}
             inventory={stats.inventory}
             ammoAffinities={stats.ammoAffinities}
+            zeroingProfiles={stats.zeroingProfiles}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))
             }
             onConsumeAmmo={spendAmmoRound}
+            onEnsureZeroing={ensureComboZero}
+            onSaveZeroing={saveComboZero}
             musicEnabled={musicEnabled}
             onLeave={backToTown}
           />

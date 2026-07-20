@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import {
   isAmmoItem,
@@ -34,14 +34,30 @@ import {
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
-import { getInventoryQty, type InventoryEntry } from "@/lib/player";
+import {
+  clampZeroingMm,
+  effectiveZeroOffsetMm,
+  getInventoryQty,
+  MAX_ZEROING_OFFSET_MM,
+  ZERO_CLICK_MM,
+  zeroingKey,
+  type InventoryEntry,
+  type ZeroingProfile,
+} from "@/lib/player";
 
 type ShootingRangeProps = {
   kitItems: ShopItem[];
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
+  zeroingProfiles: Record<string, ZeroingProfile>;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
+  onEnsureZeroing: (
+    rifleId: string,
+    scopeId: string,
+    ammoId: string,
+  ) => ZeroingProfile;
+  onSaveZeroing: (key: string, sessionXMm: number, sessionYMm: number) => void;
   musicEnabled: boolean;
   onLeave: () => void;
 };
@@ -63,8 +79,11 @@ export function ShootingRange({
   kitItems,
   inventory,
   ammoAffinities,
+  zeroingProfiles,
   onAffinitiesChange,
   onConsumeAmmo,
+  onEnsureZeroing,
+  onSaveZeroing,
   musicEnabled,
   onLeave,
 }: ShootingRangeProps) {
@@ -97,6 +116,8 @@ export function ShootingRange({
 
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
+  const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
+  const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
   const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
   const [wobbleMm, setWobbleMm] = useState({ x: 0, y: 0 });
   const [shots, setShots] = useState<ShotImpact[]>([]);
@@ -146,6 +167,16 @@ export function ShootingRange({
   const ammoRemaining = selectedAmmo
     ? getInventoryQty(inventory, selectedAmmo.id)
     : 0;
+  const comboKey =
+    rifle && scope && selectedAmmo
+      ? zeroingKey(rifle.id, scope.id, selectedAmmo.id)
+      : null;
+  const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
+  const effectiveZero = zeroProfile
+    ? effectiveZeroOffsetMm(zeroProfile, sessionZeroXMm, sessionZeroYMm)
+    : { xMm: sessionZeroXMm, yMm: sessionZeroYMm };
+  const zeroClicksX = Math.round(sessionZeroXMm / ZERO_CLICK_MM);
+  const zeroClicksY = Math.round(sessionZeroYMm / ZERO_CLICK_MM);
 
   const calmFactor = useMemo(
     () =>
@@ -194,6 +225,13 @@ export function ShootingRange({
   useEffect(() => {
     consumeAmmoRef.current = onConsumeAmmo;
   }, [onConsumeAmmo]);
+
+  useEffect(() => {
+    if (!rifle || !scope || !selectedAmmo) return;
+    onEnsureZeroing(rifle.id, scope.id, selectedAmmo.id);
+    setSessionZeroXMm(0);
+    setSessionZeroYMm(0);
+  }, [rifle, scope, selectedAmmo, onEnsureZeroing]);
 
   fireShotRef.current = () => {
     if (!ready || !rifle || !selectedAmmo) return;
@@ -248,8 +286,8 @@ export function ShootingRange({
         RANGE_DISTANCE_M,
       );
       const impact: ShotImpact = {
-        xMm: shot.xMm,
-        yMm: shot.yMm,
+        xMm: shot.xMm + effectiveZero.xMm,
+        yMm: shot.yMm + effectiveZero.yMm,
         diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
       };
       setStatus(
@@ -276,6 +314,32 @@ export function ShootingRange({
     triggerRef.current = { held: false, fireAtMs: null, startedAtMs: null };
     setTriggerUi({ pending: false, progress: 0 });
     if (reason) setStatus(reason);
+  }
+
+  function beginFocus(nowMs: number) {
+    if (focusRef.current.held) return;
+    focusRef.current = {
+      held: true,
+      startedAtMs: nowMs,
+    };
+    setStatus("Fokus — hold pusten. 8 s ro før det blir verre.");
+  }
+
+  function endFocus(abortReason: string) {
+    if (!focusRef.current.held) return;
+    focusRef.current = { held: false, startedAtMs: 0 };
+    if (triggerRef.current.fireAtMs != null) {
+      abortTrigger(abortReason);
+    }
+  }
+
+  function releaseTrigger() {
+    if (triggerRef.current.fireAtMs != null) {
+      abortTrigger("Avtrekk sluppet — skudd avbrutt.");
+      return;
+    }
+    triggerRef.current.held = false;
+    setTriggerUi({ pending: false, progress: 0 });
   }
 
   function beginTrigger(nowMs: number) {
@@ -334,13 +398,7 @@ export function ShootingRange({
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         if (e.repeat) return;
-        if (!focusRef.current.held) {
-          focusRef.current = {
-            held: true,
-            startedAtMs: performance.now(),
-          };
-          setStatus("Fokus — hold pusten. 8 s ro før det blir verre.");
-        }
+        beginFocus(performance.now());
       } else if (e.key === " " || e.code === "Space") {
         e.preventDefault();
         if (e.repeat) return;
@@ -354,18 +412,10 @@ export function ShootingRange({
       if (e.key === "ArrowLeft") keysRef.current.left = false;
       if (e.key === "ArrowRight") keysRef.current.right = false;
       if (e.key === "f" || e.key === "F") {
-        focusRef.current = { held: false, startedAtMs: 0 };
-        if (triggerRef.current.fireAtMs != null) {
-          abortTrigger("Fokus sluppet — avtrekk avbrutt.");
-        }
+        endFocus("Fokus sluppet — avtrekk avbrutt.");
       }
       if (e.key === " " || e.code === "Space") {
-        if (triggerRef.current.fireAtMs != null) {
-          abortTrigger("Avtrekk sluppet — skudd avbrutt.");
-        } else {
-          triggerRef.current.held = false;
-          setTriggerUi({ pending: false, progress: 0 });
-        }
+        releaseTrigger();
       }
     }
 
@@ -499,8 +549,35 @@ export function ShootingRange({
     setShots([]);
     setMeasurement(null);
     abortTrigger("");
-    setStatus("Ny serie — hold F (fokus), piltaster, hold Space (avtrekk).");
+    setStatus("Ny serie — hold Fokus, piltaster, hold Avtrekk.");
     wobblePhase.current = { a: Math.random() * 10, b: Math.random() * 10 };
+  }
+
+  function nudgeZero(axis: "x" | "y", deltaMm: number) {
+    if (axis === "x") {
+      setSessionZeroXMm((prev) => clampZeroingMm(prev + deltaMm));
+      return;
+    }
+    setSessionZeroYMm((prev) => clampZeroingMm(prev + deltaMm));
+  }
+
+  function saveCurrentZero() {
+    if (!comboKey) return;
+    onSaveZeroing(comboKey, sessionZeroXMm, sessionZeroYMm);
+    setSessionZeroXMm(0);
+    setSessionZeroYMm(0);
+    setStatus("Zero lagret for denne våpen/kikkert/ammo-kombinasjonen.");
+  }
+
+  function changeAmmo(nextAmmoId: string) {
+    if (nextAmmoId === ammoId) return;
+    setAmmoId(nextAmmoId);
+    setShots([]);
+    setMeasurement(null);
+    abortTrigger("");
+    setStatus(
+      "Ammo byttet — zero for denne ammoen (om lagret) er hentet tilbake automatisk.",
+    );
   }
 
   if (!ready) {
@@ -528,14 +605,42 @@ export function ShootingRange({
     focusUi.phase === "focused"
       ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)} s`
       : focusUi.phase === "fatigued"
-        ? "Pust — ustabil (slipp F, prøv igjen)"
-        : "Ingen fokus (hold F)";
+        ? "Pust — ustabil (slipp fokus, prøv igjen)"
+        : "Ingen fokus (hold F / knapp)";
+
+  function handleFocusPointerDown(e: PointerEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    beginFocus(performance.now());
+  }
+
+  function handleFocusPointerUp(e: PointerEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    endFocus("Fokus sluppet — avtrekk avbrutt.");
+  }
+
+  function handleTriggerPointerDown(e: PointerEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    beginTrigger(performance.now());
+  }
+
+  function handleTriggerPointerUp(e: PointerEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    releaseTrigger();
+  }
 
   return (
     <div className="shooting-range">
       <LocationNav
         onBackToTown={onLeave}
-        hint="F fokus/pust · piltaster sikte · hold Space avtrekk (0–1 s) · +/− zoom"
+        hint="F / Fokus-knapp · piltaster sikte · hold Space / Avtrekk (0–1 s) · +/− zoom"
       />
 
       <header className="shop-header">
@@ -559,8 +664,7 @@ export function ShootingRange({
             value={ammoId}
             disabled={shots.length > 0 && !measurement}
             onChange={(e) => {
-              setAmmoId(e.target.value);
-              setStatus("Ammo byttet — klar for serie.");
+              changeAmmo(e.target.value);
             }}
           >
             {ammoOptions.map((a) => {
@@ -585,6 +689,10 @@ export function ShootingRange({
         <span className="range-shot-count">
           Skudd {shots.length}/{SHOTS_PER_SERIES}
         </span>
+        <span className="range-shot-count">
+          Zero {effectiveZero.xMm.toFixed(0)}mm side /{" "}
+          {effectiveZero.yMm.toFixed(0)}mm hoyde
+        </span>
         <label className="shop-filter range-zoom-slider">
           Zoom {zoom.toFixed(1)}×
           <input
@@ -601,6 +709,70 @@ export function ShootingRange({
             {scope.scope.minZoom}× – {scope.scope.maxZoom}×
           </span>
         </label>
+      </div>
+
+      <div className="range-zero-panel">
+        <div className="range-zero-group">
+          <span className="shop-row-note">
+            Windage:{" "}
+            {zeroClicksX === 0
+              ? "0.0 mil"
+              : `${Math.abs(zeroClicksX / 10).toFixed(1)} mil ${
+                  zeroClicksX < 0 ? "L" : "R"
+                }`}
+          </span>
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => nudgeZero("x", -ZERO_CLICK_MM)}
+          >
+            Windage L
+          </button>
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => nudgeZero("x", ZERO_CLICK_MM)}
+          >
+            Windage R
+          </button>
+        </div>
+        <div className="range-zero-group">
+          <span className="shop-row-note">
+            Elevation:{" "}
+            {zeroClicksY === 0
+              ? "0.0 mil"
+              : `${Math.abs(zeroClicksY / 10).toFixed(1)} mil ${
+                  zeroClicksY < 0 ? "U" : "D"
+                }`}
+          </span>
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => nudgeZero("y", -ZERO_CLICK_MM)}
+          >
+            Elevation U
+          </button>
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => nudgeZero("y", ZERO_CLICK_MM)}
+          >
+            Elevation D
+          </button>
+        </div>
+        <button
+          type="button"
+          className="intro-button"
+          disabled={
+            !comboKey ||
+            (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
+            Math.abs(sessionZeroXMm) > MAX_ZEROING_OFFSET_MM ||
+            Math.abs(sessionZeroYMm) > MAX_ZEROING_OFFSET_MM
+          }
+          onClick={saveCurrentZero}
+        >
+          Lagre zero
+        </button>
       </div>
 
       {measurement ? (
@@ -698,7 +870,7 @@ export function ShootingRange({
                     : "range-focus"
                 }
               >
-                {triggerUi.pending ? "Avtrekk…" : "Avtrekk (hold Space)"}
+                {triggerUi.pending ? "Avtrekk…" : "Avtrekk (hold Space / knapp)"}
               </span>
               <div
                 className="range-trigger-bar"
@@ -708,6 +880,41 @@ export function ShootingRange({
                 }}
               />
             </div>
+          </div>
+
+          <div className="range-touch-controls" aria-label="Mobilkontroller">
+            <button
+              type="button"
+              className={
+                focusUi.phase === "focused"
+                  ? "range-touch-btn range-touch-btn--focus is-active"
+                  : focusUi.phase === "fatigued"
+                    ? "range-touch-btn range-touch-btn--focus is-fatigued"
+                    : "range-touch-btn range-touch-btn--focus"
+              }
+              aria-pressed={focusUi.phase !== "idle"}
+              onPointerDown={handleFocusPointerDown}
+              onPointerUp={handleFocusPointerUp}
+              onPointerCancel={handleFocusPointerUp}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              Fokus
+            </button>
+            <button
+              type="button"
+              className={
+                triggerUi.pending
+                  ? "range-touch-btn range-touch-btn--trigger is-active"
+                  : "range-touch-btn range-touch-btn--trigger"
+              }
+              aria-pressed={triggerUi.pending}
+              onPointerDown={handleTriggerPointerDown}
+              onPointerUp={handleTriggerPointerUp}
+              onPointerCancel={handleTriggerPointerUp}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              Avtrekk
+            </button>
           </div>
         </div>
       )}

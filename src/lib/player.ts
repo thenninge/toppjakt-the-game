@@ -7,6 +7,15 @@ export type InventoryEntry = {
   qty: number;
 };
 
+export type ZeroingProfile = {
+  /** Random first-time combo offset (mm on target at 100 m). */
+  baseXMm: number;
+  baseYMm: number;
+  /** Saved zero correction for this rifle+scope+ammo combo. */
+  savedXMm: number;
+  savedYMm: number;
+};
+
 /** Paperwork only — never appears in inventory. Required to buy hunting rifles. */
 export type WeaponLicense = {
   id: string;
@@ -35,6 +44,8 @@ export type PlayerStats = {
    * Rolled on first range use of that pair.
    */
   ammoAffinities: Record<string, number>;
+  /** Per player×rifle×scope×ammo zeroing state. */
+  zeroingProfiles: Record<string, ZeroingProfile>;
 };
 
 export const STARTING_BALANCE = 500_000;
@@ -55,6 +66,10 @@ export const TEST_RANGE_LICENSE_ID = "license-test-sauer-200str";
 export const MAX_HUNTING_RIFLES = 8;
 /** Base søknadsgebyr — doubles per paid license (500, 1000, 2000…). */
 export const BASE_PERMIT_FEE = 500;
+/** 0.1 mil at 100 m = 10 mm on the target. */
+export const ZERO_CLICK_MM = 10;
+/** Limit initial and user zeroing to ±5 clicks = ±50 mm. */
+export const MAX_ZEROING_OFFSET_MM = 50;
 
 /**
  * Fee for the next paid rifle license at Lensmannen.
@@ -81,6 +96,93 @@ export function createInitialStats(): PlayerStats {
     kit: [],
     weaponLicenses: [],
     ammoAffinities: {},
+    zeroingProfiles: {},
+  };
+}
+
+export function zeroingKey(
+  rifleId: string,
+  scopeId: string,
+  ammoId: string,
+): string {
+  return `${rifleId}::${scopeId}::${ammoId}`;
+}
+
+export function clampZeroingMm(mm: number): number {
+  return Math.max(-MAX_ZEROING_OFFSET_MM, Math.min(MAX_ZEROING_OFFSET_MM, mm));
+}
+
+function randomZeroClicks(random: () => number): number {
+  return Math.floor(random() * 11) - 5;
+}
+
+export function ensureZeroingProfile(
+  map: Record<string, ZeroingProfile>,
+  rifleId: string,
+  scopeId: string,
+  ammoId: string,
+  random: () => number = Math.random,
+): {
+  key: string;
+  profile: ZeroingProfile;
+  map: Record<string, ZeroingProfile>;
+  rolled: boolean;
+} {
+  const key = zeroingKey(rifleId, scopeId, ammoId);
+  const existing = map[key];
+  if (existing) {
+    return { key, profile: existing, map, rolled: false };
+  }
+
+  let xClicks = 0;
+  let yClicks = 0;
+  for (let i = 0; i < 4; i++) {
+    xClicks = randomZeroClicks(random);
+    yClicks = randomZeroClicks(random);
+    if (xClicks !== 0 || yClicks !== 0) break;
+  }
+  if (xClicks === 0 && yClicks === 0) yClicks = 1;
+
+  const profile: ZeroingProfile = {
+    baseXMm: xClicks * ZERO_CLICK_MM,
+    baseYMm: yClicks * ZERO_CLICK_MM,
+    savedXMm: 0,
+    savedYMm: 0,
+  };
+  return {
+    key,
+    profile,
+    map: { ...map, [key]: profile },
+    rolled: true,
+  };
+}
+
+export function effectiveZeroOffsetMm(
+  profile: ZeroingProfile,
+  sessionXMm = 0,
+  sessionYMm = 0,
+): { xMm: number; yMm: number } {
+  return {
+    xMm: profile.baseXMm + profile.savedXMm + sessionXMm,
+    yMm: profile.baseYMm + profile.savedYMm + sessionYMm,
+  };
+}
+
+export function saveZeroing(
+  map: Record<string, ZeroingProfile>,
+  key: string,
+  sessionXMm: number,
+  sessionYMm: number,
+): Record<string, ZeroingProfile> {
+  const profile = map[key];
+  if (!profile) return map;
+  return {
+    ...map,
+    [key]: {
+      ...profile,
+      savedXMm: clampZeroingMm(profile.savedXMm + sessionXMm),
+      savedYMm: clampZeroingMm(profile.savedYMm + sessionYMm),
+    },
   };
 }
 

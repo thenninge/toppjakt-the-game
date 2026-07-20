@@ -162,6 +162,28 @@ export function HomeBase({
 
   const rigGearComplete = currentRig.every((s) => s.item != null);
 
+  /**
+   * Rifle and scope define the zeroing combo (see zeroingKey). Swapping
+   * either one means the previously dialed-in turrets no longer apply to
+   * the new combo, so warn before replacing what's currently equipped.
+   * Ammo is excluded: each ammo type keeps its own saved zero in parallel,
+   * so switching ammo never loses anything and needs no warning.
+   */
+  function requestToggleKit(item: ShopItem) {
+    const isZeroCombo = item.category === "rifle" || item.category === "scope";
+    const alreadyEquipped = kit.includes(item.id);
+    if (isZeroCombo && !alreadyEquipped) {
+      const current = kitItems.find((i) => i.category === item.category);
+      if (current && current.id !== item.id) {
+        const ok = window.confirm(
+          "Dette gjør at du må skyte inn på nytt. Sikker på at du vil bytte?",
+        );
+        if (!ok) return;
+      }
+    }
+    onToggleKit(item.id);
+  }
+
   return (
     <div className="home-base">
       <LocationNav
@@ -371,7 +393,7 @@ export function HomeBase({
                       ? "intro-button shop-buy kit-equipped"
                       : "intro-button shop-buy"
                   }
-                  onClick={() => onToggleKit(item.id)}
+                  onClick={() => requestToggleKit(item)}
                 >
                   {equipped ? "I kit" : "Ta med"}
                 </button>
