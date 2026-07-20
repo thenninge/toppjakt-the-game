@@ -32,6 +32,12 @@ import type { AmmoSpec } from "@/lib/ammo/spec";
 import type { RifleSpec } from "@/lib/rifle/spec";
 import type { StockSpec } from "@/lib/stock/spec";
 import { applyStockMoaDelta } from "@/lib/stock/spec";
+import {
+  sampleTrajectory,
+  DEFAULT_SCOPE_HEIGHT_M,
+  DEFAULT_TWIST_INCHES,
+  DEFAULT_ZERO_DISTANCE_M,
+} from "@/lib/ballistics/trajectory";
 
 /** 1 MOA ≈ 29.4 mm at 100 m. */
 export const MM_PER_MOA_AT_100M = 29.4;
@@ -142,10 +148,14 @@ export type SampledShot = {
   /** Realized muzzle velocity this shot. */
   v0: number;
   deltaV0: number;
+  /** Ballistic drop below LOS (mm, +down), zeroed at DEFAULT_ZERO_DISTANCE_M. */
+  dropBelowLosMm: number;
+  /** Spin drift (mm, +right). */
+  spinDriftMm: number;
 };
 
 /**
- * Full per-shot sample: angular Gaussian + v0 vertical contribution.
+ * Full per-shot sample: angular Gaussian + BC/v0 drop + spin drift.
  * `poa` is where the reticle was when the shot broke (mm from bullseye).
  */
 export function sampleShotFromPoa(
@@ -157,17 +167,29 @@ export function sampleShotFromPoa(
   const envelope = combinedDispersionMoa(input);
   const { xMoa, yMoa } = sampleAngularOffsetMoa(envelope, random);
   const { v0, deltaV0 } = sampleMuzzleVelocity(input.ammo, random);
-  const v0YMm = verticalMissMmFromV0Delta(
-    deltaV0,
-    input.ammo.v0,
+  const traj = sampleTrajectory(
+    { v0, bc: input.ammo.bc, bcModel: input.ammo.bcModel },
     distanceM,
+    {
+      scopeHeightM: DEFAULT_SCOPE_HEIGHT_M,
+      zeroDistanceM: DEFAULT_ZERO_DISTANCE_M,
+      twistInches: DEFAULT_TWIST_INCHES,
+    },
   );
   return {
-    xMm: poa.xMm + moaToMmAtDistance(xMoa, distanceM),
-    yMm: poa.yMm + moaToMmAtDistance(yMoa, distanceM) + v0YMm,
+    xMm:
+      poa.xMm +
+      moaToMmAtDistance(xMoa, distanceM) +
+      traj.spinDriftMm,
+    yMm:
+      poa.yMm +
+      moaToMmAtDistance(yMoa, distanceM) +
+      traj.dropBelowLosMm,
     xMoa,
     yMoa,
     v0,
     deltaV0,
+    dropBelowLosMm: traj.dropBelowLosMm,
+    spinDriftMm: traj.spinDriftMm,
   };
 }

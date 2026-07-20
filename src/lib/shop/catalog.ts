@@ -2201,6 +2201,15 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     note: "Kaffe er også kit. Weight + Endurance-offset.",
     misc: { enduranceGrams: 2000 },
   },
+  {
+    id: "misc-triggercam",
+    category: "misc",
+    brand: "Triggercam",
+    name: "Triggercam TC-2",
+    priceNok: 9690,
+    note: "After-action replay: se nøyaktig hvor skuddet traff (og bommet).",
+    misc: { enduranceGrams: 0 },
+  },
 
   // --- Camouflage ---
   // birdSpotSnow / birdSpotNoSnow: lower = harder for birds to spot in that condition.

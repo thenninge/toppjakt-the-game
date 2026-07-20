@@ -678,6 +678,755 @@ body {
   max-height: min(50vh, 28rem);
 }
 
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.home-inatur-btn {
+  border-color: #4a7c59;
+  color: #b8e0c4;
+}
+
+.home-inatur-btn:hover,
+.home-inatur-btn:focus-visible {
+  border-color: #7ecf96;
+  color: #e8fff0;
+}
+
+.home-hunt-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.home-hunt-btn:not(:disabled) {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.home-hunt-blockers {
+  margin: 0;
+}
+
+.home-expandable {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 2px solid #6b5238;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.home-expandable-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-expandable-toggle:hover,
+.home-expandable-toggle:focus-visible {
+  background: rgba(212, 168, 75, 0.08);
+  outline: none;
+}
+
+.home-expandable-chevron {
+  flex: 0 0 auto;
+  width: 1rem;
+  color: var(--accent-gold);
+  font-size: 0.85rem;
+}
+
+.home-expandable-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.home-expandable-title {
+  font-size: 1.05rem;
+  color: var(--accent-gold);
+}
+
+.home-expandable-summary {
+  font-size: 0.95rem;
+  color: var(--canyon-dust);
+}
+
+.home-expandable-panel {
+  padding: 0 0.75rem 0.65rem;
+}
+
+.home-expandable-panel .current-rig {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.current-rig-inline-note {
+  margin: 0 0 0.45rem;
+}
+
+.inatur-no {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inatur-terrain-list {
+  max-height: min(58vh, 36rem);
+}
+
+.inatur-terrain {
+  align-items: stretch;
+}
+
+.inatur-terrain.is-selected {
+  background: rgba(212, 168, 75, 0.06);
+}
+
+.inatur-terrain-preview {
+  appearance: none;
+  flex: 0 0 7.5rem;
+  width: 7.5rem;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(107, 82, 56, 0.75);
+  background: #0a0806;
+  cursor: zoom-in;
+}
+
+.inatur-terrain-preview:hover,
+.inatur-terrain-preview:focus-visible {
+  border-color: var(--accent-gold);
+  outline: none;
+}
+
+.inatur-terrain-map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 4.5rem;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+}
+
+.inatur-blurb {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.inatur-message {
+  color: var(--accent-gold);
+}
+
+.inatur-map-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(6, 4, 2, 0.88);
+}
+
+.inatur-map-lightbox-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: min(96vw, 1100px);
+  max-height: min(94vh, 900px);
+  padding: 0.75rem;
+  border: 2px solid #6b5238;
+  background: #120e0a;
+}
+
+.inatur-map-lightbox-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.inatur-map-lightbox-head .intro-gift,
+.inatur-map-lightbox-head .shop-row-note {
+  margin: 0;
+}
+
+.inatur-map-lightbox-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(107, 82, 56, 0.7);
+  background: #0a0806;
+}
+
+.inatur-map-lightbox-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(78vh, 780px);
+  object-fit: contain;
+  object-position: center;
+}
+
+@media (max-width: 640px) {
+  .inatur-terrain {
+    flex-wrap: wrap;
+  }
+
+  .inatur-terrain-preview {
+    flex: 1 1 100%;
+    width: 100%;
+    height: 7rem;
+  }
+}
+
+/* --- Hunt map --- */
+
+.hunt-map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+.hunt-map-hud {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.hunt-map-hud .intro-gift,
+.hunt-map-hud .shop-row-note {
+  margin: 0;
+}
+
+.hunt-clock {
+  color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.hunt-clock.is-dark {
+  color: #9ab0c8;
+}
+
+.hunt-map-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.hunt-side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 2px solid #6b5238;
+  background: rgba(0, 0, 0, 0.35);
+  max-height: min(72vh, 820px);
+  overflow-y: auto;
+}
+
+.hunt-side-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hunt-side-actions-stack {
+  flex-direction: column;
+}
+
+.hunt-pace-fieldset {
+  margin: 0;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid rgba(107, 82, 56, 0.75);
+}
+
+.hunt-pace-fieldset legend {
+  padding: 0 0.25rem;
+  color: var(--accent-gold);
+  font-size: 0.95rem;
+}
+
+.hunt-pace-option {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  margin: 0.35rem 0;
+  cursor: pointer;
+}
+
+.hunt-pace-option .shop-row-note {
+  display: block;
+}
+
+.hunt-eat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hunt-map-cell.is-selected {
+  box-shadow: inset 0 0 0 2px #7ecf96;
+  background: rgba(126, 207, 150, 0.12);
+}
+
+.hunt-map-cell-effort {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.62rem;
+  opacity: 0.8;
+}
+
+.hunt-map-stage {
+  --hunt-cols: 7;
+  --hunt-rows: 6;
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  grid-template-rows: auto 1.4rem;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.hunt-map-canvas {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  border: 2px solid #6b5238;
+  background: #0a0806;
+  overflow: hidden;
+}
+
+.hunt-map-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(68vh, 760px);
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.hunt-map-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--hunt-cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--hunt-rows), minmax(0, 1fr));
+}
+
+.hunt-map-cell {
+  appearance: none;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 236, 180, 0.18);
+  background: transparent;
+  cursor: pointer;
+  min-width: 0;
+  min-height: 0;
+}
+
+.hunt-map-cell:hover,
+.hunt-map-cell:focus-visible {
+  background: rgba(212, 168, 75, 0.12);
+  outline: none;
+}
+
+.hunt-map-cell.is-start {
+  box-shadow: inset 0 0 0 1px rgba(120, 180, 255, 0.45);
+}
+
+.hunt-map-cell.is-player {
+  background: rgba(212, 168, 75, 0.18);
+  box-shadow: inset 0 0 0 2px var(--accent-gold);
+}
+
+.hunt-map-cell-label {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.2rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: rgba(255, 236, 180, 0.72);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
+.hunt-map-player {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.35rem;
+  color: #ffd76a;
+  text-shadow: 0 0 4px #000, 0 1px 2px #000;
+  pointer-events: none;
+}
+
+.hunt-map-axis {
+  display: grid;
+  color: var(--canyon-dust);
+  font-size: 0.8rem;
+  text-align: center;
+  align-items: center;
+}
+
+.hunt-map-axis-x {
+  grid-column: 2;
+  grid-row: 2;
+  grid-template-columns: repeat(var(--hunt-cols), minmax(0, 1fr));
+}
+
+.hunt-map-axis-y {
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-rows: repeat(var(--hunt-rows), minmax(0, 1fr));
+  align-self: stretch;
+}
+
+@media (max-width: 720px) {
+  .hunt-map-img {
+    max-height: min(55vh, 520px);
+  }
+
+  .hunt-map-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .hunt-side-panel {
+    max-height: none;
+  }
+}
+
+/* --- Spot / walk atmosphere views --- */
+
+.spot-view,
+.walk-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: min(78vh, 860px);
+}
+
+.spot-view-hud {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.spot-view-hud .intro-gift,
+.spot-view-hud .shop-row-note {
+  margin: 0;
+}
+
+.spot-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.spot-eyes-frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: min(52vh, 560px);
+  border: 2px solid #6b5238;
+  background: #0a0806;
+  overflow: hidden;
+  max-height: min(70vh, 780px);
+}
+
+.spot-eyes-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: min(52vh, 560px);
+  max-height: min(70vh, 780px);
+  object-fit: cover;
+  object-position: center;
+  user-select: none;
+}
+
+.spot-bird {
+  position: absolute;
+  z-index: 2;
+  height: auto;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}
+
+/* Binos reuse the same rectangular landscape frame (same bird %). */
+.spot-binos-frame {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  background: #050403;
+}
+
+.spot-binos-frame:active {
+  cursor: grabbing;
+}
+
+.spot-binos-world {
+  position: absolute;
+  z-index: 1;
+  transform-origin: top left;
+}
+
+.spot-binos-world-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  user-select: none;
+  pointer-events: none;
+}
+
+.spot-binos-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: radial-gradient(
+    circle closest-side at center,
+    transparent 72%,
+    rgba(5, 4, 3, 0.55) 78%,
+    rgba(5, 4, 3, 0.94) 92%
+  );
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.45);
+}
+
+.spot-binos-stage {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: min(62vh, 680px);
+  padding: 0.75rem;
+  border: 2px solid #6b5238;
+  background: radial-gradient(ellipse at center, #1a1510 0%, #050403 70%);
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.spot-binos-stage:active {
+  cursor: grabbing;
+}
+
+.spot-binos-single {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spot-binos-lens {
+  position: relative;
+  width: min(72vw, 420px);
+  height: min(72vw, 420px);
+  border-radius: 50%;
+  border: 3px solid #2a2218;
+  box-shadow:
+    inset 0 0 0 2px rgba(180, 160, 120, 0.35),
+    inset 0 0 48px rgba(0, 0, 0, 0.55),
+    0 0 0 1px #000;
+  background-color: #0a0806;
+  overflow: hidden;
+}
+
+.spot-lrf-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #e22;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(255, 40, 40, 0.75);
+  pointer-events: none;
+}
+
+.spot-lrf-readout {
+  position: absolute;
+  left: 50%;
+  bottom: 18%;
+  z-index: 4;
+  transform: translateX(-50%);
+  padding: 0.15rem 0.45rem;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #f66;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.spot-lrf-btn {
+  border-color: #a33;
+  color: #f88;
+}
+
+.spot-binos-hint {
+  margin: 0;
+  color: var(--canyon-dust);
+  font-size: 0.95rem;
+}
+
+.hunt-vital-zone {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(220, 60, 60, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(255, 80, 80, 0.15);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hunt-shoot .scope-stage {
+  margin-top: 0.35rem;
+}
+
+.triggercam-aar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0 1.25rem;
+}
+
+.triggercam-aar-frame {
+  position: relative;
+  background: #1a1510;
+  border: 2px solid #6b5238;
+  image-rendering: pixelated;
+}
+
+.triggercam-aar-bird {
+  display: block;
+  image-rendering: pixelated;
+  user-select: none;
+  pointer-events: none;
+}
+
+.triggercam-zone {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.triggercam-zone--vital {
+  border: 2px solid rgba(220, 40, 40, 0.9);
+  background: rgba(220, 40, 40, 0.08);
+}
+
+.triggercam-zone--instant {
+  border: 2px solid rgba(40, 180, 60, 0.95);
+  background: rgba(40, 180, 60, 0.12);
+}
+
+.triggercam-aar-hole {
+  z-index: 3;
+}
+
+.walk-view-frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: min(70vh, 780px);
+  border: 2px solid #6b5238;
+  background: #0a0806;
+  overflow: hidden;
+}
+
+.walk-view-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: min(70vh, 780px);
+  object-fit: cover;
+  object-position: center;
+  user-select: none;
+  filter: saturate(0.85) contrast(1.05);
+}
+
+.walk-view-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(8, 6, 4, 0.92) 0%,
+    rgba(8, 6, 4, 0.35) 45%,
+    rgba(8, 6, 4, 0.15) 100%
+  );
+  pointer-events: none;
+}
+
+.walk-view-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.1rem 1.25rem 1.25rem;
+}
+
+.walk-view-copy .intro-gift,
+.walk-view-copy .intro-line,
+.walk-view-copy .shop-row-note {
+  margin: 0;
+}
+
+.walk-view-clock {
+  color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .spot-binos-lens {
+    width: min(86vw, 320px);
+    height: min(86vw, 320px);
+  }
+}
+
+.home-expandable-panel .home-kit-list {
+  border: 0;
+  background: transparent;
+  max-height: min(45vh, 24rem);
+}
+
 @media (max-width: 720px) {
   .kit-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1104,6 +1853,14 @@ body {
   image-rendering: auto;
 }
 
+/* Must beat .scope-target width:949px — otherwise tiur is ~11× too big. */
+.scope-target.hunt-tiur-target {
+  width: 88px;
+  height: 138px;
+  max-width: none;
+  image-rendering: pixelated;
+}
+
 .bullet-hole {
   position: absolute;
   border-radius: 50%;
@@ -1255,6 +2012,79 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* --- Shotlog --- */
+
+.shot-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: min(52rem, 100%);
+}
+
+.shot-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.shot-log-row {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.shot-log-row-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.95rem;
+  color: var(--canyon-dust);
+}
+
+.shot-log-when {
+  color: var(--accent-gold);
+}
+
+.shot-log-kit,
+.shot-log-ammo {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.shot-log-ammo {
+  color: var(--accent-gold);
+}
+
+.shot-log-stats {
+  margin: 0.35rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.35rem 0.75rem;
+}
+
+.shot-log-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.shot-log-stats dt {
+  font-size: 0.85rem;
+  color: var(--canyon-dust);
+}
+
+.shot-log-stats dd {
+  margin: 0;
+  font-size: 1rem;
 }
 
 .range-touch-controls {

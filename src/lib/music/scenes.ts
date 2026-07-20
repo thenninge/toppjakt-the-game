@@ -37,7 +37,8 @@ export type MusicContextInput = {
     | "welcome"
     | "town"
     | "location"
-    | "sheriff-applied";
+    | "sheriff-applied"
+    | "hunt";
   location: TownLocationId | null;
 };
 
@@ -50,6 +51,7 @@ export function musicSceneFromGame({
   if (phase === "welcome") return "intro";
   if (phase === "town") return "town";
   if (phase === "sheriff-applied") return "sheriff";
+  if (phase === "hunt") return "hunt";
   if (phase === "location" && location) {
     switch (location) {
       case "sheriff":

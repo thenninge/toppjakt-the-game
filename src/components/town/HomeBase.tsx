@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   formatInventoryQuantity,
   resolvePlayerItem,
   type InventoryEntry,
+  type ShotLogEntry,
 } from "@/lib/player";
 import {
   isAmmoItem,
@@ -24,6 +25,11 @@ import {
 import { kitCanBoil } from "@/lib/food/spec";
 import { camoSlot } from "@/lib/camo/spec";
 import { LocationNav } from "@/components/town/LocationNav";
+import { ExpandableSection } from "@/components/ui/ExpandableSection";
+import { InaturNo } from "@/components/town/InaturNo";
+import { ShotLogView } from "@/components/town/ShotLogView";
+import { getHuntingTerrain } from "@/lib/hunt/terrain";
+import { huntReadyCheck } from "@/lib/hunt/readiness";
 
 /** Categories where only one equipped item makes sense at a time. */
 const EXCLUSIVE_KIT_CATEGORIES = new Set([
@@ -56,24 +62,35 @@ function itemLabel(item: ShopItem): string {
 }
 
 type HomeBaseProps = {
+  balance: number;
   inventory: InventoryEntry[];
   kit: string[];
+  shotLog: ShotLogEntry[];
   licenseCount: number;
   rifleCount: number;
   unusedLicenses: number;
+  selectedHuntingTerrainId: string | null;
   onToggleKit: (itemId: string) => void;
+  onSelectHuntingTerrain: (terrainId: string) => void;
+  onStartHunt: () => void;
   onLeave: () => void;
 };
 
 export function HomeBase({
+  balance,
   inventory,
   kit,
+  shotLog,
   licenseCount,
   rifleCount,
   unusedLicenses,
+  selectedHuntingTerrainId,
   onToggleKit,
+  onSelectHuntingTerrain,
+  onStartHunt,
   onLeave,
 }: HomeBaseProps) {
+  const [view, setView] = useState<"main" | "inatur" | "shotlog">("main");
   const ownedItems = useMemo(() => {
     return inventory
       .map((entry) => {
@@ -161,6 +178,29 @@ export function HomeBase({
   );
 
   const rigGearComplete = currentRig.every((s) => s.item != null);
+  const selectedTerrain = getHuntingTerrain(selectedHuntingTerrainId) ?? null;
+
+  const rigSummary = useMemo(() => {
+    const gearFilled = currentRig.filter((s) => s.item).length;
+    const ammoCount = rigAmmo.length;
+    return `${gearFilled}/${currentRig.length} gear · ${ammoCount} ammo`;
+  }, [currentRig, rigAmmo]);
+
+  const inventorySummary = useMemo(() => {
+    if (ownedItems.length === 0) return "Tomt skap";
+    const inKit = ownedItems.filter(({ item }) => kit.includes(item.id)).length;
+    return `${ownedItems.length} typer · ${inKit} i kit`;
+  }, [ownedItems, kit]);
+
+  const huntReady = useMemo(
+    () =>
+      huntReadyCheck({
+        kitItems,
+        inventory,
+        selectedHuntingTerrainId,
+      }),
+    [kitItems, inventory, selectedHuntingTerrainId],
+  );
 
   /**
    * Rifle and scope define the zeroing combo (see zeroingKey). Swapping
@@ -184,6 +224,27 @@ export function HomeBase({
     onToggleKit(item.id);
   }
 
+  if (view === "shotlog") {
+    return (
+      <ShotLogView
+        entries={shotLog}
+        onBack={() => setView("main")}
+        backLabel="← Tilbake til hjem"
+      />
+    );
+  }
+
+  if (view === "inatur") {
+    return (
+      <InaturNo
+        balance={balance}
+        selectedTerrainId={selectedHuntingTerrainId}
+        onSelectTerrain={onSelectHuntingTerrain}
+        onBack={() => setView("main")}
+      />
+    );
+  }
+
   return (
     <div className="home-base">
       <LocationNav
@@ -199,18 +260,61 @@ export function HomeBase({
             ? ` · ${unusedLicenses} ubrukt lisens (Pike Pro)`
             : " · ingen ubrukt lisens — søk hos Lensmannen for å kjøpe rifle"}
         </p>
+        {selectedTerrain ? (
+          <p className="shop-row-note">
+            Jaktterreng: {selectedTerrain.name} ({selectedTerrain.region}) ·{" "}
+            {selectedTerrain.pricePerDayNok.toLocaleString("nb-NO")} kr/dag
+          </p>
+        ) : (
+          <p className="shop-row-note">
+            Ingen jaktterreng valgt — book via inatur.no.
+          </p>
+        )}
       </header>
 
-      <section className="current-rig" aria-label="Current rig">
-        <div className="current-rig-head">
-          <p className="intro-line intro-gift">Current rig</p>
-          <p className="shop-row-note">
-            Dette tar du med på skytebanen. Flere ammo-typer = test i sekvens.
-            Bytt under inventory for å reconfigure.
+      <div className="home-actions">
+        <button
+          type="button"
+          className="intro-button home-inatur-btn"
+          onClick={() => setView("inatur")}
+        >
+          inatur.no
+        </button>
+        <button
+          type="button"
+          className="intro-button sheriff-secondary"
+          onClick={() => setView("shotlog")}
+        >
+          Shotlog ({shotLog.length})
+        </button>
+        <button
+          type="button"
+          className="intro-button home-hunt-btn"
+          disabled={!huntReady.ok}
+          title={
+            huntReady.ok
+              ? "Start jakt"
+              : huntReady.blockers.join(" · ")
+          }
+          onClick={onStartHunt}
+        >
+          Dra på jakt
+        </button>
+      </div>
+      {!huntReady.ok ? (
+        <p className="shop-row-note home-hunt-blockers">
+          {huntReady.blockers.join(" · ")}
+        </p>
+      ) : null}
+
+      <ExpandableSection title="Current rig" summary={rigSummary}>
+        <section className="current-rig" aria-label="Current rig">
+          <p className="shop-row-note current-rig-inline-note">
+            Dette tar du med på skytebanen og jakt. Flere ammo-typer = test i
+            sekvens. Bytt under inventory for å reconfigure.
             {rigGearComplete ? "" : " — noen gear-slots er tomme."}
           </p>
-        </div>
-        <ul className="current-rig-list">
+          <ul className="current-rig-list">
           {currentRig.map(({ key, label, item }) => (
             <li
               key={key}
@@ -274,7 +378,8 @@ export function HomeBase({
             </div>
           </li>
         </ul>
-      </section>
+        </section>
+      </ExpandableSection>
 
       <div className="kit-summary" aria-live="polite">
         <div className="kit-summary-item">
@@ -339,7 +444,8 @@ export function HomeBase({
       {ownedItems.length === 0 ? (
         <p className="intro-line">Tomt skap. Pike Pro venter.</p>
       ) : (
-        <ul className="shop-list home-kit-list">
+        <ExpandableSection title="Inventory" summary={inventorySummary}>
+          <ul className="shop-list home-kit-list">
           {ownedItems.map(({ item, qty }) => {
             const equipped = kit.includes(item.id);
             return (
@@ -400,7 +506,8 @@ export function HomeBase({
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </ExpandableSection>
       )}
 
       <LocationNav onBackToTown={onLeave} />

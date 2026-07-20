@@ -25,23 +25,33 @@ import {
   measureGroup,
   mmToPx,
   RANGE_DISTANCE_M,
+  RANGE_DISTANCES_M,
   sampleShotFromPoa,
   scopeImageScale,
   wobbleAmplitudeMm,
   type GroupMeasurement,
+  type RangeDistanceM,
   type ShotImpact,
 } from "@/lib/range/precision";
+import {
+  DEFAULT_ZERO_DISTANCE_M,
+  dropBelowLosMm,
+} from "@/lib/ballistics/trajectory";
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
+import { ShotLogView } from "@/components/town/ShotLogView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
-  clampZeroingMm,
+  angularMmAtDistance,
+  clampTurretMm,
+  clicksForDropMm,
   effectiveZeroOffsetMm,
   getInventoryQty,
-  MAX_ZEROING_OFFSET_MM,
+  MAX_TURRET_OFFSET_MM,
   ZERO_CLICK_MM,
   zeroingKey,
   type InventoryEntry,
+  type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 
@@ -50,6 +60,7 @@ type ShootingRangeProps = {
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  shotLog: ShotLogEntry[];
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
   onEnsureZeroing: (
@@ -58,6 +69,7 @@ type ShootingRangeProps = {
     ammoId: string,
   ) => ZeroingProfile;
   onSaveZeroing: (key: string, sessionXMm: number, sessionYMm: number) => void;
+  onLogSeries: (entry: ShotLogEntry) => void;
   musicEnabled: boolean;
   onLeave: () => void;
 };
@@ -80,13 +92,16 @@ export function ShootingRange({
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  shotLog,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
   onSaveZeroing,
+  onLogSeries,
   musicEnabled,
   onLeave,
 }: ShootingRangeProps) {
+  const [view, setView] = useState<"range" | "shotlog">("range");
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
@@ -115,6 +130,7 @@ export function ShootingRange({
   const ready = !!(rifle && scope && ammoOptions.length > 0);
 
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
+  const [distanceM, setDistanceM] = useState<RangeDistanceM>(RANGE_DISTANCE_M);
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
@@ -149,6 +165,7 @@ export function ShootingRange({
   const wobbleRef = useRef(wobbleMm);
   const measurementRef = useRef(measurement);
   const shotsLenRef = useRef(0);
+  const distanceRef = useRef(distanceM);
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(1);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
@@ -173,8 +190,16 @@ export function ShootingRange({
       : null;
   const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
   const effectiveZero = zeroProfile
-    ? effectiveZeroOffsetMm(zeroProfile, sessionZeroXMm, sessionZeroYMm)
-    : { xMm: sessionZeroXMm, yMm: sessionZeroYMm };
+    ? effectiveZeroOffsetMm(
+        zeroProfile,
+        sessionZeroXMm,
+        sessionZeroYMm,
+        distanceM,
+      )
+    : {
+        xMm: angularMmAtDistance(sessionZeroXMm, distanceM),
+        yMm: angularMmAtDistance(sessionZeroYMm, distanceM),
+      };
   const zeroClicksX = Math.round(sessionZeroXMm / ZERO_CLICK_MM);
   const zeroClicksY = Math.round(sessionZeroYMm / ZERO_CLICK_MM);
 
@@ -205,6 +230,9 @@ export function ShootingRange({
   useEffect(() => {
     aimRef.current = aimMm;
   }, [aimMm]);
+  useEffect(() => {
+    distanceRef.current = distanceM;
+  }, [distanceM]);
 
   useEffect(() => {
     wobbleRef.current = wobbleMm;
@@ -283,7 +311,7 @@ export function ShootingRange({
           stock: stock?.stock,
           affinity,
         },
-        RANGE_DISTANCE_M,
+        distanceRef.current,
       );
       const impact: ShotImpact = {
         xMm: shot.xMm + effectiveZero.xMm,
@@ -439,13 +467,15 @@ export function ShootingRange({
       last = now;
       const k = keysRef.current;
       let { x, y } = aimRef.current;
-      const speed = AIM_SPEED_MM_PER_SEC * dt;
+      const distFactor = distanceRef.current / RANGE_DISTANCE_M;
+      const speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
       if (k.left) x -= speed;
       if (k.right) x += speed;
       if (k.up) y -= speed;
       if (k.down) y += speed;
-      x = Math.max(-80, Math.min(80, x));
-      y = Math.max(-80, Math.min(80, y));
+      const aimLimit = 80 * distFactor;
+      x = Math.max(-aimLimit, Math.min(aimLimit, x));
+      y = Math.max(-aimLimit, Math.min(aimLimit, y));
       aimRef.current = { x, y };
       setAimMm({ x, y });
 
@@ -454,7 +484,7 @@ export function ShootingRange({
         focusRef.current,
         now,
       );
-      const amp = wobbleAmplitudeMm(calm);
+      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
       const nextWobble = {
@@ -519,7 +549,15 @@ export function ShootingRange({
     return () => cancelAnimationFrame(raf);
   }, [ready, measurement]);
 
-  const imgScale = scope ? scopeImageScale(zoom, scope.scope) : 1;
+  const zoomScale = scope
+    ? scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M)
+    : 1;
+  /** Target shrinks with distance (angular size). Reticle uses zoom-only
+   * scale so mil hashes stay true angular — a fixed mil error is the same
+   * screen size at every distance. */
+  const targetScale = scope
+    ? scopeImageScale(zoom, scope.scope, distanceM)
+    : 1;
   const displayAimX = aimMm.x + wobbleMm.x;
   const displayAimY = aimMm.y + wobbleMm.y;
   // POA: pan so the point under the reticle is aim+wobble relative to bullseye
@@ -529,19 +567,56 @@ export function ShootingRange({
     IMG_NATURAL_H,
   );
   const panPxX =
-    (bullseyeOff.x + mmToPx(displayAimX, IMG_NATURAL_W)) * imgScale;
+    (bullseyeOff.x + mmToPx(displayAimX, IMG_NATURAL_W)) * targetScale;
   const panPxY =
-    (bullseyeOff.y + mmToPx(displayAimY, IMG_NATURAL_W)) * imgScale;
+    (bullseyeOff.y + mmToPx(displayAimY, IMG_NATURAL_W)) * targetScale;
+
+  const ballisticHint = selectedAmmo
+    ? (() => {
+        const d = dropBelowLosMm(selectedAmmo.ammo, distanceM);
+        const clicks = clicksForDropMm(d, distanceM);
+        if (distanceM <= DEFAULT_ZERO_DISTANCE_M || Math.abs(clicks) < 0.3) {
+          return `Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ 0 klikk`;
+        }
+        const mil = Math.abs(clicks / 10).toFixed(1);
+        return `Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ ${Math.round(clicks)} klikk (${mil} mil / ${(d / 10).toFixed(0)} cm)`;
+      })()
+    : null;
 
   function measureSeries() {
     if (shots.length < SHOTS_PER_SERIES) {
       setStatus(`Trenger ${SHOTS_PER_SERIES} skudd før måling.`);
       return;
     }
-    const m = measureGroup(shots);
+    if (!rifle || !scope || !selectedAmmo) return;
+    const m = measureGroup(shots, distanceM);
     setMeasurement(m);
     if (m) {
-      setStatus("Serie målt — se stillbilde og stats under.");
+      const entry: ShotLogEntry = {
+        id: `series-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        atMs: Date.now(),
+        rifleId: rifle.id,
+        scopeId: scope.id,
+        ammoId: selectedAmmo.id,
+        rifleLabel: `${rifle.brand} ${rifle.name}`,
+        scopeLabel: `${scope.brand} ${scope.name}`,
+        ammoLabel: `${selectedAmmo.brand} ${selectedAmmo.name} (${selectedAmmo.ammo.caliber})`,
+        distanceM,
+        shotCount: m.shotCount,
+        extremeSpreadMm: m.extremeSpreadMm,
+        groupMoa: m.groupMoa,
+        meanRadiusMm: m.meanRadiusMm,
+        poiXMm: m.poiXMm,
+        poiYMm: m.poiYMm,
+        zeroXMm: effectiveZero.xMm,
+        zeroYMm: effectiveZero.yMm,
+        savedZeroXMm: zeroProfile?.savedXMm ?? 0,
+        savedZeroYMm: zeroProfile?.savedYMm ?? 0,
+        sessionZeroXMm,
+        sessionZeroYMm,
+      };
+      onLogSeries(entry);
+      setStatus("Serie målt og logget — se stillbilde eller Shotlog.");
     }
   }
 
@@ -555,10 +630,10 @@ export function ShootingRange({
 
   function nudgeZero(axis: "x" | "y", deltaMm: number) {
     if (axis === "x") {
-      setSessionZeroXMm((prev) => clampZeroingMm(prev + deltaMm));
+      setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
       return;
     }
-    setSessionZeroYMm((prev) => clampZeroingMm(prev + deltaMm));
+    setSessionZeroYMm((prev) => clampTurretMm(prev + deltaMm));
   }
 
   function saveCurrentZero() {
@@ -580,6 +655,26 @@ export function ShootingRange({
     );
   }
 
+  function changeDistance(next: RangeDistanceM) {
+    if (next === distanceM) return;
+    setDistanceM(next);
+    setAimMm({ x: 0, y: 0 });
+    setShots([]);
+    setMeasurement(null);
+    abortTrigger("");
+    setStatus(`Avstand satt til ${next} m — ny serie.`);
+  }
+
+  if (view === "shotlog") {
+    return (
+      <ShotLogView
+        entries={shotLog}
+        onBack={() => setView("range")}
+        backLabel="← Tilbake til skytebanen"
+      />
+    );
+  }
+
   if (!ready) {
     return (
       <div className="shooting-range">
@@ -594,9 +689,18 @@ export function ShootingRange({
         {ammoOptions.length === 0 ? (
           <p className="shop-row-note">Mangler: ammo</p>
         ) : null}
-        <button type="button" className="intro-button" onClick={onLeave}>
-          Ferdig
-        </button>
+        <div className="range-actions">
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => setView("shotlog")}
+          >
+            Shotlog ({shotLog.length})
+          </button>
+          <button type="button" className="intro-button" onClick={onLeave}>
+            Ferdig
+          </button>
+        </div>
       </div>
     );
   }
@@ -644,7 +748,9 @@ export function ShootingRange({
       />
 
       <header className="shop-header">
-        <p className="intro-line intro-gift">Shooting Range — CBA 100 m</p>
+        <p className="intro-line intro-gift">
+          Shooting Range — CBA {distanceM} m
+        </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name}
           {" · "}
@@ -654,10 +760,27 @@ export function ShootingRange({
           kit-calm {calmFactor.toFixed(2)}
           {bipod ? " (bipod)" : " (uten bipod)"}
           {suppressor ? " + can" : ""}
+          {ballisticHint ? ` · ${ballisticHint}` : ""}
         </p>
       </header>
 
       <div className="range-toolbar">
+        <label className="shop-filter">
+          Avstand
+          <select
+            value={distanceM}
+            disabled={shots.length > 0 && !measurement}
+            onChange={(e) =>
+              changeDistance(Number(e.target.value) as RangeDistanceM)
+            }
+          >
+            {RANGE_DISTANCES_M.map((d) => (
+              <option key={d} value={d}>
+                {d} m
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="shop-filter">
           Ammo
           <select
@@ -766,8 +889,8 @@ export function ShootingRange({
           disabled={
             !comboKey ||
             (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
-            Math.abs(sessionZeroXMm) > MAX_ZEROING_OFFSET_MM ||
-            Math.abs(sessionZeroYMm) > MAX_ZEROING_OFFSET_MM
+            Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
+            Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
           }
           onClick={saveCurrentZero}
         >
@@ -795,7 +918,7 @@ export function ShootingRange({
             <div
               className="scope-world"
               style={{
-                transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${imgScale})`,
+                transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
               }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -828,7 +951,11 @@ export function ShootingRange({
                 );
               })}
             </div>
-            <ScopeReticle scope={scope.scope} zoom={zoom} imgScale={imgScale} />
+            <ScopeReticle
+              scope={scope.scope}
+              zoom={zoom}
+              imgScale={zoomScale}
+            />
             <div className="scope-vignette" aria-hidden />
           </div>
 
@@ -932,6 +1059,13 @@ export function ShootingRange({
         </button>
         <button type="button" className="intro-button" onClick={newSeries}>
           Ny serie
+        </button>
+        <button
+          type="button"
+          className="intro-button sheriff-secondary"
+          onClick={() => setView("shotlog")}
+        >
+          Shotlog ({shotLog.length})
         </button>
         <button
           type="button"

@@ -1,8 +1,10 @@
 /**
  * Scope reticle assets and FFP/SFP display scaling.
  *
- * Calibration (Nightforce MIL-R): CBA diamond corner = 10 mm from bullseye.
- * That angular span matches the first major MRAD tick (1.0 MIL) on the reticle.
+ * Visual calibration (Nightforce MIL-R): CBA diamond tip (10 mm) aligns with
+ * the first major hash on the reticle graphic so subtensions stay readable
+ * in the scope circle. Turret clicks remain true 0.1 mil (10 mm @ 100 m);
+ * see player.ts ZERO_CLICK_MM.
  */
 
 import type { ScopeSpec } from "@/lib/optics/spec";
@@ -39,7 +41,7 @@ export function getReticleDef(id: string | undefined): ReticleDef | null {
 
 /**
  * Uniform image scale for an FFP reticle at the current target zoom.
- * Target world uses `imgScale`; 1 MIL on reticle = CBA diamond radius (10 mm).
+ * Sized so the first major hash matches the CBA diamond tip (readable FOV).
  */
 export function ffpReticleImageScale(
   imgScale: number,

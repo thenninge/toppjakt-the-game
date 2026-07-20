@@ -27,6 +27,10 @@ export {
 } from "@/lib/ballistics/dispersion";
 
 export const RANGE_DISTANCE_M = 100;
+/** Selectable CBA distances on the indoor/outdoor range. */
+export const RANGE_DISTANCES_M = [100, 200, 300, 400] as const;
+export type RangeDistanceM = (typeof RANGE_DISTANCES_M)[number];
+
 export const SHOTS_PER_SERIES = 5;
 
 /**
@@ -192,7 +196,10 @@ function emptyGroup(shotCount: number, poi?: ShotImpact): GroupMeasurement {
   };
 }
 
-export function measureGroup(shots: ShotImpact[]): GroupMeasurement | null {
+export function measureGroup(
+  shots: ShotImpact[],
+  distanceM: number = RANGE_DISTANCE_M,
+): GroupMeasurement | null {
   if (shots.length === 0) return null;
   if (shots.length === 1) return emptyGroup(1, shots[0]);
 
@@ -218,13 +225,15 @@ export function measureGroup(shots: ShotImpact[]): GroupMeasurement | null {
       0,
     ) / shots.length;
 
+  const mmPerMoa = MM_PER_MOA_AT_100M * (distanceM / 100);
+
   return {
     widthMm,
     heightMm,
     extremeSpreadMm,
-    groupMoa: extremeSpreadMm / MM_PER_MOA_AT_100M,
+    groupMoa: extremeSpreadMm / mmPerMoa,
     meanRadiusMm,
-    meanRadiusMoa: meanRadiusMm / MM_PER_MOA_AT_100M,
+    meanRadiusMoa: meanRadiusMm / mmPerMoa,
     poiXMm,
     poiYMm,
     shotCount: shots.length,
@@ -287,8 +296,12 @@ export const FOCUS_FATIGUE_CALM_MULT = 0.65;
 /** Space held → shot fires after uniform random delay in [0, this] ms. */
 export const TRIGGER_DELAY_MAX_MS = 1000;
 
-export function wobbleAmplitudeMm(calmFactor: number): number {
-  return BASE_WOBBLE_MM / Math.max(0.35, calmFactor);
+export function wobbleAmplitudeMm(
+  calmFactor: number,
+  distanceM: number = RANGE_DISTANCE_M,
+): number {
+  const at100 = BASE_WOBBLE_MM / Math.max(0.35, calmFactor);
+  return at100 * (distanceM / RANGE_DISTANCE_M);
 }
 
 /** Effective calm including breath/focus state. */
@@ -338,10 +351,13 @@ export function clampScopeZoom(
 /**
  * CSS scale for the CBA image inside the scope circle.
  * Proportional to optical zoom — min zoom shows more paper; max digs into the diamond.
+ * At longer range the target subtends less angle (∝ 100/distance).
  */
 export function scopeImageScale(
   zoom: number,
   _scope?: Pick<ScopeSpec, "minZoom" | "maxZoom">,
+  distanceM: number = RANGE_DISTANCE_M,
 ): number {
-  return Math.max(0.008, SCOPE_IMAGE_SCALE_PER_ZOOM * zoom);
+  const rangeFactor = RANGE_DISTANCE_M / Math.max(1, distanceM);
+  return Math.max(0.004, SCOPE_IMAGE_SCALE_PER_ZOOM * zoom * rangeFactor);
 }

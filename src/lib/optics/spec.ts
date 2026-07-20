@@ -47,7 +47,26 @@ export type LrfSpec = {
    * Reason to upgrade: a 3% miss at 300 m is ~±9 m hold error.
    */
   rangeErrorPercent: number;
+  /**
+   * Optical magnification (e.g. 10 for 10x42 binos).
+   * Omit or 1 for laser-only handheld rangefinders.
+   */
+  magnification?: number;
 };
+
+/** Resolve optical zoom for spotting (name like 10x42 if spec omits it). */
+export function lrfOpticalMagnification(item: {
+  name: string;
+  note?: string;
+  lrf: Pick<LrfSpec, "magnification">;
+}): number {
+  if (item.lrf.magnification != null && item.lrf.magnification > 0) {
+    return item.lrf.magnification;
+  }
+  const m = `${item.name} ${item.note ?? ""}`.match(/(\d+)\s*[x×]\s*\d+/i);
+  if (m) return Number(m[1]);
+  return 1;
+}
 
 /**
  * Apply LRF ranging error: displayed distance ∈ true × (1 ± rangeErrorPercent/100).
@@ -59,4 +78,20 @@ export function measureDistanceWithLrf(
 ): number {
   const frac = (random() * 2 - 1) * (lrf.rangeErrorPercent / 100);
   return trueDistanceM * (1 + frac);
+}
+
+/**
+ * Where a landscape %-point sits inside the bino lens (0–100 lens %).
+ * Matches CSS world: size zoom×100%, left/top (1−zoom)×pan%.
+ */
+export function landscapePointInLens(
+  landscapeX: number,
+  landscapeY: number,
+  pan: { x: number; y: number },
+  zoom: number,
+): { x: number; y: number } {
+  return {
+    x: (1 - zoom) * pan.x + landscapeX * zoom,
+    y: (1 - zoom) * pan.y + landscapeY * zoom,
+  };
 }

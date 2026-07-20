@@ -8,13 +8,52 @@ export type InventoryEntry = {
 };
 
 export type ZeroingProfile = {
-  /** Random first-time combo offset (mm on target at 100 m). */
+  /**
+   * Random first-time combo offset, stored as mm-at-100 m (angular).
+   * Capped to ±MAX_ZERO_BASE_OFFSET_MM (±5 clicks).
+   */
   baseXMm: number;
   baseYMm: number;
-  /** Saved zero correction for this rifle+scope+ammo combo. */
+  /**
+   * Saved turret correction, mm-at-100 m (angular).
+   * Can be many clicks (long-range dial / re-zero).
+   */
   savedXMm: number;
   savedYMm: number;
 };
+
+/** One measured series from the shooting range (shotlog row). */
+export type ShotLogEntry = {
+  id: string;
+  /** Unix ms when the series was measured. */
+  atMs: number;
+  rifleId: string;
+  scopeId: string;
+  ammoId: string;
+  /** Snapshot labels so old rows stay readable if catalog names change. */
+  rifleLabel: string;
+  scopeLabel: string;
+  ammoLabel: string;
+  distanceM: number;
+  shotCount: number;
+  extremeSpreadMm: number;
+  groupMoa: number;
+  meanRadiusMm: number;
+  poiXMm: number;
+  poiYMm: number;
+  /** Effective zero offset on paper when the series was shot (mm). */
+  zeroXMm: number;
+  zeroYMm: number;
+  /** Saved turret correction at log time (mm). */
+  savedZeroXMm: number;
+  savedZeroYMm: number;
+  /** Unsaved session clicks at log time (mm). */
+  sessionZeroXMm: number;
+  sessionZeroYMm: number;
+};
+
+/** Cap so the log cannot grow without bound in one session. */
+export const MAX_SHOT_LOG_ENTRIES = 200;
 
 /** Paperwork only — never appears in inventory. Required to buy hunting rifles. */
 export type WeaponLicense = {
@@ -46,12 +85,16 @@ export type PlayerStats = {
   ammoAffinities: Record<string, number>;
   /** Per player×rifle×scope×ammo zeroing state. */
   zeroingProfiles: Record<string, ZeroingProfile>;
+  /** Chronological range series log (newest first). */
+  shotLog: ShotLogEntry[];
+  /** Booked hunting terrain from inatur.no (null = none chosen yet). */
+  selectedHuntingTerrainId: string | null;
 };
 
 export const STARTING_BALANCE = 500_000;
 export const STARTER_RIFLE_ID = "rifle-cz452";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
-/** Temporary range-test loadout (Sauer 200 STR + ZCO + match ammo). */
+/** Temporary range-test weapon platform (Sauer 200 STR + NF + match ammo). */
 export const TEST_RANGE_LOADOUT_IDS = [
   "rifle-sauer-200str",
   "scope-nf-nx8-4-32-mrad",
@@ -61,15 +104,55 @@ export const TEST_RANGE_LOADOUT_IDS = [
   "bipod-trs-really-right",
   "stock-mdt-acc-elite-rem700",
 ] as const;
+
+/**
+ * Full starter hunt kit (also equipped). One item per slot — expand later if asked.
+ * Food qty overrides are in STARTER_HUNT_QTY.
+ */
+export const STARTER_HUNT_LOADOUT_IDS = [
+  ...TEST_RANGE_LOADOUT_IDS,
+  "misc-vorn-deer-42",
+  "food-msr-pocketrocket",
+  "food-msr-isopro-230",
+  "food-real-turmat",
+  "food-boller-5pk",
+  "food-polarbrod-ost-skinke",
+  "misc-thermos-jula",
+  "misc-sittpute-biltema",
+  "misc-triggercam",
+  "camo-pinewood-lappland",
+  "camo-buff-autumn-realtree",
+  "camo-beanie-forest-swedteam",
+  "camo-gloves-forest-swedteam",
+  "camo-boots-lowa",
+  "lrf-sig-kilo3000-bdx-10x42",
+  "misc-kestrel-5700-elite",
+] as const;
+
+/** Extra inventory qty for consumables (default 1). */
+export const STARTER_HUNT_QTY: Partial<Record<string, number>> = {
+  "food-real-turmat": 3,
+  "food-boller-5pk": 1,
+  "food-polarbrod-ost-skinke": 1,
+};
+
 export const TEST_RANGE_LICENSE_ID = "license-test-sauer-200str";
 /** Norwegian satire: max legal hunting rifles before the system says nei. */
 export const MAX_HUNTING_RIFLES = 8;
 /** Base søknadsgebyr — doubles per paid license (500, 1000, 2000…). */
 export const BASE_PERMIT_FEE = 500;
-/** 0.1 mil at 100 m = 10 mm on the target. */
+/** 0.1 mil click → mm on paper at 100 m (angular; scales with distance). */
 export const ZERO_CLICK_MM = 10;
-/** Limit initial and user zeroing to ±5 clicks = ±50 mm. */
-export const MAX_ZEROING_OFFSET_MM = 50;
+/**
+ * Max random first-time combo offset (±5 clicks).
+ * Not a turret limit — scopes can dial far more.
+ */
+export const MAX_ZERO_BASE_OFFSET_MM = 50;
+/** Max dial / saved turret correction (±100 clicks ≈ ±10 mil). */
+export const MAX_TURRET_OFFSET_MM = 1000;
+
+/** @deprecated Use MAX_ZERO_BASE_OFFSET_MM — kept as alias for clarity in old comments. */
+export const MAX_ZEROING_OFFSET_MM = MAX_ZERO_BASE_OFFSET_MM;
 
 /**
  * Fee for the next paid rifle license at Lensmannen.
@@ -97,7 +180,29 @@ export function createInitialStats(): PlayerStats {
     weaponLicenses: [],
     ammoAffinities: {},
     zeroingProfiles: {},
+    shotLog: [],
+    selectedHuntingTerrainId: null,
   };
+}
+
+export function appendShotLogEntry(
+  log: ShotLogEntry[],
+  entry: ShotLogEntry,
+): ShotLogEntry[] {
+  return [entry, ...log].slice(0, MAX_SHOT_LOG_ENTRIES);
+}
+
+export function formatZeroAxisMm(
+  mmAt100: number,
+  axis: "windage" | "elevation",
+): string {
+  const clicks = Math.round(mmAt100 / ZERO_CLICK_MM);
+  if (clicks === 0) return "0.0 mil";
+  const mil = Math.abs(clicks / 10).toFixed(1);
+  if (axis === "windage") {
+    return `${mil} mil ${clicks < 0 ? "L" : "R"}`;
+  }
+  return `${mil} mil ${clicks < 0 ? "U" : "D"}`;
 }
 
 export function zeroingKey(
@@ -108,8 +213,40 @@ export function zeroingKey(
   return `${rifleId}::${scopeId}::${ammoId}`;
 }
 
+/** Clamp the initial random zero offset (±5 clicks). */
+export function clampZeroBaseMm(mm: number): number {
+  return Math.max(
+    -MAX_ZERO_BASE_OFFSET_MM,
+    Math.min(MAX_ZERO_BASE_OFFSET_MM, mm),
+  );
+}
+
+/** Clamp session / saved turret dial (± many clicks). */
+export function clampTurretMm(mm: number): number {
+  return Math.max(
+    -MAX_TURRET_OFFSET_MM,
+    Math.min(MAX_TURRET_OFFSET_MM, mm),
+  );
+}
+
+/** @deprecated Prefer clampZeroBaseMm or clampTurretMm. */
 export function clampZeroingMm(mm: number): number {
-  return Math.max(-MAX_ZEROING_OFFSET_MM, Math.min(MAX_ZEROING_OFFSET_MM, mm));
+  return clampZeroBaseMm(mm);
+}
+
+/** Convert mm-at-100 m (angular) to mm on paper at `distanceM`. */
+export function angularMmAtDistance(
+  mmAt100: number,
+  distanceM: number,
+): number {
+  return mmAt100 * (distanceM / 100);
+}
+
+/** How many 0.1 mil clicks equal this drop on paper at distance. */
+export function clicksForDropMm(dropMm: number, distanceM: number): number {
+  const mmPerClick = ZERO_CLICK_MM * (distanceM / 100);
+  if (mmPerClick <= 0) return 0;
+  return dropMm / mmPerClick;
 }
 
 function randomZeroClicks(random: () => number): number {
@@ -157,14 +294,21 @@ export function ensureZeroingProfile(
   };
 }
 
+/**
+ * Effective POI shift on paper at `distanceM`.
+ * Profile + session are stored as mm-at-100 m (0.1 mil clicks × 10).
+ */
 export function effectiveZeroOffsetMm(
   profile: ZeroingProfile,
   sessionXMm = 0,
   sessionYMm = 0,
+  distanceM = 100,
 ): { xMm: number; yMm: number } {
+  const x100 = profile.baseXMm + profile.savedXMm + sessionXMm;
+  const y100 = profile.baseYMm + profile.savedYMm + sessionYMm;
   return {
-    xMm: profile.baseXMm + profile.savedXMm + sessionXMm,
-    yMm: profile.baseYMm + profile.savedYMm + sessionYMm,
+    xMm: angularMmAtDistance(x100, distanceM),
+    yMm: angularMmAtDistance(y100, distanceM),
   };
 }
 
@@ -180,8 +324,8 @@ export function saveZeroing(
     ...map,
     [key]: {
       ...profile,
-      savedXMm: clampZeroingMm(profile.savedXMm + sessionXMm),
-      savedYMm: clampZeroingMm(profile.savedYMm + sessionYMm),
+      savedXMm: clampTurretMm(profile.savedXMm + sessionXMm),
+      savedYMm: clampTurretMm(profile.savedYMm + sessionYMm),
     },
   };
 }
@@ -264,12 +408,14 @@ export function grantStarterGear(stats: PlayerStats): PlayerStats {
     };
   }
 
-  // Test range loadout — top shelf for shooting UX work.
-  for (const id of TEST_RANGE_LOADOUT_IDS) {
+  // Full hunt + range test loadout — inventory and kit.
+  for (const id of STARTER_HUNT_LOADOUT_IDS) {
     if (!next.inventory.some((e) => e.itemId === id)) {
       const item = getShopItem(id);
-      const qty =
-        item && isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
+      let qty = STARTER_HUNT_QTY[id] ?? 1;
+      if (item && isAmmoItem(item)) {
+        qty = ammoRoundsPerPurchase(item);
+      }
       next = {
         ...next,
         inventory: addToInventory(next.inventory, id, qty),
@@ -292,8 +438,28 @@ export function grantStarterGear(stats: PlayerStats): PlayerStats {
     };
   }
 
-  const testKit = [...TEST_RANGE_LOADOUT_IDS];
-  next = { ...next, kit: testKit };
+  next = { ...next, kit: [...STARTER_HUNT_LOADOUT_IDS] };
+
+  // Starter platform is already zeroed — BDX holds assume perfect 100 m zero.
+  const perfect: ZeroingProfile = {
+    baseXMm: 0,
+    baseYMm: 0,
+    savedXMm: 0,
+    savedYMm: 0,
+  };
+  const rifleId = TEST_RANGE_LOADOUT_IDS[0];
+  const scopeId = TEST_RANGE_LOADOUT_IDS[1];
+  let profiles = { ...next.zeroingProfiles };
+  for (const ammoId of [
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+  ]) {
+    profiles = {
+      ...profiles,
+      [zeroingKey(rifleId, scopeId, ammoId)]: perfect,
+    };
+  }
+  next = { ...next, zeroingProfiles: profiles };
 
   return next;
 }

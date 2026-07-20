@@ -17,8 +17,11 @@ import {
   grantStarterGear,
   resolvePlayerItem,
   saveZeroing,
+  appendShotLogEntry,
   unusedLicenseCount,
+  consumeInventoryItem,
   type PlayerStats,
+  type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 import type { ShopItem } from "@/lib/shop/types";
@@ -44,8 +47,10 @@ import {
 import { PikeProShop } from "@/components/town/PikeProShop";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
 import { ShootingRange } from "@/components/town/ShootingRange";
+import { HuntMapView } from "@/components/hunt/HuntMapView";
 import { isAmmoItem, isCamoItem, isFoodItem, isRifleItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
+import { getHuntingTerrain } from "@/lib/hunt/terrain";
 
 type Phase =
   | "loading"
@@ -53,7 +58,8 @@ type Phase =
   | "welcome"
   | "town"
   | "location"
-  | "sheriff-applied";
+  | "sheriff-applied"
+  | "hunt";
 
 const LOADING_MS = 1000;
 
@@ -238,6 +244,13 @@ export function IntroScreen() {
     [],
   );
 
+  const logRangeSeries = useCallback((entry: ShotLogEntry) => {
+    setStats((prev) => ({
+      ...prev,
+      shotLog: appendShotLogEntry(prev.shotLog, entry),
+    }));
+  }, []);
+
   function toggleKit(itemId: string) {
     setStats((prev) => ({
       ...prev,
@@ -255,6 +268,40 @@ export function IntroScreen() {
         },
       ),
     }));
+  }
+
+  function selectHuntingTerrain(terrainId: string) {
+    setStats((prev) => {
+      const terrain = getHuntingTerrain(terrainId);
+      if (!terrain || prev.balance < terrain.pricePerDayNok) return prev;
+      if (prev.selectedHuntingTerrainId === terrainId) return prev;
+      return {
+        ...prev,
+        balance: prev.balance - terrain.pricePerDayNok,
+        selectedHuntingTerrainId: terrainId,
+      };
+    });
+  }
+
+  function startHunt() {
+    if (!stats.selectedHuntingTerrainId) return;
+    setLocation(null);
+    setPhase("hunt");
+  }
+
+  function endHunt() {
+    setLocation("home");
+    setPhase("location");
+  }
+
+  function consumeHuntFood(itemId: string): boolean {
+    const prev = statsRef.current;
+    const result = consumeInventoryItem(prev.inventory, itemId, 1);
+    if (!result.ok) return false;
+    const next = { ...prev, inventory: result.inventory };
+    statsRef.current = next;
+    setStats(next);
+    return true;
   }
 
   function headIntoTown() {
@@ -386,15 +433,44 @@ export function IntroScreen() {
 
         {phase === "location" && location === "home" && (
           <HomeBase
+            balance={stats.balance}
             inventory={stats.inventory}
             kit={stats.kit}
+            shotLog={stats.shotLog}
             licenseCount={stats.weaponLicenses.length}
             rifleCount={countHuntingRifles(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
+            selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             onToggleKit={toggleKit}
+            onSelectHuntingTerrain={selectHuntingTerrain}
+            onStartHunt={startHunt}
             onLeave={backToTown}
           />
         )}
+
+        {phase === "hunt" && stats.selectedHuntingTerrainId ? (
+          <HuntMapView
+            terrainId={stats.selectedHuntingTerrainId}
+            kitItems={stats.kit
+              .map((id) => resolvePlayerItem(id))
+              .filter((x): x is ShopItem => x != null)}
+            inventory={stats.inventory}
+            ammoAffinities={stats.ammoAffinities}
+            zeroingProfiles={stats.zeroingProfiles}
+            weather={weather}
+            musicEnabled={musicEnabled}
+            onAffinitiesChange={(next) =>
+              setStats((prev) => ({ ...prev, ammoAffinities: next }))
+            }
+            onConsumeAmmo={spendAmmoRound}
+            onEnsureZeroing={ensureComboZero}
+            onConsumeFood={consumeHuntFood}
+            onTiurHarvested={() =>
+              setStats((prev) => ({ ...prev, tiur: prev.tiur + 1 }))
+            }
+            onLeave={endHunt}
+          />
+        ) : null}
 
         {phase === "location" && location === "shooting-range" && (
           <ShootingRange
@@ -404,12 +480,14 @@ export function IntroScreen() {
             inventory={stats.inventory}
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
+            shotLog={stats.shotLog}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))
             }
             onConsumeAmmo={spendAmmoRound}
             onEnsureZeroing={ensureComboZero}
             onSaveZeroing={saveComboZero}
+            onLogSeries={logRangeSeries}
             musicEnabled={musicEnabled}
             onLeave={backToTown}
           />

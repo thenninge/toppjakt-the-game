@@ -1,0 +1,167 @@
+import type { HuntGridCell, HuntMapAsset, HuntMapId } from "@/lib/hunt/maps";
+import { cellLabel } from "@/lib/hunt/maps";
+import type { HuntPace } from "@/lib/hunt/pace";
+
+/** Physical effort on a cell: 1 (lett) … 5 (tungt). */
+export type EffortScore = 1 | 2 | 3 | 4 | 5;
+
+/** One grid cell = 500 m. Effort 1 → 10 min, effort 5 → 30 min at speed 1. */
+export const CELL_WIDTH_M = 500;
+export const EFFORT_MIN_MINUTES = 10;
+export const EFFORT_MAX_MINUTES = 30;
+
+export const HUNT_DAY_START_MINUTES = 8 * 60; // 08:00
+export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlyst over
+export const SPOT_ACTION_MINUTES = 5;
+export const EAT_ACTION_MINUTES = 5;
+export const REST_ACTION_MINUTES = 10;
+
+/**
+ * Trøndelag (midtnorge1): rows A–F (bottom→top), cols 1–7 (left→right).
+ * A7 = parking / road = lett.
+ */
+const MIDTNORGE1_EFFORT: EffortScore[][] = [
+  // A
+  [4, 4, 3, 3, 2, 2, 1],
+  // B
+  [4, 5, 4, 3, 3, 2, 2],
+  // C
+  [3, 4, 5, 4, 3, 3, 2],
+  // D
+  [3, 3, 4, 4, 3, 3, 3],
+  // E
+  [4, 3, 3, 4, 4, 3, 3],
+  // F
+  [4, 4, 3, 3, 4, 4, 3],
+];
+
+const EFFORT_BY_MAP: Partial<Record<HuntMapId, EffortScore[][]>> = {
+  midtnorge1: MIDTNORGE1_EFFORT,
+};
+
+export function getCellEffort(
+  mapId: HuntMapId,
+  cell: HuntGridCell,
+): EffortScore {
+  const grid = EFFORT_BY_MAP[mapId];
+  if (!grid) return 3;
+  const row = grid[cell.row];
+  if (!row) return 3;
+  return row[cell.col] ?? 3;
+}
+
+/** Base minutes to cross one cell at speed factor 1. */
+export function baseMinutesForEffort(effort: EffortScore): number {
+  return (
+    EFFORT_MIN_MINUTES +
+    ((effort - 1) / 4) * (EFFORT_MAX_MINUTES - EFFORT_MIN_MINUTES)
+  );
+}
+
+/** Travel time for one cell at given pace. */
+export function travelMinutesForCell(
+  effort: EffortScore,
+  pace: HuntPace,
+): number {
+  return Math.round(baseMinutesForEffort(effort) / pace.speed);
+}
+
+/** Manhattan path of cells entered (excludes start, includes target). */
+export function manhattanPath(
+  from: HuntGridCell,
+  to: HuntGridCell,
+): HuntGridCell[] {
+  const path: HuntGridCell[] = [];
+  let r = from.row;
+  let c = from.col;
+  while (r !== to.row) {
+    r += to.row > r ? 1 : -1;
+    path.push({ row: r, col: c });
+  }
+  while (c !== to.col) {
+    c += to.col > c ? 1 : -1;
+    path.push({ row: r, col: c });
+  }
+  return path;
+}
+
+export function pathTravelMinutes(
+  mapId: HuntMapId,
+  from: HuntGridCell,
+  to: HuntGridCell,
+  pace: HuntPace,
+): { minutes: number; path: HuntGridCell[]; steps: number } {
+  const path = manhattanPath(from, to);
+  let minutes = 0;
+  for (const cell of path) {
+    minutes += travelMinutesForCell(getCellEffort(mapId, cell), pace);
+  }
+  return { minutes, path, steps: path.length };
+}
+
+export function formatHuntClock(absoluteMinutes: number): string {
+  const mins = ((absoluteMinutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function isHuntDark(absoluteMinutes: number): boolean {
+  return absoluteMinutes >= HUNT_DARK_MINUTES;
+}
+
+export function clampFatigue(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+/**
+ * Effective spotting after fatigue and daylight.
+ * Mental fatigue hits spotting hard; physical a bit.
+ */
+export function effectiveSpottingProbability(
+  baseSpotting: number,
+  mentalFatigue: number,
+  physicalFatigue: number,
+  absoluteMinutes: number,
+): number {
+  const mentalFactor = 1 - clampFatigue(mentalFatigue) * 0.7;
+  const physicalFactor = 1 - clampFatigue(physicalFatigue) * 0.25;
+  let p = baseSpotting * mentalFactor * physicalFactor;
+  if (isHuntDark(absoluteMinutes)) p *= 0.05;
+  return Math.max(0, Math.min(1, p));
+}
+
+/** Fatigue gained when crossing one cell. */
+export function fatigueFromStep(
+  effort: EffortScore,
+  pace: HuntPace,
+): { mental: number; physical: number } {
+  return {
+    mental: pace.mentalStrain * 0.035 * effort,
+    physical: pace.physicalStrain * 0.045 * effort,
+  };
+}
+
+export function describeEffort(effort: EffortScore): string {
+  switch (effort) {
+    case 1:
+      return "Lett (vei/parkering)";
+    case 2:
+      return "Ganske lett";
+    case 3:
+      return "Middels";
+    case 4:
+      return "Tungt";
+    case 5:
+      return "Svært tungt";
+  }
+}
+
+export function cellStatsLine(
+  map: HuntMapAsset,
+  cell: HuntGridCell,
+): string {
+  const effort = getCellEffort(map.id, cell);
+  const base = baseMinutesForEffort(effort);
+  return `${cellLabel(cell)} · Effort ${effort}/5 · ${describeEffort(effort)} · ${base.toFixed(0)} min @ speed 1 · ${CELL_WIDTH_M} m`;
+}

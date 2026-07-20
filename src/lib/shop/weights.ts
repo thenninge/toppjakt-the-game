@@ -158,6 +158,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-garmin-foretrex-801": 88,
   "misc-sittpute-biltema": 120,
   "misc-thermos-jula": 380,
+  "misc-triggercam": 460,
 
   // Chestrigs
   "chest-cds-binocular-harness": 380,
