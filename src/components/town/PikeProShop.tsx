@@ -380,6 +380,7 @@ export function PikeProShop({
         {items.map((item) => {
           const qty = ownedQty(item.id);
           const unobtainable = !isPurchasableInShop(item);
+          const soldOut = !!item.soldOut;
           const canAfford = !unobtainable && balance >= item.priceNok;
           const isUniqueGear =
             !unobtainable && item.category !== "ammo" && qty > 0;
@@ -455,10 +456,13 @@ export function PikeProShop({
                 ) : null}
                 {lrf ? (
                   <span className="shop-row-ballistics">
+                    {lrf.magnification != null
+                      ? `${lrf.magnification}× · `
+                      : ""}
                     range ±{lrf.rangeErrorPercent}%
                     {lrf.hasOnboardBallistics
-                      ? ` · Intern ballistikk: ${lrf.ballisticSystem ?? "ja"} (forecast / full-value windage — Kestrel bedre på crosswind)`
-                      : " · Kun avstand — vurder Kestrel/ACE for hold"}
+                      ? ` · Intern ballistikk: ${lrf.ballisticSystem ?? "ja"} (forecast / full-value — Kestrel 5700 Elite gir lokal fasit)`
+                      : " · Kun avstand — vurder Kestrel 5700 Elite for fasit"}
                   </span>
                 ) : null}
                 {scope ? (
@@ -536,15 +540,17 @@ export function PikeProShop({
                 }
                 onClick={() => tryBuy(item)}
               >
-                {unobtainable
-                  ? "Unobtainable"
-                  : isUniqueGear
-                    ? "Owned"
-                    : needsLicense
-                      ? "Trenger lisens"
-                      : canAfford
-                        ? "Buy"
-                        : "Too poor"}
+                {soldOut
+                  ? "For tiden utsolgt"
+                  : unobtainable
+                    ? "Unobtainable"
+                    : isUniqueGear
+                      ? "Owned"
+                      : needsLicense
+                        ? "Trenger lisens"
+                        : canAfford
+                          ? "Buy"
+                          : "Too poor"}
               </button>
             </li>
           );

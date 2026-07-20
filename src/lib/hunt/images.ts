@@ -47,6 +47,17 @@ const ROOT_SPOT_IMAGES: string[] = [
   "/images/spot23.png",
 ];
 
+/**
+ * Hand-composited spot photo (tiurer already in the frame).
+ * Used on the map start tile for bino/FOV testing — no sprite overlays.
+ */
+export const SPOT_TEST_IMAGE = "/images/spot_test.png";
+
+/** Spot images with birds baked into the photo (skip tiurtopp overlays). */
+export function isBakedSpotImage(imageSrc: string): boolean {
+  return imageSrc === SPOT_TEST_IMAGE || imageSrc.includes("spot_test");
+}
+
 const ROOT_WALK_IMAGES: string[] = [
   "/images/walk1_snow.png",
   "/images/walk2_snow.png",

@@ -463,6 +463,40 @@ body {
   font-size: 1rem;
 }
 
+.meat-market-facts {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.65rem 0.9rem;
+  list-style: none;
+  border: 1px solid #5a4030;
+  background: rgba(20, 14, 10, 0.55);
+  color: var(--canyon-dust);
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.meat-market-facts li strong {
+  color: var(--canyon-sand);
+}
+
+.meat-market-subhead {
+  margin: 0.85rem 0 0.2rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--accent-gold);
+  letter-spacing: 0.02em;
+}
+
+.meat-market-muted {
+  color: #9a8570;
+  font-size: 0.95em;
+}
+
+.meat-market-drags .meat-market-note {
+  margin-top: 0.15rem;
+  padding-left: 0.15rem;
+  border-left: 2px solid #6a5040;
+}
+
 @media (max-width: 560px) {
   .sheriff-form-grid {
     grid-template-columns: 1fr;
@@ -1872,6 +1906,20 @@ body {
   /* width/height/margin set inline from caliber Ø in mm */
 }
 
+/* Triggercam AAR: red hit mark (must beat .bullet-hole — declared after it). */
+.bullet-hole.triggercam-aar-hole {
+  z-index: 3;
+  background: radial-gradient(
+    circle at 40% 35%,
+    #ff6b5a 0%,
+    #e02018 40%,
+    #8b0a08 100%
+  );
+  box-shadow:
+    0 0 0 1.5px rgba(255, 220, 200, 0.55),
+    0 0 8px rgba(220, 40, 30, 0.85);
+}
+
 .range-timer-stack {
   width: min(100%, 28rem);
   display: flex;
@@ -2253,3 +2301,469 @@ body {
   font-size: 0.85rem;
   opacity: 0.85;
 }
+
+/* --- In-game Aware phone shell --- */
+
+.aware-app {
+  position: relative;
+  width: min(100%, 28rem);
+  margin: 0 auto;
+  padding: 0.5rem;
+}
+
+.aware-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 3px solid #3a2a1c;
+  border-radius: 1.1rem;
+  background: linear-gradient(165deg, #1e1812 0%, #12100e 55%, #0c0a08 100%);
+  box-shadow:
+    0 0 0 2px #6b5238,
+    0 16px 40px rgba(0, 0, 0, 0.55);
+  padding: 0.55rem 0.55rem 0.7rem;
+  min-height: 70vh;
+}
+
+.aware-phone-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.15rem 0.35rem;
+}
+
+.aware-brand {
+  font-family: var(--font-display), monospace;
+  letter-spacing: 0.14em;
+  color: var(--accent-gold);
+  font-size: 0.95rem;
+}
+
+.aware-clock {
+  color: var(--canyon-dust);
+  font-size: 0.95rem;
+}
+
+.aware-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+}
+
+.aware-tab {
+  border: 1px solid var(--panel-edge);
+  background: #2a2118;
+  color: var(--canyon-dust);
+  font-family: var(--font-terminal), monospace;
+  font-size: 1rem;
+  padding: 0.35rem 0.2rem;
+  cursor: pointer;
+}
+
+.aware-tab-active {
+  background: #3d3224;
+  color: var(--canyon-sand);
+  border-color: var(--accent-gold);
+}
+
+.aware-map-frame {
+  position: relative;
+  flex: 1;
+  min-height: 14rem;
+  border-radius: 0.55rem;
+  overflow: hidden;
+  border: 1px solid #4a3828;
+  background: #0a0806;
+}
+
+.aware-map-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.85;
+  filter: saturate(0.85) contrast(1.05);
+}
+
+.aware-cell-highlight {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid rgba(224, 168, 58, 0.9);
+  background: rgba(224, 168, 58, 0.12);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.aware-cell-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: crosshair;
+}
+
+.aware-hab-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+
+.aware-shot-radius {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1.5px dashed rgba(96, 165, 250, 0.75);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: inset 0 0 18px rgba(37, 99, 235, 0.12);
+}
+
+.aware-shot-bearing {
+  border-bottom-color: rgba(96, 165, 250, 0.95);
+}
+
+.aware-shoot-step {
+  color: var(--accent-gold) !important;
+  font-weight: 600;
+}
+
+.aware-shoot-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.aware-shoot-slider input[type="range"] {
+  width: 100%;
+}
+
+.aware-shoot-nav {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.aware-shoot-nav .intro-button {
+  flex: 1;
+}
+
+.aware-bearing-needle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 28px solid rgba(143, 239, 106, 0.9);
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+.aware-pair-stand,
+.aware-pair-impact,
+.aware-track-dot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.aware-nerve-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.15rem 0.35rem 0.35rem;
+}
+
+.aware-nerve-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--canyon-dust);
+}
+
+.aware-nerve-track {
+  height: 0.55rem;
+  border-radius: 0.2rem;
+  background: rgba(20, 14, 10, 0.85);
+  border: 1px solid #5a4030;
+  overflow: hidden;
+}
+
+.aware-nerve-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #6a9aad 0%, #e0a83a 55%, #c45c3a 100%);
+  transition: width 0.08s linear;
+}
+
+.aware-nerve-fill-hot {
+  background: linear-gradient(90deg, #c45c3a 0%, #e05030 100%);
+  box-shadow: 0 0 8px rgba(196, 92, 58, 0.55);
+}
+
+.aware-dest-marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border: 2px dashed #8fef6a;
+  border-radius: 50%;
+  background: rgba(143, 239, 106, 0.15);
+  z-index: 3;
+  pointer-events: none;
+  animation: aware-dest-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes aware-dest-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+.aware-hunter-marker {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #e0a83a;
+  box-shadow:
+    0 0 0 2px #1a120c,
+    0 0 8px rgba(224, 168, 58, 0.65);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.aware-cell-stage:focus {
+  outline: 1px solid rgba(224, 168, 58, 0.45);
+  outline-offset: -1px;
+}
+
+.aware-cell-stage:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.aware-bird-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.aware-bird-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #8fef6a;
+  box-shadow:
+    0 0 0 2px #1a120c,
+    0 0 10px rgba(143, 239, 106, 0.7);
+}
+
+.aware-bird-label {
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  background: rgba(20, 14, 10, 0.85);
+  color: #8fef6a;
+  border: 1px solid #5a4030;
+  white-space: nowrap;
+}
+
+.aware-wind-arrow {
+  position: absolute;
+  left: 88%;
+  top: 12%;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 18px solid rgba(110, 170, 210, 0.85);
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 0 2px #000);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.aware-weather-line {
+  margin: 0 !important;
+}
+
+.aware-pair-impact {
+  width: 12px;
+  height: 12px;
+  background: #c45c3a;
+  box-shadow: 0 0 0 2px #1a120c;
+}
+
+.aware-track-dot {
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.15rem;
+  background: #3d6b7a;
+  color: #e8d4a8;
+  font-size: 0.7rem;
+  line-height: 1.1rem;
+  text-align: center;
+  box-shadow: 0 0 0 1px #1a120c;
+}
+
+.aware-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.15rem 0.25rem;
+}
+
+.aware-cell-label {
+  margin: 0;
+  color: var(--canyon-sand);
+  font-size: 0.95rem;
+}
+
+.aware-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.aware-bearing-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--canyon-dust);
+  font-size: 0.9rem;
+}
+
+.aware-status {
+  margin: 0.15rem 0 0;
+  min-height: 2.4em;
+  color: var(--prompt-green);
+  font-size: 0.95rem;
+}
+
+.aware-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: space-between;
+  margin-top: 0.25rem;
+  padding-top: 0.2rem;
+}
+
+/* --- Kestrel 5700 AB fasit overlay --- */
+
+.kestrel-fasit {
+  position: relative;
+  width: min(11.5rem, 42vw);
+  margin: 0.35rem 0 0.55rem;
+  flex-shrink: 0;
+  align-self: flex-start;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+
+.kestrel-fasit-compact {
+  width: min(9.5rem, 38vw);
+  margin: 0.2rem 0 0.4rem;
+}
+
+.kestrel-fasit-device {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+}
+
+.kestrel-fasit-lcd {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 28.5%;
+  bottom: 41%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.05rem;
+  padding: 0.2rem 0.28rem 0.15rem;
+  background: linear-gradient(
+    165deg,
+    rgba(214, 214, 190, 0.92) 0%,
+    rgba(196, 196, 168, 0.95) 100%
+  );
+  color: #1a1a14;
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(40, 36, 28, 0.35);
+}
+
+.kestrel-fasit-compact .kestrel-fasit-lcd {
+  top: 28%;
+  bottom: 40.5%;
+  padding: 0.12rem 0.2rem;
+}
+
+.kestrel-lcd-line {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  font-size: clamp(0.55rem, 2.4vw, 0.78rem);
+}
+
+.kestrel-fasit-compact .kestrel-lcd-line {
+  font-size: clamp(0.48rem, 2.1vw, 0.68rem);
+}
+
+.kestrel-lcd-e,
+.kestrel-lcd-w {
+  font-size: clamp(0.68rem, 2.8vw, 0.95rem);
+}
+
+.kestrel-fasit-compact .kestrel-lcd-e,
+.kestrel-fasit-compact .kestrel-lcd-w {
+  font-size: clamp(0.58rem, 2.4vw, 0.82rem);
+}
+
+.kestrel-lcd-tgt,
+.kestrel-lcd-wind {
+  opacity: 0.92;
+  font-size: clamp(0.48rem, 2vw, 0.68rem);
+}
+
+.kestrel-fasit-compact .kestrel-lcd-tgt,
+.kestrel-fasit-compact .kestrel-lcd-wind {
+  font-size: clamp(0.42rem, 1.8vw, 0.58rem);
+}
+
+.kestrel-lcd-rule {
+  margin: 0.08rem 0 0.1rem;
+  border: 0;
+  border-top: 1.5px solid #1a1a14;
+  opacity: 0.85;
+}
+
+.aware-footer .intro-button {
+  flex: 1;
+}
+

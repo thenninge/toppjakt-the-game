@@ -66,6 +66,28 @@ export function birdSpotForConditions(
 }
 
 /**
+ * Blend kit camo pieces into one bird-spot factor for nervousness.
+ * Suit dominates; apparel pieces nudge the average. Lower = better.
+ * No camo in kit → poor default (highly visible).
+ */
+export function kitBirdSpotFactor(
+  pieces: CamoSpec[],
+  snowOnGround: boolean,
+): number {
+  if (pieces.length === 0) return 0.85;
+  const suit = pieces.find((p) => (p.slot ?? "suit") === "suit");
+  const others = pieces.filter((p) => (p.slot ?? "suit") !== "suit");
+  const suitSpot = suit
+    ? birdSpotForConditions(suit, snowOnGround)
+    : 0.75;
+  if (others.length === 0) return suitSpot;
+  const otherAvg =
+    others.reduce((s, p) => s + birdSpotForConditions(p, snowOnGround), 0) /
+    others.length;
+  return suitSpot * 0.7 + otherAvg * 0.3;
+}
+
+/**
  * Simple “dyrere = bedre” mapping for apparel.
  * Returns Score10 terrain/stamina and a bird-spot floor hint.
  */

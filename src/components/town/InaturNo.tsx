@@ -6,7 +6,7 @@ import { getHuntMap } from "@/lib/hunt/maps";
 import {
   formatBirdRating,
   getHuntingTerrain,
-  HUNTING_TERRAINS,
+  terrainsAvailableForPlayer,
   terrainMapSrc,
   type HuntingTerrain,
 } from "@/lib/hunt/terrain";
@@ -14,6 +14,7 @@ import {
 type InaturNoProps = {
   balance: number;
   selectedTerrainId: string | null;
+  unlockedTerrainIds: string[];
   onSelectTerrain: (terrainId: string) => void;
   onBack: () => void;
 };
@@ -25,18 +26,24 @@ function formatPrice(nok: number): string {
 function terrainTierLabel(pricePerDayNok: number): string {
   if (pricePerDayNok <= 500) return "Budsjett";
   if (pricePerDayNok <= 1000) return "Standard";
-  return "Premium";
+  if (pricePerDayNok <= 3000) return "Premium";
+  return "Finmark";
 }
 
 export function InaturNo({
   balance,
   selectedTerrainId,
+  unlockedTerrainIds,
   onSelectTerrain,
   onBack,
 }: InaturNoProps) {
   const [message, setMessage] = useState("");
   const [previewTerrain, setPreviewTerrain] = useState<HuntingTerrain | null>(
     null,
+  );
+  const listings = useMemo(
+    () => terrainsAvailableForPlayer(unlockedTerrainIds),
+    [unlockedTerrainIds],
   );
   const [pendingPurchase, setPendingPurchase] =
     useState<HuntingTerrain | null>(null);
@@ -167,7 +174,7 @@ export function InaturNo({
       {message ? <p className="shop-row-note inatur-message">{message}</p> : null}
 
       <ul className="shop-list inatur-terrain-list">
-        {HUNTING_TERRAINS.map((terrain) => {
+        {listings.map((terrain) => {
           const isSelected = terrain.id === selectedTerrainId;
           const canAfford = balance >= terrain.pricePerDayNok;
           const map = getHuntMap(terrain.mapId);
@@ -205,6 +212,11 @@ export function InaturNo({
                   {formatBirdRating(terrain.orrhaneRating)}
                 </span>
                 <span className="shop-row-note inatur-blurb">{terrain.blurb}</span>
+                {terrain.access === "rulles" && terrain.landownerName ? (
+                  <span className="shop-row-note">
+                    Via Rulles — {terrain.landownerName}
+                  </span>
+                ) : null}
               </div>
               <button
                 type="button"

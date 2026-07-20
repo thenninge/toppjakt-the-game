@@ -70,6 +70,7 @@ type HomeBaseProps = {
   rifleCount: number;
   unusedLicenses: number;
   selectedHuntingTerrainId: string | null;
+  unlockedTerrainIds: string[];
   onToggleKit: (itemId: string) => void;
   onSelectHuntingTerrain: (terrainId: string) => void;
   onStartHunt: () => void;
@@ -85,6 +86,7 @@ export function HomeBase({
   rifleCount,
   unusedLicenses,
   selectedHuntingTerrainId,
+  unlockedTerrainIds,
   onToggleKit,
   onSelectHuntingTerrain,
   onStartHunt,
@@ -239,6 +241,7 @@ export function HomeBase({
       <InaturNo
         balance={balance}
         selectedTerrainId={selectedHuntingTerrainId}
+        unlockedTerrainIds={unlockedTerrainIds}
         onSelectTerrain={onSelectHuntingTerrain}
         onBack={() => setView("main")}
       />

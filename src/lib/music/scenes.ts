@@ -58,6 +58,10 @@ export function musicSceneFromGame({
         return "sheriff";
       case "pike-pro-shop":
         return "shop";
+      case "meat-market":
+        return "town";
+      case "rulles":
+        return "town";
       case "home":
         return "home";
       case "shooting-range":

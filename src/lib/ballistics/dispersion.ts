@@ -163,6 +163,7 @@ export function sampleShotFromPoa(
   input: DispersionInput,
   distanceM: number,
   random: () => number = Math.random,
+  opts?: { densityRatio?: number },
 ): SampledShot {
   const envelope = combinedDispersionMoa(input);
   const { xMoa, yMoa } = sampleAngularOffsetMoa(envelope, random);
@@ -174,6 +175,7 @@ export function sampleShotFromPoa(
       scopeHeightM: DEFAULT_SCOPE_HEIGHT_M,
       zeroDistanceM: DEFAULT_ZERO_DISTANCE_M,
       twistInches: DEFAULT_TWIST_INCHES,
+      densityRatio: opts?.densityRatio ?? 1,
     },
   );
   return {

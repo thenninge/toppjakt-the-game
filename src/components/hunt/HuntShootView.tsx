@@ -16,13 +16,17 @@ import {
   wobbleAmplitudeMm,
   RANGE_DISTANCE_M,
 } from "@/lib/range/precision";
-import { dropBelowLosMm } from "@/lib/ballistics/trajectory";
+import {
+  dropBelowLosMm,
+  sampleTrajectory,
+} from "@/lib/ballistics/trajectory";
 import {
   exactBallisticHold,
   formatHoldClicks,
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { KestrelFasitView } from "@/components/hunt/KestrelFasitView";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
@@ -66,8 +70,14 @@ type HuntShootViewProps = {
   measuredDistanceM: number;
   /** Exact BDX+Kestrel hold from perfect zero (null if not equipped). */
   ballisticHold?: BallisticHoldSolution | null;
-  /** True local crosswind (m/s, +from left) applied to the shot. */
+  /** True local crosswind (m/s, +from left) for this shot bearing. */
   crosswindMs?: number;
+  /** Atmosphere density ratio from live temperature. */
+  densityRatio?: number;
+  /** Shot bearing toward bird (for Kestrel LCD). */
+  shotBearingDeg?: number;
+  windFromDeg?: number;
+  windSpeedMs?: number;
   clockMinutes: number;
   kitItems: ShopItem[];
   inventory: InventoryEntry[];
@@ -104,6 +114,10 @@ export function HuntShootView({
   measuredDistanceM,
   ballisticHold = null,
   crosswindMs = 0,
+  densityRatio = 1,
+  shotBearingDeg = 0,
+  windFromDeg = 0,
+  windSpeedMs = 0,
   clockMinutes,
   kitItems,
   inventory,
@@ -159,8 +173,8 @@ export function HuntShootView({
   const [wobbleMm, setWobbleMm] = useState({ x: 0, y: 0 });
   const [status, setStatus] = useState(
     ballisticHold
-      ? `BDX dialt inn: ${formatHoldClicks(ballisticHold)} · hold F · hold Space.`
-      : "Skru elevation for drop · hold F · hold Space.",
+      ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · hold F · Space.`
+      : "Skru elevation + windage (vind × skyteretning) · hold F · Space.",
   );
   const [focusUi, setFocusUi] = useState<{
     phase: "idle" | "focused" | "fatigued";
@@ -262,18 +276,32 @@ export function HuntShootView({
     consumeAmmoRef.current = onConsumeAmmo;
   }, [onConsumeAmmo]);
 
-  /** Re-dial BDX holds when ammo changes (perfect zero + current range/wind). */
+  const densityRef = useRef(densityRatio);
+  useEffect(() => {
+    densityRef.current = densityRatio;
+  }, [densityRatio]);
+
+  /** Kestrel AB auto-dials elev + windage from fasit. */
   useEffect(() => {
     if (!ballisticHold || !selectedAmmo || fired) return;
     const hold = exactBallisticHold(
       selectedAmmo.ammo,
       measuredDistanceM,
       crosswindMs,
+      { densityRatio },
     );
     setSessionZeroXMm(clampTurretMm(Math.round(hold.dialXMmAt100)));
     setSessionZeroYMm(clampTurretMm(Math.round(hold.dialYMmAt100)));
-    setStatus(`BDX dialt inn: ${formatHoldClicks(hold)} · hold F · hold Space.`);
-  }, [ammoId, selectedAmmo, measuredDistanceM, crosswindMs, ballisticHold, fired]);
+    setStatus(`Kestrel AB dialt: ${formatHoldClicks(hold)} · hold F · Space.`);
+  }, [
+    ammoId,
+    selectedAmmo,
+    measuredDistanceM,
+    crosswindMs,
+    densityRatio,
+    ballisticHold,
+    fired,
+  ]);
   useEffect(() => {
     if (!rifle || !scope || !selectedAmmo) return;
     onEnsureZeroing(rifle.id, scope.id, selectedAmmo.id);
@@ -317,12 +345,15 @@ export function HuntShootView({
         affinity,
       },
       distanceRef.current,
+      Math.random,
+      { densityRatio: densityRef.current },
     );
     // Spin is already in `shot`; add local wind drift separately.
     const windMm = exactBallisticHold(
       selectedAmmo.ammo,
       distanceRef.current,
       crosswindRef.current,
+      { densityRatio: densityRef.current },
     ).windDriftMm;
     const impact = {
       xMm: shot.xMm + effectiveZero.xMm + windMm,
@@ -351,6 +382,10 @@ export function HuntShootView({
       impact.yMm,
       selectedAmmo.ammo.damageFactor,
     );
+    const impactVelocityMps = sampleTrajectory(
+      selectedAmmo.ammo,
+      distanceRef.current,
+    ).velocityMps;
     const result: HuntShotResult = {
       kind,
       zone,
@@ -359,6 +394,12 @@ export function HuntShootView({
       trueDistanceM: distanceRef.current,
       measuredDistanceM,
       damageFactor: selectedAmmo.ammo.damageFactor,
+      impactVelocityMps,
+      ammoId: selectedAmmo.id,
+      ammoLabel: `${selectedAmmo.brand} ${selectedAmmo.name}`,
+      caliber: selectedAmmo.ammo.caliber,
+      projectileType: selectedAmmo.ammo.projectileType,
+      v0: selectedAmmo.ammo.v0,
     };
     setStatus(
       kind === "instant_kill"
@@ -587,6 +628,7 @@ export function HuntShootView({
           selectedAmmo.ammo,
           measuredDistanceM,
           crosswindMs,
+          { densityRatio },
         )
       : null;
 
@@ -684,7 +726,7 @@ export function HuntShootView({
             />
           </div>
           <p className="spot-binos-hint">
-            Rød = vital · grønn = instant kill · hull = treffpunkt
+            Rød ring = vital · grønn = instant kill · rødt hull = treffpunkt
           </p>
           <button
             type="button"
@@ -715,13 +757,19 @@ export function HuntShootView({
           {activeHold ? (
             <>
               {" · "}
-              BDX+Kestrel (perfekt zero): {formatHoldClicks(activeHold)}
+              Kestrel fasit: {formatHoldClicks(activeHold)}
+              {" · "}
+              crosswind {crosswindMs >= 0 ? "+" : ""}
+              {crosswindMs.toFixed(1)} m/s
             </>
           ) : (
             <>
               {" · "}
               drop ≈ {Math.round(dropClicks)} klikk (
               {(Math.abs(dropClicks) / 10).toFixed(1)} mil)
+              {" · "}
+              crosswind {crosswindMs >= 0 ? "+" : ""}
+              {crosswindMs.toFixed(1)} m/s
             </>
           )}
         </p>
@@ -730,6 +778,15 @@ export function HuntShootView({
           {zoom.toFixed(1)}×) · {status}
         </p>
       </header>
+
+      {activeHold ? (
+        <KestrelFasitView
+          hold={activeHold}
+          shotBearingDeg={shotBearingDeg}
+          windFromDeg={windFromDeg}
+          windSpeedMs={windSpeedMs}
+        />
+      ) : null}
 
       <div className="range-toolbar">
         <label className="shop-filter">

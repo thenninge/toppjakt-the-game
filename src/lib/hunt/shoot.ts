@@ -72,6 +72,15 @@ export type HuntShotResult = {
   measuredDistanceM: number;
   /** Ammo damageFactor used for the vital-ring roll (if any). */
   damageFactor?: number;
+  /** Impact velocity at true distance (m/s) — meat ruin. */
+  impactVelocityMps?: number;
+  /** Ammo identity for Meat Market breakdown. */
+  ammoId?: string;
+  ammoLabel?: string;
+  caliber?: string;
+  projectileType?: string;
+  /** Muzzle velocity of the load (m/s). */
+  v0?: number;
 };
 
 export function tiurNativePxPerMm(): number {

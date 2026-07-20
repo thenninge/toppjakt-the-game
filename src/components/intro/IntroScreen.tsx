@@ -45,12 +45,22 @@ import {
   type SheriffFinishResult,
 } from "@/components/town/SheriffOffice";
 import { PikeProShop } from "@/components/town/PikeProShop";
+import { MeatMarket } from "@/components/town/MeatMarket";
+import { RullesBar } from "@/components/town/RullesBar";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
 import { ShootingRange } from "@/components/town/ShootingRange";
 import { HuntMapView } from "@/components/hunt/HuntMapView";
+import {
+  addCarcassToStatsCounts,
+  removeCarcassFromStatsCounts,
+  type GameCarcass,
+} from "@/lib/hunt/carcass";
 import { isAmmoItem, isCamoItem, isFoodItem, isRifleItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
-import { getHuntingTerrain } from "@/lib/hunt/terrain";
+import {
+  getHuntingTerrain,
+  type HuntingTerrainId,
+} from "@/lib/hunt/terrain";
 
 type Phase =
   | "loading"
@@ -195,6 +205,66 @@ export function IntroScreen() {
         ...prev,
         balance: prev.balance - item.priceNok,
         inventory: addToInventory(prev.inventory, item.id, purchaseQty),
+      };
+    });
+  }
+
+  function harvestBird(carcass: GameCarcass) {
+    setStats((prev) => {
+      const counts = addCarcassToStatsCounts(
+        prev.tiur,
+        prev.orrhaner,
+        carcass.species,
+      );
+      return {
+        ...prev,
+        ...counts,
+        carcasses: [...prev.carcasses, carcass],
+        maxRange: Math.max(prev.maxRange, carcass.distanceM),
+      };
+    });
+  }
+
+  function sellCarcasses(carcassIds: string[]) {
+    const idSet = new Set(carcassIds);
+    setStats((prev) => {
+      const selling = prev.carcasses.filter((c) => idSet.has(c.id));
+      if (selling.length === 0) return prev;
+      let tiur = prev.tiur;
+      let orrhaner = prev.orrhaner;
+      let payout = 0;
+      for (const c of selling) {
+        payout += c.marketValueNok;
+        const next = removeCarcassFromStatsCounts(tiur, orrhaner, c.species);
+        tiur = next.tiur;
+        orrhaner = next.orrhaner;
+      }
+      return {
+        ...prev,
+        balance: prev.balance + payout,
+        tiur,
+        orrhaner,
+        carcasses: prev.carcasses.filter((c) => !idSet.has(c.id)),
+      };
+    });
+  }
+
+  function spendAtRulles(amountNok: number): boolean {
+    if (amountNok <= 0) return true;
+    const prev = statsRef.current;
+    if (prev.balance < amountNok) return false;
+    const next = { ...prev, balance: prev.balance - amountNok };
+    statsRef.current = next;
+    setStats(next);
+    return true;
+  }
+
+  function unlockRullesTerrain(terrainId: HuntingTerrainId) {
+    setStats((prev) => {
+      if (prev.unlockedTerrainIds.includes(terrainId)) return prev;
+      return {
+        ...prev,
+        unlockedTerrainIds: [...prev.unlockedTerrainIds, terrainId],
       };
     });
   }
@@ -431,6 +501,29 @@ export function IntroScreen() {
           />
         )}
 
+        {phase === "location" && location === "meat-market" && (
+          <MeatMarket
+            playerName={stats.name}
+            nickname={stats.nickname}
+            balance={stats.balance}
+            carcasses={stats.carcasses}
+            onSell={sellCarcasses}
+            onLeave={backToTown}
+          />
+        )}
+
+        {phase === "location" && location === "rulles" && (
+          <RullesBar
+            playerName={stats.name}
+            nickname={stats.nickname}
+            balance={stats.balance}
+            unlockedTerrainIds={stats.unlockedTerrainIds}
+            onSpend={spendAtRulles}
+            onUnlockTerrain={unlockRullesTerrain}
+            onLeave={backToTown}
+          />
+        )}
+
         {phase === "location" && location === "home" && (
           <HomeBase
             balance={stats.balance}
@@ -441,6 +534,7 @@ export function IntroScreen() {
             rifleCount={countHuntingRifles(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
+            unlockedTerrainIds={stats.unlockedTerrainIds}
             onToggleKit={toggleKit}
             onSelectHuntingTerrain={selectHuntingTerrain}
             onStartHunt={startHunt}
@@ -465,9 +559,7 @@ export function IntroScreen() {
             onConsumeAmmo={spendAmmoRound}
             onEnsureZeroing={ensureComboZero}
             onConsumeFood={consumeHuntFood}
-            onTiurHarvested={() =>
-              setStats((prev) => ({ ...prev, tiur: prev.tiur + 1 }))
-            }
+            onBirdHarvested={harvestBird}
             onLeave={endHunt}
           />
         ) : null}

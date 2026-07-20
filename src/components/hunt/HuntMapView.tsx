@@ -33,10 +33,12 @@ import {
 } from "@/lib/hunt/travel";
 import {
   FORCED_REST_MINUTES,
+  isBakedSpotImage,
   pickEatImage,
   pickSpotImage,
   pickWalkImage,
   REST_TIRED_IMAGE,
+  SPOT_TEST_IMAGE,
 } from "@/lib/hunt/images";
 import {
   getInventoryQty,
@@ -46,6 +48,7 @@ import {
 import {
   isAmmoItem,
   isBallisticsItem,
+  isCamoItem,
   isFoodItem,
   isLrfItem,
   type ShopItem,
@@ -55,25 +58,39 @@ import { SpotView, type SpotMode } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
 import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
+import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
+import { kitBirdSpotFactor } from "@/lib/camo/spec";
 import {
   flushMessage,
+  MAX_SPOOKS_BEFORE_GONE,
   placementsForBirdsInCell,
   resolveFlushesOnPath,
   spawnTiurOnMap,
+  spookBird,
   visibleInSpotMode,
   type BirdVisualPlacement,
   type FlushEvent,
   type HuntBird,
 } from "@/lib/hunt/birds";
 import type { HuntShotResult } from "@/lib/hunt/shoot";
+import {
+  createCarcassFromHarvest,
+  type BirdHarvestInput,
+  type GameCarcass,
+} from "@/lib/hunt/carcass";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
 import { DEFAULT_BINOS_MAGNIFICATION } from "@/lib/hunt/images";
 import {
+  densityRatioFromTempC,
   exactBallisticHold,
   formatHoldClicks,
+  birdMarkerOnAwareMap,
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
+import type { ShotPair } from "@/lib/aware/types";
+import { impactFromShot } from "@/lib/aware/ettersok";
+import type { CellPoint } from "@/lib/aware/cellGeometry";
 
 type HuntMapViewProps = {
   terrainId: string;
@@ -91,7 +108,7 @@ type HuntMapViewProps = {
     ammoId: string,
   ) => ZeroingProfile;
   onConsumeFood: (itemId: string) => boolean;
-  onTiurHarvested: () => void;
+  onBirdHarvested: (carcass: GameCarcass) => void;
   onLeave: () => void;
 };
 
@@ -116,10 +133,33 @@ type ShootSession = {
   bird: BirdVisualPlacement;
   trueDistanceM: number;
   measuredDistanceM: number;
-  /** Exact BDX + Kestrel hold from perfect zero (if equipped). */
   ballisticHold: BallisticHoldSolution | null;
-  /** True local crosswind used for the shot (m/s, +from left). */
   crosswindMs: number;
+  densityRatio: number;
+  /** Firing bearing toward bird (deg). */
+  bearingDeg: number;
+  /** Cell-local markers — must match Aware → ettersøk. */
+  hunterPos: CellPoint;
+  birdPos: CellPoint;
+};
+
+type AwareSession = {
+  imageSrc: string;
+  bird: BirdVisualPlacement;
+  trueDistanceM: number;
+  measuredDistanceM: number;
+  ballisticHold: BallisticHoldSolution | null;
+  crosswindMs: number;
+  densityRatio: number;
+  birdBearingDeg: number;
+  hunterPos?: CellPoint;
+  birdPos?: CellPoint;
+  ettersokPairId?: string | null;
+  /**
+   * Kill already counted (instant/vital) — Track is only for finding the tree.
+   * False/undefined = wounded ettersøk; harvest on found.
+   */
+  recoveryOnly?: boolean;
 };
 
 type EatSession = {
@@ -154,7 +194,7 @@ export function HuntMapView({
   onConsumeAmmo,
   onEnsureZeroing,
   onConsumeFood,
-  onTiurHarvested,
+  onBirdHarvested,
   onLeave,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
@@ -176,6 +216,8 @@ export function HuntMapView({
   const [walkSession, setWalkSession] = useState<WalkSession | null>(null);
   const [spotSession, setSpotSession] = useState<SpotSession | null>(null);
   const [shootSession, setShootSession] = useState<ShootSession | null>(null);
+  const [awareSession, setAwareSession] = useState<AwareSession | null>(null);
+  const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
   const [eatSession, setEatSession] = useState<EatSession | null>(null);
   const [forcedRest, setForcedRest] = useState<ForcedRestSession | null>(null);
   const [birds, setBirds] = useState<HuntBird[]>(() =>
@@ -200,9 +242,20 @@ export function HuntMapView({
       ) ?? null,
     [kitItems],
   );
-  /** BDX/AB + local wind → exact range and holds from perfect zero. */
+  /** AB-class meter (Kestrel 5700 Elite) + BDX → exact elev+windage fasit. */
+  const abMeterItem = useMemo(
+    () =>
+      kitItems.find(
+        (i) =>
+          isBallisticsItem(i) &&
+          i.ballistics.measuresCrosswind &&
+          !!i.ballistics.solver,
+      ) ?? null,
+    [kitItems],
+  );
+  /** BDX/AB + local AB meter → exact range and holds from perfect zero. */
   const hasExactBallistics = !!(
-    binoItem?.lrf.hasOnboardBallistics && kestrelItem
+    binoItem?.lrf.hasOnboardBallistics && abMeterItem
   );
   const lrfSpec = useMemo(() => {
     if (!binoItem?.lrf) return null;
@@ -213,6 +266,14 @@ export function HuntMapView({
   }, [binoItem, hasExactBallistics]);
   const primaryAmmo = useMemo(
     () => kitItems.find(isAmmoItem) ?? null,
+    [kitItems],
+  );
+  const camoBirdSpot = useMemo(
+    () =>
+      kitBirdSpotFactor(
+        kitItems.filter(isCamoItem).map((i) => i.camo),
+        false,
+      ),
     [kitItems],
   );
 
@@ -242,6 +303,8 @@ export function HuntMapView({
     setWalkSession(null);
     setSpotSession(null);
     setShootSession(null);
+    setAwareSession(null);
+    setShotPairs([]);
     setEatSession(null);
     setForcedRest(null);
     setBirds(spawnTiurOnMap(map));
@@ -256,6 +319,7 @@ export function HuntMapView({
         e.key === "Escape" &&
         !spotSession &&
         !shootSession &&
+        !awareSession &&
         !walkSession &&
         !eatSession &&
         !forcedRest &&
@@ -270,6 +334,7 @@ export function HuntMapView({
     onLeave,
     spotSession,
     shootSession,
+    awareSession,
     walkSession,
     eatSession,
     forcedRest,
@@ -452,8 +517,12 @@ export function HuntMapView({
   }
 
   function beginSpot() {
+    // Start tile: hand-composited spot_test landscape + same sprite placement
+    // as other cells (so perch height / FOV can be judged on this photo).
+    const atStart =
+      !!map && pos.row === map.start.row && pos.col === map.start.col;
     setSpotSession({
-      imageSrc: pickSpotImage(),
+      imageSrc: atStart ? SPOT_TEST_IMAGE : pickSpotImage(),
       birdPlacements: placementsForBirdsInCell(birds, pos),
     });
   }
@@ -471,7 +540,12 @@ export function HuntMapView({
         ? `${lookMin.toFixed(1)} min`
         : `${Math.round(info.gameSeconds)} s`;
     const modeLabel = info.mode === "binos" ? "Binos" : "Øyne";
+    const imageSrc = spotSession?.imageSrc ?? "";
     const placements = spotSession?.birdPlacements ?? [];
+    const bakedNote = isBakedSpotImage(imageSrc)
+      ? " [spot_test]"
+      : "";
+
     const visible = placements.filter((p) =>
       visibleInSpotMode(p.distanceM, info.mode),
     );
@@ -483,14 +557,16 @@ export function HuntMapView({
     if (visible.length > 0) {
       const dists = visible.map((p) => `${p.distanceM} m`).join(", ");
       setLog(
-        `${modeLabel} (${timeLabel}): Du ser ${visible.length === 1 ? "en tiur" : `${visible.length} tiurer`} i trærne (${dists}).`,
+        `${modeLabel} (${timeLabel})${bakedNote}: Du ser ${visible.length === 1 ? "en tiur" : `${visible.length} tiurer`} i trærne (${dists}).`,
       );
     } else if (hiddenFar.length > 0) {
       setLog(
-        `${modeLabel} (${timeLabel}): Ingen fugl synlig med øynene. Prøv kikkert — det kan være noe lenger unna.`,
+        `${modeLabel} (${timeLabel})${bakedNote}: Ingen fugl synlig med øynene. Prøv kikkert — det kan være noe lenger unna.`,
       );
     } else {
-      setLog(`${modeLabel} (${timeLabel}): Ingen fugl i denne ruta.`);
+      setLog(
+        `${modeLabel} (${timeLabel})${bakedNote}: Ingen fugl i denne ruta.`,
+      );
     }
     setSpotSession(null);
     setPanel("arrived");
@@ -510,34 +586,137 @@ export function HuntMapView({
     const measured = hasExactBallistics
       ? Math.round(trueDist)
       : info.measuredDistanceM;
-    // Default shot bearing 0° — Kestrel gives true local crosswind component.
+    // Random shot direction for this contact (LRF gives distance only).
+    const birdBearing = Math.random() * 360;
     const cw = crosswindMs(
       weather.live.windSpeedMs,
       weather.live.windFromDeg,
-      0,
+      birdBearing,
     );
+    const density = densityRatioFromTempC(weather.live.temperatureC);
     let hold: BallisticHoldSolution | null = null;
     if (hasExactBallistics && primaryAmmo) {
-      hold = exactBallisticHold(primaryAmmo.ammo, measured, cw);
+      hold = exactBallisticHold(primaryAmmo.ammo, measured, cw, {
+        densityRatio: density,
+      });
     }
+
     setSpotSession(null);
-    setShootSession({
+    setAwareSession({
       imageSrc,
       bird: info.placement,
       trueDistanceM: trueDist,
       measuredDistanceM: measured,
       ballisticHold: hold,
       crosswindMs: cw,
+      birdBearingDeg: birdBearing,
+      densityRatio: density,
+      hunterPos: { x: 50, y: 50 },
+      birdPos: birdMarkerOnAwareMap(measured, birdBearing),
     });
-    if (hold) {
+    setLog(
+      hold
+        ? `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Kestrel fasit: ${formatHoldClicks(hold)}.`
+        : `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Sjekk bakgrunn og vind.`,
+    );
+  }
+
+  function abortAware() {
+    setAwareSession(null);
+    setLog("Du lukker Aware. Fuglen er fortsatt der.");
+    setPanel("arrived");
+  }
+
+  function proceedFromAware(stance?: AwareShootStance) {
+    if (!awareSession) return;
+    if (awareSession.ettersokPairId) {
+      const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
+      const recoveryOnly = !!awareSession.recoveryOnly;
+      if (pair?.found === true) {
+        if (!recoveryOnly && pair.harvestDraft) {
+          onBirdHarvested(createCarcassFromHarvest(pair.harvestDraft));
+        }
+        setLog(
+          recoveryOnly
+            ? "Fugl hentet ved treet. Skuddpar beholdt — nyttig når flere fugler er skutt."
+            : "Ettersøk lyktes — fuglen er din. Skuddpar lagret i Aware Track.",
+        );
+      } else if (pair?.found === false) {
+        setLog(
+          recoveryOnly
+            ? "Du fant ikke treet. Skuddparet er lagret — åpne Track senere."
+            : "Ettersøk mislyktes — fuglen er tapt. Sporene er logget.",
+        );
+      } else {
+        setLog(
+          recoveryOnly
+            ? "Skuddpar lagret. Husk å hente fuglen ved treet (Track)."
+            : "Du avslutter ettersøk uten søk. Fuglen er trolig tapt.",
+        );
+      }
+      setAwareSession(null);
+      setPanel("arrived");
+      return;
+    }
+    const session = awareSession;
+    const bearingDeg = stance?.bearingDeg ?? session.birdBearingDeg;
+    const distanceM = Math.max(
+      40,
+      Math.round(stance?.distanceM ?? session.measuredDistanceM),
+    );
+    const cw = crosswindMs(
+      weather.live.windSpeedMs,
+      weather.live.windFromDeg,
+      bearingDeg,
+    );
+    const density = densityRatioFromTempC(weather.live.temperatureC);
+    let hold = session.ballisticHold;
+    if (hasExactBallistics && primaryAmmo) {
+      hold = exactBallisticHold(primaryAmmo.ammo, distanceM, cw, {
+        densityRatio: density,
+      });
+    }
+    setAwareSession(null);
+    setShootSession({
+      imageSrc: session.imageSrc,
+      bird: {
+        ...session.bird,
+        distanceM,
+      },
+      trueDistanceM: distanceM,
+      measuredDistanceM: distanceM,
+      ballisticHold: hold,
+      crosswindMs: cw,
+      densityRatio: density,
+      bearingDeg,
+      hunterPos: stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 },
+      birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
+    });
+    setLog(
+      hold
+        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${distanceM} m · cw ${cw.toFixed(1)} m/s`
+        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${distanceM} m · crosswind ${cw.toFixed(1)} m/s — skru elev + windage!`,
+    );
+  }
+
+  function onAwareBirdFlushed(nervousness: number) {
+    if (!awareSession || !map) return;
+    const id = awareSession.bird.birdId;
+    const result = spookBird(birds, id, map);
+    setBirds(result.birds);
+    setAwareSession(null);
+    if (result.event?.gone) {
       setLog(
-        `Fugl observert! LRF ${measured} m · BDX+Kestrel: ${formatHoldClicks(hold)} (perfekt zero).`,
+        `Fuglen (${id}) letter for andre gang og er borte for godt ` +
+          `(nervøsitet ${nervousness.toFixed(2)}).`,
       );
     } else {
       setLog(
-        `Fugl observert! LRF ${measured} m — klar til skudd.`,
+        `Fuglen (${id}) letter (spook ${(result.event?.spookCount ?? 1)}/${MAX_SPOOKS_BEFORE_GONE}) — ` +
+          `nervøsitet ${nervousness.toFixed(2)}. Én spook til og den er borte.`,
       );
     }
+    setPanel("arrived");
   }
 
   function abortShoot() {
@@ -547,31 +726,102 @@ export function HuntMapView({
   }
 
   function onHuntShotResult(result: HuntShotResult) {
-    if (!shootSession) return;
+    if (!shootSession || !map) return;
     const id = shootSession.bird.birdId;
     const dist = result.measuredDistanceM;
-    if (result.kind === "instant_kill" || result.kind === "vital_kill") {
+    const stand = shootSession.hunterPos;
+    // True bird marker from Aware — keep continuity into ettersøk.
+    // Soft hits: slight scatter so søk isn't pixel-perfect.
+    const birdPos = shootSession.birdPos;
+    const impact =
+      result.kind === "miss"
+        ? impactFromShot({
+            stand,
+            bearingDeg: shootSession.bearingDeg,
+            distanceM: result.trueDistanceM,
+          })
+        : result.kind === "ettersok"
+          ? {
+              x: Math.max(
+                2,
+                Math.min(98, birdPos.x + (Math.random() - 0.5) * 4),
+              ),
+              y: Math.max(
+                2,
+                Math.min(98, birdPos.y + (Math.random() - 0.5) * 4),
+              ),
+            }
+          : birdPos;
+    const harvestDraft: BirdHarvestInput = {
+      birdId: id,
+      species: shootSession.bird.species,
+      zone: result.zone,
+      damageFactor: result.damageFactor ?? 0.5,
+      distanceM: result.trueDistanceM,
+      impactVelocityMps: result.impactVelocityMps ?? 550,
+      ammoId: result.ammoId,
+      ammoLabel: result.ammoLabel,
+      caliber: result.caliber,
+      projectileType: result.projectileType,
+      v0: result.v0,
+    };
+    const pair: ShotPair = {
+      id: `pair-${Date.now()}`,
+      atMs: Date.now(),
+      cell: { ...pos },
+      cellLabel: cellLabel(pos),
+      stand,
+      impact,
+      distanceM: Math.round(result.trueDistanceM),
+      bearingDeg: shootSession.bearingDeg,
+      resultKind: result.kind,
+      trackPoints: [],
+      found: null,
+      harvestDraft,
+    };
+    setShotPairs((prev) => [pair, ...prev]);
+
+    // Always open Aware Track with skuddpar — even instant kill:
+    // hard to find the right tree, especially with several birds.
+    if (
+      result.kind === "instant_kill" ||
+      result.kind === "vital_kill" ||
+      result.kind === "ettersok"
+    ) {
       setBirds((prev) => prev.filter((b) => b.id !== id));
-      onTiurHarvested();
+      const recoveryOnly =
+        result.kind === "instant_kill" || result.kind === "vital_kill";
+      if (recoveryOnly) {
+        onBirdHarvested(createCarcassFromHarvest(harvestDraft));
+      }
+      setShootSession(null);
+      setAwareSession({
+        imageSrc: shootSession.imageSrc,
+        bird: shootSession.bird,
+        trueDistanceM: shootSession.trueDistanceM,
+        measuredDistanceM: shootSession.measuredDistanceM,
+        ballisticHold: shootSession.ballisticHold,
+        crosswindMs: shootSession.crosswindMs,
+        densityRatio: shootSession.densityRatio,
+        birdBearingDeg: shootSession.bearingDeg,
+        hunterPos: stand,
+        birdPos: impact,
+        ettersokPairId: pair.id,
+        recoveryOnly,
+      });
       setLog(
         result.kind === "instant_kill"
-          ? `Instant kill på ${dist} m (grønn sone). Tiuren er din.`
-          : `Vitalt treff på ${dist} m — ren felling. Tiuren er din.`,
+          ? `Instant kill på ${dist} m — skuddpar lagret. Finn treet i Track.`
+          : result.kind === "vital_kill"
+            ? `Vitalt treff på ${dist} m — skuddpar lagret. Finn treet i Track.`
+            : `Treff — ettersøk! Aware Track åpnet med stand/fugl-posisjon.`,
       );
-    } else if (result.kind === "ettersok") {
-      setBirds((prev) => prev.filter((b) => b.id !== id));
-      const where =
-        result.zone === "vital"
-          ? "i rød vital-sone (ammo avgjorde ettersøk)"
-          : "i kroppen";
-      setLog(
-        `Treff ${where} på ${dist} m — ettersøk. (Ettersøk-gameplay kommer.)`,
-      );
-    } else {
-      setLog(
-        `Bom på ${dist} m. Fuglen sitter fortsatt. Skru riktig elevation og prøv igjen.`,
-      );
+      return;
     }
+
+    setLog(
+      `Bom på ${dist} m. Skuddpar logget (stand + estimat). Åpne Shoot/Track ved behov.`,
+    );
     setShootSession(null);
     setPanel("arrived");
   }
@@ -690,6 +940,10 @@ export function HuntMapView({
         measuredDistanceM={shootSession.measuredDistanceM}
         ballisticHold={shootSession.ballisticHold}
         crosswindMs={shootSession.crosswindMs}
+        densityRatio={shootSession.densityRatio}
+        shotBearingDeg={shootSession.bearingDeg}
+        windFromDeg={weather.live.windFromDeg}
+        windSpeedMs={weather.live.windSpeedMs}
         clockMinutes={clockMinutes}
         kitItems={kitItems}
         inventory={inventory}
@@ -701,6 +955,33 @@ export function HuntMapView({
         onEnsureZeroing={onEnsureZeroing}
         onAbort={abortShoot}
         onShotResult={onHuntShotResult}
+      />
+    );
+  }
+
+  if (awareSession && map) {
+    return (
+      <AwareAppView
+        map={map}
+        cell={pos}
+        birdDistanceM={awareSession.measuredDistanceM}
+        birdBearingDeg={awareSession.birdBearingDeg}
+        initialHunter={awareSession.hunterPos ?? null}
+        initialBird={awareSession.birdPos ?? null}
+        weather={weather}
+        camoBirdSpot={camoBirdSpot}
+        hasLrf={hasBinos}
+        ammo={primaryAmmo?.ammo ?? null}
+        hasKestrel={!!kestrelItem}
+        hasBdx={!!binoItem?.lrf.hasOnboardBallistics}
+        clockMinutes={clockMinutes}
+        shotPairs={shotPairs}
+        focusPairId={awareSession.ettersokPairId ?? null}
+        onShotPairsChange={setShotPairs}
+        onGameSeconds={addGameSeconds}
+        onProceedToShoot={proceedFromAware}
+        onBirdFlushed={onAwareBirdFlushed}
+        onAbort={abortAware}
       />
     );
   }

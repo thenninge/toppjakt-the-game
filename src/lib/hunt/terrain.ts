@@ -7,23 +7,33 @@ export type BirdRating = 1 | 2 | 3 | 4 | 5;
 export type HuntingTerrainId =
   | "ostlandet-budsjett"
   | "ostlandet-standard"
-  | "trondelag";
+  | "trondelag"
+  | "rulles-stubb-teig"
+  | "rulles-bonna-li"
+  | "rulles-lovenskiold";
 
 export type HuntingTerrain = {
   id: HuntingTerrainId;
   name: string;
   region: string;
   blurb: string;
-  /** Daily lease in NOK (inatur.no). */
-  pricePerDayNok: 500 | 1000 | 2000;
+  /** Daily lease in NOK (inatur.no / handshake). */
+  pricePerDayNok: number;
   /** 1–5. Higher = more likely tiur in this terrain. */
   tiurRating: BirdRating;
   /** 1–5. Higher = more likely orrhane in this terrain. */
   orrhaneRating: BirdRating;
   mapId: HuntMapId;
+  /**
+   * `inatur` = always listed.
+   * `rulles` = only after unlocking via Rulles (snøvling + påspandering).
+   */
+  access: "inatur" | "rulles";
+  /** Flavor: who shook your hand. */
+  landownerName?: string;
 };
 
-/** Exactly three options — one per test map. Expand later when asked. */
+/** Base inatur listings + Rulles handshake grounds. */
 export const HUNTING_TERRAINS: HuntingTerrain[] = [
   {
     id: "ostlandet-budsjett",
@@ -34,6 +44,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     tiurRating: 1,
     orrhaneRating: 2,
     mapId: "ostlandet1",
+    access: "inatur",
   },
   {
     id: "ostlandet-standard",
@@ -44,6 +55,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     tiurRating: 3,
     orrhaneRating: 3,
     mapId: "ostlandet2",
+    access: "inatur",
   },
   {
     id: "trondelag",
@@ -54,6 +66,46 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     tiurRating: 4,
     orrhaneRating: 5,
     mapId: "midtnorge1",
+    access: "inatur",
+  },
+  {
+    id: "rulles-stubb-teig",
+    name: "Stubbens teig",
+    region: "Østlandet",
+    blurb:
+      "Kari Stubb sitt lille stykke. «Ikke skyt mot hytta. Den er forsikret, men jeg er ikke.»",
+    pricePerDayNok: 700,
+    tiurRating: 2,
+    orrhaneRating: 3,
+    mapId: "ostlandet1",
+    access: "rulles",
+    landownerName: "Kari Stubb",
+  },
+  {
+    id: "rulles-bonna-li",
+    name: "Bønna sin li",
+    region: "Østlandet",
+    blurb:
+      "Bjørn Halvorsen sin skråning. Bra med orre, grei tiur — hvis du ikke tråkker i potetene.",
+    pricePerDayNok: 1600,
+    tiurRating: 3,
+    orrhaneRating: 4,
+    mapId: "ostlandet2",
+    access: "rulles",
+    landownerName: "Bjørn «Bønna» Halvorsen",
+  },
+  {
+    id: "rulles-lovenskiold",
+    name: "Løvenskiolds finmark",
+    region: "Østlandet / «privat»",
+    blurb:
+      "Carl Otto Løvenskiolds fineste. Stappfullt av fugl. Du er gjest — oppfør deg deretter.",
+    pricePerDayNok: 12000,
+    tiurRating: 5,
+    orrhaneRating: 5,
+    mapId: "midtnorge1",
+    access: "rulles",
+    landownerName: "Carl Otto Løvenskiold",
   },
 ];
 
@@ -62,6 +114,16 @@ export function getHuntingTerrain(
 ): HuntingTerrain | undefined {
   if (!id) return undefined;
   return HUNTING_TERRAINS.find((t) => t.id === id);
+}
+
+/** Terrains visible on inatur for this player. */
+export function terrainsAvailableForPlayer(
+  unlockedTerrainIds: readonly string[],
+): HuntingTerrain[] {
+  const unlocked = new Set(unlockedTerrainIds);
+  return HUNTING_TERRAINS.filter(
+    (t) => t.access === "inatur" || unlocked.has(t.id),
+  );
 }
 
 export function formatBirdRating(rating: BirdRating): string {

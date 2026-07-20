@@ -46,6 +46,7 @@ export type { CamoSpec, CamoTerrain, CamoSlot } from "@/lib/camo/spec";
 export {
   BIRD_SPOT_REFERENCE,
   birdSpotForConditions,
+  kitBirdSpotFactor,
   camoSlot,
   apparelQualityFromPrice,
 } from "@/lib/camo/spec";

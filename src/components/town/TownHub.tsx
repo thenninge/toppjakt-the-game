@@ -4,7 +4,9 @@ export type TownLocationId =
   | "pike-pro-shop"
   | "sheriff"
   | "home"
-  | "shooting-range";
+  | "shooting-range"
+  | "meat-market"
+  | "rulles";
 
 type TownLocation = {
   id: TownLocationId;
@@ -22,6 +24,16 @@ const LOCATIONS: TownLocation[] = [
     id: "pike-pro-shop",
     name: "Pike Pro Shop",
     blurb: "Buy weapons and ammo.",
+  },
+  {
+    id: "meat-market",
+    name: "Meat Market",
+    blurb: "Selg tiur og orrfugl — finansier mer kit.",
+  },
+  {
+    id: "rulles",
+    name: "Rulles Kebab, Pizza, Bar & Fine Dining",
+    blurb: "Snøvling, påspandering — og nye grunneiere.",
   },
   {
     id: "sheriff",

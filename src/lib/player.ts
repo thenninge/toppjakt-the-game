@@ -1,3 +1,4 @@
+import type { GameCarcass } from "@/lib/hunt/carcass";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { isAmmoItem } from "@/lib/shop/types";
@@ -71,6 +72,8 @@ export type PlayerStats = {
   balance: number;
   orrhaner: number;
   tiur: number;
+  /** Harvested birds ready for Meat Market (weight + meat quality). */
+  carcasses: GameCarcass[];
   /** Longest hunting hit distance in meters. */
   maxRange: number;
   inventory: InventoryEntry[];
@@ -89,6 +92,8 @@ export type PlayerStats = {
   shotLog: ShotLogEntry[];
   /** Booked hunting terrain from inatur.no (null = none chosen yet). */
   selectedHuntingTerrainId: string | null;
+  /** Handshake grounds unlocked at Rulles (terrain ids). */
+  unlockedTerrainIds: string[];
 };
 
 export const STARTING_BALANCE = 500_000;
@@ -174,6 +179,7 @@ export function createInitialStats(): PlayerStats {
     balance: STARTING_BALANCE,
     orrhaner: 0,
     tiur: 0,
+    carcasses: [],
     maxRange: 0,
     inventory: [],
     kit: [],
@@ -182,6 +188,7 @@ export function createInitialStats(): PlayerStats {
     zeroingProfiles: {},
     shotLog: [],
     selectedHuntingTerrainId: null,
+    unlockedTerrainIds: [],
   };
 }
 

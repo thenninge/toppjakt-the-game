@@ -13,11 +13,18 @@ import {
 import { ZERO_CLICK_MM } from "@/lib/player";
 
 /**
+ * Sea-level density ratio from temperature (ICAO-ish).
+ * Cooler air → denser → more drop / wind effect.
+ */
+export function densityRatioFromTempC(tempC: number): number {
+  return 288.15 / (273.15 + tempC);
+}
+
+/**
  * Lateral wind drift on paper (mm, +right) for a crosswind (m/s, +from left).
  *
  * Uses aerodynamic lag time: the bullet only “feels” wind for
- * (TOF − distance/v0), not the full TOF. The old `wind×TOF×1.5` model
- * produced metres of drift and blew past the turret clamp.
+ * (TOF − distance/v0), not the full TOF.
  */
 export function windDriftMm(
   crosswindMs: number,
@@ -29,6 +36,20 @@ export function windDriftMm(
   const vacuumTof = distanceM / Math.max(50, v0Mps);
   const lagS = Math.max(0, timeOfFlightS - vacuumTof);
   return crosswindMs * lagS * 1000;
+}
+
+/** Marker position on Aware cell stage (hunter at 50,50). */
+export function birdMarkerOnAwareMap(
+  distanceM: number,
+  bearingDeg: number,
+): { x: number; y: number } {
+  const maxM = 450;
+  const r = Math.min(42, (Math.max(0, distanceM) / maxM) * 42);
+  const rad = ((bearingDeg - 90) * Math.PI) / 180;
+  return {
+    x: 50 + Math.cos(rad) * r,
+    y: 50 + Math.sin(rad) * r,
+  };
 }
 
 export type BallisticHoldSolution = {
@@ -101,4 +122,80 @@ export function formatHoldClicks(solution: BallisticHoldSolution): string {
       ? "wind 0"
       : `wind ${Math.abs(Math.round(w))} ${w < 0 ? "L" : "R"}`;
   return `${elev} · ${wind}`;
+}
+
+/**
+ * Kestrel 5700 AB LCD lines (matches Applied Ballistics solution screen).
+ * Clicks are 0.1 mil → mils = |clicks| / 10.
+ */
+export type KestrelLcdCopy = {
+  elevLine: string;
+  windLine: string;
+  tgtLine: string;
+  windEnvLine: string;
+};
+
+/** Wind direction as clock face relative to shot (12 = headwind). */
+export function formatWindClockFacing(
+  windFromDeg: number,
+  shotBearingDeg: number,
+): string {
+  let rel = ((windFromDeg - shotBearingDeg) % 360 + 360) % 360;
+  const totalMin = (rel / 360) * 12 * 60;
+  let h = Math.floor(totalMin / 60) % 12;
+  let m = Math.round((totalMin % 60) / 30) * 30;
+  if (m === 60) {
+    m = 0;
+    h = (h + 1) % 12;
+  }
+  if (h === 0) h = 12;
+  return m === 0 ? `${h}:00` : `${h}:${String(m).padStart(2, "0")}`;
+}
+
+export function formatKestrelLcd(
+  solution: BallisticHoldSolution,
+  opts: {
+    shotBearingDeg: number;
+    windFromDeg: number;
+    windSpeedMs: number;
+  },
+): KestrelLcdCopy {
+  const eMil = Math.abs(solution.elevationClicks) / 10;
+  const wMil = Math.abs(solution.windageClicks) / 10;
+  // Wind1 / Wind2 bracket (±~25% like dual-wind AB display)
+  const w1 = wMil;
+  const w2 = wMil * 1.4;
+  const eDir =
+    Math.abs(solution.elevationClicks) < 0.05
+      ? ""
+      : solution.elevationClicks < 0
+        ? "U"
+        : "D";
+  const wDir =
+    Math.abs(solution.windageClicks) < 0.05
+      ? ""
+      : solution.windageClicks < 0
+        ? "L"
+        : "R";
+
+  const elevLine =
+    Math.abs(solution.elevationClicks) < 0.05
+      ? "E  0.00 MIL"
+      : `E  ${eMil.toFixed(2)}${eDir} MIL`;
+  const windLine =
+    Math.abs(solution.windageClicks) < 0.05
+      ? "W  0.00"
+      : `W  ${w1.toFixed(2)}/${w2.toFixed(2)}${wDir}`;
+
+  const bearing = Math.round(((opts.shotBearingDeg % 360) + 360) % 360);
+  const distM = Math.round(solution.distanceM);
+  const clock = formatWindClockFacing(opts.windFromDeg, opts.shotBearingDeg);
+  const mph = Math.round(opts.windSpeedMs * 2.237);
+
+  return {
+    elevLine,
+    windLine,
+    tgtLine: `Tgt...  ${String(bearing).padStart(3, "0")}°  ${distM}m`,
+    windEnvLine: `Wind... ${clock}  ${mph}mph`,
+  };
 }

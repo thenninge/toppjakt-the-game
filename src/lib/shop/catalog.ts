@@ -25,42 +25,48 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       hasOnboardBallistics: true,
       ballisticSystem: "BDX + AB Ultralite",
       rangeErrorPercent: 1,
+      magnification: 10,
     },
   },
   {
     id: "lrf-biltema-monocular",
     category: "lrf",
     brand: "Biltema",
-    name: "Avstandsmåler monokkel",
+    name: "Avstandsmåler 6× monokkel",
     priceNok: 1000,
-    note: "Ufancy, men måler meter. Primærbehov dekket.",
+    note: "Ufancy 6×, men måler meter. Primærbehov dekket.",
     lrf: {
       hasOnboardBallistics: false,
       rangeErrorPercent: 3,
+      magnification: 6,
     },
   },
   {
     id: "lrf-jula-pocket",
     category: "lrf",
     brand: "Jula",
-    name: "Pocket Laser Rangefinder",
+    name: "Pocket Laser Rangefinder 4×",
     priceNok: 799,
-    note: "Golf/jakt-hybrid fra hylla ved grillen.",
+    soldOut: true,
+    note: "Golf/jakt-hybrid 4× fra hylla ved grillen. — For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: false,
       rangeErrorPercent: 3,
+      magnification: 4,
     },
   },
   {
     id: "lrf-clas-ohlson-golf",
     category: "lrf",
     brand: "Clas Ohlson",
-    name: "Golfavstandsmåler",
+    name: "Golfavstandsmåler 6×",
     priceNok: 1299,
-    note: "Fungerer på trær også. Offisielt til golf.",
+    soldOut: true,
+    note: "6× — fungerer på trær også. Offisielt til golf. — For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: false,
       rangeErrorPercent: 3,
+      magnification: 6,
     },
   },
   {
@@ -69,7 +75,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Magasinet",
     name: "Budget 10x42 + «laser»",
     priceNok: 2490,
-    note: "Kikkert med tvilsom LRF. Billig, tung, ærlig.",
+    soldOut: true,
+    note: "Kikkert med tvilsom LRF. Billig, tung, ærlig. — For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: false,
       rangeErrorPercent: 2.5,
@@ -81,6 +88,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leica",
     name: "Geovid R 10x42",
     priceNok: 22500,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "EHR / basic ballistic",
@@ -93,6 +102,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leica",
     name: "Geovid R 8x42",
     priceNok: 22500,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "EHR / basic ballistic",
@@ -105,7 +116,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leica",
     name: "Geovid Pro 10x42",
     priceNok: 36500,
-    note: "Applied Ballistics-klasse.",
+    soldOut: true,
+    note: "Applied Ballistics-klasse. — For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Applied Ballistics",
@@ -118,6 +130,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vortex",
     name: "Fury HD 5000 10x42",
     priceNok: 18990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Applied Ballistics",
@@ -130,6 +144,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vortex",
     name: "Ranger 1800 (monokular)",
     priceNok: 4990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: false,
       rangeErrorPercent: 1,
@@ -141,6 +157,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zeiss",
     name: "Victory RF 10x42",
     priceNok: 39990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Onboard ballistic",
@@ -153,6 +171,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zeiss",
     name: "Victory RF 8x42",
     priceNok: 38990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Onboard ballistic",
@@ -165,6 +185,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kahles",
     name: "Helia RF 10x42",
     priceNok: 27990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Onboard ballistic",
@@ -177,7 +199,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leupold",
     name: "RX-2800 TBR/W",
     priceNok: 8490,
-    note: "Kompakt monokular LRF.",
+    soldOut: true,
+    note: "Kompakt monokular LRF. — For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "TBR/W",
@@ -190,6 +213,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leupold",
     name: "BX-4 RangeGuide 10x42",
     priceNok: 21990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "RangeGuide ballistic",
@@ -202,6 +227,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Burris",
     name: "Signature LRF 10x42",
     priceNok: 14990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: false,
       rangeErrorPercent: 1.5,
@@ -213,6 +240,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Swarovski",
     name: "EL Range 10x42",
     priceNok: 42990,
+    soldOut: true,
+    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Tracking Assistant / ballistic",
@@ -1618,7 +1647,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kestrel",
     name: "5700 Elite (Applied Ballistics)",
     priceNok: 8990,
-    note: "Vær + vind + AB-solver. Langholdsstandard.",
+    note: "Vær + vind + Applied Ballistics. Gir fasit for elev og windage.",
     ballistics: {
       measuresCrosswind: true,
       windErrorPercent: 3,
@@ -1633,7 +1662,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kestrel",
     name: "5500 Weather Meter",
     priceNok: 4990,
-    note: "Vær/vind uten full AB-elite.",
+    soldOut: true,
+    note: "Vær/vind uten full AB-elite. — Sold out",
     ballistics: {
       measuresCrosswind: true,
       windErrorPercent: 5,
@@ -1647,7 +1677,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vortex",
     name: "ACE Ballistic Weather Meter",
     priceNok: 7490,
-    note: "GeoBallistics on-board — Kestrel-alternativ.",
+    soldOut: true,
+    note: "GeoBallistics on-board — Kestrel-alternativ. — Sold out",
     ballistics: {
       measuresCrosswind: true,
       windErrorPercent: 4,
@@ -1662,7 +1693,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Skywatch",
     name: "BL / Atmos",
     priceNok: 2490,
-    note: "Kompakt vær/vind til telefon.",
+    soldOut: true,
+    note: "Kompakt vær/vind til telefon. — Sold out",
     ballistics: {
       measuresCrosswind: true,
       windErrorPercent: 8,
@@ -1676,7 +1708,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "WeatherFlow",
     name: "WEATHERmeter",
     priceNok: 1290,
-    note: "Plug-in anemometer til mobilen.",
+    soldOut: true,
+    note: "Plug-in anemometer til mobilen. — Sold out",
     ballistics: {
       measuresCrosswind: true,
       windErrorPercent: 10,
@@ -1690,7 +1723,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Clas Ohlson",
     name: "Digital vindmåler",
     priceNok: 399,
-    note: "Budget vind. God nok til å skjønne at det blåser.",
+    soldOut: true,
+    note: "Budget vind. God nok til å skjønne at det blåser. — Sold out",
     ballistics: {
       measuresCrosswind: true,
       windErrorPercent: 16,
@@ -1704,7 +1738,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Garmin",
     name: "Foretrex 801",
     priceNok: 4490,
-    note: "Håndledd-GPS; ballistikk via app/økosystem.",
+    soldOut: true,
+    note: "Håndledd-GPS; ballistikk via app/økosystem. — Sold out",
     ballistics: {
       measuresCrosswind: false,
       windErrorPercent: 18,
@@ -2743,6 +2778,7 @@ export function getShopItem(id: string): ShopItem | undefined {
 
 export function isPurchasableInShop(item: ShopItem): boolean {
   if (item.priceNok <= 0) return false;
+  if (item.soldOut) return false;
   if (isCamoItem(item) && item.camo.availableInShop === false) return false;
   return true;
 }
@@ -2776,6 +2812,8 @@ export function getCatalogByCategory(category: ShopItem["category"]): ShopItem[]
   const items = SHOP_CATALOG.filter((item) => {
     if (item.category !== category) return false;
     if (isPurchasableInShop(item)) return true;
+    // Sold-out gear stays visible (greyed) — window shopping / aspiration.
+    if (item.soldOut) return true;
     // Unobtainable camo stays visible in the list (never for sale).
     if (
       category === "camo" &&

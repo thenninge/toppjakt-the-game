@@ -37,6 +37,8 @@ export type ShopItemBase = {
   fits?: string;
   caliber?: string;
   unitLabel?: string;
+  /** Listed but not buyable (grayed — "Sold out"). */
+  soldOut?: boolean;
 };
 
 export type AmmoShopItem = ShopItemBase & {
@@ -300,6 +302,7 @@ export type CatalogDraft = {
   fits?: string;
   caliber?: string;
   unitLabel?: string;
+  soldOut?: boolean;
   ammo?: AmmoSpec;
   camo?: CamoSpec;
   carry?: CarrySpec;

@@ -18,7 +18,15 @@ export type HuntBird = {
   cell: HuntGridCell;
   /** Viewing distance in meters (150–450). */
   distanceM: number;
+  /**
+   * Times this bird has flushed/spooked this hunt.
+   * At {@link MAX_SPOOKS_BEFORE_GONE} the bird leaves the map for good.
+   */
+  spookCount: number;
 };
+
+/** After this many spooks, the bird is gone from the hunt. */
+export const MAX_SPOOKS_BEFORE_GONE = 2;
 
 /** Eyes can resolve birds closer than this; farther needs binos. */
 export const EYES_MAX_DISTANCE_M = 250;
@@ -163,8 +171,13 @@ export type FlushEvent = {
   species: BirdSpecies;
   direction: FlushDirection;
   from: HuntGridCell;
+  /** Where it relocated — same as `from` if gone for good. */
   to: HuntGridCell;
   imageSrc: string;
+  /** spookCount after this flush (1 or 2). */
+  spookCount: number;
+  /** True if this was the 2nd spook — bird leaves the hunt. */
+  gone: boolean;
 };
 
 function cellKey(cell: HuntGridCell): string {
@@ -234,6 +247,7 @@ export function spawnTiurOnMap(
     species: "tiur",
     cell: { ...map.start },
     distanceM: rollBirdDistance(random),
+    spookCount: 0,
   });
 
   if (cells.length === 0) return birds;
@@ -245,6 +259,7 @@ export function spawnTiurOnMap(
       species: "tiur",
       cell: { ...pick },
       distanceM: rollBirdDistance(random),
+      spookCount: 0,
     });
   }
   return birds;
@@ -252,7 +267,7 @@ export function spawnTiurOnMap(
 
 /**
  * Place birds that are in `cell` into the spot landscape.
- * Positions are in the upper tree band so toppjakt sprites sit in crowns.
+ * Default band ≈ 40 % from top (~40 % sky/air above, bird near mid-frame).
  * Start-cell test bird (`tiur-1`) uses a fixed spot so placement is easy to tune.
  */
 export function placementsForBirdsInCell(
@@ -270,7 +285,7 @@ export function placementsForBirdsInCell(
         imageSrc: TIUR_TOPP_IMAGES[0]!,
         distanceM: bird.distanceM,
         x: 58,
-        y: 24,
+        y: 40,
         widthPct,
         flip: false,
       };
@@ -282,7 +297,7 @@ export function placementsForBirdsInCell(
       imageSrc: TIUR_TOPP_IMAGES[0]!,
       distanceM: bird.distanceM,
       x: Math.max(8, Math.min(88, 52 + spread + (random() - 0.5) * 18)),
-      y: Math.max(8, Math.min(45, 20 + (random() - 0.5) * 16)),
+      y: Math.max(32, Math.min(50, 40 + (random() - 0.5) * 12)),
       widthPct,
       flip: random() < 0.5,
     };
@@ -295,8 +310,60 @@ export type FlushResolveResult = {
 };
 
 /**
+ * Apply one spook to a bird: increment counter, relocate or remove.
+ * Returns updated bird list and a flush event (always).
+ */
+export function spookBird(
+  birds: HuntBird[],
+  birdId: string,
+  map: HuntMapAsset,
+  random: () => number = Math.random,
+): { birds: HuntBird[]; event: FlushEvent | null } {
+  const idx = birds.findIndex((b) => b.id === birdId);
+  if (idx < 0) return { birds, event: null };
+  const bird = birds[idx]!;
+  const direction = pickFlushDirection(random);
+  const from = { ...bird.cell };
+  const nextCount = bird.spookCount + 1;
+  const gone = nextCount >= MAX_SPOOKS_BEFORE_GONE;
+  const to = gone
+    ? from
+    : relocateBirdCell(bird.cell, direction, map, random);
+
+  const event: FlushEvent = {
+    birdId: bird.id,
+    species: bird.species,
+    direction,
+    from,
+    to,
+    imageSrc: pickFluktImage(random),
+    spookCount: nextCount,
+    gone,
+  };
+
+  if (gone) {
+    return {
+      birds: birds.filter((b) => b.id !== birdId),
+      event,
+    };
+  }
+
+  const next = birds.map((b, i) =>
+    i === idx
+      ? {
+          ...b,
+          spookCount: nextCount,
+          cell: to,
+          distanceM: rollBirdDistance(random),
+        }
+      : b,
+  );
+  return { birds: next, event };
+}
+
+/**
  * For each cell entered (path), birds there may flush based on pace.
- * Flushed birds are relocated 1–2 cells in a random direction.
+ * 1st spook: relocate 1–2 cells. 2nd spook: gone for good.
  */
 export function resolveFlushesOnPath(
   birds: HuntBird[],
@@ -310,7 +377,7 @@ export function resolveFlushesOnPath(
     return { birds, events: [] };
   }
 
-  const next = birds.map((b) => ({
+  let next = birds.map((b) => ({
     ...b,
     cell: { ...b.cell },
   }));
@@ -323,20 +390,10 @@ export function resolveFlushesOnPath(
     );
     for (const bird of here) {
       if (random() >= pFlush) continue;
-      const direction = pickFlushDirection(random);
-      const to = relocateBirdCell(bird.cell, direction, map, random);
-      const from = { ...bird.cell };
-      bird.cell = to;
-      bird.distanceM = rollBirdDistance(random);
       flushedIds.add(bird.id);
-      events.push({
-        birdId: bird.id,
-        species: bird.species,
-        direction,
-        from,
-        to,
-        imageSrc: pickFluktImage(random),
-      });
+      const result = spookBird(next, bird.id, map, random);
+      next = result.birds;
+      if (result.event) events.push(result.event);
     }
   }
 
@@ -345,9 +402,16 @@ export function resolveFlushesOnPath(
 
 export function flushMessage(event: FlushEvent): string {
   const species = event.species === "tiur" ? "Tiuren" : "Orrhanen";
+  if (event.gone) {
+    return (
+      `Du hører vingeslag — ${species.toLowerCase()} letter for andre gang ` +
+      `(${event.birdId}) og er borte for godt i denne jakta. ` +
+      `Retning ${event.direction}.`
+    );
+  }
   return (
-    `Du hører vingeslag og ser opp. Fuglen er allerede fløyet. ` +
-    `${species} gikk i retning ${event.direction}. ` +
-    `Beveg deg mer forsiktig neste gang.`
+    `Du hører vingeslag og ser opp. ${species} (${event.birdId}) letter ` +
+    `(spook ${event.spookCount}/${MAX_SPOOKS_BEFORE_GONE}) i retning ${event.direction}. ` +
+    `Én spook til og den er borte.`
   );
 }
