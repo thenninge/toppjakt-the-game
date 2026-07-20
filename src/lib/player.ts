@@ -72,6 +72,12 @@ export type PlayerStats = {
   balance: number;
   orrhaner: number;
   tiur: number;
+  /**
+   * Lifetime harvest counts (never decrease on Meat Market sale).
+   * Used for Rulles landowner audience gates.
+   */
+  lifetimeTiur: number;
+  lifetimeOrrhaner: number;
   /** Harvested birds ready for Meat Market (weight + meat quality). */
   carcasses: GameCarcass[];
   /** Longest hunting hit distance in meters. */
@@ -179,6 +185,8 @@ export function createInitialStats(): PlayerStats {
     balance: STARTING_BALANCE,
     orrhaner: 0,
     tiur: 0,
+    lifetimeTiur: 0,
+    lifetimeOrrhaner: 0,
     carcasses: [],
     maxRange: 0,
     inventory: [],

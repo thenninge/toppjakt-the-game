@@ -7,12 +7,25 @@ import {
   getHuntingTerrain,
   type HuntingTerrainId,
 } from "@/lib/hunt/terrain";
+import {
+  checkAudience,
+  RULLES_AUDIENCE,
+} from "@/lib/rulles/audience";
+
+type HunterRésumé = {
+  tiur: number;
+  orrhaner: number;
+  lifetimeTiur: number;
+  lifetimeOrrhaner: number;
+  maxRange: number;
+};
 
 type RullesBarProps = {
   playerName: string;
   nickname: string;
   balance: number;
   unlockedTerrainIds: string[];
+  hunter: HunterRésumé;
   onSpend: (amountNok: number) => boolean;
   onUnlockTerrain: (terrainId: HuntingTerrainId) => void;
   onLeave: () => void;
@@ -23,7 +36,7 @@ type Step =
   | "floor"
   | "rulle"
   | "kari"
-  | "bonna"
+  | "kristian"
   | "lovenskiold"
   | "enrique"
   | "result";
@@ -65,15 +78,20 @@ function formatKr(n: number): string {
   return `${n.toLocaleString("nb-NO")} kr`;
 }
 
+function formatRange(m: number): string {
+  return m > 0 ? `${m} m` : "—";
+}
+
 /**
  * Rulles — kebab, pizza, bar & fine dining.
- * Snøvling + påspandering → handshake-jaktterreng på inatur.
+ * Snøvling + påspandering + hunt résumé → handshake-jaktterreng.
  */
 export function RullesBar({
   playerName,
   nickname,
   balance,
   unlockedTerrainIds,
+  hunter,
   onSpend,
   onUnlockTerrain,
   onLeave,
@@ -81,13 +99,28 @@ export function RullesBar({
   const [step, setStep] = useState<Step>("welcome");
   const [status, setStatus] = useState("");
   const [kariRound, setKariRound] = useState(0);
-  const [bonnaTrust, setBonnaTrust] = useState(0);
+  const [kristianTrust, setKristianTrust] = useState(0);
   const [loveCharm, setLoveCharm] = useState(0);
 
   const unlocked = useMemo(
     () => new Set(unlockedTerrainIds),
     [unlockedTerrainIds],
   );
+
+  const kariGate = useMemo(
+    () => checkAudience(hunter, RULLES_AUDIENCE.kari),
+    [hunter],
+  );
+  const kristianGate = useMemo(
+    () => checkAudience(hunter, RULLES_AUDIENCE.kristian),
+    [hunter],
+  );
+  const loveGate = useMemo(
+    () => checkAudience(hunter, RULLES_AUDIENCE.lovenskiold),
+    [hunter],
+  );
+
+  const birdsTotal = hunter.lifetimeTiur + hunter.lifetimeOrrhaner;
 
   function buy(drink: DrinkId): boolean {
     const d = DRINKS[drink];
@@ -133,16 +166,17 @@ export function RullesBar({
           </h2>
           <p className="intro-line">
             Neonet sier «FINE DINING». Lukta sier «løk og ambisjon». Inne sitter
-            folk som eier skog, myr, og meninger om kikkertsikte.
+            folk som eier skog — og som sjekker jaktlista di før de sier hei.
           </p>
           <p className="intro-line">
             Rulle vinker deg inn. «{playerName} &quot;{nickname}&quot;? Her blir
-            man kjent med grunneiere. Det koster pils, pizza, og litt… hvordan
-            skal vi si det… etisk fleksibel beundring.»
+            man kjent med grunneiere. Det koster pils, pizza, og resultater. Ingen
+            resultater? Da er du bare tørst.»
           </p>
           <p className="intro-hint-balance">
-            Konto: {formatKr(balance)} · Opplåste handshake-terreng:{" "}
-            {unlockedTerrainIds.length}
+            Konto: {formatKr(balance)} · Lista (livstid): {hunter.lifetimeTiur}{" "}
+            tiur / {hunter.lifetimeOrrhaner} orre ({birdsTotal} totalt) · Max
+            range {formatRange(hunter.maxRange)}
           </p>
           <button
             type="button"
@@ -158,9 +192,9 @@ export function RullesBar({
         <>
           <h2 className="intro-title">Salongen</h2>
           <p className="intro-line">
-            Rulle peker diskret. «Ikke sett deg ved Løvenskiold uten å ha råd til
-            å tape. Stubb er snill. Bønna lukter traktor. Enrique i kjøkkenet vet
-            ting han ikke burde vite.»
+            Rulle peker diskret. «Stubb vil se ti fugl og 250 m. Kristian Olav
+            vil ha tjue fugl og 300 m. Løvenskiold? Tyve tiur, ti orre, og over
+            400 m — ellers er du usynlig.»
           </p>
           {status ? <p className="shop-row-note">{status}</p> : null}
           <ul className="town-list">
@@ -190,9 +224,10 @@ export function RullesBar({
               >
                 <span className="town-location-name">
                   Kari Stubb {unlocked.has("rulles-stubb-teig") ? "✓" : ""}
+                  {!kariGate.ok ? " · låst" : ""}
                 </span>
                 <span className="town-location-blurb">
-                  Lokal teig. Billig handshake. Elsker ærlig kebab.
+                  Krav: 10 fugl · 250 m max range
                 </span>
               </button>
             </li>
@@ -202,15 +237,16 @@ export function RullesBar({
                 className="town-location"
                 onClick={() => {
                   setStatus("");
-                  setStep("bonna");
+                  setStep("kristian");
                 }}
               >
                 <span className="town-location-name">
-                  Bjørn «Bønna» Halvorsen{" "}
-                  {unlocked.has("rulles-bonna-li") ? "✓" : ""}
+                  Kristian Olav{" "}
+                  {unlocked.has("rulles-kristian-li") ? "✓" : ""}
+                  {!kristianGate.ok ? " · låst" : ""}
                 </span>
                 <span className="town-location-blurb">
-                  Bondeskog. Mistenksom mot byfolk med for fin bukse.
+                  Krav: 20 fugl · 300 m max range
                 </span>
               </button>
             </li>
@@ -226,9 +262,10 @@ export function RullesBar({
                 <span className="town-location-name">
                   Carl Otto Løvenskiold{" "}
                   {unlocked.has("rulles-lovenskiold") ? "✓" : ""}
+                  {!loveGate.ok ? " · låst" : ""}
                 </span>
                 <span className="town-location-blurb">
-                  Finmark stappfull av fugl. Krever champagne og korrekt snøvl.
+                  Krav: 20 tiur · 10 orre · max range over 400 m
                 </span>
               </button>
             </li>
@@ -272,9 +309,9 @@ export function RullesBar({
             Trustpilot skrevet av min fetter.»
           </p>
           <p className="intro-line">
-            «Tips: Stubb tar kebab. Bønna tar pils — men ikke for mange, da
-            begynner han om EU. Løvenskiold tar bobler. Ta feil drikk, og du er
-            «interessant» på den dårlige måten.»
+            «Tips: Stubb tar kebab. Kristian Olav tar pils — men ikke for mange,
+            da begynner han om EU. Løvenskiold tar bobler. Og alle tre sjekker
+            lista di før de smiler.»
           </p>
           <ul className="town-list">
             {(Object.keys(DRINKS) as DrinkId[]).map((id) => (
@@ -310,17 +347,41 @@ export function RullesBar({
         </>
       ) : null}
 
-      {step === "kari" ? (
+      {step === "kari" && !kariGate.ok ? (
+        <>
+          <h2 className="intro-title">Kari Stubb — ikke ennå</h2>
+          <p className="intro-line">
+            Kari ser deg opp og ned. «Hyggelig. Men jeg åpner ikke teigen for
+            turister med tom sekk. Kom tilbake når lista di sier innsats.»
+          </p>
+          <ul className="meat-market-facts">
+            {kariGate.progress.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="shop-row-note">Mangler: {kariGate.missing.join(" · ")}</p>
+          <button
+            type="button"
+            className="intro-button"
+            onClick={() => setStep("floor")}
+          >
+            Tilbake — mer jakt først
+          </button>
+        </>
+      ) : null}
+
+      {step === "kari" && kariGate.ok ? (
         <>
           <h2 className="intro-title">Kari Stubb</h2>
           <p className="intro-line">
-            Kari smiler med hele ansiktet. «Jeg har en teig. Ikke Louvre. Men
-            orrene synes den er fin. Hva vil du — snakke sant, eller snakke som
-            folk gjør når de vil ha noe?»
+            Kari smiler med hele ansiktet. «Ti fugl og 250 meter? Da er du ikke
+            bare her for stemninga. Jeg har en teig. Ikke Louvre. Men orrene
+            synes den er fin.»
           </p>
           {unlocked.has("rulles-stubb-teig") ? (
             <p className="shop-row-note">
-              Dere har allerede håndtrykk. Kari vinker deg videre mot Bønna.
+              Dere har allerede håndtrykk. Kari vinker deg videre mot Kristian
+              Olav.
             </p>
           ) : null}
           <ul className="town-list">
@@ -396,13 +457,39 @@ export function RullesBar({
         </>
       ) : null}
 
-      {step === "bonna" ? (
+      {step === "kristian" && !kristianGate.ok ? (
         <>
-          <h2 className="intro-title">Bjørn «Bønna» Halvorsen</h2>
+          <h2 className="intro-title">Kristian Olav — ikke ennå</h2>
           <p className="intro-line">
-            Bønna ser på støvlene dine. Så på deg. Så på støvlene igjen. «Byfolk
-            kommer hit med kikkert til tjue tusen og spør om «tilgang». Jeg spør
-            om du kan skille potet fra tiur.»
+            Han ser på støvlene dine. Så på deg. «Audiens? Når lista di viser
+            tjue fugl og tre hundre meter. Ikke før. Jeg har poteter som krever
+            mer respekt enn tomme historier.»
+          </p>
+          <ul className="meat-market-facts">
+            {kristianGate.progress.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="shop-row-note">
+            Mangler: {kristianGate.missing.join(" · ")}
+          </p>
+          <button
+            type="button"
+            className="intro-button"
+            onClick={() => setStep("floor")}
+          >
+            Tilbake — mer jakt først
+          </button>
+        </>
+      ) : null}
+
+      {step === "kristian" && kristianGate.ok ? (
+        <>
+          <h2 className="intro-title">Kristian Olav</h2>
+          <p className="intro-line">
+            Kristian Olav nikker mot lista. «Tjue fugl. Tre hundre meter. Da kan
+            vi snakke. Byfolk kommer hit med kikkert til tjue tusen — jeg spør om
+            du kan skille potet fra tiur.»
           </p>
           <ul className="town-list">
             <li>
@@ -411,9 +498,9 @@ export function RullesBar({
                 className="town-location"
                 onClick={() => {
                   if (!buy("ol")) return;
-                  setBonnaTrust((t) => t + 1);
+                  setKristianTrust((t) => t + 1);
                   setStatus(
-                    "Bønna drikker. «Pils er pils. Du er ikke verst — ennå.»",
+                    "Kristian Olav drikker. «Pils er pils. Du er ikke verst — ennå.»",
                   );
                 }}
               >
@@ -428,9 +515,9 @@ export function RullesBar({
                 type="button"
                 className="town-location"
                 onClick={() => {
-                  setBonnaTrust((t) => t + 2);
+                  setKristianTrust((t) => t + 2);
                   setStatus(
-                    "Bønna rynker panna, så nikker. «Endelig. En som ikke sier «habitat» på norsk.»",
+                    "Han rynker panna, så nikker. «Endelig. En som ikke sier «habitat» på norsk.»",
                   );
                 }}
               >
@@ -445,9 +532,9 @@ export function RullesBar({
                 type="button"
                 className="town-location"
                 onClick={() => {
-                  setBonnaTrust((t) => Math.max(0, t - 2));
+                  setKristianTrust((t) => Math.max(0, t - 2));
                   setStatus(
-                    "Bønna setter glasset hardt. «EU-regler? Her? Ut. Nesten. Drikk ferdig først.»",
+                    "Han setter glasset hardt. «EU-regler? Her? Ut. Nesten. Drikk ferdig først.»",
                   );
                 }}
               >
@@ -461,17 +548,17 @@ export function RullesBar({
               <button
                 type="button"
                 className="town-location"
-                disabled={unlocked.has("rulles-bonna-li")}
+                disabled={unlocked.has("rulles-kristian-li")}
                 onClick={() => {
-                  if (bonnaTrust < 2) {
+                  if (kristianTrust < 2) {
                     setStatus(
-                      "Bønna rister. «Vi er ikke venner. Vi er… midlertidig tørste.»",
+                      "Kristian Olav rister. «Vi er ikke venner. Vi er… midlertidig tørste.»",
                     );
                     return;
                   }
                   unlock(
-                    "rulles-bonna-li",
-                    "Bønna kniper hånda di. «Lien er din noen dager. Tråkk utenom potetene, så overlever vennskapet.»",
+                    "rulles-kristian-li",
+                    "Han kniper hånda di. «Lien er din noen dager. Tråkk utenom potetene, så overlever vennskapet.»",
                   );
                 }}
               >
@@ -482,7 +569,9 @@ export function RullesBar({
               </button>
             </li>
           </ul>
-          <p className="shop-row-note">Tillit hos Bønna: {bonnaTrust}/2+</p>
+          <p className="shop-row-note">
+            Tillit hos Kristian Olav: {kristianTrust}/2+
+          </p>
           {status ? <p className="shop-row-note">{status}</p> : null}
           <button
             type="button"
@@ -494,14 +583,36 @@ export function RullesBar({
         </>
       ) : null}
 
-      {step === "lovenskiold" ? (
+      {step === "lovenskiold" && !loveGate.ok ? (
+        <>
+          <h2 className="intro-title">Carl Otto Løvenskiold — usynlig</h2>
+          <p className="intro-line">
+            Han ser gjennom deg. «Tyve tiur. Ti orrhaner. Max range over fire
+            hundre meter. Da finnes du. Før det er du… atmosfære.»
+          </p>
+          <ul className="meat-market-facts">
+            {loveGate.progress.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="shop-row-note">Mangler: {loveGate.missing.join(" · ")}</p>
+          <button
+            type="button"
+            className="intro-button"
+            onClick={() => setStep("floor")}
+          >
+            Tilbake — mer jakt først
+          </button>
+        </>
+      ) : null}
+
+      {step === "lovenskiold" && loveGate.ok ? (
         <>
           <h2 className="intro-title">Carl Otto Løvenskiold</h2>
           <p className="intro-line">
-            Han sitter som om stolen eier lokalet. Klokke som kunne finansiert et
-            jaktlag. «Jeg eier mark der tiuren nærmest… hvordan skal vi si det…
-            melder seg frivillig. Spørsmålet er ikke om du får skyte. Det er om
-            du fortjener å bli sett.»
+            Han sitter som om stolen eier lokalet. «Tyve tiur. Ti orre. Over fire
+            hundre meter. Da fortjener du å bli sett. Spørsmålet er om du klarer
+            champagne uten å skjelve.»
           </p>
           <ul className="town-list">
             <li>
@@ -539,7 +650,9 @@ export function RullesBar({
                 <span className="town-location-name">
                   Whisky ({formatKr(DRINKS.whisky.priceNok)})
                 </span>
-                <span className="town-location-blurb">Bonuspoeng, ikke erstatning.</span>
+                <span className="town-location-blurb">
+                  Bonuspoeng, ikke erstatning.
+                </span>
               </button>
             </li>
             <li>
@@ -618,8 +731,8 @@ export function RullesBar({
           <h2 className="intro-title">Enrique — kjøkkenet</h2>
           <p className="intro-line">
             Røyk, oregano, og en radio på portugisisk. «Jeg eier ingen skog. Jeg
-            eier ovnen. Men jeg har sett Løvenskiold spise pizza med kniv og gaffel.
-            Det sier mer enn jaktkortet.»
+            eier ovnen. Men jeg har sett Løvenskiold spise pizza med kniv og
+            gaffel. Det sier mer enn jaktkortet.»
           </p>
           <ul className="town-list">
             <li>
@@ -647,7 +760,7 @@ export function RullesBar({
                 className="town-location"
                 onClick={() =>
                   setStatus(
-                    "Enrique hvisker: «Bønna hater ordet habitat. Si «skog som funker» i stedet.»",
+                    "Enrique hvisker: «Kristian Olav hater ordet habitat. Si «skog som funker» i stedet.»",
                   )
                 }
               >

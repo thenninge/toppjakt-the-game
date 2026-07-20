@@ -9,7 +9,7 @@ export type HuntingTerrainId =
   | "ostlandet-standard"
   | "trondelag"
   | "rulles-stubb-teig"
-  | "rulles-bonna-li"
+  | "rulles-kristian-li"
   | "rulles-lovenskiold";
 
 export type HuntingTerrain = {
@@ -82,17 +82,17 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     landownerName: "Kari Stubb",
   },
   {
-    id: "rulles-bonna-li",
-    name: "Bønna sin li",
+    id: "rulles-kristian-li",
+    name: "Kristian Olav sin li",
     region: "Østlandet",
     blurb:
-      "Bjørn Halvorsen sin skråning. Bra med orre, grei tiur — hvis du ikke tråkker i potetene.",
+      "Kristian Olav sin skråning. Bra med orre, grei tiur — hvis du ikke tråkker i potetene.",
     pricePerDayNok: 1600,
     tiurRating: 3,
     orrhaneRating: 4,
     mapId: "ostlandet2",
     access: "rulles",
-    landownerName: "Bjørn «Bønna» Halvorsen",
+    landownerName: "Kristian Olav",
   },
   {
     id: "rulles-lovenskiold",

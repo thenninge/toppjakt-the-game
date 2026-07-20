@@ -61,6 +61,10 @@ import {
   getHuntingTerrain,
   type HuntingTerrainId,
 } from "@/lib/hunt/terrain";
+import {
+  loadPlayerSave,
+  savePlayerStats,
+} from "@/lib/playerSave";
 
 type Phase =
   | "loading"
@@ -101,9 +105,39 @@ export function IntroScreen() {
     statsRef.current = stats;
   }, [stats]);
 
+  /** Persist progress across refresh / new Vercel deploys (same browser). */
+  useEffect(() => {
+    if (!stats.name) return;
+    savePlayerStats(stats);
+  }, [stats]);
+
   useEffect(() => {
     setMusicEnabled(readMusicEnabled());
   }, []);
+
+  useEffect(() => {
+    if (phase !== "loading") return;
+
+    const dotTimer = window.setInterval(() => {
+      setDots((d) => (d.length >= 4 ? "." : `${d}.`));
+    }, 380);
+
+    const done = window.setTimeout(() => {
+      const saved = loadPlayerSave();
+      if (saved?.stats.name) {
+        setStats(saved.stats);
+        setName(saved.stats.name);
+        setPhase("town");
+        return;
+      }
+      setPhase("name");
+    }, LOADING_MS);
+
+    return () => {
+      window.clearInterval(dotTimer);
+      window.clearTimeout(done);
+    };
+  }, [phase]);
 
   function toggleMusic() {
     setMusicEnabled((prev) => {
@@ -116,10 +150,10 @@ export function IntroScreen() {
   function toggleHunterStatus() {
     setHunterStatusEnabled((prev) => !prev);
   }
+
   // Weather HUD only during mission — not town / shop / sheriff / home.
   const showWeather = false;
 
-  // Live weather drifts only while on a mission (when weather HUD is shown).
   useEffect(() => {
     if (!showWeather) return;
     const id = window.setInterval(() => {
@@ -127,23 +161,6 @@ export function IntroScreen() {
     }, 8000);
     return () => window.clearInterval(id);
   }, [showWeather]);
-
-  useEffect(() => {
-    if (phase !== "loading") return;
-
-    const dotTimer = window.setInterval(() => {
-      setDots((d) => (d.length >= 4 ? "." : `${d}.`));
-    }, 380);
-
-    const done = window.setTimeout(() => {
-      setPhase("name");
-    }, LOADING_MS);
-
-    return () => {
-      window.clearInterval(dotTimer);
-      window.clearTimeout(done);
-    };
-  }, [phase]);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -219,6 +236,14 @@ export function IntroScreen() {
       return {
         ...prev,
         ...counts,
+        lifetimeTiur:
+          carcass.species === "tiur"
+            ? prev.lifetimeTiur + 1
+            : prev.lifetimeTiur,
+        lifetimeOrrhaner:
+          carcass.species === "orrhane"
+            ? prev.lifetimeOrrhaner + 1
+            : prev.lifetimeOrrhaner,
         carcasses: [...prev.carcasses, carcass],
         maxRange: Math.max(prev.maxRange, carcass.distanceM),
       };
@@ -518,6 +543,13 @@ export function IntroScreen() {
             nickname={stats.nickname}
             balance={stats.balance}
             unlockedTerrainIds={stats.unlockedTerrainIds}
+            hunter={{
+              tiur: stats.tiur,
+              orrhaner: stats.orrhaner,
+              lifetimeTiur: stats.lifetimeTiur,
+              lifetimeOrrhaner: stats.lifetimeOrrhaner,
+              maxRange: stats.maxRange,
+            }}
             onSpend={spendAtRulles}
             onUnlockTerrain={unlockRullesTerrain}
             onLeave={backToTown}
