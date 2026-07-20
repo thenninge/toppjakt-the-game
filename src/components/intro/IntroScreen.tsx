@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { generateNickname } from "@/lib/nickname";
 import {
   addToInventory,
+  ammoRoundsPerPurchase,
   canApproveNewLicense,
   canBuyHuntingRifle,
+  consumeAmmoRound,
   countHuntingRifles,
   countPaidLicenses,
   createInitialStats,
@@ -39,7 +41,7 @@ import {
 import { PikeProShop } from "@/components/town/PikeProShop";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
 import { ShootingRange } from "@/components/town/ShootingRange";
-import { isCamoItem, isFoodItem, isRifleItem } from "@/lib/shop/types";
+import { isAmmoItem, isCamoItem, isFoodItem, isRifleItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 
 type Phase =
@@ -70,9 +72,14 @@ export function IntroScreen() {
     null,
   );
   const [musicEnabled, setMusicEnabled] = useState(true);
+  const statsRef = useRef(stats);
 
   const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
   const musicScene = musicSceneFromGame({ phase, location });
+
+  useEffect(() => {
+    statsRef.current = stats;
+  }, [stats]);
 
   useEffect(() => {
     setMusicEnabled(readMusicEnabled());
@@ -169,13 +176,21 @@ export function IntroScreen() {
     setStats((prev) => {
       if (prev.balance < item.priceNok) return prev;
       if (isRifleItem(item) && !canBuyHuntingRifle(prev)) return prev;
+      const purchaseQty = isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
       return {
         ...prev,
         balance: prev.balance - item.priceNok,
-        inventory: addToInventory(prev.inventory, item.id),
+        inventory: addToInventory(prev.inventory, item.id, purchaseQty),
       };
     });
   }
+
+  const spendAmmoRound = useCallback((ammoId: string): boolean => {
+    const result = consumeAmmoRound(statsRef.current, ammoId);
+    if (!result.ok) return false;
+    setStats(result.stats);
+    return true;
+  }, []);
 
   function toggleKit(itemId: string) {
     setStats((prev) => ({
@@ -338,10 +353,13 @@ export function IntroScreen() {
             kitItems={stats.kit
               .map((id) => resolvePlayerItem(id))
               .filter((x): x is ShopItem => x != null)}
+            inventory={stats.inventory}
             ammoAffinities={stats.ammoAffinities}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))
             }
+            onConsumeAmmo={spendAmmoRound}
+            musicEnabled={musicEnabled}
             onLeave={backToTown}
           />
         )}

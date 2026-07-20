@@ -29,7 +29,10 @@ import {
   SUPPRESSOR_CALM_WEIGHT_FACTOR,
   suppressorWeaponCalmGrams,
 } from "@/lib/suppressor/spec";
-import type { InventoryEntry } from "@/lib/player";
+import {
+  formatInventoryQuantity,
+  type InventoryEntry,
+} from "@/lib/player";
 import type { ProjectileType } from "@/lib/ammo/spec";
 import {
   CALIBER_SORT_ORDER,
@@ -416,7 +419,11 @@ export function PikeProShop({
                       : ""}
                   {item.unitLabel ? ` · ${item.unitLabel}` : ""}
                   {item.fits ? ` · passer: ${item.fits}` : ""}
-                  {qty > 0 ? ` · eid: ${qty}` : ""}
+                  {qty > 0
+                    ? isAmmoItem(item)
+                      ? ` · eid: ${formatInventoryQuantity(item.id, qty)}`
+                      : ` · eid: ${qty}`
+                    : ""}
                 </span>
                 {ammo ? (
                   <span className="shop-row-ballistics">

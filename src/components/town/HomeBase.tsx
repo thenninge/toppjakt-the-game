@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import {
+  formatInventoryQuantity,
   resolvePlayerItem,
   type InventoryEntry,
 } from "@/lib/player";
@@ -229,7 +230,14 @@ export function HomeBase({
               ) : (
                 rigAmmo.map((item) => (
                   <div key={item.id} className="current-rig-ammo-row">
-                    <span className="current-rig-value">{itemLabel(item)}</span>
+                    <span className="current-rig-value">
+                      {itemLabel(item)}
+                      {" · "}
+                      {formatInventoryQuantity(
+                        item.id,
+                        inventory.find((e) => e.itemId === item.id)?.qty ?? 0,
+                      )}
+                    </span>
                     <button
                       type="button"
                       className="current-rig-clear"
@@ -320,7 +328,11 @@ export function HomeBase({
                   </span>
                   <span className="shop-row-meta">
                     {item.category} · {formatWeightKg(item.weightGrams)}
-                    {qty > 1 ? ` · ×${qty}` : ""}
+                    {formatInventoryQuantity(item.id, qty)
+                      ? ` · ${formatInventoryQuantity(item.id, qty)}`
+                      : qty > 1
+                        ? ` · ×${qty}`
+                        : ""}
                     {EXCLUSIVE_KIT_CATEGORIES.has(item.category)
                       ? " · én i kit"
                       : ""}

@@ -1019,6 +1019,10 @@ body {
   padding-bottom: 0.25rem;
 }
 
+.range-shot-count.is-empty {
+  color: var(--danger-rust);
+}
+
 .scope-stage {
   outline: none;
   display: flex;

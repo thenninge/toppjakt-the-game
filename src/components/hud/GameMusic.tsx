@@ -24,6 +24,7 @@ type GameMusicProps = {
 
 export function GameMusic({ scene, enabled }: GameMusicProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const trackRef = useRef<string | null>(null);
 
   useEffect(() => {
     const audio = audioRef.current ?? new Audio();
@@ -33,28 +34,33 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
 
     if (!enabled || !scene) {
       audio.pause();
+      trackRef.current = null;
       return;
     }
 
     const track = getMusicTrack(scene);
     if (!track) {
       audio.pause();
+      trackRef.current = null;
       return;
     }
 
     const nextSrc = new URL(track, window.location.href).href;
-    if (audio.src !== nextSrc) {
+    const sameTrack = trackRef.current === nextSrc;
+
+    if (!sameTrack) {
       audio.pause();
       audio.src = track;
+      trackRef.current = nextSrc;
+      void audio.play().catch(() => {
+        /* Autoplay blocked until next user gesture — toggle will retry. */
+      });
+      return;
     }
 
-    void audio.play().catch(() => {
-      /* Autoplay blocked until next user gesture — toggle will retry. */
-    });
-
-    return () => {
-      audio.pause();
-    };
+    if (audio.paused) {
+      void audio.play().catch(() => {});
+    }
   }, [scene, enabled]);
 
   return null;

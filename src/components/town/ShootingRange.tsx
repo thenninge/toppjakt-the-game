@@ -33,11 +33,16 @@ import {
 } from "@/lib/range/precision";
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { useRangeAudio } from "@/components/range/useRangeAudio";
+import { getInventoryQty, type InventoryEntry } from "@/lib/player";
 
 type ShootingRangeProps = {
   kitItems: ShopItem[];
+  inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   onAffinitiesChange: (next: Record<string, number>) => void;
+  onConsumeAmmo: (ammoId: string) => boolean;
+  musicEnabled: boolean;
   onLeave: () => void;
 };
 
@@ -56,8 +61,11 @@ const IMG_NATURAL_H = 1024;
 
 export function ShootingRange({
   kitItems,
+  inventory,
   ammoAffinities,
   onAffinitiesChange,
+  onConsumeAmmo,
+  musicEnabled,
   onLeave,
 }: ShootingRangeProps) {
   const rifle = useMemo(
@@ -129,8 +137,15 @@ export function ShootingRange({
     startedAtMs: number | null;
   }>({ held: false, fireAtMs: null, startedAtMs: null });
   const fireShotRef = useRef(() => {});
+  const playShotRef = useRef<(hasSuppressor: boolean) => void>(() => {});
+  const consumeAmmoRef = useRef(onConsumeAmmo);
+
+  const { playShot } = useRangeAudio({ enabled: musicEnabled });
 
   const selectedAmmo = ammoOptions.find((a) => a.id === ammoId) ?? null;
+  const ammoRemaining = selectedAmmo
+    ? getInventoryQty(inventory, selectedAmmo.id)
+    : 0;
 
   const calmFactor = useMemo(
     () =>
@@ -172,15 +187,41 @@ export function ShootingRange({
     shotsLenRef.current = shots.length;
   }, [shots.length]);
 
+  useEffect(() => {
+    playShotRef.current = playShot;
+  }, [playShot]);
+
+  useEffect(() => {
+    consumeAmmoRef.current = onConsumeAmmo;
+  }, [onConsumeAmmo]);
+
   fireShotRef.current = () => {
     if (!ready || !rifle || !selectedAmmo) return;
+    if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
+      setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
+      return;
+    }
+    if (
+      shotsLenRef.current >= SHOTS_PER_SERIES ||
+      measurementRef.current
+    ) {
+      if (measurementRef.current) {
+        setStatus("Målt ferdig — start ny serie for flere skudd.");
+      } else {
+        setStatus("Serien er full (5). Mål serie eller start ny.");
+      }
+      return;
+    }
+    if (!consumeAmmoRef.current(selectedAmmo.id)) {
+      setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
+      return;
+    }
+
     setShots((prev) => {
       if (prev.length >= SHOTS_PER_SERIES) {
-        setStatus("Serien er full (5). Mål serie eller start ny.");
         return prev;
       }
       if (measurementRef.current) {
-        setStatus("Målt ferdig — start ny serie for flere skudd.");
         return prev;
       }
 
@@ -214,6 +255,7 @@ export function ShootingRange({
       setStatus(
         `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
       );
+      playShotRef.current(!!suppressor);
       // Recoil shake
       if (recoilClearRef.current != null) {
         window.clearTimeout(recoilClearRef.current);
@@ -248,6 +290,10 @@ export function ShootingRange({
     }
     if (!focusRef.current.held) {
       setStatus("Hold F (pust/fokus) før du tar avtrekk.");
+      return;
+    }
+    if (ammoRemaining <= 0) {
+      setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
       return;
     }
     const delay = Math.max(40, Math.random() * TRIGGER_DELAY_MAX_MS);
@@ -517,13 +563,25 @@ export function ShootingRange({
               setStatus("Ammo byttet — klar for serie.");
             }}
           >
-            {ammoOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.brand} {a.name} ({a.ammo.caliber})
-              </option>
-            ))}
+            {ammoOptions.map((a) => {
+              const rounds = getInventoryQty(inventory, a.id);
+              return (
+                <option key={a.id} value={a.id}>
+                  {a.brand} {a.name} ({a.ammo.caliber}) · {rounds} igjen
+                </option>
+              );
+            })}
           </select>
         </label>
+        <span
+          className={
+            ammoRemaining <= 0
+              ? "range-shot-count is-empty"
+              : "range-shot-count"
+          }
+        >
+          Patroner {ammoRemaining}
+        </span>
         <span className="range-shot-count">
           Skudd {shots.length}/{SHOTS_PER_SERIES}
         </span>

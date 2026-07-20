@@ -1,5 +1,6 @@
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
+import { isAmmoItem } from "@/lib/shop/types";
 
 export type InventoryEntry = {
   itemId: string;
@@ -164,9 +165,12 @@ export function grantStarterGear(stats: PlayerStats): PlayerStats {
   // Test range loadout — top shelf for shooting UX work.
   for (const id of TEST_RANGE_LOADOUT_IDS) {
     if (!next.inventory.some((e) => e.itemId === id)) {
+      const item = getShopItem(id);
+      const qty =
+        item && isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
       next = {
         ...next,
-        inventory: addToInventory(next.inventory, id, id.startsWith("ammo-") ? 3 : 1),
+        inventory: addToInventory(next.inventory, id, qty),
       };
     }
   }
@@ -204,4 +208,67 @@ export function addToInventory(
     );
   }
   return [...inventory, { itemId, qty }];
+}
+
+/** Patroner per shop purchase (parsed from unitLabel, e.g. "eske 50"). */
+export function ammoRoundsPerPurchase(item: ShopItem): number {
+  if (!isAmmoItem(item)) return 1;
+  const match = item.unitLabel?.match(/(\d+)\s*$/);
+  return match ? parseInt(match[1], 10) : 20;
+}
+
+export function getInventoryQty(
+  inventory: InventoryEntry[],
+  itemId: string,
+): number {
+  return inventory.find((e) => e.itemId === itemId)?.qty ?? 0;
+}
+
+export function formatInventoryQuantity(itemId: string, qty: number): string {
+  const item = getShopItem(itemId);
+  if (item && isAmmoItem(item)) {
+    return `${qty} patron${qty === 1 ? "" : "er"}`;
+  }
+  return qty > 1 ? `×${qty}` : "";
+}
+
+/**
+ * Remove qty from inventory. For ammo, qty = patroner.
+ * Returns ok:false when insufficient stock.
+ */
+export function consumeInventoryItem(
+  inventory: InventoryEntry[],
+  itemId: string,
+  qty = 1,
+): { inventory: InventoryEntry[]; ok: boolean } {
+  const entry = inventory.find((e) => e.itemId === itemId);
+  if (!entry || entry.qty < qty) {
+    return { inventory, ok: false };
+  }
+  if (entry.qty === qty) {
+    return {
+      inventory: inventory.filter((e) => e.itemId !== itemId),
+      ok: true,
+    };
+  }
+  return {
+    inventory: inventory.map((e) =>
+      e.itemId === itemId ? { ...e, qty: e.qty - qty } : e,
+    ),
+    ok: true,
+  };
+}
+
+/** Spend one round of ammo; drops from kit when empty. */
+export function consumeAmmoRound(
+  stats: PlayerStats,
+  ammoId: string,
+): { stats: PlayerStats; ok: boolean } {
+  const { inventory, ok } = consumeInventoryItem(stats.inventory, ammoId, 1);
+  if (!ok) return { stats, ok: false };
+  const kit =
+    getInventoryQty(inventory, ammoId) === 0
+      ? stats.kit.filter((id) => id !== ammoId)
+      : stats.kit;
+  return { stats: { ...stats, inventory, kit }, ok: true };
 }

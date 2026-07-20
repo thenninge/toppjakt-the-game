@@ -14,11 +14,13 @@ export type MusicScene =
  * Tracks discovered in /public/music/. `null` = no file yet (silent).
  * Paths are URL-encoded where filenames contain spaces.
  */
+const INTRO_TOWN_TRACK = "/music/intro/intro.mp3";
+
 export const MUSIC_TRACKS: Record<MusicScene, string | null> = {
-  intro: "/music/intro/intro.mp3",
-  town: null,
+  intro: INTRO_TOWN_TRACK,
+  town: INTRO_TOWN_TRACK,
   home: "/music/home/inventory.mp3",
-  shop: null,
+  shop: "/music/shop/shop.mp3",
   sheriff: "/music/sheriff/lensmann.mp3",
   range: null,
   hunt: "/music/hunt/map%20music.mp3",
