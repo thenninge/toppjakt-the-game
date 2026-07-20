@@ -14,6 +14,405 @@ Et **realistisk jakt-simulator spill** inspirert av "The Lost Dutchman Mine" og 
 - Presis skyting med balistikk
 - Etisk jakt (minimere lidelse/ødeleggelse)
 
+---
+
+## 🧭 Realisme-kjernen (levende dokument)
+
+Dette er **essensen** av hva som gjør spillet realistisk. Tall og kataloger justeres underveis (Tomas eier jakt-/våpenfag; kode speiler dette). Implementasjon i dag: `src/lib/ammo/`, `src/lib/shop/`.
+
+### Designregler for game engine
+
+1. **Aldri forenkle til arcade-DPS.** «Damage» betyr kjøttødelegging / ekspansjon — ikke hitpoints.
+2. **Presisjon måles i MOA**, ikke magiske accuracy-prosent uten fysisk mening.
+3. **Alt man bærer har vekt** (gram). Vekt påvirker bevegelse, utholdenhet, støy og valg.
+4. **Priser i NOK** skal føles som norsk gatepris (Biltema-budget → Leica/ZCO-premium).
+5. **Trade-offs er poenget:** billig/tung/dårlig glass vs. dyrt/lett/presist; rent kjøtt vs. tilgivende ekspansjon; papirbyråkrati vs. arvet .22.
+
+### Town-hub (Lost Dutchman-stil)
+
+Etter intro står spilleren i byen og velger destinasjon:
+
+| Sted | Rolle |
+|------|--------|
+| **Pike Pro Shop** | Kjøp våpen, ammo, glass, dempere, stokker, misc kit |
+| **Sheriff** | Søke nye våpen (norsk byråkrati-satire midlertidig) |
+| **Home** | Kit-bygger + **Current rig** (rifle / scope / stock / bipod / can + **flere ammo** til range-sekvens) → total vekt + top speed; lisensstatus (ikke i inventory) |
+| **Shooting Range** | CBA 100 m: kit-rig, piltaster + wobble (calm/bipod×3), +/− zoom, 5-skudds serie, hull + mål i MOA/mm. Låneutstyr senere |
+
+### Player stats (HUD)
+
+Alltid synlig etter karakterskaping:
+
+- **Navn** / **Nick** (kun epithet, f.eks. `"Sniper Slim"`)
+- **Konto** (NOK)
+- **Orrhaner** / **Tiur** (antall felt)
+- **Max Range** (lengste jakt-treff i meter)
+
+### Vær (HUD — kun mission)
+
+**Ikke** synlig i by / Pike Pro / Sheriff / Home. Under jakt: kompakt **hjørne-chip** (nede til høyre) som ekspanderer til live + forecast.  
+Kode: `src/lib/weather/spec.ts`, UI: `WeatherFrame` (FAB).
+
+### Startkit / narrativ
+
+- Onkel gir bort **CZ 452 .22 LR** (iron sights, ingen picatinny).
+- Spilleren må kjøpe ammo, evt. demper, øve på range, og senere søke/kjøpe bedre våpen.
+- Konto starter midlertidig på **500 000 kr** for testing (endre `STARTING_BALANCE` i `src/lib/player.ts` før «ekte» økonomi).
+- **Test-loadout ved boot** (midlertidig): Sauer 200 STR + ZCO 527 + Norma Black Diamond 139gr & Lapua Scenar 139gr (6,5×55) + Svemko Genesis can + RRS bipod + MDT ACC Elite stock — alt i kit. Loading **1 s**.
+
+---
+
+### Ammunisjon — ballistikk og terminal effekt
+
+Hver ammo-type i katalog har:
+
+| Felt | Synlig for spiller? | Betydning |
+|------|---------------------|-----------|
+| `caliber` | Ja | 6,5×55, 6,5 Creedmoor, .223, .22 LR, .17 HMR, .308, .30-06, … |
+| `projectileType` | Ja | `FMJ` \| `OTM` \| `SP` |
+| `v0` | Ja | Utgangshastighet (m/s) |
+| `bc` + `bcModel` | Ja | Ballistisk koeffisient (G1/G7) |
+| `damageFactor` | Ja (senere/engine) | Kjøttødelegging / ekspansjon (0–1) |
+| `maxAchievableMoa` | **Nei — internt** | Beste (laveste) spredning ammo kan bidra til |
+
+#### damageFactor — hvordan vi setter den
+
+Utgangspunkt: **prosjektilkonstruksjon**, ikke «stopping power».
+
+| Konstruksjon | Typisk faktor | Eksempler |
+|--------------|---------------|-----------|
+| FMJ / match OTM | **Lav** ≈ 0.18–0.28 | Lapua Scenar, ELD-M, MatchKing |
+| Kontrollert jaktekspansjon | **Midt** ≈ 0.55–0.70 | Gamehead, Speedhead, Bondstrike |
+| Agressiv ekspansjon | **Høy** ≈ 0.70–0.85 | Oryx, Hammerhead, Core-Lokt, V-MAX |
+
+**Lav ≠ dårlig / svak.** Lav factor = mindre ødelagt kjøtt, men spilleren må treffe vitalt bedre for å unngå ettersøk. Høy factor = mer tilgivende treff, mer ødelagt kjøtt.
+
+**Game engine-regel:** `damageFactor` = meat-ruin + placement forgiveness. Aldri «damage points» / DPS.
+
+Sortering i butikk: kaliber → type (eller type → kaliber), med filter.
+
+#### maxAchievableMoa — intern presisjon
+
+- Spredning måles i **MOA**. **1 MOA ≈ 29.4 mm** gruppe på **100 m**.
+- `maxAchievableMoa` = beste (laveste) vinkelspredning denne ammoen kan bidra til i et kapabelt våpen (f.eks. Tikka T3x Varmint).
+- Eksempel-intensjon:
+  - Lapua Scenar 136gr / Norma Black Diamond → ca. **0.25–0.28 MOA**
+  - Sako Speedhead / Gamehead → ca. **0.5 MOA**
+  - Trenings-FMJ / budget-bulk → høyere (dårligere gulv)
+- **Endelig treffpunkt i engine** (range + jakt):
+  - **Siktepunkt (POA)** = retikkel når skuddet går
+  - **Treffpunkt (POI)** = POA + gaussisk vinkel-spredning (+ v0-vertikal)
+  - Envelope MOA = `rifle.averageBestAccuracyMoa + ammo.maxAchievableMoa × affinity + stock.moaDelta`
+  - Envelope = **N σ** (default **N=2**, bytt `DISPERSION_MOA_SIGMA_LEVEL` til 1 eller 3)
+  - σ = envelope / N → hovedvekten av skudd tettere enn envelope; outliers finnes
+  - **v0-variasjon** separat (m/s SD); påvirker drop mer på lang hold enn 100 m-gruppe
+  - scope zero / vind / skytter (pust, fokus) kommer i tillegg
+- Spilleren ser **ikke** ammo-MOA i butikk; de oppdager det gjennom testing på range og jaktresultat. Rifle «avg best» vises som referanse — faktisk gruppe krever riktig ammo + hell.
+- **Ingen nullfaktorer i Pike Pro:** hvert produkt skal flytte nålen. Mangler noe faktor → spør Tomas.
+
+```typescript
+// src/lib/ballistics/dispersion.ts
+envelopeMoa = rifleMoa + ammoMoa * affinity  // + stock.moaDelta
+sigmaMoa    = envelopeMoa / DISPERSION_MOA_SIGMA_LEVEL  // default 2
+// sample X,Y ~ N(0, sigmaMoa); POI = POA + mm(offset, distance)
+// + sample v0 ~ N(ammo.v0, v0Sigma); vertical miss grows with distance²
+```
+
+**Skala (guide):** ~0.25 megabra (Sauer 200 STR + Krieger-type) · ~0.50 bra-bra · >1.0 budget.
+
+Tune-liste: `src/lib/rifle/spec.ts` → `RIFLE_AVERAGE_BEST_MOA`.  
+Dispersion: `src/lib/ballistics/dispersion.ts`.  
+**Full error budget (hjørnestein):** `src/lib/ballistics/errorBudget.ts` + seksjon **Ballistikkmotor** under.
+
+Kode: `src/lib/ammo/spec.ts`, `src/lib/rifle/spec.ts`, `src/lib/stock/spec.ts`, `src/lib/optics/spec.ts`, katalogverdier i `src/lib/shop/catalog.ts`.
+
+---
+
+### Ballistikkmotor — hjørnestein (jakt P(hit) på avstand)
+
+Sannsynlighet for å treffe jaktmål på lenger hold er **ikke** bare 100 m-gruppe. Engine skal stable hele feilbudsjettet før vital/body/miss-geometri:
+
+| # | Faktor | Status / kilde |
+|---|--------|----------------|
+| 1 | **POA** (retikkel ved avtrekk) | Range: pust/fokus, calm, wobble |
+| 2 | **Vinkel-spredning** rifle+ammo(+stock, affinity), N σ Gauss | `dispersion.ts` |
+| 3 | **v0-variasjon** (drop/TOF) | `dispersion.ts` (vokser med avstand) |
+| 4 | **Vind** — sann vs trodd (Kestrel lokal vs LRF/AB forecast) | Delvis i vær/optics-design |
+| 5 | **Kikkert-klikk / zero** — `clickAccuracyFactor`, `zeroRetentionInaccuracy` | Scope-katalog |
+| 6 | **Avstandsmåling** — LRF `rangeErrorPercent` | `optics/spec.ts` |
+| 7 | **Atmosfære / BC-path** | Planlagt |
+| 8 | **Zero-tilstand** (cold bore, cant, sist verifisert) | Planlagt |
+| 9 | **Vital-sone geometri** — ikke loot-roll | Planlagt jakt |
+
+**Prinsipp:** Sample (eller integrer) full miss-vektor i målplanet, *deretter* klassifiser vital/body/miss. Aldri kollaps til én `accuracy × distance`-fudge.
+
+Kontrakt i kode: `BALLISTIC_ENGINE_CORNERSTONE` + `BallisticErrorBudget` i `src/lib/ballistics/errorBudget.ts`.
+
+---
+
+### Vekt — alt bæres
+
+Hvert produkt i Pike Pro Shop har **`weightGrams`** (realistisk gatevekt).
+
+- Rifler: tomt våpen uten kikkert/demper
+- Scopes / LRF / dempere / stokker: som solgt
+- Ammo: **hele esken** som kjøpes
+- Sekker: tom sekk (last kommer på toppen i engine)
+
+**Engine skal bruke total bærevekt til:**
+
+- effektiv ganghastighet
+- utmattelse / tidsbruk
+- støy / spooking (tungt + raskt = mer støy)
+- valg: karbonstokk / lett demper / liten sekk vs. tung precision-rig
+
+**Alt kjøp går inn i totalt gameplay:** hvor mye terreng du får dekket, hva kitet veier (rå + følt), og hva det koster i NOK. Algoritmene finpusses senere — knaggene finnes i katalogdata.
+
+#### Misc — Weight + Endurance (enkel to-knapp-modell)
+
+Misc-varer har alltid `weightGrams` **og** `misc.enduranceGrams`.
+
+Placeholder (ikke endelig formel):
+
+```
+feltContribution ≈ weightGrams - enduranceGrams
+```
+
+Eksempel: Termos ~380 g + endurance 2000 → net negativ følt vekt (kaffe/utholdenhet).  
+Futteral/veske: endurance 0 → ren vekt.  
+Sittpute: litt endurance (tørr post = mer tålmodighet).
+
+Kode: `src/lib/misc/spec.ts`. Flere faktortyper kan komme senere; misc holder seg til disse to nå.
+
+Vekter: `src/lib/shop/weights.ts` (kan overstyres per vare).
+
+#### Lyddempere — bærevekt vs weapon calm (2×)
+
+Vekt er det **primære** attributtet for lyddempere. Masse langt fremme på munningen gir mer «rolig våpen» enn den koster i bæring:
+
+| Bruk | Formel | Eksempel 300 g demper |
+|------|--------|------------------------|
+| Kit / bærevekt | `weightGrams × 1` | +300 g |
+| Weapon calm mass | `weightGrams × 2` | +600 g |
+
+Tung demper = tyngre å gå med, men våpenet ligger roligere i skuddet. Lett titan = lettere kit, mindre calm-bidrag.
+
+Kode: `src/lib/suppressor/spec.ts` (`SUPPRESSOR_CALM_WEIGHT_FACTOR = 2`).
+
+#### Bipods / tofot — vekt vs weapon calm
+
+Tofot øker bærevekt, men gir **sterk calm** når den er ute under skuddet.
+
+| | |
+|--|--|
+| Kit | `weightGrams` (full) |
+| Weapon calm | `bipodWeaponCalmGrams(weight, weaponCalm)` — tung + dyr pod = høyere calm-mass |
+
+`weaponCalm` (1–10): Game-On/Jula lavt; Accu-Tac FC / RRS = 10. Aldri nullfaktor.
+
+**Shooting Range (senere — ikke implementert ennå):**  
+På banen kan man låne «generisk tofot», «sandsekk» og lignende for å *føle* calm / støtte under zeroing — **kun om man ikke allerede eier dem eller har dem i kit**. Har du kjøpt Accu-Tac og pakket den, bruker du din egen (ikke lån). Poenget er fristelse: prøve utstyr man ikke har råd til ennå → bli gira → tilbake til Pike Pro og spille mer. Samme calm-prinsipp som eide bipods.
+
+Kode: `src/lib/bipod/spec.ts`.
+
+#### LRF — range error (±%)
+
+Hver LRF har `rangeErrorPercent`. Engine sampler jevnt innenfor ±%-båndet (`measureDistanceWithLrf`):
+
+| Tier | Eksempel | `rangeErrorPercent` |
+|------|----------|---------------------|
+| Premium | Sig, Leupold, Vortex, Leica, Zeiss, … | **1** (±1%) |
+| Mid | Burris / Magasinet | **1.5–2.5** |
+| Budget | Biltema, Jula, Clas Ohlson | **3** (±3%) |
+
+Ved 300 m: ±1% ≈ ±3 m, ±3% ≈ ±9 m — nok til bom hvis hold er stramt. Oppgradering av LRF er derfor reell kit-gevinst, ikke kosmetikk.
+
+Kode: `src/lib/optics/spec.ts`.
+
+#### Weather forecast vs Kestrel / handheld meters
+
+Hver **dag** har en `DayWeather`:
+
+| Lag | Innhold |
+|-----|---------|
+| `forecast` | Morgenprognose (temp, vindstyrke, vindretning) — det LRF/AB/apper bruker |
+| `live` | Sannhet på bakken; driver over `missionMinutes` |
+
+Forecast har feil vs morgen-truth (`FORECAST_WIND_SPEED_ERROR_PERCENT ≈ 18%`, retning ±25°, temp ±2°C). I løpet av dagen driver `live` videre (vind/temp endres).
+
+| Kilde | Crosswind | Typisk vindfeil |
+|-------|-----------|-----------------|
+| **Kestrel / ACE / anemometer** | Måler lokal vind → **ekte crosswind** for skuddretning | ±3–16% (produkt) |
+| **LRF med AB / forecast-solver** | Vet ikke reell crosswind; gir ofte **full-value windage** (antar vind fra 90°) basert på forecast | ≈ forecast ±18% + avrunding |
+
+Derfor: dyr LRF med AB kan gjøre separat solver valgfri for *hold for drop*, men **Kestrel er fortsatt verdifull for windage**. Billig LRF + Kestrel er et ærlig alternativ.
+
+Kode: `src/lib/weather/spec.ts`, `src/lib/ballistics/spec.ts`.
+
+---
+
+### Pike Pro Shop — katalogfilosofi
+
+Kategorier:
+
+1. **LRF / Avstandsmålere** — Biltema-monokkel → Leica / Zeiss / Vortex Fury. Felt `hasOnboardBallistics` + `rangeErrorPercent` (±% randomizer på målt avstand; premium ≈ ±1%, Biltema/Jula ≈ ±3%). Filter: «kun m/intern ballistikk».  
+2. **Scopes** — sort/filter: pris, vekt, min/max zoom, MRAD vs MOA. Spec: `clickAccuracyFactor`, `zeroRetentionInaccuracy` (MOA).  
+3. **Lyddempere** — kun vekt for nå (kit +1×, weapon calm +2×). Ingen ekstra dB/POI-styr.  
+3b. **Bipods / Tofot** — kit-vekt + `weaponCalm` (dyrere/tyngre → høyere calm). Score10: `weaponCalm`, `deploySpeed`, `tracking`. Calm gjelder når tofot er ute.  
+4. **Stokker** — GRS / MDT / McMillan + budget. Spec: `moaDelta` (additivt; f.eks. −0.05 MOA; aldri 0).  
+5. **Rifler** — `averageBestAccuracyMoa` (kjent gulv med matchende ammo). Tune-tabell: `RIFLE_AVERAGE_BEST_MOA`. Per-spiller ammo-affinity randomizer (uflaks) — må testes på range.  
+6. **Ammunisjon** — Norma, Lapua, Sako, … + budget  
+7. **Camouflage** — fullsett + apparel-slots: buff, beanie, hansker, boots, **skistøvler** (påkrevd med ski). Score: birdSpot (lav=bra) + `terrainSpeed`/`stamina` (høy=bra; dyrere ≈ bedre).  
+8. **Ballistics** — Kestrel/ACE måler lokal **crosswind** (lav ±%). LRF med AB bruker **forecast** + typisk full-value windage (antar 90°) — større feil enn Kestrel. Garmin Foretrex ≈ forecast-path.  
+9. **Backpacks** — Score10: `carryComfort`, `quickRelease` (+ `opticsAccess`). Høyere = bedre.  
+10. **Chestrigs** — samme Score10-akse; `opticsAccess` er hovedknagg.  
+11. **Skis/Snowshoes** — Score10: `maxSpeed`, `flowPerKg` + `widthMm` (brede = bedre i dyp snø med tung sekk).  
+12. **Food** — Real turmat (krever MSR PocketRocket + gass for stamina), klar mat (brød/baguette/boller). Gassboks 230 g ≈ 10 turer.  
+13. **Misc kult kit** — futteraler, soft cases, termos, sittpute  
+
+**Butikksortering (alle kategorier):** pris ↑↓, vekt ↑↓.
+
+**Score10 (butikk-språk):** Alle spillbare kvalitetsfaktorer skal over tid bruke **1–10 der høyere alltid er bedre**. Rå fysikk (MOA, %, gram) kan leve internt; spilleren skal kunne søke «høy score» konsistent. Ingen nullfaktorer.
+
+**Budget-hylla er bevisst:** Jula / Biltema / Clas Ohlson / Magasinet dekker primærbehov tidlig. Premium er valg når konto og skill tillater det — ikke «unlock level 10 magically».
+
+**Sheriff / Lensmann (satire):** Velkommen + kølapp → meny (våpensøknad / selvinnsikt hjemmebrent / feil luke klamydia / kattesak). Våpensøknad: skjema → takk-valg → Digipost 45–55 uker → «50 uker»-ekspressdialog (4 valg) → gebyr **500 × 2^(betalte_lisenser)** (500 / 1000 / 2000 / 4000…) → **våpenlisens** GODKJENT (maks 8 lisenser). Lisens ≠ rifle: lisenser ligger ikke i inventory; Pike Pro krever ubrukt lisens for å kjøpe jaktrifle. Start: CZ 452 + 1 gift-lisens.
+
+---
+
+### Carry systems — faffe, nervøsitet og vekt
+
+Chestrig og backpack er ikke bare «inventory slots». De påvirker **tid** og **følt vekt**.
+
+#### CarrySpec (Score10 — høyere = bedre)
+
+| Felt | Betydning |
+|------|-----------|
+| `carryComfort` (1–10) | Høyere = raskere gange / mindre utmattelse under last |
+| `quickRelease` (1–10) | Høyere = kortere tid fra bærestilling til skuddklar |
+| `opticsAccess` (1–10) | Høyere = raskere LRF/kikkert-tilgang |
+
+Backpacks: comfort + QR er hovedknagger. Chestrigs: opticsAccess er kongen.  
+Uten pack/chestrig: defaults comfort 2 / QR 3 / optics 1.  
+Kombinasjon: **beste (høyeste) score** per akse vinner.  
+Engine: `carryToEngine()` → sekunder + weightPenaltyFactor.  
+Kode: `src/lib/carry/spec.ts`, `src/lib/shop/score.ts`.
+
+```
+effectiveCarryKg = rawKitKg * scoreToWeightPenaltyFactor(combined.carryComfort)
+rifleDeploySeconds = scoreToDeploySeconds(combined.quickRelease)
+```
+
+#### Score10-migrering (alle kategorier)
+
+Mål: spiller ser alltid «høy = bra». Planlagte butikk-scorer:
+
+| Kategori | Score10-knagger (utkast) |
+|----------|--------------------------|
+| Backpack / Chestrig | comfort, QR, opticsAccess ✅ |
+| Skis/Snowshoes | maxSpeed, flowPerKg (+ widthMm) ✅ |
+| Bipod / Tofot | weaponCalm, deploySpeed, tracking ✅ |
+| LRF | rangingAccuracy (fra ±%), ballisticCapability |
+| Scope | clickAccuracy, zeroRetention |
+| Stock | rigidity / accuracyGain |
+| Suppressor | calm (fra fremre masse), hush |
+| Rifle | averageBestAccuracyMoa → Score10 ✅ (+ ammo affinity randomizer) |
+| Camo | concealSnow, concealNoSnow (inverter birdSpot) |
+| Ballistics | readingAccuracy ✅ · measuresCrosswind · windErrorPercent |
+| Ammo | (precision skjult — evt. ikke Score10 i butikk) |
+| Misc | enduranceScore |
+
+Rå motorverdier beholdes der fysikk krever det; Score10 er UX-laget.
+
+#### Nervøsitets-utregning (fugl sitter vs. letter)
+
+Samme «trykk»-familie som dårlig kamo og mye bevegelse. Fuglen akkumulerer nervøsitet; over terskel → flush.
+
+```
+nervousness ≈
+    distancePressure(distance, dangerRadius)   // nærmere = høyere
+  + effectiveBirdSpotFactor * spotWeight       // snow vs no-snow camo factor
+  + timeInDangerZoneSec * timeWeight           // tid i faresonen
+  + faffeSeconds * faffeWeight                 // tid brukt på å faffe med glass/rifle
+  + movementNoise * …
+
+if nervousness >= flushThreshold → bird flies
+```
+
+**Faffe-sekunder** kommer typisk fra `carryToEngine()` (optics/rifle deploy) når spilleren faktisk tar fram kikkert eller rifle *mens* hen er i faresonen. Bra chestrig (høy `opticsAccess`) sparer observasjons-faffe; bra pack (høy `quickRelease`) sparer rifle-faffe.
+
+Kode (placeholder-formel): `src/lib/game/nervousness.ts`.
+
+---
+
+### Camouflage vs fuglesyn
+
+Fugler (orrhaner/tiur) har **ekstremt godt syn**. Kamuflasje gjør deg ikke usynlig — den reduserer hvor lett fuglen spotter menneskelig silhuett/kontrast.
+
+Hver kamuflasje har **to** bird-spot-faktorer. Jegere trenger typisk **både** snøkamo og ikke-snøkamo — det koster penger og tvinger prioritering.
+
+| Felt | Betydning |
+|------|-----------|
+| `birdSpotSnow` | Hvor lett fuglen spotter deg **i snø**. **Lav = bra.** |
+| `birdSpotNoSnow` | Hvor lett fuglen spotter deg **uten snø** (høstskog, barskog, lyng, …). **Lav = bra.** |
+| `bestTerrains` | Hvor mønsteret er ment å skinne (flavor + finjustering) |
+| `availableInShop` | `false` = finnes i spilldata, kan ikke kjøpes (f.eks. Norwegian Snow Camo) |
+
+**Engine-regel:** Bruk `birdSpotForConditions(camo, snowOnGround)` — ikke ett generisk tall. Snøkamo på bar mark / høstkamo på åpen snø skal være dyrt i nervøsitet.
+
+Eksempel (placeholders):
+
+| Kamo | Snow | No-snow |
+|------|------|---------|
+| Norwegian Snow (unobtainable) | 0.08 | 0.85 |
+| Finnish M05 Snow | 0.10 | 0.84 |
+| Vintage hvitt overtrekk | 0.18 | 0.88 |
+| Sitka Subalpine | 0.72 | 0.22 |
+| KUIU Verde | 0.74 | 0.24 |
+| Biltema Leaf | 0.78 | 0.42 |
+
+Kode: `src/lib/camo/spec.ts`.
+
+---
+
+### Observasjon, kikkert og «øyne»
+
+*(Utvides med art / assets.)*
+
+- Landskap som sett med øynene (stillbilde/lag), ikke full 3D-skog i MVP.
+- Fugler kan være synlige eller ikke (LOS, avstand, **kamuflasje / birdSpotFactor**, observasjonsmodus).
+- **Kikkert** = pan/zoom (crop + scale) av samme scene; synlige fugler i trær når logikk tillater.
+- LRF / værstasjon / scope påvirker hva spilleren *vet* (avstand, vind, hold), ikke magisk auto-hit.
+
+### Innskyting (range)
+
+- CBA-blink (én diamant) i kikkertvindu med vignette; generisk tynt kors (per-scope retikkel senere).
+- Blink-skala: `SCOPE_IMAGE_SCALE_PER_ZOOM` (apparent size ∝ optical zoom) — finjusteres for UX.
+- Piltaster sikter; wobble dempes av weapon calm (bipod ≈ 3×, can bidrar).
+- **F (hold):** fokus/pust — calm ×3 i 8 s, deretter fatigue (verre) til F slippes og trykkes på nytt.
+- **Space (hold):** avtrekk — skudd etter tilfeldig 0–1 s; slipp F eller Space før det = avbrutt.
+- `+` / `−` zoom mellom scope min–max (start max).
+- 5 skudd/serie → hull på blink → **Mål serie** = stillbilde av hele blinken med nummererte treff, bounding box, mean radius, POI-linje + gul stats-banner (group size MOA/mm, area B×H, mean radius, POI).
+- Ammo-affinity rulles per rifle×ammo ved første skudd og persisteres.
+- Knappene: Mål serie / Ny serie / Ferdig.
+
+### Jakt-etikk (scoring)
+
+Belønnes:
+
+- vital / clean kill
+- lav kjøttskade (ofte lav `damageFactor` *og* godt treffpunkt)
+- korrekt avstand/vind
+- lite unødig lidelse / ettersøk
+
+Straffes / koster:
+
+- body/wing uten oppfølging
+- høy meat-ruin uten grunn
+- bom som spooker område
+
+---
+
 ## 🗺️ Spillverdenen
 
 ### Kart og Terreng
@@ -48,35 +447,41 @@ Basert på terrengkategori → game-logikk bestemmer:
 - Må **teste våpenet** for å finne egenskaper
 - Må **finne riktig ammunisjon** gjennom testing
 
-#### Våpenattributter
+#### Våpenattributter (konsept — speiles i shop/rifle-katalog)
 ```typescript
 interface Weapon {
   name: string;
-  caliber: string; // f.eks. ".22 LR", "12ga"
-  baseAccuracy: number; // 0-100
-  weight: number; // kg
-  effectiveRange: number; // meter
-  recoil: number; // påvirker oppfølgingsskudd
-  cost: number; // pris i poeng
+  caliber: string; // f.eks. ".22 LR", "6,5 Creedmoor"
+  weightGrams: number; // tomt våpen
+  /** @internal Beste spredning våpenet kan bidra til (MOA), før ammo/skytter */
+  maxAchievableMoa: number;
+  effectiveRange: number; // meter (praktisk, ikke magisk)
+  recoil: number;
+  priceNok: number;
+  // thread, rail/picatinny, stock inlet-kompatibilitet, …
 }
 ```
 
-#### Ammunisjonstyper
+#### Ammunisjon (gjeldende modell)
 ```typescript
-interface Ammunition {
-  type: string; // "blyhagl", "stålhagl", "subsonic", etc.
-  accuracy: number; // modifikator
-  damage: number; // kjøttskade (lavere = bedre)
-  penetration: number; // for ulike fugletyper
-  cost: number; // pris per skudd
+type ProjectileType = "FMJ" | "OTM" | "SP";
+
+interface AmmoSpec {
+  caliber: string;
+  projectileType: ProjectileType;
+  v0: number;              // m/s
+  bc: number;
+  bcModel: "G1" | "G7";
+  damageFactor: number;    // kjøttødelegging 0–1; LAV ≠ dårlig
+  /** @internal aldri vis til spiller */
+  maxAchievableMoa: number;
 }
 ```
 
-#### Våpen + Ammunisjon = Treffsannsynlighet
-```
-baseTrefffSannsynlighet = weapon.baseAccuracy * ammo.accuracy * distance_modifier
-```
+Se **Realisme-kjernen** over for tolkning og engine-regler.
 
+#### Våpen + ammo + skytter = treff
+Ikke en enkel `accuracy * modifier`-formel. Se **Ballistikkmotor — hjørnestein**: full feilbudsjett (v0, vind, klikk, LRF, atmosfære, zero, POA) → miss-vektor i målplanet → vital/body/miss-geometri. Aldri loot-roll.
 ### 2. Skytesystem
 
 #### Spilleren MÅ:
@@ -121,14 +526,9 @@ interface Shot {
 - ✅ **Effektiv rute** (areal dekket vs tid) (+bonus)
 
 #### Poeng brukes til:
-- 🛒 Bedre våpen
-- 🛒 Bedre ammunisjon
-- 🛒 Utstyr:
-  - Avstandsmåler (laser rangefinder)
-  - Bedre kikkert
-  - Balistikk-computer
-  - Vær-stasjon
-  - Lettere utstyr (karbon-stock)
+- 🛒 Kontantkjøp i **Pike Pro Shop** (NOK — realistiske priser)
+- 🛒 Bedre våpen / ammo / glass / dempere / stokker / sekker / værstasjon
+- 🛒 Lettere utstyr (lavere bærevekt → bedre bevegelse)
 
 ### 4. Bevegelsessystem
 
@@ -140,21 +540,23 @@ Langsom bevegelse → Mindre område → Bedre observasjon
 
 #### Vekt-system
 ```typescript
-interface Player {
-  baseSpeed: number; // meter per tidsenhet
-  equipment: Equipment[];
-  totalWeight: number; // sum av alt utstyr
-  
-  // Effektiv hastighet
-  actualSpeed = baseSpeed * (1 - (totalWeight - 10) * 0.05);
+interface PlayerLoadout {
+  baseSpeed: number; // m per tidsenhet
+  inventory: { itemId: string; qty: number }[];
+  // totalCarryWeightKg = sum(item.weightGrams) / 1000  (+ evt. felt-last)
+  // actualSpeed = f(baseSpeed, totalCarryWeightKg, terrain, sneak|move|scan)
 }
 ```
 
-**Eksempel:**
-- Basis hastighet: 100 m/time
-- Lett rifle (3kg) + minimal utstyr = 5kg total → 125% hastighet
-- Tung rifle (5kg) + fullt utstyr = 15kg total → 75% hastighet
+Alt i butikken har `weightGrams`. Tomme tall er uakseptable — bruk realistiske verdier og juster i `weights.ts` / katalog.
 
+**Carry-effektivitet:** Equipped backpack/chestrig sin `carryComfort` (Score10) → `scoreToWeightPenaltyFactor` reduserer hvor mye kit-vekt straffer fart/støy (se Carry systems over).
+
+**Eksempel (retning, ikke endelig formel):**
+- Basis hastighet: 100 m/time
+- Lett rifle (~3 kg) + minimal utstyr ≈ raskere tempo
+- Tung precision-rig (~8–12 kg+) uten bra pack ≈ saktere, mer støy
+- Samme rig med Vorn + chestrig ≈ mer av vekten «bæres effektivt»
 #### Støy-system
 ```
 Hastighet → Støy-nivå → Spooking-radius
@@ -554,10 +956,12 @@ const LEVEL_1: GameLevel = {
 
 ---
 
-**Dokument opprettet:** 2026-07-19
-**Sist oppdatert:** 2026-07-19
-**Versjon:** 1.0
+**Dokument opprettet:** 2026-07-19  
+**Sist oppdatert:** 2026-07-19  
+**Versjon:** 1.1 — lagt til Realisme-kjernen (ammo/MOA/damageFactor/vekt/shop/town)
 
-**Kontakt:** Tomas Henningsen
-**Prosjekt:** Cold Bore Toppjakt - The Game
-**Relatert:** Aware hunting app
+**Kontakt:** Tomas Henningsen  
+**Prosjekt:** Cold Bore Toppjakt - The Game  
+**Relatert:** Aware hunting app  
+
+> **Vedlikehold:** Når du utvider tall (MOA, v0, BC, damageFactor, vekter, priser) eller nye produkter — oppdater både katalogkode *og* denne seksjonen hvis regelen endres. Tall kan leve i kode; **regler og intensjon** skal stå her.
