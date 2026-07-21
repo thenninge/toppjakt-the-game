@@ -45,6 +45,7 @@ import {
   type SheriffFinishResult,
 } from "@/components/town/SheriffOffice";
 import { PikeProShop } from "@/components/town/PikeProShop";
+import { CbCustoms } from "@/components/town/CbCustoms";
 import { MeatMarket } from "@/components/town/MeatMarket";
 import { RullesBar } from "@/components/town/RullesBar";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
@@ -589,6 +590,10 @@ export function IntroScreen() {
           />
         )}
 
+        {phase === "location" && location === "cb-customs" && (
+          <CbCustoms onLeave={backToTown} />
+        )}
+
         {phase === "location" && location === "meat-market" && (
           <MeatMarket
             playerName={stats.name}
@@ -722,6 +727,7 @@ export function IntroScreen() {
           location &&
           location !== "sheriff" &&
           location !== "pike-pro-shop" &&
+          location !== "cb-customs" &&
           location !== "home" &&
           location !== "meat-market" &&
           location !== "rulles" &&
