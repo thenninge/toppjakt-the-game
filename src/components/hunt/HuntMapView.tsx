@@ -77,7 +77,7 @@ import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareApp
 import { kitBirdSpotFactor } from "@/lib/camo/spec";
 import {
   flushMessage,
-  MAX_SPOOKS_BEFORE_GONE,
+  GONE_BIRD_MENTAL_HIT,
   placementsForBirdsInCell,
   resolveFlushesOnPath,
   spawnTiurOnMap,
@@ -102,6 +102,15 @@ import type { ShotPair } from "@/lib/aware/types";
 import { impactFromShot } from "@/lib/aware/ettersok";
 import type { CellPoint } from "@/lib/aware/cellGeometry";
 
+export type HuntHudStatus = {
+  clockMinutes: number;
+  isDark: boolean;
+  /** Remaining mental stamina 0–1 (1 = fresh). */
+  mentalStamina: number;
+  /** Remaining physical stamina 0–1 (1 = fresh). */
+  physicalStamina: number;
+};
+
 type HuntMapViewProps = {
   terrainId: string;
   kitItems: ShopItem[];
@@ -121,6 +130,7 @@ type HuntMapViewProps = {
   onBirdHarvested: (carcass: GameCarcass) => void;
   carcasses: GameCarcass[];
   onConsumeCarcasses: (carcassIds: string[]) => void;
+  onHudChange?: (hud: HuntHudStatus) => void;
   onLeave: () => void;
 };
 
@@ -199,8 +209,8 @@ function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
 
-/** Physical stamina left (100% = fresh, 0% = exhausted / «på null»). */
-function physicalStaminaLeft(fatigue: number): number {
+/** Stamina left (100% = fresh, 0% = exhausted / «på null»). */
+function staminaLeft(fatigue: number): number {
   return clampFatigue(1 - fatigue);
 }
 
@@ -219,6 +229,7 @@ export function HuntMapView({
   onBirdHarvested,
   carcasses,
   onConsumeCarcasses,
+  onHudChange,
   onLeave,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
@@ -462,6 +473,20 @@ export function HuntMapView({
       .filter((x) => x.qty > 0);
   }, [kitItems, inventory]);
 
+  useEffect(() => {
+    onHudChange?.({
+      clockMinutes,
+      isDark: isHuntDark(clockMinutes),
+      mentalStamina: staminaLeft(mentalFatigue),
+      physicalStamina: staminaLeft(physicalFatigue),
+    });
+  }, [
+    clockMinutes,
+    mentalFatigue,
+    physicalFatigue,
+    onHudChange,
+  ]);
+
   if (!terrain || !map) {
     return (
       <div className="hunt-map">
@@ -549,7 +574,7 @@ export function HuntMapView({
     }
     if (
       !hasHeadlamp &&
-      arrivalMin >= HUNT_DARK_MINUTES &&
+      isHuntDark(arrivalMin) &&
       !destAtParking
     ) {
       setLog(
@@ -609,6 +634,12 @@ export function HuntMapView({
 
     if (flush.events.length > 0) {
       pendingForcedRestRef.current = nextFatigue.physical >= 1;
+      const goneHits = flush.events.filter((e) => e.gone).length;
+      if (goneHits > 0) {
+        setMentalFatigue((m) =>
+          clampFatigue(m + goneHits * GONE_BIRD_MENTAL_HIT),
+        );
+      }
       setFlushQueue(flush.events);
       setLog(flushMessage(flush.events[0]!));
       return;
@@ -839,24 +870,21 @@ export function HuntMapView({
     );
   }
 
-  function onAwareBirdFlushed(nervousness: number) {
+  function onAwareBirdFlushed(_nervousness: number) {
     if (!awareSession || !map) return;
     const id = awareSession.bird.birdId;
     const result = spookBird(birds, id, map);
     setBirds(result.birds);
     setAwareSession(null);
-    if (result.event?.gone) {
-      setLog(
-        `Fuglen (${id}) letter for andre gang og er borte for godt ` +
-          `(nervøsitet ${nervousness.toFixed(2)}).`,
-      );
-    } else {
-      setLog(
-        `Fuglen (${id}) letter (spook ${(result.event?.spookCount ?? 1)}/${MAX_SPOOKS_BEFORE_GONE}) — ` +
-          `nervøsitet ${nervousness.toFixed(2)}. Én spook til og den er borte.`,
-      );
+    if (!result.event) {
+      setPanel("arrived");
+      return;
     }
-    setPanel("arrived");
+    if (result.event.gone) {
+      setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
+    }
+    setFlushQueue([result.event]);
+    setLog(flushMessage(result.event));
   }
 
   function abortShoot() {
@@ -1032,7 +1060,7 @@ export function HuntMapView({
       ateCount > 0
         ? `Du spiste ${ateCount} ${ateCount === 1 ? "fugl" : "fugler"} fra sekken — ikke noe å selge på Vebjørn i morgen.`
         : "Tom sekk — sulten natt under stjernene.";
-    const duration = minutesUntilDawn(clockMinutes);
+    const duration = Math.max(1, minutesUntilDawn(clockMinutes));
     setForcedCamp(null);
     setCampOvernight({
       imageSrc: CAMP_NIGHT_IMAGE,
@@ -1043,7 +1071,8 @@ export function HuntMapView({
 
   function finishCampOvernight() {
     if (!campOvernight) return;
-    advanceClockMinutes(campOvernight.durationMinutes);
+    const session = campOvernight;
+    advanceClockMinutes(session.durationMinutes);
     setPhysicalFatigue((p) => clampFatigue(p - 0.35));
     setMentalFatigue((m) => clampFatigue(m - 0.2));
     const mins = Math.floor(clockSecondsRef.current / 60);
@@ -1051,6 +1080,7 @@ export function HuntMapView({
       `Morgen — kl ${formatHuntClock(mins)}. Skuddlys igjen til 17:00. Kom deg til bilen før mørket.`,
     );
     setCampOvernight(null);
+    setForcedCamp(null);
     setPanel("arrived");
   }
 
@@ -1070,6 +1100,7 @@ export function HuntMapView({
         title="Flukt!"
         subtitle={flushMessage(flushCurrent)}
         durationMinutes={2}
+        holdMs={5000}
         clockMinutes={clockMinutes}
         onContinue={finishFlush}
         ariaLabel="Fugl fløy"
@@ -1182,6 +1213,8 @@ export function HuntMapView({
         ammoAffinities={ammoAffinities}
         zeroingProfiles={zeroingProfiles}
         musicEnabled={musicEnabled}
+        physicalFatigue={physicalFatigue}
+        mentalFatigue={mentalFatigue}
         onAffinitiesChange={onAffinitiesChange}
         onConsumeAmmo={onConsumeAmmo}
         onEnsureZeroing={onEnsureZeroing}
@@ -1270,8 +1303,8 @@ export function HuntMapView({
             {" · "}
             Rute {cellLabel(pos)} · Effort {hereEffort}/5
             {" · "}
-            Mental {pct(mentalFatigue)} · Fysisk{" "}
-            {pct(physicalStaminaLeft(physicalFatigue))}
+            Mental {pct(staminaLeft(mentalFatigue))} · Fysisk{" "}
+            {pct(staminaLeft(physicalFatigue))}
             {physicalFatigue >= 1 ? " (på null!)" : ""}
           </p>
           <p className="shop-row-note">{log}</p>
@@ -1420,7 +1453,7 @@ export function HuntMapView({
                     !canWalkAtNight(hasHeadlamp, clockMinutes) ||
                     (!hasHeadlamp &&
                       inspectTrip != null &&
-                      clockMinutes + inspectTrip.minutes >= HUNT_DARK_MINUTES &&
+                      isHuntDark(clockMinutes + inspectTrip.minutes) &&
                       selected != null &&
                       !isAtParking(selected, map))
                   }

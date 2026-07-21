@@ -10,6 +10,11 @@ type AtmospherePauseViewProps = {
   durationMinutes: number;
   /** Clock when the pause started. */
   clockMinutes: number;
+  /**
+   * Real-time hold before auto-continue.
+   * Defaults to a 3–5 s scale based on `durationMinutes`.
+   */
+  holdMs?: number;
   onContinue: () => void;
   skipLabel?: string;
   ariaLabel?: string;
@@ -27,6 +32,7 @@ export function AtmospherePauseView({
   subtitle,
   durationMinutes,
   clockMinutes,
+  holdMs,
   onContinue,
   skipLabel = "Hopp over",
   ariaLabel = "Pause",
@@ -47,7 +53,7 @@ export function AtmospherePauseView({
 
   useEffect(() => {
     doneRef.current = false;
-    const durationMs = animDurationMs(durationMinutes);
+    const durationMs = holdMs ?? animDurationMs(durationMinutes);
     const start = performance.now();
     let raf = 0;
 
@@ -67,7 +73,7 @@ export function AtmospherePauseView({
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clockMinutes, durationMinutes]);
+  }, [clockMinutes, durationMinutes, holdMs]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

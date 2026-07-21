@@ -91,6 +91,10 @@ type HuntShootViewProps = {
     ammoId: string,
   ) => ZeroingProfile;
   musicEnabled: boolean;
+  /** Hunt BODY fatigue 0–1 (1 = exhausted). Increases weapon shake. */
+  physicalFatigue?: number;
+  /** Hunt MIND fatigue 0–1 (1 = exhausted). Increases weapon shake. */
+  mentalFatigue?: number;
   onAbort: () => void;
   onShotResult: (result: HuntShotResult) => void;
 };
@@ -127,6 +131,8 @@ export function HuntShootView({
   onConsumeAmmo,
   onEnsureZeroing,
   musicEnabled,
+  physicalFatigue = 0,
+  mentalFatigue = 0,
   onAbort,
   onShotResult,
 }: HuntShootViewProps) {
@@ -208,6 +214,10 @@ export function HuntShootView({
   const firedRef = useRef(false);
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(1);
+  const fatigueRef = useRef({
+    physicalFatigue: physicalFatigue,
+    mentalFatigue: mentalFatigue,
+  });
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   const triggerRef = useRef<{
     held: boolean;
@@ -257,6 +267,9 @@ export function HuntShootView({
   useEffect(() => {
     weaponCalmRef.current = calmFactor;
   }, [calmFactor]);
+  useEffect(() => {
+    fatigueRef.current = { physicalFatigue, mentalFatigue };
+  }, [physicalFatigue, mentalFatigue]);
   useEffect(() => {
     aimRef.current = aimMm;
   }, [aimMm]);
@@ -535,6 +548,7 @@ export function HuntShootView({
         weaponCalmRef.current,
         focusRef.current,
         now,
+        fatigueRef.current,
       );
       const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;

@@ -28,6 +28,9 @@ export type HuntBird = {
 /** After this many spooks, the bird is gone from the hunt. */
 export const MAX_SPOOKS_BEFORE_GONE = 2;
 
+/** Mental fatigue gain when a bird is spooked away for good (0–1 scale). */
+export const GONE_BIRD_MENTAL_HIT = 0.2;
+
 /** Eyes can resolve birds closer than this; farther needs binos. */
 export const EYES_MAX_DISTANCE_M = 250;
 
@@ -404,13 +407,12 @@ export function flushMessage(event: FlushEvent): string {
   const species = event.species === "tiur" ? "Tiuren" : "Orrhanen";
   if (event.gone) {
     return (
-      `Du hører vingeslag — ${species.toLowerCase()} letter for andre gang ` +
-      `(${event.birdId}) og er borte for godt i denne jakta. ` +
-      `Retning ${event.direction}.`
+      "Fuglen er skremt igjen og borte for godt. " +
+      "Du innser at du er en dårlig jeger og burde håndtert situasjonen bedre."
     );
   }
   return (
-    `Du hører vingeslag og ser opp. ${species} (${event.birdId}) letter ` +
+    `Du hører vingeslag og ser opp. ${species} letter ` +
     `(spook ${event.spookCount}/${MAX_SPOOKS_BEFORE_GONE}) i retning ${event.direction}. ` +
     `Én spook til og den er borte.`
   );

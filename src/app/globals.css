@@ -200,6 +200,25 @@ body {
   font-size: 0.9rem;
 }
 
+@media (max-width: 520px) {
+  .intro-header-hunt {
+    column-gap: 0.35rem;
+  }
+
+  .intro-header-clock {
+    font-size: 0.78rem;
+  }
+
+  .hunt-stamina-bar-track {
+    width: 0.48rem;
+    height: 2.2rem;
+  }
+
+  .hunt-stamina-bar-label {
+    font-size: 0.45rem;
+  }
+}
+
 @keyframes intro-panel-in {
   from {
     opacity: 0;
@@ -216,6 +235,84 @@ body {
   margin-bottom: 1.75rem;
   border-bottom: 2px solid var(--panel-edge);
   padding-bottom: 1rem;
+}
+
+.intro-header-hunt {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 1fr) auto minmax(4.5rem, 1fr);
+  align-items: center;
+  column-gap: 0.65rem;
+  text-align: center;
+}
+
+.intro-header-brand {
+  justify-self: center;
+  text-align: center;
+}
+
+.intro-header-clock {
+  justify-self: start;
+  margin: 0;
+  font-family: var(--font-display), monospace;
+  font-size: clamp(0.85rem, 2.4vw, 1.05rem);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: 1px 1px 0 #1a120c;
+}
+
+.intro-header-side {
+  display: block;
+  min-width: 4.5rem;
+}
+
+.hunt-stamina-bars {
+  justify-self: end;
+  display: flex;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.hunt-stamina-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.22rem;
+}
+
+.hunt-stamina-bar-track {
+  position: relative;
+  width: 0.55rem;
+  height: 2.55rem;
+  border: 1px solid var(--canyon-sand);
+  background: #1a120c;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.hunt-stamina-bar-fill {
+  width: 100%;
+  background: linear-gradient(
+    180deg,
+    var(--canyon-sand) 0%,
+    #d4bc8a 100%
+  );
+  transition: height 220ms ease;
+}
+
+.hunt-stamina-bar-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  font-family: var(--font-display), monospace;
+  font-size: 0.52rem;
+  line-height: 1.05;
+  letter-spacing: 0.06em;
+  color: var(--canyon-dust);
+  text-transform: uppercase;
+  user-select: none;
 }
 
 .intro-title {
@@ -2712,6 +2809,7 @@ body {
   margin: 0.35rem 0 0.55rem;
   flex-shrink: 0;
   align-self: flex-start;
+  pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
 }
 

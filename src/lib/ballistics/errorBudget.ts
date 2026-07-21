@@ -11,7 +11,8 @@
  * ## Error budget (must all participate in long-range P(hit))
  *
  * 1. **POA** — Where the reticle actually was when the shot broke
- *    (shooter wobble, focus/breath, bipod/can calm, trigger timing).
+ *    (shooter wobble, focus/breath, bipod/can calm, BODY/MIND fatigue,
+ *    trigger timing).
  * 2. **Angular dispersion** — Gaussian rifle + ammo (+ stock, affinity).
  *    Catalog MOA = N σ (default 2). See `dispersion.ts`.
  * 3. **v0 variation** — Per-shot muzzle velocity SD → drop / TOF error

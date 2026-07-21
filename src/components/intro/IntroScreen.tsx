@@ -49,7 +49,9 @@ import { MeatMarket } from "@/components/town/MeatMarket";
 import { RullesBar } from "@/components/town/RullesBar";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
 import { ShootingRange } from "@/components/town/ShootingRange";
-import { HuntMapView } from "@/components/hunt/HuntMapView";
+import { HuntMapView, type HuntHudStatus } from "@/components/hunt/HuntMapView";
+import { HuntStaminaBars } from "@/components/hunt/HuntStaminaBars";
+import { formatHuntClock } from "@/lib/hunt/travel";
 import {
   addCarcassToStatsCounts,
   removeCarcassFromStatsCounts,
@@ -97,10 +99,14 @@ export function IntroScreen() {
   );
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [hunterStatusEnabled, setHunterStatusEnabled] = useState(true);
+  const [huntHud, setHuntHud] = useState<HuntHudStatus | null>(null);
   const statsRef = useRef(stats);
 
   const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
   const musicScene = musicSceneFromGame({ phase, location });
+  const onHuntHudChange = useCallback((hud: HuntHudStatus) => {
+    setHuntHud(hud);
+  }, []);
 
   useEffect(() => {
     statsRef.current = stats;
@@ -409,10 +415,12 @@ export function IntroScreen() {
   function startHunt() {
     if (!stats.selectedHuntingTerrainId) return;
     setLocation(null);
+    setHuntHud(null);
     setPhase("hunt");
   }
 
   function endHunt() {
+    setHuntHud(null);
     setLocation("home");
     setPhase("location");
   }
@@ -454,9 +462,36 @@ export function IntroScreen() {
       {showWeather ? <WeatherFrame weather={weather} /> : null}
 
       <main className="intro-panel">
-        <header className="intro-header">
-          <h1 className="intro-title">Cold Bore Toppjakt</h1>
-          <p className="intro-subtitle">The Game!</p>
+        <header
+          className={
+            phase === "hunt" ? "intro-header intro-header-hunt" : "intro-header"
+          }
+        >
+          {phase === "hunt" && huntHud ? (
+            <p
+              className={
+                huntHud.isDark
+                  ? "intro-header-clock hunt-clock is-dark"
+                  : "intro-header-clock hunt-clock"
+              }
+            >
+              Kl {formatHuntClock(huntHud.clockMinutes)}
+            </p>
+          ) : phase === "hunt" ? (
+            <span className="intro-header-side" aria-hidden />
+          ) : null}
+          <div className="intro-header-brand">
+            <h1 className="intro-title">Cold Bore Toppjakt</h1>
+            <p className="intro-subtitle">The Game!</p>
+          </div>
+          {phase === "hunt" && huntHud ? (
+            <HuntStaminaBars
+              physical={huntHud.physicalStamina}
+              mental={huntHud.mentalStamina}
+            />
+          ) : phase === "hunt" ? (
+            <span className="intro-header-side" aria-hidden />
+          ) : null}
         </header>
 
         {phase === "loading" && (
@@ -622,6 +657,7 @@ export function IntroScreen() {
             onBirdHarvested={harvestBird}
             carcasses={stats.carcasses}
             onConsumeCarcasses={consumeHuntCarcasses}
+            onHudChange={onHuntHudChange}
             onLeave={endHunt}
           />
         ) : null}

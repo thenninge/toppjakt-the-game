@@ -100,19 +100,31 @@ export function pathTravelMinutes(
 }
 
 export function formatHuntClock(absoluteMinutes: number): string {
-  const mins = ((absoluteMinutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const mins = huntTimeOfDayMinutes(absoluteMinutes);
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export function isHuntDark(absoluteMinutes: number): boolean {
-  return absoluteMinutes >= HUNT_DARK_MINUTES;
+/** Minutes since local 00:00 (0…1439), wrapping multi-day absolute clocks. */
+export function huntTimeOfDayMinutes(absoluteMinutes: number): number {
+  const day = 24 * 60;
+  return ((Math.floor(absoluteMinutes) % day) + day) % day;
 }
 
-/** Spotting / shooting only before skuddlys ends at 17:00. */
+/**
+ * Night for hunting: from 17:00 until 08:00 next morning.
+ * Uses time-of-day so overnight camping (absolute clock past 24h) still works.
+ */
+export function isHuntDark(absoluteMinutes: number): boolean {
+  const tod = huntTimeOfDayMinutes(absoluteMinutes);
+  return tod >= HUNT_DARK_MINUTES || tod < HUNT_DAY_START_MINUTES;
+}
+
+/** Spotting / shooting only during skuddlys (08:00–17:00). */
 export function canHuntAtTime(absoluteMinutes: number): boolean {
-  return absoluteMinutes < HUNT_DARK_MINUTES;
+  const tod = huntTimeOfDayMinutes(absoluteMinutes);
+  return tod >= HUNT_DAY_START_MINUTES && tod < HUNT_DARK_MINUTES;
 }
 
 /** Walking after 17:00 requires a headlamp in kit. */
@@ -134,8 +146,15 @@ export function isAtParking(
 /** Game minutes from current time until next 08:00. */
 export function minutesUntilDawn(absoluteMinutes: number): number {
   const day = 24 * 60;
-  if (absoluteMinutes < HUNT_DARK_MINUTES) return 0;
-  return day - absoluteMinutes + HUNT_DAY_START_MINUTES;
+  const tod = huntTimeOfDayMinutes(absoluteMinutes);
+  // Already in skuddlys window.
+  if (tod >= HUNT_DAY_START_MINUTES && tod < HUNT_DARK_MINUTES) return 0;
+  // Evening / night after 17:00 → remainder of day + morning to 08:00.
+  if (tod >= HUNT_DARK_MINUTES) {
+    return day - tod + HUNT_DAY_START_MINUTES;
+  }
+  // After midnight, before 08:00.
+  return HUNT_DAY_START_MINUTES - tod;
 }
 
 /** Stranded in the field after dark without a headlamp. */

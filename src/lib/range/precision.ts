@@ -296,6 +296,43 @@ export const FOCUS_FATIGUE_CALM_MULT = 0.65;
 /** Space held → shot fires after uniform random delay in [0, this] ms. */
 export const TRIGGER_DELAY_MAX_MS = 1000;
 
+/**
+ * How hard physical fatigue (BODY empty → 1) cuts hold steadiness.
+ * At 1.0 physical fatigue, calm is multiplied by (1 − this).
+ */
+export const PHYSICAL_FATIGUE_CALM_PENALTY = 0.55;
+/**
+ * How hard mental fatigue (MIND empty → 1) cuts hold steadiness.
+ * At 1.0 mental fatigue, calm is multiplied by (1 − this).
+ */
+export const MENTAL_FATIGUE_CALM_PENALTY = 0.4;
+/** Floor so wobble never explodes if both bars are empty. */
+export const FATIGUE_CALM_FLOOR = 0.25;
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
+export type ShooterFatigueInput = {
+  /** 0 = fresh BODY, 1 = exhausted. */
+  physicalFatigue?: number;
+  /** 0 = fresh MIND, 1 = exhausted. */
+  mentalFatigue?: number;
+};
+
+/**
+ * Calm multiplier from BODY/MIND fatigue (higher fatigue → lower calm → more shake).
+ * Fresh hunter → 1. Both bars empty → ≈ {@link FATIGUE_CALM_FLOOR}.
+ */
+export function fatigueCalmFactor(fatigue: ShooterFatigueInput = {}): number {
+  const physical = clamp01(fatigue.physicalFatigue ?? 0);
+  const mental = clamp01(fatigue.mentalFatigue ?? 0);
+  const physicalMult = 1 - physical * PHYSICAL_FATIGUE_CALM_PENALTY;
+  const mentalMult = 1 - mental * MENTAL_FATIGUE_CALM_PENALTY;
+  return Math.max(FATIGUE_CALM_FLOOR, physicalMult * mentalMult);
+}
+
 export function wobbleAmplitudeMm(
   calmFactor: number,
   distanceM: number = RANGE_DISTANCE_M,
@@ -304,16 +341,23 @@ export function wobbleAmplitudeMm(
   return at100 * (distanceM / RANGE_DISTANCE_M);
 }
 
-/** Effective calm including breath/focus state. */
+/** Effective calm including breath/focus and optional BODY/MIND fatigue. */
 export function effectiveCalmWithFocus(
   weaponCalm: number,
   focus: { held: boolean; startedAtMs: number },
   nowMs: number,
+  fatigue?: ShooterFatigueInput,
 ): number {
-  if (!focus.held) return weaponCalm;
-  const elapsed = nowMs - focus.startedAtMs;
-  if (elapsed < FOCUS_HOLD_MS) return weaponCalm * FOCUS_CALM_MULT;
-  return weaponCalm * FOCUS_FATIGUE_CALM_MULT;
+  let calm = weaponCalm;
+  if (focus.held) {
+    const elapsed = nowMs - focus.startedAtMs;
+    calm *=
+      elapsed < FOCUS_HOLD_MS ? FOCUS_CALM_MULT : FOCUS_FATIGUE_CALM_MULT;
+  }
+  if (fatigue) {
+    calm *= fatigueCalmFactor(fatigue);
+  }
+  return calm;
 }
 
 export type FocusPhase = "idle" | "focused" | "fatigued";
