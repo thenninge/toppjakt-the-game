@@ -151,11 +151,69 @@ export function generateFleeObservation(
   };
 }
 
+function absAngleDiffDeg(a: number, b: number): number {
+  const d = Math.abs(normalizeDeg(a) - normalizeDeg(b));
+  return d > 180 ? 360 - d : d;
+}
+
 /**
- * More track points near the impact → better odds.
- * Triggercam / Camcorder improve baseline (better knowledge of where to look).
- * Instant/vital kills still need tree recovery — much easier than wounded search.
- * Failed previous attempts slightly lower chance (bird may have moved / scent cold).
+ * How well the current draft track covers the true land / tree point.
+ * Gear (Triggercam / Camcorder) only helps via the flee *cue* — not a flat
+ * find bonus. Wrong-direction tracks must stay unlikely.
+ */
+function trackCoverageVsImpact(pair: ShotPair): {
+  minDistM: number;
+  meanDistM: number;
+  bearingErrorDeg: number | null;
+  pointsNearM: number;
+} {
+  const impact = pair.impact;
+  const points = pair.trackPoints;
+  if (points.length === 0) {
+    return {
+      minDistM: 999,
+      meanDistM: 999,
+      bearingErrorDeg: null,
+      pointsNearM: 0,
+    };
+  }
+
+  let minDistM = Infinity;
+  let sumM = 0;
+  let near = 0;
+  let cx = 0;
+  let cy = 0;
+  for (const p of points) {
+    const d = distanceMBetween(p, impact);
+    minDistM = Math.min(minDistM, d);
+    sumM += d;
+    if (d < 40) near += 1;
+    cx += p.x;
+    cy += p.y;
+  }
+  const n = points.length;
+  cx /= n;
+  cy /= n;
+
+  const trueBearing = bearingDegFromTo(pair.stand, impact);
+  const trackBearing = bearingDegFromTo(pair.stand, { x: cx, y: cy });
+  const bearingErrorDeg = absAngleDiffDeg(trueBearing, trackBearing);
+
+  return {
+    minDistM,
+    meanDistM: sumM / n,
+    bearingErrorDeg,
+    pointsNearM: near,
+  };
+}
+
+/**
+ * Find chance from track placement vs true land / tree.
+ *
+ * Wounded ettersøk: Triggercam / Camcorder improve the *direction cue* only.
+ * Tracks must still be in the right corridor — but bands are wide enough that
+ * following a good camcorder cue (with its inherent noise) usually works.
+ * Instant/vital kills still need tree recovery — easier than wounded search.
  */
 export function estimateEttersokFind(
   pair: ShotPair,
@@ -166,47 +224,102 @@ export function estimateEttersokFind(
   const n = pair.trackPoints.length;
   const cue = pair.fleeObservation;
   const attempts = pair.ettersokAttempts ?? 0;
-  let chance = isKill ? 0.55 : 0.22;
-  if (n >= 1) chance += isKill ? 0.25 : 0.18;
-  if (n >= 3) chance += isKill ? 0.12 : 0.2;
-  if (n >= 5) chance += isKill ? 0.05 : 0.14;
+  const cover = trackCoverageVsImpact(pair);
 
-  if (n > 0) {
+  /** How well the draft track matches the player's observed cue (not truth). */
+  let cueAlign: { distM: number; bearingErrorDeg: number } | null = null;
+  if (cue && n > 0) {
     const last = pair.trackPoints[n - 1]!;
-    const dx = last.x - pair.impact.x;
-    const dy = last.y - pair.impact.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 8) chance += isKill ? 0.15 : 0.22;
-    else if (dist < 18) chance += isKill ? 0.08 : 0.12;
-    else if (dist > 35) chance -= isKill ? 0.05 : 0.1;
-  } else if (!isKill) {
-    chance -= 0.08; // søk uten spor er svakt
+    const cueDistM = cue.observedLandDistanceM;
+    const trackBearing = bearingDegFromTo(pair.stand, last);
+    const bearingErrorDeg = absAngleDiffDeg(
+      cue.observedBearingDeg,
+      trackBearing,
+    );
+    let distM = 0;
+    if (cueDistM != null) {
+      const along = distanceMBetween(pair.stand, last);
+      distM = Math.abs(along - cueDistM);
+    }
+    cueAlign = { distM, bearingErrorDeg };
   }
 
-  if (pair.resultKind === "ettersok") {
-    if (cue?.hasCamcorder) chance += 0.28;
-    else if (cue?.hasTriggercam) chance += 0.18;
+  let chance: number;
+  let missHint: string;
+
+  if (isKill) {
+    chance = 0.55;
+    if (n >= 1) chance += 0.25;
+    if (n >= 3) chance += 0.12;
+    if (n >= 5) chance += 0.05;
+    if (n > 0) {
+      if (cover.minDistM < 25) chance += 0.15;
+      else if (cover.minDistM < 50) chance += 0.08;
+      else if (cover.minDistM > 100) chance -= 0.12;
+    }
+    missHint =
+      "Feil tre / du mistet oversikten — legg nye spor og prøv igjen.";
+  } else {
+    chance = n === 0 ? 0.05 : 0.1;
+
+    // Wide enough that a camcorder cue (±~20–40 m) still lands in a good band.
+    if (cover.minDistM < 20) chance += 0.55;
+    else if (cover.minDistM < 40) chance += 0.42;
+    else if (cover.minDistM < 65) chance += 0.28;
+    else if (cover.minDistM < 95) chance += 0.12;
+    else if (cover.minDistM < 130) chance += 0.02;
+    else chance -= 0.04;
+
+    chance += Math.min(0.2, cover.pointsNearM * 0.05);
+
+    if (cover.bearingErrorDeg != null) {
+      if (cover.bearingErrorDeg > 110) chance *= 0.22;
+      else if (cover.bearingErrorDeg > 70) chance *= 0.45;
+      else if (cover.bearingErrorDeg > 40) chance *= 0.72;
+      else if (cover.bearingErrorDeg < 22) chance += 0.1;
+    }
+
+    if (n >= 2 && cover.meanDistM > 120) chance *= 0.55;
+
+    // Reward actually following the gear cue (direction ± distance).
+    if (cueAlign && cue) {
+      if (cueAlign.bearingErrorDeg < 20) chance += 0.08;
+      else if (cueAlign.bearingErrorDeg < 35) chance += 0.04;
+      if (cue.observedLandDistanceM != null) {
+        if (cueAlign.distM < 25) chance += 0.1;
+        else if (cueAlign.distM < 45) chance += 0.05;
+      }
+      if (cue.hasCamcorder) chance += 0.04;
+      else if (cue.hasTriggercam) chance += 0.02;
+    }
+
+    if (cover.minDistM > 100 || (cover.bearingErrorDeg ?? 0) > 70) {
+      missHint =
+        "Sporene ligger feil vei i forhold til der fuglen dro — følg fluktretningen fra skuddplassen og legg et nytt spor der.";
+    } else if (n < 2) {
+      missHint =
+        "For få søkespor i området — legg flere punkter langs fluktretningen og prøv igjen.";
+    } else {
+      missHint =
+        "Nær, men ikke treff — finjuster sporet rundt der du tror den landet.";
+    }
   }
 
-  if (attempts >= 1) chance -= 0.04 * Math.min(4, attempts);
+  if (attempts >= 1) chance -= 0.025 * Math.min(4, attempts);
 
-  chance = Math.max(0.05, Math.min(0.95, chance));
+  chance = Math.max(0.03, Math.min(0.93, chance));
   const found = random() < chance;
   const reason = found
     ? isKill
       ? n === 0
         ? "Du finner treet og plukker fuglen."
         : "Skuddparet leder deg til riktig tre."
-      : n === 0
-        ? "Heldig — du snubler over fuglen nær skuddplassen."
+      : cover.minDistM < 50
+        ? "Søkesporene traff området der fuglen landet."
         : cue?.hasCamcorder || cue?.hasTriggercam
-          ? "Opptaket + søkesporene leder deg frem til fuglen."
-          : "Søkesporene leder deg frem til fuglen."
-    : isKill
-      ? "Feil tre / du mistet oversikten — legg nye spor og prøv igjen."
-      : n < 2
-        ? "For få søkespor i retningen den fløy — legg flere punkter i et nytt spor og prøv igjen."
-        : "Du søkte feil område. Det søkesporet ligger på kartet — legg et nytt spor et annet sted.";
+          ? "Du fant den — sporene fulgte fluktretningen godt nok."
+          : "Heldig — du snubler over fuglen nær søkesporet."
+    : missHint;
 
   return { findChance: chance, found, reason };
 }

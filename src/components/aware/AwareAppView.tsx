@@ -51,7 +51,8 @@ import {
   type HuntMapAsset,
 } from "@/lib/hunt/maps";
 import {
-  ETTERSOK_SEARCH_MINUTES,
+  ETTERSOK_MINUTES_PER_TRACK_POINT,
+  ettersokMinutesForTrackPoints,
   formatHuntClock,
 } from "@/lib/hunt/travel";
 import {
@@ -303,7 +304,7 @@ export function AwareAppView({
     }
     const pair = shotPairs.find((p) => p.id === focusPairId);
     if (pair?.resultKind === "ettersok" && pair.fleeObservation) {
-      return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet, deretter Ettersøk (+${ETTERSOK_SEARCH_MINUTES} min).`;
+      return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt), deretter utfør ettersøk.`;
     }
     if (pair?.fleeObservation?.text) return pair.fleeObservation.text;
     return "Track — skuddpar: stand → stiplet linje → tre (+ ~20 m søkeradius). Finn riktig tre.";
@@ -601,7 +602,7 @@ export function AwareAppView({
     );
     onShotPairsChange(next);
     setStatus(
-      `Søkespor #${activePair.trackPoints.length + 1} markert — trykk «Ettersøk» når sporet er klart. Tidligere søk ligger igjen på kartet.`,
+      `Søkespor #${activePair.trackPoints.length + 1} markert (${ettersokMinutesForTrackPoints(activePair.trackPoints.length + 1)} min) — trykk «Utfør ettersøk» når sporet er klart.`,
     );
   }
 
@@ -624,7 +625,15 @@ export function AwareAppView({
 
   function runEttersokSearch() {
     if (!activePair || activePair.found === true) return;
-    onGameSeconds(ETTERSOK_SEARCH_MINUTES * 60);
+    const trackN = activePair.trackPoints.length;
+    if (trackN < 1) {
+      setStatus(
+        `Legg minst ett søkespor først (${ETTERSOK_MINUTES_PER_TRACK_POINT} min per punkt).`,
+      );
+      return;
+    }
+    const searchMin = ettersokMinutesForTrackPoints(trackN);
+    onGameSeconds(searchMin * 60);
     const attemptNo = (activePair.ettersokAttempts ?? 0) + 1;
     const est = estimateEttersokFind(activePair);
     const sweep = {
@@ -653,8 +662,8 @@ export function AwareAppView({
     onShotPairsChange(next);
     setStatus(
       est.found
-        ? `FUNNET — ettersøk #${attemptNo} (+${ETTERSOK_SEARCH_MINUTES} min). ${est.reason}`
-        : `IKKE FUNNET — ettersøk #${attemptNo} (+${ETTERSOK_SEARCH_MINUTES} min). ${est.reason} Søkespor #${attemptNo} ligger på kartet — legg et nytt spor i et annet område.`,
+        ? `FUNNET — ettersøk #${attemptNo} (+${searchMin} min). ${est.reason}`
+        : `IKKE FUNNET — ettersøk #${attemptNo} (+${searchMin} min). ${est.reason} Søkespor #${attemptNo} ligger på kartet — legg et nytt spor i et annet område.`,
     );
     if (est.found) onPairFound?.(updated);
   }
@@ -1153,8 +1162,8 @@ export function AwareAppView({
                       activePair.found !== true ? (
                         <p className="aware-ettersok-hint">
                           Forrige søkespor ligger på kartet. Legg et nytt spor i
-                          et annet område og kjør ettersøk (+
-                          {ETTERSOK_SEARCH_MINUTES} min).
+                          fluktretningen — {ETTERSOK_MINUTES_PER_TRACK_POINT}{" "}
+                          min per punkt.
                         </p>
                       ) : null}
                     </div>
@@ -1182,16 +1191,19 @@ export function AwareAppView({
                       <ol className="aware-ettersok-steps">
                         <li>
                           Trykk på kartet og legg et <strong>søkespor</strong>{" "}
-                          i fluktretningen / rundt skuddplassen.
+                          i fluktretningen (
+                          {ETTERSOK_MINUTES_PER_TRACK_POINT} min per punkt).
                         </li>
                         <li>
-                          Kjør <strong>Ettersøk</strong> (
-                          {ETTERSOK_SEARCH_MINUTES} min). Sporene blir liggende
-                          på kartet så du ser hvor du allerede har søkt.
+                          Kjør <strong>Ettersøk</strong> — tiden summeres fra
+                          sporpunktene. Sporene blir liggende på kartet.
                         </li>
                       </ol>
                       <p className="shop-row-note">
                         Nytt spor: {activePair.trackPoints.length}
+                        {activePair.trackPoints.length > 0
+                          ? ` · ${ettersokMinutesForTrackPoints(activePair.trackPoints.length)} min`
+                          : ""}
                         {(activePair.searchedTracks?.length ?? 0) > 0
                           ? ` · lagret på kart: ${activePair.searchedTracks!.length}`
                           : ""}
@@ -1215,10 +1227,17 @@ export function AwareAppView({
                         <button
                           type="button"
                           className="intro-button"
-                          disabled={activePair.found === true}
+                          disabled={
+                            activePair.found === true ||
+                            activePair.trackPoints.length === 0
+                          }
                           onClick={runEttersokSearch}
                         >
-                          Ettersøk (+{ETTERSOK_SEARCH_MINUTES} min)
+                          Utfør ettersøk (
+                          {ettersokMinutesForTrackPoints(
+                            activePair.trackPoints.length,
+                          )}{" "}
+                          min)
                         </button>
                       </div>
                     </>

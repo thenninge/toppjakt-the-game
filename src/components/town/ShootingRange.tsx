@@ -48,6 +48,7 @@ import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
+import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
@@ -182,6 +183,13 @@ export function ShootingRange({
   }>({ pending: false, targetPct: 0 });
   const { fillRef: triggerFillRef, paintTriggerProgress, resetTriggerProgress } =
     useTriggerBarPaint();
+  const {
+    focusFillRef,
+    focusBarRef,
+    paintFocusProgress,
+    setFocusBarFatigued,
+    resetFocusProgress,
+  } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const bullseyeOffRef = useRef({ x: 0, y: 0 });
@@ -403,6 +411,8 @@ export function ShootingRange({
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
+    paintFocusProgress(1);
+    setFocusBarFatigued(false);
     setTriggerUi({
       pending: false,
       targetPct: markMs / TRIGGER_BAR_MS,
@@ -418,6 +428,7 @@ export function ShootingRange({
     }
     triggerMarkRef.current = null;
     resetTriggerProgress();
+    resetFocusProgress();
     setTriggerUi({ pending: false, targetPct: 0 });
   }
 
@@ -602,11 +613,25 @@ export function ShootingRange({
         }
       }
 
+      const fPhase = focusPhase(focusRef.current, now);
+      if (fPhase === "focused") {
+        paintFocusProgress(
+          focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+        );
+        setFocusBarFatigued(false);
+      } else if (fPhase === "fatigued") {
+        paintFocusProgress(1);
+        setFocusBarFatigued(true);
+      } else {
+        paintFocusProgress(0);
+        setFocusBarFatigued(false);
+      }
+
       uiAccum += dt;
       if (uiAccum > 0.05) {
         uiAccum = 0;
         setFocusUi({
-          phase: focusPhase(focusRef.current, now),
+          phase: fPhase,
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
       }
@@ -1032,100 +1057,94 @@ export function ShootingRange({
         />
       ) : (
         <div className="scope-stage" tabIndex={0}>
-          <div className="scope-optic">
-            <div
-              className={
-                recoilActive
-                  ? "scope-viewport is-recoiling"
-                  : "scope-viewport"
-              }
-            >
-                <div ref={scopeWorldRef} className="scope-world">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="scope-target"
-                  src={IMG_SRC}
-                  alt="CBA blink"
-                  draggable={false}
-                  width={IMG_NATURAL_W}
-                  height={IMG_NATURAL_H}
-                />
-                {shots.map((s, i) => {
-                  const hx = bullseyeOff.x + mmToPx(s.xMm, IMG_NATURAL_W);
-                  const hy = bullseyeOff.y + mmToPx(s.yMm, IMG_NATURAL_W);
-                  const d = mmToPx(s.diameterMm, IMG_NATURAL_W);
-                  return (
-                    <span
-                      key={`hole-${i}`}
-                      className="bullet-hole"
-                      style={{
-                        left: `calc(50% + ${hx}px)`,
-                        top: `calc(50% + ${hy}px)`,
-                        width: `${d}px`,
-                        height: `${d}px`,
-                        marginLeft: `${-d / 2}px`,
-                        marginTop: `${-d / 2}px`,
-                      }}
-                      title={`#${i + 1} · Ø ${s.diameterMm.toFixed(1)} mm`}
-                    />
-                  );
-                })}
-              </div>
-              <ScopeReticle
-                scope={scope.scope}
-                zoom={zoom}
-                imgScale={zoomScale}
-              />
-              <div className="scope-vignette" aria-hidden />
-            </div>
-            <ScopeZoomRing
-              scope={scope.scope}
-              zoom={zoom}
-              onChange={(z) => setZoom(z)}
-            />
-          </div>
-
-          <div className="range-timer-stack">
-            <div className="range-timer-row">
+          <div className="scope-stage-optic-row">
+            <div className="range-side-rail range-side-rail--focus">
               <span
                 className={
                   focusUi.phase === "focused"
-                    ? "range-focus is-focused"
+                    ? "range-side-rail-label is-focused"
                     : focusUi.phase === "fatigued"
-                      ? "range-focus is-fatigued"
-                      : "range-focus"
+                      ? "range-side-rail-label is-fatigued"
+                      : "range-side-rail-label"
                 }
               >
                 {focusLabel}
               </span>
               <div
+                ref={focusBarRef}
                 className={
                   focusUi.phase === "fatigued"
                     ? "range-focus-bar is-fatigued"
                     : "range-focus-bar"
                 }
                 aria-hidden
-                style={{
-                  ["--focus-pct" as string]:
-                    focusUi.phase === "focused"
-                      ? `${(focusUi.remainingMs / FOCUS_HOLD_MS) * 100}%`
-                      : focusUi.phase === "fatigued"
-                        ? "100%"
-                        : "0%",
-                }}
+              >
+                <div ref={focusFillRef} className="range-focus-fill" />
+              </div>
+            </div>
+
+            <div className="scope-optic">
+              <div
+                className={
+                  recoilActive
+                    ? "scope-viewport is-recoiling"
+                    : "scope-viewport"
+                }
+              >
+                <div ref={scopeWorldRef} className="scope-world">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="scope-target"
+                    src={IMG_SRC}
+                    alt="CBA blink"
+                    draggable={false}
+                    width={IMG_NATURAL_W}
+                    height={IMG_NATURAL_H}
+                  />
+                  {shots.map((s, i) => {
+                    const hx = bullseyeOff.x + mmToPx(s.xMm, IMG_NATURAL_W);
+                    const hy = bullseyeOff.y + mmToPx(s.yMm, IMG_NATURAL_W);
+                    const d = mmToPx(s.diameterMm, IMG_NATURAL_W);
+                    return (
+                      <span
+                        key={`hole-${i}`}
+                        className="bullet-hole"
+                        style={{
+                          left: `calc(50% + ${hx}px)`,
+                          top: `calc(50% + ${hy}px)`,
+                          width: `${d}px`,
+                          height: `${d}px`,
+                          marginLeft: `${-d / 2}px`,
+                          marginTop: `${-d / 2}px`,
+                        }}
+                        title={`#${i + 1} · Ø ${s.diameterMm.toFixed(1)} mm`}
+                      />
+                    );
+                  })}
+                </div>
+                <ScopeReticle
+                  scope={scope.scope}
+                  zoom={zoom}
+                  imgScale={zoomScale}
+                />
+                <div className="scope-vignette" aria-hidden />
+              </div>
+              <ScopeZoomRing
+                scope={scope.scope}
+                zoom={zoom}
+                onChange={(z) => setZoom(z)}
               />
             </div>
-            <div className="range-timer-row">
+
+            <div className="range-side-rail range-side-rail--trigger">
               <span
                 className={
                   triggerUi.pending
-                    ? "range-focus is-trigger"
-                    : "range-focus"
+                    ? "range-side-rail-label is-trigger"
+                    : "range-side-rail-label"
                 }
               >
-                {triggerUi.pending
-                  ? "Avtrekk… slipp på merket"
-                  : "Avtrekk (hold/slipp Space)"}
+                {triggerUi.pending ? "Avtrekk…" : "Avtrekk"}
               </span>
               <div
                 className="range-trigger-bar"

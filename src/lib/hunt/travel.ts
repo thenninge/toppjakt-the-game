@@ -15,8 +15,14 @@ export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
 export const SPOT_ACTION_MINUTES = 5;
 export const EAT_ACTION_MINUTES = 5;
 export const REST_ACTION_MINUTES = 10;
-/** One ettersøk search sweep around the shot / land area. */
-export const ETTERSOK_SEARCH_MINUTES = 30;
+/** Minutes of search time per søkespor point on the Aware map. */
+export const ETTERSOK_MINUTES_PER_TRACK_POINT = 5;
+
+/** Total ettersøk duration from the current draft track. */
+export function ettersokMinutesForTrackPoints(pointCount: number): number {
+  const n = Math.max(0, Math.floor(pointCount));
+  return n * ETTERSOK_MINUTES_PER_TRACK_POINT;
+}
 
 /**
  * Trøndelag (midtnorge1): rows A–F (bottom→top), cols 1–7 (left→right).

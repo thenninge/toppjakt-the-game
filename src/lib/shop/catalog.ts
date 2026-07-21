@@ -344,10 +344,12 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zero Compromise",
     name: "ZCO 5-27x56 MCT",
     priceNok: 54990,
-    note: "ZCO527-familien / MCT-retikkel.",
+    note: "FFP · MPCT mil-retikkel · 0.1 mil klikk.",
     scope: {
       minZoom: 5,
       maxZoom: 27,
+      focalPlane: "FFP",
+      reticleId: "zco-527-mpct",
       clickUnit: "MRAD",
       clickAccuracyFactor: 0.995,
       zeroRetentionInaccuracy: 0.05,

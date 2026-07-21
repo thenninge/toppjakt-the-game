@@ -37,10 +37,11 @@ import {
   type EffortScore,
 } from "@/lib/hunt/travel";
 import {
-  CAMP_NIGHT_IMAGE,
   FORCED_REST_MINUTES,
   isBakedSpotImage,
   pickEatImage,
+  pickFireImage,
+  pickFunnImage,
   pickSpotImage,
   pickWalkImage,
   REST_TIRED_IMAGE,
@@ -82,6 +83,7 @@ import { HuntShootView } from "@/components/hunt/HuntShootView";
 import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
+import { ShotVideoView } from "@/components/hunt/ShotVideoView";
 import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
 import { kitBirdSpotFactor } from "@/lib/camo/spec";
 import {
@@ -93,6 +95,7 @@ import {
 import {
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
+  pickFluktImage,
   placementsForBirdsInCell,
   resolveFlushesOnPath,
   spawnTiurOnMap,
@@ -107,6 +110,7 @@ import {
   TRIGGERCAM_ITEM_ID,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
+import { pickShotVideoForResult } from "@/lib/hunt/vids";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
 import { DEFAULT_BINOS_MAGNIFICATION } from "@/lib/hunt/images";
 import {
@@ -252,6 +256,13 @@ function staminaLeft(fatigue: number): number {
   return clampFatigue(1 - fatigue);
 }
 
+/** Keep 70% of current mental stamina (= 30% setback). */
+const ETTERSOK_ABANDON_MENTAL_KEEP = 0.7;
+
+function birdNameNb(species: string | undefined): string {
+  return species === "orrhane" ? "orrhane" : "tiur";
+}
+
 export function HuntMapView({
   terrainId,
   kitItems,
@@ -295,6 +306,22 @@ export function HuntMapView({
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
   /** Hit fasit overlay after finding a dead bird (with or without Triggercam). */
   const [findHitAar, setFindHitAar] = useState<ShotPair | null>(null);
+  /** Ettersøk find reveal (funn image) before optional AAR. */
+  const [findReveal, setFindReveal] = useState<{
+    imageSrc: string;
+    pair: ShotPair;
+  } | null>(null);
+  /** Abandon ettersøk — full-screen pause (same pattern as flukt). */
+  const [abandonReveal, setAbandonReveal] = useState<{
+    imageSrc: string;
+    subtitle: string;
+  } | null>(null);
+  /** Post-shot kill / hit / miss clip before Aware or map. */
+  const [shotVideo, setShotVideo] = useState<{
+    videoSrc: string;
+    title: string;
+    subtitle?: string;
+  } | null>(null);
   const [eatSession, setEatSession] = useState<EatSession | null>(null);
   const [forcedRest, setForcedRest] = useState<ForcedRestSession | null>(null);
   const [forcedCamp, setForcedCamp] = useState<ForcedCampPrompt | null>(null);
@@ -484,7 +511,7 @@ export function HuntMapView({
     setShootSession(null);
     setSelected(null);
     setPanel("arrived");
-    setForcedCamp({ imageSrc: CAMP_NIGHT_IMAGE });
+    setForcedCamp({ imageSrc: pickFireImage() });
     setLog(reason);
   }
 
@@ -878,8 +905,39 @@ export function HuntMapView({
   }
 
   function abortAware() {
+    if (awareSession?.ettersokPairId && !awareSession.recoveryOnly) {
+      abandonEttersok(awareSession.ettersokPairId);
+      return;
+    }
     setAwareSession(null);
     setLog("Du lukker Aware. Fuglen er fortsatt der.");
+    setPanel("arrived");
+  }
+
+  /**
+   * Give up wounded ettersøk without a find — bird lost, mental stamina −30%.
+   * Shows a dedicated pause view (like flukt) so the consequence is not buried in the log.
+   */
+  function abandonEttersok(pairId: string) {
+    const pair = shotPairs.find((p) => p.id === pairId);
+    if (pair && pair.found !== true) {
+      setShotPairs((prev) =>
+        prev.map((p) => (p.id === pairId ? { ...p, found: false } : p)),
+      );
+      setMentalFatigue((m) =>
+        clampFatigue(1 - staminaLeft(m) * ETTERSOK_ABANDON_MENTAL_KEEP),
+      );
+      const bird = birdNameNb(pair.harvestDraft?.species);
+      setAbandonReveal({
+        imageSrc: pickFluktImage(),
+        subtitle:
+          `Fuglen er tapt og det setter deg tilbake mentalt 30 %. ` +
+          `Du gir opp søket etter ${bird}.`,
+      });
+    } else {
+      setLog("Ettersøk avsluttet.");
+    }
+    setAwareSession(null);
     setPanel("arrived");
   }
 
@@ -903,24 +961,22 @@ export function HuntMapView({
             ? "Fugl hentet ved treet. Skuddpar beholdt — nyttig når flere fugler er skutt."
             : "Ettersøk lyktes — fuglen er din. Skuddpar lagret i Aware Track.",
         );
-      } else if (pair?.found === false) {
-        setLog(
-          recoveryOnly
-            ? "Du fant ikke treet. Skuddparet er lagret — åpne Track senere."
-            : "Fuglen ble ikke funnet. Skuddparet er lagret.",
-        );
-      } else {
-        const attempts = pair?.ettersokAttempts ?? 0;
-        setLog(
-          recoveryOnly
-            ? "Skuddpar lagret. Husk å hente fuglen ved treet (Track)."
-            : attempts > 0
-              ? `Du avslutter ettersøk etter ${attempts} forsøk uten funn — fuglen er tapt.`
-              : "Du avslutter uten ettersøk — fuglen er trolig tapt.",
-        );
+        setAwareSession(null);
+        setPanel("arrived");
+        return;
       }
-      setAwareSession(null);
-      setPanel("arrived");
+      if (recoveryOnly) {
+        setLog(
+          pair?.found === false
+            ? "Du fant ikke treet. Skuddparet er lagret — åpne Track senere."
+            : "Skuddpar lagret. Husk å hente fuglen ved treet (Track).",
+        );
+        setAwareSession(null);
+        setPanel("arrived");
+        return;
+      }
+      // Wounded bird still missing — abandoning ettersøk.
+      abandonEttersok(awareSession.ettersokPairId);
       return;
     }
     const session = awareSession;
@@ -1057,6 +1113,8 @@ export function HuntMapView({
     };
     setShotPairs((prev) => [pair, ...prev]);
 
+    const clip = pickShotVideoForResult(result.kind);
+
     // Always open Aware Track with skuddpar — even instant kill:
     // hard to find the right tree, especially with several birds.
     if (
@@ -1085,23 +1143,36 @@ export function HuntMapView({
         ettersokPairId: pair.id,
         recoveryOnly,
       });
-      setLog(
+      const logMsg =
         result.kind === "instant_kill"
           ? `Instant kill på ${dist} m — skuddpar lagret. Finn treet i Track.`
           : result.kind === "vital_kill"
             ? `Vitalt treff på ${dist} m — skuddpar lagret. Finn treet i Track.`
             : fleeObservation
-              ? `Treff — ettersøk! Flukt ${fleeObservation.compassLabel}. Legg søkespor og kjør Ettersøk (30 min).`
-              : `Treff — ettersøk! Legg søkespor rundt skuddplassen og kjør Ettersøk (30 min).`,
-      );
+              ? `Treff — ettersøk! Flukt ${fleeObservation.compassLabel}. Legg søkespor (5 min/punkt) og utfør ettersøk.`
+              : `Treff — ettersøk! Legg søkespor (5 min/punkt) og utfør ettersøk.`;
+      setLog(logMsg);
+      if (clip) {
+        setShotVideo({
+          videoSrc: clip.src,
+          title: clip.title,
+          subtitle: logMsg,
+        });
+      }
       return;
     }
 
-    setLog(
-      `Bom på ${dist} m. Skuddpar logget (stand + estimat). Åpne Shoot/Track ved behov.`,
-    );
+    const missLog = `Bom på ${dist} m. Skuddpar logget (stand + estimat). Åpne Shoot/Track ved behov.`;
+    setLog(missLog);
     setShootSession(null);
     setPanel("arrived");
+    if (clip) {
+      setShotVideo({
+        videoSrc: clip.src,
+        title: clip.title,
+        subtitle: missLog,
+      });
+    }
   }
 
   function eatItem(itemId: string) {
@@ -1204,7 +1275,7 @@ export function HuntMapView({
     const duration = Math.max(1, minutesUntilDawn(clockMinutes));
     setForcedCamp(null);
     setCampOvernight({
-      imageSrc: CAMP_NIGHT_IMAGE,
+      imageSrc: pickFireImage(),
       durationMinutes: duration,
       subtitle,
     });
@@ -1241,6 +1312,38 @@ export function HuntMapView({
           isAtParking(selected, map),
         )
       : null;
+
+  if (shotVideo) {
+    return (
+      <ShotVideoView
+        videoSrc={shotVideo.videoSrc}
+        title={shotVideo.title}
+        subtitle={shotVideo.subtitle}
+        onContinue={() => setShotVideo(null)}
+        skipLabel="Fortsett"
+        ariaLabel={shotVideo.title}
+      />
+    );
+  }
+
+  if (abandonReveal) {
+    return (
+      <AtmospherePauseView
+        imageSrc={abandonReveal.imageSrc}
+        title="Ettersøk avsluttet"
+        subtitle={abandonReveal.subtitle}
+        durationMinutes={0}
+        holdMs={5500}
+        clockMinutes={clockMinutes}
+        onContinue={() => {
+          setLog(abandonReveal.subtitle);
+          setAbandonReveal(null);
+        }}
+        skipLabel="Fortsett"
+        ariaLabel="Ettersøk avsluttet"
+      />
+    );
+  }
 
   if (flushCurrent) {
     return (
@@ -1350,6 +1453,26 @@ export function HuntMapView({
     );
   }
 
+  if (findReveal) {
+    return (
+      <AtmospherePauseView
+        imageSrc={findReveal.imageSrc}
+        title="Du fant fuglen! Godt utført ettersøk."
+        subtitle="Skuddpar og spor er lagret i Aware Track."
+        durationMinutes={0}
+        holdMs={4500}
+        clockMinutes={clockMinutes}
+        onContinue={() => {
+          const pair = findReveal.pair;
+          setFindReveal(null);
+          if (pair.hitFasit) setFindHitAar(pair);
+        }}
+        skipLabel="Fortsett"
+        ariaLabel="Fugl funnet"
+      />
+    );
+  }
+
   if (findHitAar?.hitFasit) {
     const hit = findHitAar.hitFasit;
     return (
@@ -1418,7 +1541,7 @@ export function HuntMapView({
         onBirdFlushed={onAwareBirdFlushed}
         onAbort={abortAware}
         onPairFound={(pair) => {
-          if (pair.hitFasit) setFindHitAar(pair);
+          setFindReveal({ imageSrc: pickFunnImage(), pair });
         }}
       />
     );

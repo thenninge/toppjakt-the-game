@@ -32,6 +32,7 @@ import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
+import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
 import type { HuntRangeSource } from "@/components/hunt/HuntShotConditions";
 import { KestrelFasitView } from "@/components/hunt/KestrelFasitView";
@@ -206,6 +207,13 @@ export function HuntShootView({
   });
   const { fillRef: triggerFillRef, paintTriggerProgress, resetTriggerProgress } =
     useTriggerBarPaint();
+  const {
+    focusFillRef,
+    focusBarRef,
+    paintFocusProgress,
+    setFocusBarFatigued,
+    resetFocusProgress,
+  } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const vitalOffRef = useRef({ x: 0, y: 0 });
@@ -477,6 +485,8 @@ export function HuntShootView({
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
+    paintFocusProgress(1);
+    setFocusBarFatigued(false);
     setTriggerUi({
       pending: false,
       targetPct: markMs / TRIGGER_BAR_MS,
@@ -490,6 +500,7 @@ export function HuntShootView({
     }
     triggerMarkRef.current = null;
     resetTriggerProgress();
+    resetFocusProgress();
     setTriggerUi({ pending: false, targetPct: 0 });
   }
 
@@ -661,11 +672,23 @@ export function HuntShootView({
         }
       }
 
+      const fPhase = focusPhase(focusRef.current, now);
+      if (fPhase === "focused") {
+        paintFocusProgress(focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS);
+        setFocusBarFatigued(false);
+      } else if (fPhase === "fatigued") {
+        paintFocusProgress(1);
+        setFocusBarFatigued(true);
+      } else {
+        paintFocusProgress(0);
+        setFocusBarFatigued(false);
+      }
+
       uiAccum += dt;
       if (uiAccum > 0.05) {
         uiAccum = 0;
         setFocusUi({
-          phase: focusPhase(focusRef.current, now),
+          phase: fPhase,
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
       }
@@ -828,91 +851,90 @@ export function HuntShootView({
       </div>
 
       <div className="scope-stage" tabIndex={0}>
-        <div className="scope-optic">
-          <div
-            className={
-              recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
-            }
-          >
-            <div ref={scopeWorldRef} className="scope-world">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                className="scope-target hunt-tiur-target"
-                src={TIUR_TARGET_SRC}
-                alt="Tiur"
-                draggable={false}
-                width={TIUR_IMAGE_NATIVE_W}
-                height={TIUR_IMAGE_NATIVE_H}
-                style={{ width: TIUR_IMAGE_NATIVE_W, height: TIUR_IMAGE_NATIVE_H }}
-              />
-              {lastImpact ? (
-                <span
-                  className="bullet-hole"
-                  style={{
-                    width: tiurMmToNativePx(lastImpact.diameterMm),
-                    height: tiurMmToNativePx(lastImpact.diameterMm),
-                    left: `calc(50% + ${vitalOff.x + tiurMmToNativePx(lastImpact.xMm)}px)`,
-                    top: `calc(50% + ${vitalOff.y + tiurMmToNativePx(lastImpact.yMm)}px)`,
-                    marginLeft: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
-                    marginTop: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
-                  }}
-                />
-              ) : null}
-            </div>
-            <ScopeReticle
-              scope={scope.scope}
-              zoom={zoom}
-              imgScale={reticleScale}
-            />
-          </div>
-          <ScopeZoomRing
-            scope={scope.scope}
-            zoom={zoom}
-            onChange={(z) => setZoom(z)}
-            disabled={fired}
-          />
-        </div>
-
-        <div className="range-timer-stack">
-          <div className="range-timer-row">
+        <div className="scope-stage-optic-row">
+          <div className="range-side-rail range-side-rail--focus">
             <span
               className={
                 focusUi.phase === "focused"
-                  ? "range-focus is-focused"
+                  ? "range-side-rail-label is-focused"
                   : focusUi.phase === "fatigued"
-                    ? "range-focus is-fatigued"
-                    : "range-focus"
+                    ? "range-side-rail-label is-fatigued"
+                    : "range-side-rail-label"
               }
             >
               {focusUi.phase === "focused"
-                ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+                ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)}s`
                 : focusUi.phase === "fatigued"
                   ? "Utmatt"
-                  : "Fokus (F)"}
+                  : "Fokus"}
             </span>
             <div
+              ref={focusBarRef}
               className={
                 focusUi.phase === "fatigued"
                   ? "range-focus-bar is-fatigued"
                   : "range-focus-bar"
               }
+              aria-hidden
             >
-              <span
-                style={{
-                  width:
-                    focusUi.phase === "focused"
-                      ? `${(focusUi.remainingMs / FOCUS_HOLD_MS) * 100}%`
-                      : focusUi.phase === "fatigued"
-                        ? "100%"
-                        : "0%",
-                }}
-              />
+              <div ref={focusFillRef} className="range-focus-fill" />
             </div>
           </div>
-          <div className="range-timer-row">
+
+          <div className="scope-optic">
+            <div
+              className={
+                recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
+              }
+            >
+              <div ref={scopeWorldRef} className="scope-world">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  className="scope-target hunt-tiur-target"
+                  src={TIUR_TARGET_SRC}
+                  alt="Tiur"
+                  draggable={false}
+                  width={TIUR_IMAGE_NATIVE_W}
+                  height={TIUR_IMAGE_NATIVE_H}
+                  style={{
+                    width: TIUR_IMAGE_NATIVE_W,
+                    height: TIUR_IMAGE_NATIVE_H,
+                  }}
+                />
+                {lastImpact ? (
+                  <span
+                    className="bullet-hole"
+                    style={{
+                      width: tiurMmToNativePx(lastImpact.diameterMm),
+                      height: tiurMmToNativePx(lastImpact.diameterMm),
+                      left: `calc(50% + ${vitalOff.x + tiurMmToNativePx(lastImpact.xMm)}px)`,
+                      top: `calc(50% + ${vitalOff.y + tiurMmToNativePx(lastImpact.yMm)}px)`,
+                      marginLeft: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
+                      marginTop: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
+                    }}
+                  />
+                ) : null}
+              </div>
+              <ScopeReticle
+                scope={scope.scope}
+                zoom={zoom}
+                imgScale={reticleScale}
+              />
+            </div>
+            <ScopeZoomRing
+              scope={scope.scope}
+              zoom={zoom}
+              onChange={(z) => setZoom(z)}
+              disabled={fired}
+            />
+          </div>
+
+          <div className="range-side-rail range-side-rail--trigger">
             <span
               className={
-                triggerUi.pending ? "range-focus is-trigger" : "range-focus"
+                triggerUi.pending
+                  ? "range-side-rail-label is-trigger"
+                  : "range-side-rail-label"
               }
             >
               Avtrekk

@@ -13,7 +13,7 @@
  * Or use a quick overlay later — JSON below is enough to start.
  *
  * Example:
- *   "/images/spot1.png": [
+ *   "/images/spot/spot1.png": [
  *     { x: 38, y: 18, note: "stor furu midt-venstre" },
  *     { x: 72, y: 26, note: "høyre krone" },
  *   ],
@@ -35,7 +35,7 @@ export type SpotPerchCatalog = Record<string, SpotPerch[]>;
  * Empty array / missing key → game falls back to random crown band.
  */
 export const SPOT_PERCHES: SpotPerchCatalog = {
-  // "/images/spot1.png": [
+  // "/images/spot/spot1.png": [
   //   { x: 58, y: 24, note: "test-tre" },
   // ],
 };

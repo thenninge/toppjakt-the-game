@@ -1,10 +1,13 @@
 /**
  * Scope reticle assets and FFP/SFP display scaling.
  *
- * Visual calibration (Nightforce MIL-R): CBA diamond tip (10 mm) aligns with
- * the first major hash on the reticle graphic so subtensions stay readable
- * in the scope circle. Turret clicks remain true 0.1 mil (10 mm @ 100 m);
- * see player.ts ZERO_CLICK_MM.
+ * Visual calibration: CBA diamond tip (10 mm) aligns with the first major
+ * hash on the reticle graphic so subtensions stay readable in the scope
+ * circle. Turret clicks remain true 0.1 mil (10 mm @ 100 m); see
+ * player.ts ZERO_CLICK_MM.
+ *
+ * Measure `centerTo1MilPx` on the native PNG (center → 1.0 mil hash).
+ * Optional `opticalCenterX/Y` if the crosshair is not at the image midpoint.
  */
 
 import type { ScopeSpec } from "@/lib/optics/spec";
@@ -21,6 +24,12 @@ export type ReticleDef = {
   nativeHeight: number;
   /** Reticle center → first major MRAD/MIL hash (measured on native asset). */
   centerTo1MilPx: number;
+  /**
+   * Crosshair / floating-dot position in native pixels.
+   * Defaults to image midpoint when omitted.
+   */
+  opticalCenterX?: number;
+  opticalCenterY?: number;
 };
 
 export const RETICLES: Record<string, ReticleDef> = {
@@ -32,11 +41,36 @@ export const RETICLES: Record<string, ReticleDef> = {
     nativeHeight: 741,
     centerTo1MilPx: 43,
   },
+  /**
+   * ZCO 5-27 MPCT-style mil tree (zco27.png).
+   * Asset measure ≈ 13 px/mil; range fine-tune is the midpoint of
+   * ×20/17 and ×20/18 (=×10/9). Crosshair slightly left of geometric center.
+   */
+  "zco-527-mpct": {
+    id: "zco-527-mpct",
+    label: "MPCT",
+    src: "/range/reticles/zco27.png",
+    nativeWidth: 531,
+    nativeHeight: 469,
+    centerTo1MilPx: 13 / ((20 / 17 + 20 / 18) / 2),
+    opticalCenterX: 263,
+    opticalCenterY: 235,
+  },
 };
 
 export function getReticleDef(id: string | undefined): ReticleDef | null {
   if (!id) return null;
   return RETICLES[id] ?? null;
+}
+
+export function reticleOpticalCenter(reticle: ReticleDef): {
+  x: number;
+  y: number;
+} {
+  return {
+    x: reticle.opticalCenterX ?? reticle.nativeWidth / 2,
+    y: reticle.opticalCenterY ?? reticle.nativeHeight / 2,
+  };
 }
 
 /**
