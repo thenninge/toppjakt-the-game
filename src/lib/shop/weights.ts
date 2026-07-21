@@ -156,9 +156,6 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-eberlestock-x1-euro": 2800,
   "pack-fjellsekk-budget": 900,
   "pack-jula-daypack": 550,
-  "misc-fjellet-rifle-sleeve": 450,
-  "misc-biltema-gun-bag": 800,
-  "misc-jula-soft-case": 600,
   "misc-kestrel-5700-elite": 150,
   "misc-kestrel-5500": 130,
   "misc-vortex-ace-ballistic": 162,
@@ -172,6 +169,8 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-nightcore-hc60": 128,
   "misc-triggercam": 460,
   "misc-hunt-camcorder": 890,
+  "misc-garmin-xero-c1-pro": 108,
+  "misc-fx-true-ballistic": 820,
 
   // Chestrigs
   "chest-cds-binocular-harness": 380,

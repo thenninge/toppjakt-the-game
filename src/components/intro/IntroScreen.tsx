@@ -15,6 +15,10 @@ import {
   ensureZeroingProfile,
   formatPermitFee,
   grantStarterGear,
+  grantUncleRifle,
+  isCheatPlayerName,
+  CHEAT_STARTING_BALANCE,
+  STARTING_BALANCE,
   resolvePlayerItem,
   saveZeroing,
   appendShotLogEntry,
@@ -198,6 +202,9 @@ export function IntroScreen() {
       ...prev,
       name: nice,
       nickname: generateNickname(trimmed),
+      balance: isCheatPlayerName(nice)
+        ? CHEAT_STARTING_BALANCE
+        : STARTING_BALANCE,
     }));
     setPhase("welcome");
   }
@@ -542,7 +549,15 @@ export function IntroScreen() {
   }
 
   function headIntoTown() {
-    setStats((prev) => grantStarterGear(prev));
+    setStats((prev) => {
+      if (isCheatPlayerName(prev.name)) {
+        return grantStarterGear({
+          ...prev,
+          balance: CHEAT_STARTING_BALANCE,
+        });
+      }
+      return grantUncleRifle({ ...prev, balance: STARTING_BALANCE });
+    });
     setPhase("town");
   }
 
@@ -643,13 +658,13 @@ export function IntroScreen() {
               stolt av deg!
             </p>
             <p className="intro-line intro-gift">
-              Here, take my CZ452, it&apos;s yours now. It&apos;s great for
-              squirrels in the back yard!
+              Here, take my CZ452 — and that Biltema 3-9× I stuck on it. Great
+              for squirrels in the back yard!
             </p>
 
             <blockquote className="intro-thought">
-              Ah.. great.. my old uncle&apos;s .22 with iron sights and no
-              picatinny.. gee wiz, need to level up. Better buy some ammo and
+              Ah.. great.. uncle&apos;s .22 with a rattly Biltema 3-9×40. Clicks
+              like Lego. Gee wiz, need to level up. Better buy some ammo and
               take it to the range.
             </blockquote>
 
@@ -799,6 +814,7 @@ export function IntroScreen() {
             zeroingProfiles={stats.zeroingProfiles}
             shotLog={stats.shotLog}
             dopeCard={stats.dopeCard}
+            weather={weather}
             customsMoaDelta={customsBeddingMoaDelta(stats.customsMods)}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))

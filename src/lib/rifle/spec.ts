@@ -62,7 +62,7 @@ export const RIFLE_AVERAGE_BEST_MOA: Record<string, number> = {
   "rifle-ruger-american-predator": 0.75,
   "rifle-cz455": 0.8,
   "rifle-rem-700-sps": 0.85,
-  "rifle-cz452": 0.9, // uncle gift — honest .22
+  "rifle-cz452": 0.55, // uncle gift — solid .22 with matching ammo
 
   // Budget
   "rifle-magasinet-budget-308": 1.25,

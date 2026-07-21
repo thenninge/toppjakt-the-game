@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import {
   isAmmoItem,
+  isBallisticsItem,
   isBipodItem,
   isRifleItem,
   isScopeItem,
@@ -49,6 +50,7 @@ import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
+import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
@@ -65,6 +67,8 @@ import {
   type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
+import { densityRatioFromTempC } from "@/lib/ballistics/solver";
+import type { DayWeather } from "@/lib/weather/spec";
 
 type ShootingRangeProps = {
   kitItems: ShopItem[];
@@ -73,6 +77,8 @@ type ShootingRangeProps = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
+  /** Live day weather (same as hunt) for Enviro / App. */
+  weather: DayWeather;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -119,6 +125,7 @@ export function ShootingRange({
   zeroingProfiles,
   shotLog,
   dopeCard,
+  weather,
   customsMoaDelta = 0,
   onAffinitiesChange,
   onConsumeAmmo,
@@ -156,6 +163,16 @@ export function ShootingRange({
     () => kitItems.filter(isAmmoItem),
     [kitItems],
   );
+  const hasKestrel = useMemo(
+    () =>
+      kitItems.some(
+        (i) => isBallisticsItem(i) && i.ballistics.measuresCrosswind,
+      ),
+    [kitItems],
+  );
+  /** Indoor/outdoor range lane — fixed shot bearing for Enviro / App. */
+  const rangeShotBearingDeg = 0;
+  const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
 
   const ready = !!(rifle && scope && ammoOptions.length > 0);
 
@@ -1008,44 +1025,66 @@ export function ShootingRange({
         </span>
       </div>
 
-      <ScopeTurrets
-        sessionZeroXMm={sessionZeroXMm}
-        sessionZeroYMm={sessionZeroYMm}
-        onNudge={nudgeZero}
-        actions={
-          <>
-            <button
-              type="button"
-              className="intro-button"
-              disabled={
-                !comboKey ||
-                (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
-                Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
-                Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
+      <div className="hunt-shoot-dope-row">
+        <ScopeTurrets
+          sessionZeroXMm={sessionZeroXMm}
+          sessionZeroYMm={sessionZeroYMm}
+          onNudge={nudgeZero}
+          enviroPanel={
+            <HuntShotConditions
+              rangeM={distanceM}
+              rangeSource="range"
+              shotBearingDeg={rangeShotBearingDeg}
+              windFromDeg={weather.live.windFromDeg}
+              windSpeedMs={weather.live.windSpeedMs}
+              densityRatio={densityRatio}
+              hasKestrel={hasKestrel}
+              dopeCard={dopeCard}
+              ammoId={ammoId}
+              rifleId={rifle?.id ?? null}
+              ammo={selectedAmmo?.ammo ?? null}
+              ammoLabel={
+                selectedAmmo
+                  ? `${selectedAmmo.brand} ${selectedAmmo.name}`
+                  : "Ammo"
               }
-              onClick={saveCurrentZero}
-            >
-              Lagre zero
-            </button>
-            <button
-              type="button"
-              className="intro-button sheriff-secondary"
-              disabled={!rifle || !scope || !selectedAmmo}
-              onClick={addCurrentToDope}
-              title="Lagre ammo + avstand + klikk til felt-DOPE"
-            >
-              Add to DOPE
-            </button>
-            <button
-              type="button"
-              className="intro-button sheriff-secondary"
-              onClick={() => setView("dope")}
-            >
-              Se/edit DOPE ({dopeCard.length})
-            </button>
-          </>
-        }
-      />
+            />
+          }
+          actions={
+            <>
+              <button
+                type="button"
+                className="intro-button"
+                disabled={
+                  !comboKey ||
+                  (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
+                  Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
+                  Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
+                }
+                onClick={saveCurrentZero}
+              >
+                Lagre zero
+              </button>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                disabled={!rifle || !scope || !selectedAmmo}
+                onClick={addCurrentToDope}
+                title="Lagre ammo + avstand + klikk til felt-DOPE"
+              >
+                Add to DOPE
+              </button>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                onClick={() => setView("dope")}
+              >
+                Se/edit DOPE ({dopeCard.length})
+              </button>
+            </>
+          }
+        />
+      </div>
 
       {measurement ? (
         <SeriesMeasureView

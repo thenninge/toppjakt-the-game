@@ -25,10 +25,10 @@ export function ettersokMinutesForTrackPoints(pointCount: number): number {
 }
 
 /**
- * Trøndelag (midtnorge1): rows A–F (bottom→top), cols 1–7 (left→right).
+ * Shared effort grid (7×6) for all playable cutouts until per-map data exists.
  * A7 = parking / road = lett.
  */
-const MIDTNORGE1_EFFORT: EffortScore[][] = [
+const SHARED_HUNT_EFFORT: EffortScore[][] = [
   // A
   [4, 4, 3, 3, 2, 2, 1],
   // B
@@ -44,7 +44,9 @@ const MIDTNORGE1_EFFORT: EffortScore[][] = [
 ];
 
 const EFFORT_BY_MAP: Partial<Record<HuntMapId, EffortScore[][]>> = {
-  midtnorge1: MIDTNORGE1_EFFORT,
+  midtnorge1: SHARED_HUNT_EFFORT,
+  ostlandet1: SHARED_HUNT_EFFORT,
+  ostlandet2: SHARED_HUNT_EFFORT,
 };
 
 export function getCellEffort(

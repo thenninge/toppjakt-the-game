@@ -25,7 +25,7 @@ export type HuntMapAsset = {
   rows: number;
   /** Hunter spawn cell (parking / trailhead). */
   start: HuntGridCell;
-  /** First playable hunt map — others show map but are placeholders. */
+  /** Hunt maps — all three cutouts are playable (same grid for now). */
   playable: boolean;
 };
 
@@ -37,8 +37,9 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
     regionHint: "Østlandet",
     cols: 7,
     rows: 6,
-    start: { row: 0, col: 0 },
-    playable: false,
+    /** Same trailhead layout as Trøndelag until dedicated maps exist. */
+    start: { row: 0, col: 6 },
+    playable: true,
   },
   ostlandet2: {
     id: "ostlandet2",
@@ -47,8 +48,8 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
     regionHint: "Østlandet",
     cols: 7,
     rows: 6,
-    start: { row: 0, col: 0 },
-    playable: false,
+    start: { row: 0, col: 6 },
+    playable: true,
   },
   midtnorge1: {
     id: "midtnorge1",

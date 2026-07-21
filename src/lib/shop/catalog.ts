@@ -896,9 +896,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "452 American .22 LR",
     priceNok: 0,
     caliber: ".22 LR",
-    note: "Onkelens arv — ikke til salgs. Iron sights, ingen picatinny.",
+    note: "Onkelens arv — ikke til salgs. Med billig Biltema 3-9×40 på.",
     rifle: {
-      averageBestAccuracyMoa: 0.9,
+      averageBestAccuracyMoa: 0.55,
     },
   },
   {
@@ -1410,7 +1410,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       bc: 0.12,
       bcModel: "G1",
       damageFactor: 0.35,
-      maxAchievableMoa: 1.5,
+      maxAchievableMoa: 0.85,
     },
   },
   {
@@ -1461,7 +1461,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       bc: 0.12,
       bcModel: "G1",
       damageFactor: 0.55,
-      maxAchievableMoa: 1.75,
+      maxAchievableMoa: 1.2,
     },
   },
   {
@@ -1649,7 +1649,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       bc: 0.11,
       bcModel: "G1",
       damageFactor: 0.4,
-      maxAchievableMoa: 2.5,
+      maxAchievableMoa: 1.8,
     },
   },
   {
@@ -2377,32 +2377,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   // --- Misc kult kit (rest) ---
   // Every misc item: weightGrams + misc.enduranceGrams (felt ≈ weight − endurance).
   {
-    id: "misc-fjellet-rifle-sleeve",
-    category: "misc",
-    brand: "Fjellbutikken",
-    name: "Rifle sleeve / fôret futteral",
-    priceNok: 899,
-    note: "Beskytter rifla i bil/sekk. Lite endurance — mest vekt.",
-    misc: { enduranceGrams: 0 },
-  },
-  {
-    id: "misc-biltema-gun-bag",
-    category: "misc",
-    brand: "Biltema",
-    name: "Våpenveske m/skum",
-    priceNok: 399,
-    note: "Soft case. Ikke dropp den i elva.",
-    misc: { enduranceGrams: 0 },
-  },
-  {
-    id: "misc-jula-soft-case",
-    category: "misc",
-    brand: "Jula",
-    name: "Soft rifle case",
-    priceNok: 299,
-    misc: { enduranceGrams: 0 },
-  },
-  {
     id: "misc-sittpute-biltema",
     category: "misc",
     brand: "Biltema",
@@ -2455,6 +2429,28 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     priceNok: 12490,
     note: "Stativ-camcorder mot standplass. Gir retning + landingsavstand etter skudd — men tar tid å sette opp (fuglen blir nervøs).",
     misc: { enduranceGrams: 0, isCamcorder: true },
+  },
+  {
+    id: "misc-garmin-xero-c1-pro",
+    category: "misc",
+    brand: "Garmin",
+    name: "Xero C1 Pro",
+    priceNok: 5499,
+    note:
+      "Doppler-kronograf — måler reell hastighet på prosjektilene (muzzle velocity). " +
+      "Kult kit; funksjon kobles inn senere (DOPE / zero / ballistikk).",
+    misc: { enduranceGrams: 0, isChronograph: true },
+  },
+  {
+    id: "misc-fx-true-ballistic",
+    category: "misc",
+    brand: "FX",
+    name: "True Ballistic Chronograph",
+    priceNok: 11990,
+    note:
+      "Radar-kronograf — måler reell hastighet (og hastighet langs banen / BC via app). " +
+      "Premium kult kit; funksjon kobles inn senere.",
+    misc: { enduranceGrams: 0, isChronograph: true },
   },
 
   // --- Camouflage ---

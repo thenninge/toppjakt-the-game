@@ -129,8 +129,12 @@ export type PlayerStats = {
   unlockedTerrainIds: string[];
 };
 
-export const STARTING_BALANCE = 500_000;
+export const STARTING_BALANCE = 10_000;
+/** Cheat login name — full starter kit + cash (case-insensitive). */
+export const CHEAT_PLAYER_NAME = "Neppe";
+export const CHEAT_STARTING_BALANCE = 500_000;
 export const STARTER_RIFLE_ID = "rifle-cz452";
+export const STARTER_SCOPE_ID = "scope-biltema-3-9x40";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
 /** Temporary range-test weapon platform (Sauer 200 STR + NF + match ammo). */
 export const TEST_RANGE_LOADOUT_IDS = [
@@ -205,6 +209,112 @@ export function permitFeeForNextRifle(priorPaidLicenses: number): number {
 
 export function formatPermitFee(nok: number): string {
   return `${nok.toLocaleString("nb-NO")},-`;
+}
+
+/** True when the display/login name is the cheat identity (Neppe). */
+export function isCheatPlayerName(name: string): boolean {
+  return name.trim().toLowerCase() === CHEAT_PLAYER_NAME.toLowerCase();
+}
+
+/**
+ * Story gift only — uncle's CZ452 + Biltema 3-9× + license.
+ * Normal starts also get STARTING_BALANCE (10 000 kr). No full hunt loadout.
+ */
+export function grantUncleRifle(stats: PlayerStats): PlayerStats {
+  let next = stats;
+
+  if (!next.inventory.some((e) => e.itemId === STARTER_RIFLE_ID)) {
+    next = {
+      ...next,
+      inventory: [...next.inventory, { itemId: STARTER_RIFLE_ID, qty: 1 }],
+    };
+  }
+  if (!next.inventory.some((e) => e.itemId === STARTER_SCOPE_ID)) {
+    next = {
+      ...next,
+      inventory: [...next.inventory, { itemId: STARTER_SCOPE_ID, qty: 1 }],
+    };
+  }
+  if (!next.weaponLicenses.some((l) => l.id === STARTER_LICENSE_ID)) {
+    next = {
+      ...next,
+      weaponLicenses: [
+        ...next.weaponLicenses,
+        {
+          id: STARTER_LICENSE_ID,
+          brand: "CZ",
+          type: "452 American",
+          caliber: ".22 LR",
+          gifted: true,
+        },
+      ],
+    };
+  }
+
+  return next;
+}
+
+/**
+ * Cheat / developer loadout: full hunt + range kit, licenses, perfect zeros.
+ * Call after setting balance to CHEAT_STARTING_BALANCE.
+ */
+export function grantStarterGear(stats: PlayerStats): PlayerStats {
+  let next = grantUncleRifle(stats);
+
+  // Full hunt + range test loadout — inventory and kit.
+  for (const id of STARTER_HUNT_LOADOUT_IDS) {
+    if (!next.inventory.some((e) => e.itemId === id)) {
+      const item = getShopItem(id);
+      let qty = STARTER_HUNT_QTY[id] ?? 1;
+      if (item && isAmmoItem(item)) {
+        qty = ammoRoundsPerPurchase(item);
+      }
+      next = {
+        ...next,
+        inventory: addToInventory(next.inventory, id, qty),
+      };
+    }
+  }
+  if (!next.weaponLicenses.some((l) => l.id === TEST_RANGE_LICENSE_ID)) {
+    next = {
+      ...next,
+      weaponLicenses: [
+        ...next.weaponLicenses,
+        {
+          id: TEST_RANGE_LICENSE_ID,
+          brand: "Sauer",
+          type: "200 STR",
+          caliber: "6,5×55",
+          gifted: true,
+        },
+      ],
+    };
+  }
+
+  next = { ...next, kit: [...STARTER_HUNT_LOADOUT_IDS] };
+
+  // Starter platform is already zeroed — BDX holds assume perfect 100 m zero.
+  const perfect: ZeroingProfile = {
+    baseXMm: 0,
+    baseYMm: 0,
+    savedXMm: 0,
+    savedYMm: 0,
+  };
+  const rifleId = TEST_RANGE_LOADOUT_IDS[0];
+  const scopeId = TEST_RANGE_LOADOUT_IDS[1];
+  let profiles = { ...next.zeroingProfiles };
+  for (const ammoId of [
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+  ]) {
+    profiles = {
+      ...profiles,
+      [zeroingKey(rifleId, scopeId, ammoId)]: perfect,
+    };
+  }
+  next = { ...next, zeroingProfiles: profiles };
+
+  return next;
 }
 
 export function createInitialStats(): PlayerStats {
@@ -517,88 +627,6 @@ export function createWeaponLicense(input: {
     type: input.type.trim(),
     caliber: input.caliber.trim(),
   };
-}
-
-export function grantStarterGear(stats: PlayerStats): PlayerStats {
-  let next = stats;
-
-  // CZ inheritance + license (still in inventory; not forced into kit).
-  if (!next.inventory.some((e) => e.itemId === STARTER_RIFLE_ID)) {
-    next = {
-      ...next,
-      inventory: [...next.inventory, { itemId: STARTER_RIFLE_ID, qty: 1 }],
-    };
-  }
-  if (!next.weaponLicenses.some((l) => l.id === STARTER_LICENSE_ID)) {
-    next = {
-      ...next,
-      weaponLicenses: [
-        ...next.weaponLicenses,
-        {
-          id: STARTER_LICENSE_ID,
-          brand: "CZ",
-          type: "452 American",
-          caliber: ".22 LR",
-          gifted: true,
-        },
-      ],
-    };
-  }
-
-  // Full hunt + range test loadout — inventory and kit.
-  for (const id of STARTER_HUNT_LOADOUT_IDS) {
-    if (!next.inventory.some((e) => e.itemId === id)) {
-      const item = getShopItem(id);
-      let qty = STARTER_HUNT_QTY[id] ?? 1;
-      if (item && isAmmoItem(item)) {
-        qty = ammoRoundsPerPurchase(item);
-      }
-      next = {
-        ...next,
-        inventory: addToInventory(next.inventory, id, qty),
-      };
-    }
-  }
-  if (!next.weaponLicenses.some((l) => l.id === TEST_RANGE_LICENSE_ID)) {
-    next = {
-      ...next,
-      weaponLicenses: [
-        ...next.weaponLicenses,
-        {
-          id: TEST_RANGE_LICENSE_ID,
-          brand: "Sauer",
-          type: "200 STR",
-          caliber: "6,5×55",
-          gifted: true,
-        },
-      ],
-    };
-  }
-
-  next = { ...next, kit: [...STARTER_HUNT_LOADOUT_IDS] };
-
-  // Starter platform is already zeroed — BDX holds assume perfect 100 m zero.
-  const perfect: ZeroingProfile = {
-    baseXMm: 0,
-    baseYMm: 0,
-    savedXMm: 0,
-    savedYMm: 0,
-  };
-  const rifleId = TEST_RANGE_LOADOUT_IDS[0];
-  const scopeId = TEST_RANGE_LOADOUT_IDS[1];
-  let profiles = { ...next.zeroingProfiles };
-  for (const ammoId of [
-    "ammo-norma-65x55-black-diamond",
-    "ammo-lapua-65x55-scenar",
-  ]) {
-    profiles = {
-      ...profiles,
-      [zeroingKey(rifleId, scopeId, ammoId)]: perfect,
-    };
-  }
-  next = { ...next, zeroingProfiles: profiles };
-
-  return next;
 }
 
 export function addToInventory(

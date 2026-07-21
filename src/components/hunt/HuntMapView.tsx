@@ -12,6 +12,7 @@ import {
   formatBirdRating,
   getHuntingTerrain,
   terrainMapSrc,
+  tiurSpawnCountForTerrain,
 } from "@/lib/hunt/terrain";
 import { getHuntPace, HUNT_PACES, type HuntPaceId } from "@/lib/hunt/pace";
 import {
@@ -285,6 +286,7 @@ export function HuntMapView({
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
+  const tiurSpawnCount = terrain ? tiurSpawnCountForTerrain(terrain) : 20;
 
   const [pos, setPos] = useState<HuntGridCell>(() =>
     map ? { ...map.start } : { row: 0, col: 0 },
@@ -329,7 +331,7 @@ export function HuntMapView({
     null,
   );
   const [birds, setBirds] = useState<HuntBird[]>(() =>
-    map ? spawnTiurOnMap(map) : [],
+    map ? spawnTiurOnMap(map, tiurSpawnCount) : [],
   );
   const [flushQueue, setFlushQueue] = useState<FlushEvent[]>([]);
   const flushCurrent = flushQueue[0] ?? null;
@@ -458,11 +460,11 @@ export function HuntMapView({
     setForcedRest(null);
     setForcedCamp(null);
     setCampOvernight(null);
-    setBirds(spawnTiurOnMap(map));
+    setBirds(spawnTiurOnMap(map, tiurSpawnCount));
     setFlushQueue([]);
     pendingForcedRestRef.current = false;
     setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.");
-  }, [terrainId, map]);
+  }, [terrainId, map, tiurSpawnCount]);
 
   useEffect(() => {
     saveShotPairsForTerrain(terrainId, shotPairs);

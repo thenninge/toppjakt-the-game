@@ -31,7 +31,7 @@ export function huntReadyCheck(input: {
     const map = getHuntMap(terrain.mapId);
     if (!map.playable) {
       blockers.push(
-        `${terrain.region}-kartet er ikke spillbart ennå — velg Trøndelag`,
+        `${terrain.region}-kartet er ikke spillbart ennå — velg et annet terreng`,
       );
     }
   }

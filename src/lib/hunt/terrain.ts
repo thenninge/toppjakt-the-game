@@ -39,7 +39,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "ostlandet-budsjett",
     name: "Gammel hogst",
     region: "Østlandet",
-    blurb: "Billig leie, tynt med fugl — men du kommer deg ut.",
+    blurb: "Billig leie, tynt med fugl (10 tiur) — men du kommer deg ut.",
     pricePerDayNok: 500,
     tiurRating: 1,
     orrhaneRating: 2,
@@ -50,7 +50,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "ostlandet-standard",
     name: "Bjørkeskog",
     region: "Østlandet",
-    blurb: "Middels pris og middels fugl — trygg standard.",
+    blurb: "Middels pris og middels fugl (15 tiur) — trygg standard.",
     pricePerDayNok: 1000,
     tiurRating: 3,
     orrhaneRating: 3,
@@ -61,7 +61,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "trondelag",
     name: "Myrkanter",
     region: "Trøndelag",
-    blurb: "Første spillbare kart. Parker ved veien nede til høyre.",
+    blurb: "Dyreste inatur-teig — fullt med fugl (20 tiur). Parker nede til høyre.",
     pricePerDayNok: 2000,
     tiurRating: 4,
     orrhaneRating: 5,
@@ -73,7 +73,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Stubbens teig",
     region: "Østlandet",
     blurb:
-      "Kari Stubb sitt lille stykke. «Ikke skyt mot hytta. Den er forsikret, men jeg er ikke.»",
+      "Kari Stubb sitt lille stykke (10 tiur). «Ikke skyt mot hytta. Den er forsikret, men jeg er ikke.»",
     pricePerDayNok: 700,
     tiurRating: 2,
     orrhaneRating: 3,
@@ -86,7 +86,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Kristian Olav sin li",
     region: "Østlandet",
     blurb:
-      "Kristian Olav sin skråning. Bra med orre, grei tiur — hvis du ikke tråkker i potetene.",
+      "Kristian Olav sin skråning (15 tiur). Bra med orre — hvis du ikke tråkker i potetene.",
     pricePerDayNok: 1600,
     tiurRating: 3,
     orrhaneRating: 4,
@@ -99,7 +99,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Løvenskiolds finmark",
     region: "Østlandet / «privat»",
     blurb:
-      "Carl Otto Løvenskiolds fineste. Stappfullt av fugl. Du er gjest — oppfør deg deretter.",
+      "Carl Otto Løvenskiolds fineste (20 tiur). Du er gjest — oppfør deg deretter.",
     pricePerDayNok: 12000,
     tiurRating: 5,
     orrhaneRating: 5,
@@ -114,6 +114,19 @@ export function getHuntingTerrain(
 ): HuntingTerrain | undefined {
   if (!id) return undefined;
   return HUNTING_TERRAINS.find((t) => t.id === id);
+}
+
+/**
+ * How many tiur spawn on the map for this lease.
+ * Cheap → thin; mid → decent; expensive → full.
+ *   ≤ 700 kr  → 10
+ *   ≤ 1600 kr → 15
+ *   else      → 20
+ */
+export function tiurSpawnCountForTerrain(terrain: HuntingTerrain): number {
+  if (terrain.pricePerDayNok <= 700) return 10;
+  if (terrain.pricePerDayNok <= 1600) return 15;
+  return 20;
 }
 
 /** Terrains visible on inatur for this player. */

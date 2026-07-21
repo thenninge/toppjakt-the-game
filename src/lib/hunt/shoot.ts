@@ -23,6 +23,9 @@ export const TRIGGERCAM_ITEM_ID = "misc-triggercam";
 /** Tripod camcorder — better ettersøk overview; deploy costs nerve. */
 export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
 
+/** Garmin Xero chronograph — measures real projectile velocity (wiring later). */
+export const CHRONOGRAPH_ITEM_ID = "misc-garmin-xero-c1-pro";
+
 /** Nerve bump (0–1 scale) when deploying camcorder before the shot. */
 export const CAMCORDER_SETUP_NERVE = 0.2;
 

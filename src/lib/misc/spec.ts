@@ -33,6 +33,11 @@ export type MiscSpec = {
    * (direction + land distance), at a nervousness cost.
    */
   isCamcorder?: boolean;
+  /**
+   * Chronograph — measures real projectile velocity (muzzle / near-muzzle).
+   * Gameplay wiring comes later; flag marks the kit item.
+   */
+  isChronograph?: boolean;
 };
 
 /** Placeholder net contribution to felt load (can be negative = net help). */
@@ -49,4 +54,8 @@ export function isHeadlampMisc(misc: MiscSpec): boolean {
 
 export function isCamcorderMisc(misc: MiscSpec): boolean {
   return !!misc.isCamcorder;
+}
+
+export function isChronographMisc(misc: MiscSpec): boolean {
+  return !!misc.isChronograph;
 }

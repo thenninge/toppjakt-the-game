@@ -13,7 +13,7 @@ import {
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import { LapuaBallisticsApp } from "@/components/hunt/LapuaBallisticsApp";
 
-export type HuntRangeSource = "lrf" | "estimated";
+export type HuntRangeSource = "lrf" | "estimated" | "range";
 
 type HuntShotConditionsProps = {
   rangeM: number;
@@ -79,7 +79,11 @@ export function HuntShotConditions({
           <span className="hunt-shot-cond-value">
             {Math.round(rangeM)} m
             <small>
-              {rangeSource === "lrf" ? "LRF" : "Aware estimat"}
+              {rangeSource === "lrf"
+                ? "LRF"
+                : rangeSource === "range"
+                  ? "Bane"
+                  : "Aware estimat"}
             </small>
           </span>
         </div>
