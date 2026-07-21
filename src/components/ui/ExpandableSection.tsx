@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 type ExpandableSectionProps = {
   title: string;
@@ -18,6 +18,17 @@ export function ExpandableSection({
 }: ExpandableSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const panelId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const skipScrollOnMount = useRef(defaultExpanded);
+
+  useEffect(() => {
+    if (!expanded) return;
+    if (skipScrollOnMount.current) {
+      skipScrollOnMount.current = false;
+      return;
+    }
+    panelRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [expanded]);
 
   return (
     <section className="home-expandable">
@@ -37,7 +48,7 @@ export function ExpandableSection({
         </span>
       </button>
       {expanded ? (
-        <div id={panelId} className="home-expandable-panel">
+        <div id={panelId} ref={panelRef} className="home-expandable-panel">
           {children}
         </div>
       ) : null}

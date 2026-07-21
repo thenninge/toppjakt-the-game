@@ -2182,7 +2182,10 @@ body {
 .home-expandable-panel .home-kit-list {
   border: 0;
   background: transparent;
-  max-height: min(45vh, 24rem);
+  /* Let the page scroll — capped height forced a tiny inner scroller
+     that looked like the expander hadn’t opened fully. */
+  max-height: none;
+  overflow: visible;
 }
 
 @media (max-width: 720px) {
