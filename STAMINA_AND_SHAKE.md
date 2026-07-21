@@ -295,10 +295,30 @@ amp_mm = (18 / max(0.35, calm)) × (distanceM / 100)
 ```
 
 ```
-POA = aimMm + wobbleMm
+POA = aimMm + wobbleMm + triggerPullOffsetMm
 ```
 
-Trigger-delay 0–1000 ms: **ikke** fatigue-skalert.
+### 5.5 Avtrekk (hold/slipp Space)
+
+Når **F** trykkes, rulles et tilfeldig **merke** på avtrekksbaren (0.5–2.5 s inn i en **3 s** bar). Spilleren holder Space (fyll) og **slipper** nær merket.
+
+| Konstant | Verdi |
+|----------|-------|
+| `TRIGGER_BAR_MS` | 3000 |
+| Merke | random 500–2500 ms |
+| Perfekt bånd | ±100 ms → ingen ekstra POA-feil |
+
+```
+errorFactor = 0  hvis |release − mark| ≤ 0.1 s
+            = clamp01((|release − mark| − 0.1) / maxMiss)  ellers
+
+envelopeMm = moaToMmAtDistance(combinedDispersionMoa(rifle+ammo+stock), distance)
+pullOffset = randomDirection × errorFactor × envelopeMm
+```
+
+Rent avtrekk → kun vanlig Gaussian (maks rifle+ammo-presisjon).  
+Elendig avtrekk → opptil **100 %** av envelope som ekstra avvik fra siktepunkt.  
+Baren auto-slipper ved 3.0 s. Fokus må holdes under avtrekk.
 
 ---
 
@@ -437,7 +457,7 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 4. **Riflevekt** i weapon calm (kun demper forward-mass + bipod).
 5. **Bipod deploy/fold** (`deploySpeed` unused).
 6. **Carcass i sekk** → ingen ekstra pack-fatigue.
-7. **Trigger delay / aim speed** uavhengig av fatigue.
+7. **Aim speed** uavhengig av fatigue (avtrekk er nå skill-basert hold/slipp).
 8. **MIND = 0** → ingen soft-lock.
 9. **Passiv tretthet over tid** (klokke uten handling).
 10. **Shooting range** har ingen BODY/MIND (med vilje).
@@ -481,7 +501,8 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 | Pris-kurve | `weightNorm^0.85 × quality^1.15` |
 | Art min/maks kr | `SPECIES_MARKET` |
 | Baseline wobble | `BASE_WOBBLE_MM` (18) |
+| Avtrekksbar / merke / ±perfekt | `TRIGGER_BAR_MS` / `TARGET_MIN/MAX` / `PERFECT_BAND_MS` |
 
 ---
 
-*Sist synket mot kode: fatigue↔shake, gone-bird mind-hit, carcass verditap (zone×ammo×velocity), kit-vekt ennå ikke i stamina.*
+*Sist synket mot kode: fatigue↔shake, gone-bird mind-hit, carcass verditap (zone×ammo×velocity), kit-vekt ennå ikke i stamina, skill-avtrekk (hold/slipp Space mot F-merke).*

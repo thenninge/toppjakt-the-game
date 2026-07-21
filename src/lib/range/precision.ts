@@ -14,6 +14,7 @@ import { suppressorWeaponCalmGrams } from "@/lib/suppressor/spec";
 import {
   MM_PER_MOA_AT_100M,
   combinedDispersionMoa,
+  moaToMmAtDistance,
   sampleShotFromPoa,
   type DispersionInput,
 } from "@/lib/ballistics/dispersion";
@@ -23,6 +24,7 @@ export {
   DISPERSION_MOA_SIGMA_LEVEL,
   combinedDispersionMoa,
   dispersionSigmaMoa,
+  moaToMmAtDistance,
   sampleShotFromPoa,
 } from "@/lib/ballistics/dispersion";
 
@@ -293,8 +295,70 @@ export const FOCUS_HOLD_MS = 8000;
  * Release F and press again to reset the window.
  */
 export const FOCUS_FATIGUE_CALM_MULT = 0.65;
-/** Space held → shot fires after uniform random delay in [0, this] ms. */
-export const TRIGGER_DELAY_MAX_MS = 1000;
+
+/**
+ * Trigger bar length (real-time ms). Player holds Space; fill runs 0→1 over this.
+ * @deprecated Prefer {@link TRIGGER_BAR_MS}. Kept as alias for old call sites.
+ */
+export const TRIGGER_DELAY_MAX_MS = 3000;
+
+/** Full trigger-bar travel time (hold Space). */
+export const TRIGGER_BAR_MS = 3000;
+/** Random release mark when F is pressed — inclusive range. */
+export const TRIGGER_TARGET_MIN_MS = 500;
+export const TRIGGER_TARGET_MAX_MS = 2500;
+/** |release − mark| within this → perfect break (no extra POA error). */
+export const TRIGGER_PERFECT_BAND_MS = 100;
+
+/** Roll the invisible “break” mark shown on the trigger bar when focus starts. */
+export function rollTriggerTargetMs(
+  random: () => number = Math.random,
+): number {
+  return (
+    TRIGGER_TARGET_MIN_MS +
+    random() * (TRIGGER_TARGET_MAX_MS - TRIGGER_TARGET_MIN_MS)
+  );
+}
+
+/**
+ * Trigger-pull quality → extra POA error factor.
+ * 0 = perfect release (rifle+ammo max precision only).
+ * 1 = worst release (extra miss = full combined envelope mm at distance).
+ */
+export function triggerPullErrorFactor(
+  releaseElapsedMs: number,
+  targetMs: number,
+): number {
+  const err = Math.abs(releaseElapsedMs - targetMs);
+  if (err <= TRIGGER_PERFECT_BAND_MS) return 0;
+  const maxErr = Math.max(targetMs, TRIGGER_BAR_MS - targetMs);
+  const span = Math.max(1, maxErr - TRIGGER_PERFECT_BAND_MS);
+  return clamp01((err - TRIGGER_PERFECT_BAND_MS) / span);
+}
+
+/**
+ * Extra POA offset from a bad trigger break.
+ * Magnitude = errorFactor × combinedDispersionMoa envelope in mm at distance.
+ * Direction is random on the target plane.
+ */
+export function triggerPullOffsetMm(
+  errorFactor: number,
+  envelopeMoa: number,
+  distanceM: number,
+  random: () => number = Math.random,
+): { xMm: number; yMm: number; envelopeMm: number } {
+  const envelopeMm = moaToMmAtDistance(Math.max(0, envelopeMoa), distanceM);
+  if (errorFactor <= 0 || envelopeMm <= 0) {
+    return { xMm: 0, yMm: 0, envelopeMm };
+  }
+  const mag = errorFactor * envelopeMm;
+  const angle = random() * Math.PI * 2;
+  return {
+    xMm: Math.cos(angle) * mag,
+    yMm: Math.sin(angle) * mag,
+    envelopeMm,
+  };
+}
 
 /**
  * How hard physical fatigue (BODY empty → 1) cuts hold steadiness.

@@ -13,10 +13,11 @@ import {
 import {
   FOCUS_HOLD_MS,
   SHOTS_PER_SERIES,
-  TRIGGER_DELAY_MAX_MS,
+  TRIGGER_BAR_MS,
   caliberBulletDiameterMm,
   cbaBullseyeOffsetFromImageCenterPx,
   clampScopeZoom,
+  combinedDispersionMoa,
   computeWeaponCalmFactor,
   effectiveCalmWithFocus,
   ensureAmmoAffinity,
@@ -26,8 +27,11 @@ import {
   mmToPx,
   RANGE_DISTANCE_M,
   RANGE_DISTANCES_M,
+  rollTriggerTargetMs,
   sampleShotFromPoa,
   scopeImageScale,
+  triggerPullErrorFactor,
+  triggerPullOffsetMm,
   wobbleAmplitudeMm,
   type GroupMeasurement,
   type RangeDistanceM,
@@ -141,7 +145,7 @@ export function ShootingRange({
     null,
   );
   const [status, setStatus] = useState(
-    "Hold F (fokus/pust), sikte med piltaster, hold Space for avtrekk.",
+    "Hold F (fokus) → merke på avtrekksbar. Hold Space, slipp på merket.",
   );
   const [focusUi, setFocusUi] = useState<{
     phase: "idle" | "focused" | "fatigued";
@@ -151,7 +155,9 @@ export function ShootingRange({
     pending: boolean;
     /** 0–1 while holding Space toward break. */
     progress: number;
-  }>({ pending: false, progress: 0 });
+    /** 0–1 mark on bar while focused. */
+    targetPct: number;
+  }>({ pending: false, progress: 0, targetPct: 0 });
   const [recoilActive, setRecoilActive] = useState(false);
   const recoilClearRef = useRef<number | null>(null);
 
@@ -169,11 +175,12 @@ export function ShootingRange({
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(1);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
+  const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
-    fireAtMs: number | null;
     startedAtMs: number | null;
-  }>({ held: false, fireAtMs: null, startedAtMs: null });
+  }>({ held: false, startedAtMs: null });
+  const triggerPullRef = useRef(0);
   const fireShotRef = useRef(() => {});
   const playShotRef = useRef<(hasSuppressor: boolean) => void>(() => {});
   const consumeAmmoRef = useRef(onConsumeAmmo);
@@ -299,18 +306,25 @@ export function ShootingRange({
       if (rolled) onAffinitiesChange(map);
 
       const w = wobbleRef.current;
+      const dispersionInput = {
+        rifle: rifle.rifle,
+        ammo: selectedAmmo.ammo,
+        stock: stock?.stock,
+        affinity,
+      };
+      const envelopeMoa = combinedDispersionMoa(dispersionInput);
+      const pull = triggerPullOffsetMm(
+        triggerPullRef.current,
+        envelopeMoa,
+        distanceRef.current,
+      );
       const poa = {
-        xMm: aimRef.current.x + w.x,
-        yMm: aimRef.current.y + w.y,
+        xMm: aimRef.current.x + w.x + pull.xMm,
+        yMm: aimRef.current.y + w.y + pull.yMm,
       };
       const shot = sampleShotFromPoa(
         poa,
-        {
-          rifle: rifle.rifle,
-          ammo: selectedAmmo.ammo,
-          stock: stock?.stock,
-          affinity,
-        },
+        dispersionInput,
         distanceRef.current,
       );
       const impact: ShotImpact = {
@@ -318,8 +332,17 @@ export function ShootingRange({
         yMm: shot.yMm + effectiveZero.yMm,
         diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
       };
+      const pullFactor = triggerPullRef.current;
+      const pullNote =
+        pullFactor <= 0
+          ? "rent avtrekk"
+          : pullFactor < 0.35
+            ? "OK avtrekk"
+            : pullFactor < 0.7
+              ? "rykk"
+              : "elendig avtrekk";
       setStatus(
-        `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
+        `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${pullNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
       );
       playShotRef.current(!!suppressor);
       // Recoil shake
@@ -339,8 +362,12 @@ export function ShootingRange({
   };
 
   function abortTrigger(reason: string) {
-    triggerRef.current = { held: false, fireAtMs: null, startedAtMs: null };
-    setTriggerUi({ pending: false, progress: 0 });
+    triggerRef.current = { held: false, startedAtMs: null };
+    setTriggerUi((prev) => ({
+      pending: false,
+      progress: 0,
+      targetPct: prev.targetPct,
+    }));
     if (reason) setStatus(reason);
   }
 
@@ -350,28 +377,58 @@ export function ShootingRange({
       held: true,
       startedAtMs: nowMs,
     };
-    setStatus("Fokus — hold pusten. 8 s ro før det blir verre.");
+    const markMs = rollTriggerTargetMs();
+    triggerMarkRef.current = markMs;
+    setTriggerUi({
+      pending: false,
+      progress: 0,
+      targetPct: markMs / TRIGGER_BAR_MS,
+    });
+    setStatus("Fokus — hold pusten. Slipp Space på merket i avtrekksbaren.");
   }
 
   function endFocus(abortReason: string) {
     if (!focusRef.current.held) return;
     focusRef.current = { held: false, startedAtMs: 0 };
-    if (triggerRef.current.fireAtMs != null) {
+    if (triggerRef.current.held) {
       abortTrigger(abortReason);
     }
+    triggerMarkRef.current = null;
+    setTriggerUi({ pending: false, progress: 0, targetPct: 0 });
   }
 
-  function releaseTrigger() {
-    if (triggerRef.current.fireAtMs != null) {
-      abortTrigger("Avtrekk sluppet — skudd avbrutt.");
+  function releaseTrigger(nowMs: number) {
+    const trig = triggerRef.current;
+    const markMs = triggerMarkRef.current;
+    if (!trig.held || trig.startedAtMs == null) {
+      triggerRef.current = { held: false, startedAtMs: null };
+      setTriggerUi((prev) => ({
+        ...prev,
+        pending: false,
+        progress: 0,
+      }));
       return;
     }
-    triggerRef.current.held = false;
-    setTriggerUi({ pending: false, progress: 0 });
+    if (!focusRef.current.held || markMs == null) {
+      abortTrigger("Mistet fokus under avtrekk.");
+      return;
+    }
+    const elapsed = Math.min(
+      TRIGGER_BAR_MS,
+      Math.max(0, nowMs - trig.startedAtMs),
+    );
+    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
+    triggerRef.current = { held: false, startedAtMs: null };
+    setTriggerUi((prev) => ({
+      pending: false,
+      progress: 0,
+      targetPct: prev.targetPct,
+    }));
+    fireShotRef.current();
   }
 
   function beginTrigger(nowMs: number) {
-    if (triggerRef.current.fireAtMs != null) return;
+    if (triggerRef.current.held) return;
     if (shotsLenRef.current >= SHOTS_PER_SERIES || measurementRef.current) {
       setStatus(
         measurementRef.current
@@ -380,22 +437,20 @@ export function ShootingRange({
       );
       return;
     }
-    if (!focusRef.current.held) {
-      setStatus("Hold F (pust/fokus) før du tar avtrekk.");
+    if (!focusRef.current.held || triggerMarkRef.current == null) {
+      setStatus("Hold F (pust/fokus) før du tar avtrekk — da settes merket.");
       return;
     }
     if (ammoRemaining <= 0) {
       setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
       return;
     }
-    const delay = Math.max(40, Math.random() * TRIGGER_DELAY_MAX_MS);
     triggerRef.current = {
       held: true,
-      fireAtMs: nowMs + delay,
       startedAtMs: nowMs,
     };
-    setTriggerUi({ pending: true, progress: 0 });
-    setStatus("Avtrekk… hold Space");
+    setTriggerUi((prev) => ({ ...prev, pending: true, progress: 0 }));
+    setStatus("Avtrekk… slipp Space på merket");
   }
 
   // Keyboard
@@ -443,7 +498,7 @@ export function ShootingRange({
         endFocus("Fokus sluppet — avtrekk avbrutt.");
       }
       if (e.key === " " || e.code === "Space") {
-        releaseTrigger();
+        releaseTrigger(performance.now());
       }
     }
 
@@ -501,17 +556,16 @@ export function ShootingRange({
       setWobbleMm(nextWobble);
 
       const trig = triggerRef.current;
-      if (trig.held && trig.fireAtMs != null && now >= trig.fireAtMs) {
-        if (!focusRef.current.held) {
-          abortTrigger("Mistet fokus under avtrekk.");
-        } else {
-          triggerRef.current = {
-            held: false,
-            fireAtMs: null,
-            startedAtMs: null,
-          };
-          setTriggerUi({ pending: false, progress: 1 });
-          fireShotRef.current();
+      if (trig.held && trig.startedAtMs != null) {
+        const elapsed = now - trig.startedAtMs;
+        const progress = Math.min(1, Math.max(0, elapsed / TRIGGER_BAR_MS));
+        setTriggerUi((prev) => ({
+          ...prev,
+          pending: true,
+          progress,
+        }));
+        if (elapsed >= TRIGGER_BAR_MS) {
+          releaseTrigger(trig.startedAtMs + TRIGGER_BAR_MS);
         }
       }
 
@@ -522,24 +576,6 @@ export function ShootingRange({
           phase: focusPhase(focusRef.current, now),
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
-        if (
-          trig.held &&
-          trig.fireAtMs != null &&
-          trig.startedAtMs != null
-        ) {
-          const span = Math.max(1, trig.fireAtMs - trig.startedAtMs);
-          const progress = Math.min(
-            1,
-            Math.max(0, (now - trig.startedAtMs) / span),
-          );
-          setTriggerUi({ pending: true, progress });
-        } else if (!trig.held) {
-          setTriggerUi((prev) =>
-            prev.pending || prev.progress > 0
-              ? { pending: false, progress: 0 }
-              : prev,
-          );
-        }
       }
 
       raf = requestAnimationFrame(tick);
@@ -737,14 +773,14 @@ export function ShootingRange({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    releaseTrigger();
+    releaseTrigger(performance.now());
   }
 
   return (
     <div className="shooting-range">
       <LocationNav
         onBackToTown={onLeave}
-        hint="F / Fokus-knapp · piltaster sikte · hold Space / Avtrekk (0–1 s) · +/− zoom"
+        hint="F = fokus + avtrekksmerke · piltaster · hold/slipp Space på merket (3 s bar) · +/− zoom"
       />
 
       <header className="shop-header">
@@ -997,15 +1033,22 @@ export function ShootingRange({
                     : "range-focus"
                 }
               >
-                {triggerUi.pending ? "Avtrekk…" : "Avtrekk (hold Space / knapp)"}
+                {triggerUi.pending
+                  ? "Avtrekk… slipp på merket"
+                  : "Avtrekk (hold/slipp Space)"}
               </span>
               <div
                 className="range-trigger-bar"
                 aria-hidden
                 style={{
                   ["--trigger-pct" as string]: `${triggerUi.progress * 100}%`,
+                  ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
                 }}
-              />
+              >
+                {triggerUi.targetPct > 0 ? (
+                  <span className="range-trigger-mark" />
+                ) : null}
+              </div>
             </div>
           </div>
 

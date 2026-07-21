@@ -12,7 +12,7 @@
  *
  * 1. **POA** — Where the reticle actually was when the shot broke
  *    (shooter wobble, focus/breath, bipod/can calm, BODY/MIND fatigue,
- *    trigger timing).
+ *    trigger-break quality vs the F-rolled mark on the 3 s bar).
  * 2. **Angular dispersion** — Gaussian rifle + ammo (+ stock, affinity).
  *    Catalog MOA = N σ (default 2). See `dispersion.ts`.
  * 3. **v0 variation** — Per-shot muzzle velocity SD → drop / TOF error

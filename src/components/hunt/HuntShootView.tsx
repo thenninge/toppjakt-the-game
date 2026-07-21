@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FOCUS_HOLD_MS,
-  TRIGGER_DELAY_MAX_MS,
+  TRIGGER_BAR_MS,
   caliberBulletDiameterMm,
   clampScopeZoom,
+  combinedDispersionMoa,
   computeWeaponCalmFactor,
   effectiveCalmWithFocus,
   ensureAmmoAffinity,
   focusPhase,
   focusRemainingMs,
+  rollTriggerTargetMs,
   sampleShotFromPoa,
   scopeImageScale,
+  triggerPullErrorFactor,
+  triggerPullOffsetMm,
   wobbleAmplitudeMm,
   RANGE_DISTANCE_M,
 } from "@/lib/range/precision";
@@ -179,8 +183,8 @@ export function HuntShootView({
   const [wobbleMm, setWobbleMm] = useState({ x: 0, y: 0 });
   const [status, setStatus] = useState(
     ballisticHold
-      ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · hold F · Space.`
-      : "Skru elevation + windage (vind × skyteretning) · hold F · Space.",
+      ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
+      : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
   );
   const [focusUi, setFocusUi] = useState<{
     phase: "idle" | "focused" | "fatigued";
@@ -189,6 +193,7 @@ export function HuntShootView({
   const [triggerUi, setTriggerUi] = useState({
     pending: false,
     progress: 0,
+    targetPct: 0,
   });
   const [recoilActive, setRecoilActive] = useState(false);
   const [fired, setFired] = useState(false);
@@ -219,11 +224,12 @@ export function HuntShootView({
     mentalFatigue: mentalFatigue,
   });
   const focusRef = useRef({ held: false, startedAtMs: 0 });
+  const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
-    fireAtMs: number | null;
     startedAtMs: number | null;
-  }>({ held: false, fireAtMs: null, startedAtMs: null });
+  }>({ held: false, startedAtMs: null });
+  const triggerPullRef = useRef(0);
   const fireShotRef = useRef(() => {});
   const playShotRef = useRef<(hasSuppressor: boolean) => void>(() => {});
   const consumeAmmoRef = useRef(onConsumeAmmo);
@@ -345,18 +351,25 @@ export function HuntShootView({
     if (rolled) onAffinitiesChange(map);
 
     const w = wobbleRef.current;
+    const dispersionInput = {
+      rifle: rifle.rifle,
+      ammo: selectedAmmo.ammo,
+      stock: stock?.stock,
+      affinity,
+    };
+    const envelopeMoa = combinedDispersionMoa(dispersionInput);
+    const pull = triggerPullOffsetMm(
+      triggerPullRef.current,
+      envelopeMoa,
+      distanceRef.current,
+    );
     const poa = {
-      xMm: aimRef.current.x + w.x,
-      yMm: aimRef.current.y + w.y,
+      xMm: aimRef.current.x + w.x + pull.xMm,
+      yMm: aimRef.current.y + w.y + pull.yMm,
     };
     const shot = sampleShotFromPoa(
       poa,
-      {
-        rifle: rifle.rifle,
-        ammo: selectedAmmo.ammo,
-        stock: stock?.stock,
-        affinity,
-      },
+      dispersionInput,
       distanceRef.current,
       Math.random,
       { densityRatio: densityRef.current },
@@ -414,16 +427,25 @@ export function HuntShootView({
       projectileType: selectedAmmo.ammo.projectileType,
       v0: selectedAmmo.ammo.v0,
     };
+    const pullFactor = triggerPullRef.current;
+    const pullLabel =
+      pullFactor <= 0
+        ? "Rent avtrekk · "
+        : pullFactor < 0.35
+          ? "OK avtrekk · "
+          : pullFactor < 0.7
+            ? "Rykk i avtrekket · "
+            : "Elendig avtrekk · ";
     setStatus(
       kind === "instant_kill"
-        ? "Instant kill (grønn sone)!"
+        ? pullLabel + "Instant kill (grønn sone)!"
         : kind === "vital_kill"
-          ? "Vitalt treff — fuglen faller."
+          ? pullLabel + "Vitalt treff — fuglen faller."
           : kind === "ettersok"
             ? zone === "vital"
-              ? "Vitalt treff, men trenger ettersøk…"
-              : "Treff i kroppen — ettersøk."
-            : "Bom.",
+              ? pullLabel + "Vitalt treff, men trenger ettersøk…"
+              : pullLabel + "Treff i kroppen — ettersøk."
+            : pullLabel + "Bom.",
     );
     if (hasTriggercam) {
       setReplay(result);
@@ -433,30 +455,76 @@ export function HuntShootView({
   };
 
   function abortTrigger(reason: string) {
-    triggerRef.current = { held: false, fireAtMs: null, startedAtMs: null };
-    setTriggerUi({ pending: false, progress: 0 });
+    triggerRef.current = { held: false, startedAtMs: null };
+    setTriggerUi((prev) => ({
+      pending: false,
+      progress: 0,
+      targetPct: prev.targetPct,
+    }));
     if (reason) setStatus(reason);
   }
 
   function beginFocus(nowMs: number) {
     if (focusRef.current.held || firedRef.current) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
+    const markMs = rollTriggerTargetMs();
+    triggerMarkRef.current = markMs;
+    setTriggerUi({
+      pending: false,
+      progress: 0,
+      targetPct: markMs / TRIGGER_BAR_MS,
+    });
   }
 
   function endFocus() {
     focusRef.current = { held: false, startedAtMs: 0 };
+    if (triggerRef.current.held) {
+      abortTrigger("Fokus sluppet — avtrekk avbrutt.");
+    }
+    triggerMarkRef.current = null;
+    setTriggerUi({ pending: false, progress: 0, targetPct: 0 });
   }
 
   function beginTrigger(nowMs: number) {
     if (firedRef.current) return;
     if (triggerRef.current.held) return;
-    const delay = Math.random() * TRIGGER_DELAY_MAX_MS;
-    triggerRef.current = {
-      held: true,
-      fireAtMs: nowMs + delay,
-      startedAtMs: nowMs,
-    };
-    setTriggerUi({ pending: true, progress: 0 });
+    if (!focusRef.current.held || triggerMarkRef.current == null) {
+      setStatus("Hold F (fokus) først — da settes avtrekkspunktet.");
+      return;
+    }
+    triggerRef.current = { held: true, startedAtMs: nowMs };
+    setTriggerUi((prev) => ({ ...prev, pending: true, progress: 0 }));
+    setStatus("Avtrekk — slipp Space på merket.");
+  }
+
+  function releaseTrigger(nowMs: number) {
+    const trig = triggerRef.current;
+    const markMs = triggerMarkRef.current;
+    if (!trig.held || trig.startedAtMs == null || markMs == null) {
+      triggerRef.current = { held: false, startedAtMs: null };
+      setTriggerUi((prev) => ({
+        ...prev,
+        pending: false,
+        progress: 0,
+      }));
+      return;
+    }
+    if (!focusRef.current.held) {
+      abortTrigger("Mistet fokus under avtrekk.");
+      return;
+    }
+    const elapsed = Math.min(
+      TRIGGER_BAR_MS,
+      Math.max(0, nowMs - trig.startedAtMs),
+    );
+    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
+    triggerRef.current = { held: false, startedAtMs: null };
+    setTriggerUi((prev) => ({
+      pending: false,
+      progress: 0,
+      targetPct: prev.targetPct,
+    }));
+    fireShotRef.current();
   }
 
   useEffect(() => {
@@ -505,11 +573,8 @@ export function HuntShootView({
       if (e.key === "ArrowRight") keysRef.current.right = false;
       if (e.key === "f" || e.key === "F") endFocus();
       if (e.key === " " || e.code === "Space") {
-        if (triggerRef.current.held && triggerRef.current.fireAtMs != null) {
-          const now = performance.now();
-          if (now < triggerRef.current.fireAtMs) {
-            abortTrigger("Avtrekk avbrutt.");
-          }
+        if (triggerRef.current.held) {
+          releaseTrigger(performance.now());
         }
       }
     }
@@ -567,20 +632,16 @@ export function HuntShootView({
       setWobbleMm(nextWobble);
 
       const trig = triggerRef.current;
-      if (trig.held && trig.fireAtMs != null && trig.startedAtMs != null) {
-        const prog = Math.min(
-          1,
-          (now - trig.startedAtMs) / (trig.fireAtMs - trig.startedAtMs),
-        );
-        setTriggerUi({ pending: true, progress: prog });
-        if (now >= trig.fireAtMs) {
-          triggerRef.current = {
-            held: false,
-            fireAtMs: null,
-            startedAtMs: null,
-          };
-          setTriggerUi({ pending: false, progress: 0 });
-          fireShotRef.current();
+      if (trig.held && trig.startedAtMs != null) {
+        const elapsed = now - trig.startedAtMs;
+        const prog = Math.min(1, elapsed / TRIGGER_BAR_MS);
+        setTriggerUi((prev) => ({
+          ...prev,
+          pending: true,
+          progress: prog,
+        }));
+        if (elapsed >= TRIGGER_BAR_MS) {
+          releaseTrigger(trig.startedAtMs + TRIGGER_BAR_MS);
         }
       }
 
@@ -989,9 +1050,14 @@ export function HuntShootView({
               style={
                 {
                   ["--trigger-pct" as string]: `${triggerUi.progress * 100}%`,
+                  ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
                 } as CSSProperties
               }
-            />
+            >
+              {triggerUi.targetPct > 0 ? (
+                <span className="range-trigger-mark" aria-hidden />
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1028,11 +1094,12 @@ export function HuntShootView({
               beginTrigger(performance.now());
             }}
             onPointerUp={() => {
-              if (
-                triggerRef.current.held &&
-                triggerRef.current.fireAtMs != null &&
-                performance.now() < triggerRef.current.fireAtMs
-              ) {
+              if (triggerRef.current.held) {
+                releaseTrigger(performance.now());
+              }
+            }}
+            onPointerCancel={() => {
+              if (triggerRef.current.held) {
                 abortTrigger("Avtrekk avbrutt.");
               }
             }}
