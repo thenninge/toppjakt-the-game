@@ -18,10 +18,15 @@ import {
   resolvePlayerItem,
   saveZeroing,
   appendShotLogEntry,
+  addDopeCardEntry,
+  updateDopeCardEntry,
+  removeDopeCardEntry,
   unusedLicenseCount,
   consumeInventoryItem,
+  sellInventoryOnFinn,
   type PlayerStats,
   type ShotLogEntry,
+  type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 import type { ShopItem } from "@/lib/shop/types";
@@ -58,6 +63,12 @@ import {
   removeCarcassFromStatsCounts,
   type GameCarcass,
 } from "@/lib/hunt/carcass";
+import {
+  CUSTOMS_SERVICES,
+  HOME_LOAD_PER_ROUND_NOK,
+  customsBeddingMoaDelta,
+  type CustomsServiceId,
+} from "@/lib/customs/spec";
 import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 import { isHeadlampMisc } from "@/lib/misc/spec";
@@ -234,6 +245,13 @@ export function IntroScreen() {
     });
   }
 
+  function sellOnFinn(itemId: string) {
+    setStats((prev) => {
+      const result = sellInventoryOnFinn(prev, itemId);
+      return result ? result.stats : prev;
+    });
+  }
+
   function harvestBird(carcass: GameCarcass) {
     setStats((prev) => {
       const counts = addCarcassToStatsCounts(
@@ -323,6 +341,58 @@ export function IntroScreen() {
     });
   }
 
+  function buyCustomsService(id: CustomsServiceId) {
+    const svc = CUSTOMS_SERVICES.find((s) => s.id === id);
+    if (!svc || svc.comingSoon) return;
+    setStats((prev) => {
+      if (prev.balance < svc.priceNok) return prev;
+      const mods = { ...prev.customsMods };
+      if (id === "bedding") {
+        if (mods.bedding || mods.pillarBedding) return prev;
+        mods.bedding = true;
+      } else if (id === "pillar_bedding") {
+        if (mods.pillarBedding) return prev;
+        mods.pillarBedding = true;
+        mods.bedding = true; // superseded, but mark as done
+      } else if (id === "fluting") {
+        if (mods.fluting) return prev;
+        mods.fluting = true;
+      } else if (id === "stock_slim") {
+        if (mods.stockSlim) return prev;
+        mods.stockSlim = true;
+      } else if (id === "home_loads_setup") {
+        if (mods.homeLoadsSetup) return prev;
+        mods.homeLoadsSetup = true;
+      } else if (id === "custom_camo") {
+        if (mods.customCamo) return prev;
+        mods.customCamo = true;
+      } else {
+        return prev;
+      }
+      return {
+        ...prev,
+        balance: prev.balance - svc.priceNok,
+        customsMods: mods,
+      };
+    });
+  }
+
+  function orderCustomsHomeLoads(ammoId: string, rounds: number) {
+    const qty = Math.max(1, Math.floor(rounds));
+    const cost = qty * HOME_LOAD_PER_ROUND_NOK;
+    setStats((prev) => {
+      if (!prev.customsMods.homeLoadsSetup) return prev;
+      if (prev.balance < cost) return prev;
+      const item = resolvePlayerItem(ammoId);
+      if (!item || !isAmmoItem(item)) return prev;
+      return {
+        ...prev,
+        balance: prev.balance - cost,
+        inventory: addToInventory(prev.inventory, ammoId, qty),
+      };
+    });
+  }
+
   const spendAmmoRound = useCallback((ammoId: string): boolean => {
     const result = consumeAmmoRound(statsRef.current, ammoId);
     if (!result.ok) return false;
@@ -367,6 +437,41 @@ export function IntroScreen() {
     },
     [],
   );
+
+  const addDopeEntry = useCallback(
+    (entry: Omit<DopeCardEntry, "id" | "atMs">) => {
+      setStats((prev) => ({
+        ...prev,
+        dopeCard: addDopeCardEntry(prev.dopeCard, entry),
+      }));
+    },
+    [],
+  );
+
+  const updateDopeEntry = useCallback(
+    (
+      id: string,
+      patch: Partial<
+        Pick<
+          DopeCardEntry,
+          "distanceM" | "elevationClicks" | "windageClicks" | "ammoLabel"
+        >
+      >,
+    ) => {
+      setStats((prev) => ({
+        ...prev,
+        dopeCard: updateDopeCardEntry(prev.dopeCard, id, patch),
+      }));
+    },
+    [],
+  );
+
+  const removeDopeEntry = useCallback((id: string) => {
+    setStats((prev) => ({
+      ...prev,
+      dopeCard: removeDopeCardEntry(prev.dopeCard, id),
+    }));
+  }, []);
 
   const logRangeSeries = useCallback((entry: ShotLogEntry) => {
     setStats((prev) => ({
@@ -591,7 +696,17 @@ export function IntroScreen() {
         )}
 
         {phase === "location" && location === "cb-customs" && (
-          <CbCustoms onLeave={backToTown} />
+          <CbCustoms
+            balance={stats.balance}
+            customsMods={stats.customsMods}
+            kitItems={stats.kit
+              .map((id) => resolvePlayerItem(id))
+              .filter((x): x is ShopItem => x != null)}
+            inventory={stats.inventory}
+            onBuyService={buyCustomsService}
+            onOrderHomeLoads={orderCustomsHomeLoads}
+            onLeave={backToTown}
+          />
         )}
 
         {phase === "location" && location === "meat-market" && (
@@ -630,13 +745,18 @@ export function IntroScreen() {
             inventory={stats.inventory}
             kit={stats.kit}
             shotLog={stats.shotLog}
+            dopeCard={stats.dopeCard}
+            customsMods={stats.customsMods}
             licenseCount={stats.weaponLicenses.length}
             rifleCount={countHuntingRifles(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             unlockedTerrainIds={stats.unlockedTerrainIds}
             onToggleKit={toggleKit}
+            onSellOnFinn={sellOnFinn}
             onSelectHuntingTerrain={selectHuntingTerrain}
+            onUpdateDope={updateDopeEntry}
+            onRemoveDope={removeDopeEntry}
             onStartHunt={startHunt}
             onLeave={backToTown}
           />
@@ -651,6 +771,8 @@ export function IntroScreen() {
             inventory={stats.inventory}
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
+            dopeCard={stats.dopeCard}
+            customsMods={stats.customsMods}
             weather={weather}
             musicEnabled={musicEnabled}
             onAffinitiesChange={(next) =>
@@ -676,12 +798,17 @@ export function IntroScreen() {
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
             shotLog={stats.shotLog}
+            dopeCard={stats.dopeCard}
+            customsMoaDelta={customsBeddingMoaDelta(stats.customsMods)}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))
             }
             onConsumeAmmo={spendAmmoRound}
             onEnsureZeroing={ensureComboZero}
             onSaveZeroing={saveComboZero}
+            onAddDope={addDopeEntry}
+            onUpdateDope={updateDopeEntry}
+            onRemoveDope={removeDopeEntry}
             onLogSeries={logRangeSeries}
             musicEnabled={musicEnabled}
             onLeave={backToTown}

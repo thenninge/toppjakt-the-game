@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import {
+  finnSalePayoutNok,
   formatInventoryQuantity,
   resolvePlayerItem,
+  type DopeCardEntry,
   type InventoryEntry,
   type ShotLogEntry,
 } from "@/lib/player";
@@ -12,7 +14,9 @@ import {
   isCarryItem,
   isCamoItem,
   isFoodItem,
+  isRifleItem,
   isSkiItem,
+  isStockItem,
   type ShopCategory,
   type ShopItem,
 } from "@/lib/shop/types";
@@ -24,10 +28,16 @@ import {
 } from "@/lib/kit/speed";
 import { kitCanBoil } from "@/lib/food/spec";
 import { camoSlot } from "@/lib/camo/spec";
+import {
+  EMPTY_CUSTOMS_MODS,
+  customsWeightReductionGrams,
+  type CustomsMods,
+} from "@/lib/customs/spec";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { InaturNo } from "@/components/town/InaturNo";
 import { ShotLogView } from "@/components/town/ShotLogView";
+import { DopeCardView } from "@/components/town/DopeCardView";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { huntReadyCheck } from "@/lib/hunt/readiness";
 
@@ -67,13 +77,27 @@ type HomeBaseProps = {
   inventory: InventoryEntry[];
   kit: string[];
   shotLog: ShotLogEntry[];
+  dopeCard: DopeCardEntry[];
+  customsMods?: CustomsMods;
   licenseCount: number;
   rifleCount: number;
   unusedLicenses: number;
   selectedHuntingTerrainId: string | null;
   unlockedTerrainIds: string[];
   onToggleKit: (itemId: string) => void;
+  /** Sell one unit (or ammo eske) on Finn at ~50% catalog price. */
+  onSellOnFinn: (itemId: string) => void;
   onSelectHuntingTerrain: (terrainId: string) => void;
+  onUpdateDope: (
+    id: string,
+    patch: Partial<
+      Pick<
+        DopeCardEntry,
+        "distanceM" | "elevationClicks" | "windageClicks" | "ammoLabel"
+      >
+    >,
+  ) => void;
+  onRemoveDope: (id: string) => void;
   onStartHunt: () => void;
   onLeave: () => void;
 };
@@ -83,17 +107,24 @@ export function HomeBase({
   inventory,
   kit,
   shotLog,
+  dopeCard,
+  customsMods = EMPTY_CUSTOMS_MODS,
   licenseCount,
   rifleCount,
   unusedLicenses,
   selectedHuntingTerrainId,
   unlockedTerrainIds,
   onToggleKit,
+  onSellOnFinn,
   onSelectHuntingTerrain,
+  onUpdateDope,
+  onRemoveDope,
   onStartHunt,
   onLeave,
 }: HomeBaseProps) {
-  const [view, setView] = useState<"main" | "inatur" | "shotlog">("main");
+  const [view, setView] = useState<"main" | "inatur" | "shotlog" | "dope">(
+    "main",
+  );
   const ownedItems = useMemo(() => {
     return inventory
       .map((entry) => {
@@ -114,10 +145,16 @@ export function HomeBase({
       .filter((x): x is ShopItem => x != null);
   }, [kit]);
 
-  const totalWeightGrams = useMemo(
-    () => kitItems.reduce((sum, item) => sum + item.weightGrams, 0),
-    [kitItems],
-  );
+  const totalWeightGrams = useMemo(() => {
+    const raw = kitItems.reduce((sum, item) => sum + item.weightGrams, 0);
+    const rifle = kitItems.find(isRifleItem);
+    const stock = kitItems.find(isStockItem);
+    const cut = customsWeightReductionGrams(customsMods, {
+      rifleWeightGrams: rifle?.weightGrams ?? 3500,
+      stockWeightGrams: stock?.weightGrams ?? null,
+    });
+    return Math.max(0, raw - cut);
+  }, [kitItems, customsMods]);
 
   const carryPieces = useMemo(
     () => kitItems.filter(isCarryItem).map((i) => i.carry),
@@ -237,6 +274,18 @@ export function HomeBase({
     );
   }
 
+  if (view === "dope") {
+    return (
+      <DopeCardView
+        entries={dopeCard}
+        onUpdate={onUpdateDope}
+        onRemove={onRemoveDope}
+        onBack={() => setView("main")}
+        backLabel="← Tilbake til hjem"
+      />
+    );
+  }
+
   if (view === "inatur") {
     return (
       <InaturNo
@@ -290,6 +339,13 @@ export function HomeBase({
           onClick={() => setView("shotlog")}
         >
           Shotlog ({shotLog.length})
+        </button>
+        <button
+          type="button"
+          className="intro-button sheriff-secondary"
+          onClick={() => setView("dope")}
+        >
+          Se/edit DOPE ({dopeCard.length})
         </button>
         <button
           type="button"
@@ -452,6 +508,7 @@ export function HomeBase({
           <ul className="shop-list home-kit-list">
           {ownedItems.map(({ item, qty }) => {
             const equipped = kit.includes(item.id);
+            const finnDeal = finnSalePayoutNok(item, qty);
             return (
               <li key={item.id} className="shop-row">
                 <div className="shop-row-main">
@@ -467,6 +524,9 @@ export function HomeBase({
                         : ""}
                     {EXCLUSIVE_KIT_CATEGORIES.has(item.category)
                       ? " · én i kit"
+                      : ""}
+                    {finnDeal
+                      ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
                       : ""}
                   </span>
                   {isCamoItem(item) ? (
@@ -491,22 +551,42 @@ export function HomeBase({
                         : item.food.kind === "fuel"
                           ? `gass · ${item.food.huntTrips} turer`
                           : item.food.requiresBoil
-                            ? `Real · +${item.food.staminaGain} stamina · krever koking`
-                            : `klar mat · +${item.food.staminaGain} · ${item.food.huntTrips} tur`}
+                            ? `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · krever koking`
+                            : `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · ${item.food.minutes} min`}
                     </span>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className={
-                    equipped
-                      ? "intro-button shop-buy kit-equipped"
-                      : "intro-button shop-buy"
-                  }
-                  onClick={() => requestToggleKit(item)}
-                >
-                  {equipped ? "I kit" : "Ta med"}
-                </button>
+                <div className="home-inventory-actions">
+                  <button
+                    type="button"
+                    className={
+                      equipped
+                        ? "intro-button shop-buy kit-equipped"
+                        : "intro-button shop-buy"
+                    }
+                    onClick={() => requestToggleKit(item)}
+                  >
+                    {equipped ? "I kit" : "Ta med"}
+                  </button>
+                  <button
+                    type="button"
+                    className="intro-button shop-buy sheriff-secondary"
+                    disabled={!finnDeal}
+                    title={
+                      finnDeal
+                        ? isAmmoItem(item)
+                          ? `Selg ${finnDeal.consumeQty} patroner for ${finnDeal.payout.toLocaleString("nb-NO")} kr (50% av eskepris)`
+                          : `Selg for ${finnDeal.payout.toLocaleString("nb-NO")} kr (50% av kjøpspris)`
+                        : "Kan ikke selges"
+                    }
+                    onClick={() => {
+                      if (!finnDeal) return;
+                      onSellOnFinn(item.id);
+                    }}
+                  >
+                    Selg på Finn
+                  </button>
+                </div>
               </li>
             );
           })}

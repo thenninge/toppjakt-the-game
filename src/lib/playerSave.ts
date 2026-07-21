@@ -3,6 +3,7 @@
  */
 
 import { createInitialStats, type PlayerStats } from "@/lib/player";
+import { normalizeCustomsMods } from "@/lib/customs/spec";
 
 const STORAGE_KEY = "toppjakt-player-save-v1";
 const SAVE_VERSION = 1 as const;
@@ -37,6 +38,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     ? raw.weaponLicenses
     : base.weaponLicenses;
   const shotLog = Array.isArray(raw.shotLog) ? raw.shotLog : base.shotLog;
+  const dopeCard = Array.isArray(raw.dopeCard) ? raw.dopeCard : base.dopeCard;
 
   return {
     ...base,
@@ -82,6 +84,8 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       ? (raw.zeroingProfiles as PlayerStats["zeroingProfiles"])
       : base.zeroingProfiles,
     shotLog: shotLog as PlayerStats["shotLog"],
+    dopeCard: dopeCard as PlayerStats["dopeCard"],
+    customsMods: normalizeCustomsMods(raw.customsMods),
     selectedHuntingTerrainId:
       typeof raw.selectedHuntingTerrainId === "string"
         ? raw.selectedHuntingTerrainId

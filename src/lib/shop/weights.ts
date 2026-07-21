@@ -144,6 +144,12 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "ammo-remington-3006-corelokt": 520,
   "ammo-biltema-22lr-bulk": 350,
   "ammo-jula-308-fmj": 1000,
+  "ammo-cb-homeload-65x55": 22,
+  "ammo-cb-homeload-65cm": 22,
+  "ammo-cb-homeload-308": 24,
+  "ammo-cb-homeload-3006": 25,
+  "ammo-cb-homeload-223": 14,
+  "ammo-cb-homeload-22lr": 4,
 
   "misc-vorn-deer-42": 3100,
   "misc-eberlestock-gunrunner-h2": 1600,
@@ -165,6 +171,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-nightcore-nu21": 68,
   "misc-nightcore-hc60": 128,
   "misc-triggercam": 460,
+  "misc-hunt-camcorder": 890,
 
   // Chestrigs
   "chest-cds-binocular-harness": 380,
@@ -241,6 +248,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "food-polarbrod-ost-skinke": 420, // pack + toppings
   "food-circlek-baguette": 260,
   "food-boller-5pk": 400,
+  "food-dronning-kokesjokolade": 100,
 };
 
 /** Fallback if an id is missing — keep catalog from crashing; fix weights map. */

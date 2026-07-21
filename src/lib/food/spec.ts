@@ -1,9 +1,8 @@
 /**
- * Food & cook kit — stamina on hunt trips.
+ * Food & cook kit — body/mind recovery on hunt trips.
  *
- * Ready food (brød, baguette, boller) restores stamina without a stove.
- * Freeze-dried “Real” turmat needs boiled water → kit must include a
- * burner + gas canister with trips left, or the stamina gain does not fire.
+ * Ready food works cold. Freeze-dried “Real” needs boiled water
+ * (stove + gas in kit).
  */
 
 export type FoodKind = "stove" | "fuel" | "meal" | "ready";
@@ -16,10 +15,15 @@ export type FoodSpec = {
    */
   huntTrips: number;
   /**
-   * Stamina restored when used on a trip (0 for stove/fuel).
-   * Score-ish 1–10 for meals; ready food is lower than a hot Real meal.
+   * Legacy shop hint (1–10). Prefer bodyGain / mindGain for hunt effects.
    */
   staminaGain: number;
+  /** Physical stamina restored (0–1 of full bar). */
+  bodyGain: number;
+  /** Mental stamina restored (0–1 of full bar). */
+  mindGain: number;
+  /** Game minutes spent eating / preparing. */
+  minutes: number;
   /** Freeze-dried / needs boiled water (stove + fuel required). */
   requiresBoil: boolean;
 };
@@ -29,23 +33,64 @@ export function isCookGear(food: FoodSpec): boolean {
 }
 
 /** True if kit can boil water for freeze-dried meals. */
-export function kitCanBoil(
-  foods: FoodSpec[],
-): boolean {
+export function kitCanBoil(foods: FoodSpec[]): boolean {
   const stove = foods.some((f) => f.kind === "stove");
   const fuel = foods.some((f) => f.kind === "fuel" && f.huntTrips > 0);
   return stove && fuel;
 }
 
+export type FoodRecovery = {
+  bodyGain: number;
+  mindGain: number;
+  minutes: number;
+};
+
 /**
- * Effective stamina from a food item given kit boil capability.
- * Boil-required meals return 0 without stove+fuel.
+ * Effective recovery from a food item given kit boil capability.
+ * Boil-required meals return null without stove+fuel.
  */
+export function effectiveFoodRecovery(
+  food: FoodSpec,
+  canBoil: boolean,
+): FoodRecovery | null {
+  if (food.kind === "stove" || food.kind === "fuel") return null;
+  if (food.bodyGain <= 0 && food.mindGain <= 0) return null;
+  if (food.requiresBoil && !canBoil) return null;
+  return {
+    bodyGain: food.bodyGain,
+    mindGain: food.mindGain,
+    minutes: Math.max(1, food.minutes),
+  };
+}
+
+/** @deprecated Prefer effectiveFoodRecovery. */
 export function effectiveFoodStamina(
   food: FoodSpec,
   canBoil: boolean,
 ): number {
-  if (food.staminaGain <= 0) return 0;
-  if (food.requiresBoil && !canBoil) return 0;
+  const rec = effectiveFoodRecovery(food, canBoil);
+  if (!rec) return 0;
   return food.staminaGain;
 }
+
+export function formatStaminaPct(gain: number): string {
+  if (gain <= 0) return "0%";
+  return `${Math.round(gain * 100)}%`;
+}
+
+/** Jula thermos — enables coffee cup on hunt. */
+export const THERMOS_ITEM_ID = "misc-thermos-jula";
+
+export const COFFEE_RECOVERY: FoodRecovery & { label: string } = {
+  label: "Kaffekopp (termos)",
+  bodyGain: 0.05,
+  mindGain: 0.15,
+  minutes: 5,
+};
+
+export const TYRIBAL_RECOVERY = {
+  label: "Tyribål!",
+  bodyGain: 0.3,
+  mindToFull: true as const,
+  minutes: 45,
+};

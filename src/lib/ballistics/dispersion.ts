@@ -57,17 +57,22 @@ export type DispersionInput = {
   stock?: StockSpec | null;
   /** player×rifle×ammo; 1 = typical, <1 lucky ammo match, >1 poor match. */
   affinity: number;
+  /** Negative = tighter (CB Customs bedding / søylebedding). */
+  customsMoaDelta?: number;
 };
 
 /**
  * Combined angular envelope in MOA (the N-σ figure from catalog terms).
- * rifle + (ammo × affinity) + stock delta.
+ * rifle + (ammo × affinity) + stock delta + customs bedding.
  */
 export function combinedDispersionMoa(input: DispersionInput): number {
   const ammoMoa = Math.max(0, input.ammo.maxAchievableMoa) * input.affinity;
   let moa = Math.max(0, input.rifle.averageBestAccuracyMoa) + ammoMoa;
   if (input.stock) {
     moa = applyStockMoaDelta(moa, input.stock);
+  }
+  if (input.customsMoaDelta) {
+    moa += input.customsMoaDelta;
   }
   return Math.max(0.05, moa);
 }

@@ -528,8 +528,8 @@ export function PikeProShop({
                       : food.kind === "fuel"
                         ? `gass · ${food.huntTrips} jaktturer`
                         : food.requiresBoil
-                          ? `stamina +${food.staminaGain} · ${food.huntTrips} tur · krever koking`
-                          : `stamina +${food.staminaGain} · ${food.huntTrips} jakttur${food.huntTrips === 1 ? "" : "er"} · klar/kald`}
+                          ? `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min · krever koking`
+                          : `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min`}
                   </span>
                 ) : null}
                 {isSuppressor ? (

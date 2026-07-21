@@ -10,9 +10,12 @@ import {
 } from "react";
 import { ZERO_CLICK_MM } from "@/lib/player";
 
+/** Turret visual modes + optional field/app tabs (hunt). */
+export type ScopeHudTab = "overhead" | "shooter" | "enviro" | "kestrel";
+
 type TurretView = "overhead" | "shooter";
 
-const VIEW_STORAGE_KEY = "toppjakt-scope-turret-view";
+const VIEW_STORAGE_KEY = "toppjakt-scope-hud-tab";
 
 type ScopeTurretsProps = {
   /** Session dial mm-at-100 m (+x = right, +y = down). */
@@ -22,6 +25,15 @@ type ScopeTurretsProps = {
   disabled?: boolean;
   /** Optional actions under/ beside the turrets (save zero, abort, …). */
   actions?: ReactNode;
+  /**
+   * Enviro tab content (range, wind, DOPE…). When set, shows an Enviro tab
+   * — switch away from turrets to read field data.
+   */
+  enviroPanel?: ReactNode;
+  /**
+   * Kestrel tab content. Only pass when Kestrel is in kit / solution exists.
+   */
+  kestrelPanel?: ReactNode;
 };
 
 function milLabel(clicks: number): string {
@@ -44,11 +56,15 @@ function capRotationDeg(clicks: number): number {
   return clicks * 18;
 }
 
-function readStoredView(): TurretView {
+function readStoredTab(allowed: ScopeHudTab[]): ScopeHudTab {
   if (typeof window === "undefined") return "overhead";
   try {
-    const v = window.localStorage.getItem(VIEW_STORAGE_KEY);
-    if (v === "shooter" || v === "overhead") return v;
+    const v =
+      window.localStorage.getItem(VIEW_STORAGE_KEY) ??
+      window.localStorage.getItem("toppjakt-scope-turret-view");
+    if (v === "shooter" || v === "overhead" || v === "enviro" || v === "kestrel") {
+      if (allowed.includes(v)) return v;
+    }
   } catch {
     /* ignore */
   }
@@ -441,7 +457,7 @@ function TurretDial({
 
 /**
  * Scope elevation (top turret) + windage (side turret) — click dials with mil readout.
- * Toggle between overhead cap view and shooter's-perspective cylinder.
+ * Tabs: Oversikt / Shooter for turrets; optional Enviro / Kestrel for field apps.
  */
 export function ScopeTurrets({
   sessionZeroXMm,
@@ -449,15 +465,28 @@ export function ScopeTurrets({
   onNudge,
   disabled = false,
   actions,
+  enviroPanel,
+  kestrelPanel,
 }: ScopeTurretsProps) {
-  const [view, setView] = useState<TurretView>("overhead");
+  const hasEnviro = enviroPanel != null;
+  const hasKestrel = kestrelPanel != null;
+  const allowedTabs: ScopeHudTab[] = [
+    "overhead",
+    "shooter",
+    ...(hasEnviro ? (["enviro"] as const) : []),
+    ...(hasKestrel ? (["kestrel"] as const) : []),
+  ];
+
+  const [tab, setTab] = useState<ScopeHudTab>("overhead");
 
   useEffect(() => {
-    setView(readStoredView());
-  }, []);
+    setTab(readStoredTab(allowedTabs));
+    // Re-read when kit gains/loses Kestrel or Enviro.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedTabs derived from panels
+  }, [hasEnviro, hasKestrel]);
 
-  function setAndStoreView(next: TurretView) {
-    setView(next);
+  function setAndStoreTab(next: ScopeHudTab) {
+    setTab(next);
     try {
       window.localStorage.setItem(VIEW_STORAGE_KEY, next);
     } catch {
@@ -471,79 +500,144 @@ export function ScopeTurrets({
   const elevFace = -elevClicks;
   const windFace = windClicks;
 
+  const turretView: TurretView =
+    tab === "shooter" ? "shooter" : "overhead";
+  const showTurrets = tab === "overhead" || tab === "shooter";
+  const showEnviro = tab === "enviro" && hasEnviro;
+  const showKestrel = tab === "kestrel" && hasKestrel;
+
   return (
-    <div className="scope-turrets">
-      <div className="scope-turrets-view-toggle" role="group" aria-label="Tårnvisning">
+    <div
+      className={
+        showTurrets
+          ? "scope-turrets"
+          : "scope-turrets scope-turrets--app"
+      }
+    >
+      <div className="scope-turrets-view-toggle" role="tablist" aria-label="Skyte-HUD">
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === "overhead"}
           className={
-            view === "overhead"
+            tab === "overhead"
               ? "scope-turrets-view-btn is-active"
               : "scope-turrets-view-btn"
           }
           disabled={disabled}
-          onClick={() => setAndStoreView("overhead")}
+          onClick={() => setAndStoreTab("overhead")}
         >
           Oversikt
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === "shooter"}
           className={
-            view === "shooter"
+            tab === "shooter"
               ? "scope-turrets-view-btn is-active"
               : "scope-turrets-view-btn"
           }
           disabled={disabled}
-          onClick={() => setAndStoreView("shooter")}
+          onClick={() => setAndStoreTab("shooter")}
         >
           Shooter
         </button>
+        {hasEnviro ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "enviro"}
+            className={
+              tab === "enviro"
+                ? "scope-turrets-view-btn is-active"
+                : "scope-turrets-view-btn"
+            }
+            disabled={disabled}
+            onClick={() => setAndStoreTab("enviro")}
+          >
+            Enviro/App
+          </button>
+        ) : null}
+        {hasKestrel ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "kestrel"}
+            className={
+              tab === "kestrel"
+                ? "scope-turrets-view-btn is-active"
+                : "scope-turrets-view-btn"
+            }
+            disabled={disabled}
+            onClick={() => setAndStoreTab("kestrel")}
+          >
+            Kestrel
+          </button>
+        ) : null}
       </div>
 
-      <TurretDial
-        title="Elevation"
-        axisHint="Topptårn"
-        kind="elevation"
-        view={view}
-        clicks={elevClicks}
-        faceClicks={elevFace}
-        milValue={milLabel(elevClicks)}
-        milSuffix={milDir(elevClicks, "D", "U")}
-        clickText={clickLabel(elevClicks, "ned", "opp")}
-        disabled={disabled}
-        onNeg={() => onNudge("y", -ZERO_CLICK_MM)}
-        onPos={() => onNudge("y", ZERO_CLICK_MM)}
-        onFaceDelta={(d) => {
-          /* face UP+ → session y − */
-          if (d !== 0) onNudge("y", -d * ZERO_CLICK_MM);
-        }}
-        negAria="Elevation opp (ett klikk)"
-        posAria="Elevation ned (ett klikk)"
-        negMark="▲ U"
-        posMark="▼ D"
-        baseLegend="UP →"
-      />
-      <TurretDial
-        title="Windage"
-        axisHint="Sidetårn"
-        kind="windage"
-        view={view}
-        clicks={windClicks}
-        faceClicks={windFace}
-        milValue={milLabel(windClicks)}
-        milSuffix={milDir(windClicks, "R", "L")}
-        clickText={clickLabel(windClicks, "høyre", "venstre")}
-        disabled={disabled}
-        onNeg={() => onNudge("x", -ZERO_CLICK_MM)}
-        onPos={() => onNudge("x", ZERO_CLICK_MM)}
-        onFaceDelta={(d) => {
-          if (d !== 0) onNudge("x", d * ZERO_CLICK_MM);
-        }}
-        negAria="Windage venstre (ett klikk)"
-        posAria="Windage høyre (ett klikk)"
-        negMark="◀ L"
-        posMark="R ▶"
-      />
+      {showTurrets ? (
+        <>
+          <TurretDial
+            title="Elevation"
+            axisHint="Topptårn"
+            kind="elevation"
+            view={turretView}
+            clicks={elevClicks}
+            faceClicks={elevFace}
+            milValue={milLabel(elevClicks)}
+            milSuffix={milDir(elevClicks, "D", "U")}
+            clickText={clickLabel(elevClicks, "ned", "opp")}
+            disabled={disabled}
+            onNeg={() => onNudge("y", -ZERO_CLICK_MM)}
+            onPos={() => onNudge("y", ZERO_CLICK_MM)}
+            onFaceDelta={(d) => {
+              /* face UP+ → session y − */
+              if (d !== 0) onNudge("y", -d * ZERO_CLICK_MM);
+            }}
+            negAria="Elevation opp (ett klikk)"
+            posAria="Elevation ned (ett klikk)"
+            negMark="▲ U"
+            posMark="▼ D"
+            baseLegend="UP →"
+          />
+          <TurretDial
+            title="Windage"
+            axisHint="Sidetårn"
+            kind="windage"
+            view={turretView}
+            clicks={windClicks}
+            faceClicks={windFace}
+            milValue={milLabel(windClicks)}
+            milSuffix={milDir(windClicks, "R", "L")}
+            clickText={clickLabel(windClicks, "høyre", "venstre")}
+            disabled={disabled}
+            onNeg={() => onNudge("x", -ZERO_CLICK_MM)}
+            onPos={() => onNudge("x", ZERO_CLICK_MM)}
+            onFaceDelta={(d) => {
+              if (d !== 0) onNudge("x", d * ZERO_CLICK_MM);
+            }}
+            negAria="Windage venstre (ett klikk)"
+            posAria="Windage høyre (ett klikk)"
+            negMark="◀ L"
+            posMark="R ▶"
+          />
+        </>
+      ) : null}
+
+      {showEnviro ? (
+        <div className="scope-turrets-app-panel" role="tabpanel">
+          {enviroPanel}
+        </div>
+      ) : null}
+
+      {showKestrel ? (
+        <div className="scope-turrets-app-panel scope-turrets-app-panel--kestrel" role="tabpanel">
+          {kestrelPanel}
+        </div>
+      ) : null}
+
       {actions ? <div className="scope-turrets-actions">{actions}</div> : null}
     </div>
   );

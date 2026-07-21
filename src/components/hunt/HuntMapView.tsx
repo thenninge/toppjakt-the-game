@@ -21,7 +21,8 @@ import {
   CELL_WIDTH_M,
   clampFatigue,
   describeEffort,
-  EAT_ACTION_MINUTES,
+  estimatedBirdChancePct,
+  describeBirdChance,
   fatigueFromStep,
   formatHuntClock,
   getCellEffort,
@@ -32,7 +33,6 @@ import {
   isStrandedAtNight,
   minutesUntilDawn,
   pathTravelMinutes,
-  REST_ACTION_MINUTES,
   travelMinutesForCell,
   type EffortScore,
 } from "@/lib/hunt/travel";
@@ -48,6 +48,7 @@ import {
 } from "@/lib/hunt/images";
 import {
   getInventoryQty,
+  type DopeCardEntry,
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
@@ -61,8 +62,15 @@ import {
   isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
-import { kitCanBoil, effectiveFoodStamina } from "@/lib/food/spec";
-import { isHeadlampMisc } from "@/lib/misc/spec";
+import {
+  COFFEE_RECOVERY,
+  THERMOS_ITEM_ID,
+  TYRIBAL_RECOVERY,
+  effectiveFoodRecovery,
+  formatStaminaPct,
+  kitCanBoil,
+} from "@/lib/food/spec";
+import { isCamcorderMisc, isHeadlampMisc } from "@/lib/misc/spec";
 import {
   createCarcassFromHarvest,
   speciesLabelNb,
@@ -71,10 +79,17 @@ import {
 } from "@/lib/hunt/carcass";
 import { SpotView, type SpotMode } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
+import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
 import { kitBirdSpotFactor } from "@/lib/camo/spec";
+import {
+  EMPTY_CUSTOMS_MODS,
+  applyCustomCamoBirdSpot,
+  customsBeddingMoaDelta,
+  type CustomsMods,
+} from "@/lib/customs/spec";
 import {
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
@@ -87,7 +102,11 @@ import {
   type FlushEvent,
   type HuntBird,
 } from "@/lib/hunt/birds";
-import type { HuntShotResult } from "@/lib/hunt/shoot";
+import {
+  CAMCORDER_ITEM_ID,
+  TRIGGERCAM_ITEM_ID,
+  type HuntShotResult,
+} from "@/lib/hunt/shoot";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
 import { DEFAULT_BINOS_MAGNIFICATION } from "@/lib/hunt/images";
 import {
@@ -99,7 +118,16 @@ import {
 } from "@/lib/ballistics/solver";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
 import type { ShotPair } from "@/lib/aware/types";
-import { impactFromShot } from "@/lib/aware/ettersok";
+import { caliberBulletDiameterMm } from "@/lib/range/precision";
+import {
+  generateFleeObservation,
+  impactFromShot,
+} from "@/lib/aware/ettersok";
+import {
+  clearShotPairsStorage,
+  loadShotPairsForHuntStart,
+  saveShotPairsForTerrain,
+} from "@/lib/aware/shotPairStorage";
 import type { CellPoint } from "@/lib/aware/cellGeometry";
 
 export type HuntHudStatus = {
@@ -117,6 +145,8 @@ type HuntMapViewProps = {
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  dopeCard?: DopeCardEntry[];
+  customsMods?: CustomsMods;
   weather: DayWeather;
   musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -134,7 +164,7 @@ type HuntMapViewProps = {
   onLeave: () => void;
 };
 
-type PanelMode = "idle" | "inspect" | "arrived" | "eat";
+type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
 
 type WalkSession = {
   imageSrc: string;
@@ -163,6 +193,10 @@ type ShootSession = {
   /** Cell-local markers — must match Aware → ettersøk. */
   hunterPos: CellPoint;
   birdPos: CellPoint;
+  /** Camcorder was deployed in Aware before this shot. */
+  camcorderActive?: boolean;
+  /** Where the displayed range came from. */
+  rangeSource: "lrf" | "estimated";
 };
 
 type AwareSession = {
@@ -186,9 +220,13 @@ type AwareSession = {
 
 type EatSession = {
   imageSrc: string;
-  itemId: string;
+  /** Inventory item to consume, or null for coffee / tyribål. */
+  itemId: string | null;
   label: string;
-  stam: number;
+  bodyGain: number;
+  mindGain: number;
+  mindToFull?: boolean;
+  minutes: number;
 };
 
 type ForcedRestSession = {
@@ -220,6 +258,8 @@ export function HuntMapView({
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  dopeCard = [],
+  customsMods = EMPTY_CUSTOMS_MODS,
   weather,
   musicEnabled,
   onAffinitiesChange,
@@ -253,6 +293,8 @@ export function HuntMapView({
   const [shootSession, setShootSession] = useState<ShootSession | null>(null);
   const [awareSession, setAwareSession] = useState<AwareSession | null>(null);
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
+  /** Hit fasit overlay after finding a dead bird (with or without Triggercam). */
+  const [findHitAar, setFindHitAar] = useState<ShotPair | null>(null);
   const [eatSession, setEatSession] = useState<EatSession | null>(null);
   const [forcedRest, setForcedRest] = useState<ForcedRestSession | null>(null);
   const [forcedCamp, setForcedCamp] = useState<ForcedCampPrompt | null>(null);
@@ -325,17 +367,34 @@ export function HuntMapView({
   );
   const camoBirdSpot = useMemo(
     () =>
-      kitBirdSpotFactor(
-        kitItems.filter(isCamoItem).map((i) => i.camo),
-        false,
+      applyCustomCamoBirdSpot(
+        kitBirdSpotFactor(
+          kitItems.filter(isCamoItem).map((i) => i.camo),
+          false,
+        ),
+        customsMods,
       ),
-    [kitItems],
+    [kitItems, customsMods],
   );
+  const customsMoaDelta = customsBeddingMoaDelta(customsMods);
   const hasHeadlamp = useMemo(
     () =>
       kitItems.some(
         (i) => isMiscItem(i) && isHeadlampMisc(i.misc),
       ),
+    [kitItems],
+  );
+  const hasCamcorder = useMemo(
+    () =>
+      kitItems.some(
+        (i) =>
+          i.id === CAMCORDER_ITEM_ID ||
+          (isMiscItem(i) && isCamcorderMisc(i.misc)),
+      ),
+    [kitItems],
+  );
+  const hasTriggercam = useMemo(
+    () => kitItems.some((i) => i.id === TRIGGERCAM_ITEM_ID),
     [kitItems],
   );
 
@@ -366,7 +425,8 @@ export function HuntMapView({
     setSpotSession(null);
     setShootSession(null);
     setAwareSession(null);
-    setShotPairs([]);
+    setShotPairs(loadShotPairsForHuntStart(terrainId));
+    setFindHitAar(null);
     setEatSession(null);
     setForcedRest(null);
     setForcedCamp(null);
@@ -376,6 +436,15 @@ export function HuntMapView({
     pendingForcedRestRef.current = false;
     setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.");
   }, [terrainId, map]);
+
+  useEffect(() => {
+    saveShotPairsForTerrain(terrainId, shotPairs);
+  }, [terrainId, shotPairs]);
+
+  function leaveHunt() {
+    clearShotPairsStorage();
+    onLeave();
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -391,7 +460,7 @@ export function HuntMapView({
         !campOvernight &&
         !flushCurrent
       ) {
-        onLeave();
+        leaveHunt();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -458,6 +527,11 @@ export function HuntMapView({
     return list;
   }, [map]);
 
+  const hasThermos = useMemo(
+    () => kitItems.some((i) => i.id === THERMOS_ITEM_ID),
+    [kitItems],
+  );
+
   const edible = useMemo(() => {
     const canBoil = kitCanBoil(
       kitItems.filter(isFoodItem).map((i) => i.food),
@@ -467,8 +541,14 @@ export function HuntMapView({
       .filter((item) => item.food.kind === "meal" || item.food.kind === "ready")
       .map((item) => {
         const qty = getInventoryQty(inventory, item.id);
-        const stam = effectiveFoodStamina(item.food, canBoil);
-        return { item, qty, stam, canEat: qty > 0 && stam > 0 };
+        const recovery = effectiveFoodRecovery(item.food, canBoil);
+        return {
+          item,
+          qty,
+          recovery,
+          canEat: qty > 0 && recovery != null,
+          needsBoil: item.food.requiresBoil && !canBoil,
+        };
       })
       .filter((x) => x.qty > 0);
   }, [kitItems, inventory]);
@@ -491,7 +571,7 @@ export function HuntMapView({
     return (
       <div className="hunt-map">
         <p className="intro-line">Ugyldig jaktterreng.</p>
-        <button type="button" className="intro-button" onClick={onLeave}>
+        <button type="button" className="intro-button" onClick={leaveHunt}>
           Tilbake til Home
         </button>
       </div>
@@ -544,6 +624,17 @@ export function HuntMapView({
       setForcedRest({ imageSrc: REST_TIRED_IMAGE });
       return;
     }
+
+    // Study map: browse cells freely; only «Go back» leaves the mode.
+    if (panel === "study") {
+      if (cell.row === pos.row && cell.col === pos.col) {
+        setSelected(null);
+        return;
+      }
+      setSelected(cell);
+      return;
+    }
+
     if (cell.row === pos.row && cell.col === pos.col) {
       setSelected(null);
       setPanel("arrived");
@@ -816,13 +907,16 @@ export function HuntMapView({
         setLog(
           recoveryOnly
             ? "Du fant ikke treet. Skuddparet er lagret — åpne Track senere."
-            : "Ettersøk mislyktes — fuglen er tapt. Sporene er logget.",
+            : "Fuglen ble ikke funnet. Skuddparet er lagret.",
         );
       } else {
+        const attempts = pair?.ettersokAttempts ?? 0;
         setLog(
           recoveryOnly
             ? "Skuddpar lagret. Husk å hente fuglen ved treet (Track)."
-            : "Du avslutter ettersøk uten søk. Fuglen er trolig tapt.",
+            : attempts > 0
+              ? `Du avslutter ettersøk etter ${attempts} forsøk uten funn — fuglen er tapt.`
+              : "Du avslutter uten ettersøk — fuglen er trolig tapt.",
         );
       }
       setAwareSession(null);
@@ -862,11 +956,13 @@ export function HuntMapView({
       bearingDeg,
       hunterPos: stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 },
       birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
+      camcorderActive: !!stance?.camcorderActive,
+      rangeSource: hasBinos ? "lrf" : "estimated",
     });
     setLog(
       hold
-        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${distanceM} m · cw ${cw.toFixed(1)} m/s`
-        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${distanceM} m · crosswind ${cw.toFixed(1)} m/s — skru elev + windage!`,
+        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${distanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}`
+        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${distanceM} m — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}`,
     );
   }
 
@@ -899,27 +995,30 @@ export function HuntMapView({
     const dist = result.measuredDistanceM;
     const stand = shootSession.hunterPos;
     // True bird marker from Aware — keep continuity into ettersøk.
-    // Soft hits: slight scatter so søk isn't pixel-perfect.
     const birdPos = shootSession.birdPos;
-    const impact =
-      result.kind === "miss"
-        ? impactFromShot({
-            stand,
-            bearingDeg: shootSession.bearingDeg,
-            distanceM: result.trueDistanceM,
-          })
-        : result.kind === "ettersok"
-          ? {
-              x: Math.max(
-                2,
-                Math.min(98, birdPos.x + (Math.random() - 0.5) * 4),
-              ),
-              y: Math.max(
-                2,
-                Math.min(98, birdPos.y + (Math.random() - 0.5) * 4),
-              ),
-            }
-          : birdPos;
+    /** Aim point (bird/tree) — always the visible skuddpar endpoint. */
+    let target = birdPos;
+    let impact = birdPos;
+    if (result.kind === "miss") {
+      const missImpact = impactFromShot({
+        stand,
+        bearingDeg: shootSession.bearingDeg,
+        distanceM: result.trueDistanceM,
+      });
+      target = missImpact;
+      impact = missImpact;
+    }
+    let fleeObservation: ShotPair["fleeObservation"];
+    if (result.kind === "ettersok") {
+      const flee = generateFleeObservation({
+        stand,
+        birdAtShot: birdPos,
+        hasTriggercam,
+        hasCamcorder: !!shootSession.camcorderActive,
+      });
+      impact = flee.landPos;
+      fleeObservation = flee.observation;
+    }
     const harvestDraft: BirdHarvestInput = {
       birdId: id,
       species: shootSession.bird.species,
@@ -939,6 +1038,7 @@ export function HuntMapView({
       cell: { ...pos },
       cellLabel: cellLabel(pos),
       stand,
+      target,
       impact,
       distanceM: Math.round(result.trueDistanceM),
       bearingDeg: shootSession.bearingDeg,
@@ -946,6 +1046,14 @@ export function HuntMapView({
       trackPoints: [],
       found: null,
       harvestDraft,
+      fleeObservation,
+      hitFasit: {
+        xMm: result.xMm,
+        yMm: result.yMm,
+        diameterMm: caliberBulletDiameterMm(result.caliber ?? "6.5×55"),
+        zone: result.zone,
+        kind: result.kind,
+      },
     };
     setShotPairs((prev) => [pair, ...prev]);
 
@@ -982,7 +1090,9 @@ export function HuntMapView({
           ? `Instant kill på ${dist} m — skuddpar lagret. Finn treet i Track.`
           : result.kind === "vital_kill"
             ? `Vitalt treff på ${dist} m — skuddpar lagret. Finn treet i Track.`
-            : `Treff — ettersøk! Aware Track åpnet med stand/fugl-posisjon.`,
+            : fleeObservation
+              ? `Treff — ettersøk! Flukt ${fleeObservation.compassLabel}. Legg søkespor og kjør Ettersøk (30 min).`
+              : `Treff — ettersøk! Legg søkespor rundt skuddplassen og kjør Ettersøk (30 min).`,
       );
       return;
     }
@@ -994,18 +1104,11 @@ export function HuntMapView({
     setPanel("arrived");
   }
 
-  function restTen() {
-    advanceClockMinutes(REST_ACTION_MINUTES);
-    setMentalFatigue((m) => clampFatigue(m - 0.15));
-    setPhysicalFatigue((p) => clampFatigue(p - 0.12));
-    setLog("Du hviler 10 minutter. Mentalt og fysisk litt bedre.");
-  }
-
   function eatItem(itemId: string) {
     const entry = edible.find((e) => e.item.id === itemId);
-    if (!entry || !entry.canEat) {
+    if (!entry || !entry.canEat || !entry.recovery) {
       setLog(
-        entry?.item.food.requiresBoil
+        entry?.needsBoil
           ? "Kan ikke spise Real uten kokeutstyr i kit."
           : "Kan ikke spise dette nå.",
       );
@@ -1015,24 +1118,62 @@ export function HuntMapView({
       imageSrc: pickEatImage(),
       itemId,
       label: `${entry.item.brand} ${entry.item.name}`,
-      stam: entry.stam,
+      bodyGain: entry.recovery.bodyGain,
+      mindGain: entry.recovery.mindGain,
+      minutes: entry.recovery.minutes,
+    });
+  }
+
+  function drinkCoffee() {
+    if (!hasThermos) {
+      setLog("Ingen termos i kit — ingen kaffe.");
+      return;
+    }
+    setEatSession({
+      imageSrc: pickEatImage(),
+      itemId: null,
+      label: COFFEE_RECOVERY.label,
+      bodyGain: COFFEE_RECOVERY.bodyGain,
+      mindGain: COFFEE_RECOVERY.mindGain,
+      minutes: COFFEE_RECOVERY.minutes,
+    });
+  }
+
+  function lightTyribal() {
+    setEatSession({
+      imageSrc: pickEatImage(),
+      itemId: null,
+      label: TYRIBAL_RECOVERY.label,
+      bodyGain: TYRIBAL_RECOVERY.bodyGain,
+      mindGain: 1,
+      mindToFull: true,
+      minutes: TYRIBAL_RECOVERY.minutes,
     });
   }
 
   function finishEat() {
     if (!eatSession) return;
-    if (!onConsumeFood(eatSession.itemId)) {
-      setLog("Ingen mer av den maten igjen.");
-      setEatSession(null);
-      setPanel("arrived");
-      return;
+    if (eatSession.itemId) {
+      if (!onConsumeFood(eatSession.itemId)) {
+        setLog("Ingen mer av den maten igjen.");
+        setEatSession(null);
+        setPanel("arrived");
+        return;
+      }
     }
-    advanceClockMinutes(EAT_ACTION_MINUTES);
-    const restore = eatSession.stam / 10;
-    setPhysicalFatigue((p) => clampFatigue(p - restore * 0.35));
-    setMentalFatigue((m) => clampFatigue(m - restore * 0.2));
+    advanceClockMinutes(eatSession.minutes);
+    setPhysicalFatigue((p) => clampFatigue(p - eatSession.bodyGain));
+    if (eatSession.mindToFull) {
+      setMentalFatigue(0);
+    } else {
+      setMentalFatigue((m) => clampFatigue(m - eatSession.mindGain));
+    }
+    const bodyTxt = formatStaminaPct(eatSession.bodyGain);
+    const mindTxt = eatSession.mindToFull
+      ? "Mind 100%"
+      : `Mind +${formatStaminaPct(eatSession.mindGain)}`;
     setLog(
-      `Spiste ${eatSession.label} (+${eatSession.stam} stamina-hint, ${EAT_ACTION_MINUTES} min).`,
+      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.`,
     );
     setEatSession(null);
     setPanel("arrived");
@@ -1091,6 +1232,15 @@ export function HuntMapView({
   const selectedEffort = selected
     ? getCellEffort(map.id, selected)
     : null;
+  const selectedBirdChance =
+    selected && map && terrain
+      ? estimatedBirdChancePct(
+          map.id,
+          selected,
+          terrain.tiurRating,
+          isAtParking(selected, map),
+        )
+      : null;
 
   if (flushCurrent) {
     return (
@@ -1186,12 +1336,28 @@ export function HuntMapView({
     return (
       <AtmospherePauseView
         imageSrc={eatSession.imageSrc}
-        title="Spiser…"
-        subtitle={eatSession.label}
-        durationMinutes={EAT_ACTION_MINUTES}
+        title={eatSession.label}
+        subtitle={`Body +${formatStaminaPct(eatSession.bodyGain)} · ${
+          eatSession.mindToFull
+            ? "Mind → 100%"
+            : `Mind +${formatStaminaPct(eatSession.mindGain)}`
+        }`}
+        durationMinutes={eatSession.minutes}
         clockMinutes={clockMinutes}
         onContinue={finishEat}
-        ariaLabel="Spiser"
+        ariaLabel="Eat / Rest"
+      />
+    );
+  }
+
+  if (findHitAar?.hitFasit) {
+    const hit = findHitAar.hitFasit;
+    return (
+      <HuntShotAarView
+        title="Fasit — treffpunkt"
+        hit={hit}
+        continueLabel="Tilbake til Track"
+        onContinue={() => setFindHitAar(null)}
       />
     );
   }
@@ -1201,6 +1367,7 @@ export function HuntMapView({
       <HuntShootView
         trueDistanceM={shootSession.trueDistanceM}
         measuredDistanceM={shootSession.measuredDistanceM}
+        rangeSource={shootSession.rangeSource}
         ballisticHold={shootSession.ballisticHold}
         crosswindMs={shootSession.crosswindMs}
         densityRatio={shootSession.densityRatio}
@@ -1212,6 +1379,8 @@ export function HuntMapView({
         inventory={inventory}
         ammoAffinities={ammoAffinities}
         zeroingProfiles={zeroingProfiles}
+        dopeCard={dopeCard}
+        customsMoaDelta={customsMoaDelta}
         musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={mentalFatigue}
@@ -1239,6 +1408,7 @@ export function HuntMapView({
         ammo={primaryAmmo?.ammo ?? null}
         hasKestrel={!!kestrelItem}
         hasBdx={!!binoItem?.lrf.hasOnboardBallistics}
+        hasCamcorder={hasCamcorder}
         clockMinutes={clockMinutes}
         shotPairs={shotPairs}
         focusPairId={awareSession.ettersokPairId ?? null}
@@ -1247,6 +1417,9 @@ export function HuntMapView({
         onProceedToShoot={proceedFromAware}
         onBirdFlushed={onAwareBirdFlushed}
         onAbort={abortAware}
+        onPairFound={(pair) => {
+          if (pair.hitFasit) setFindHitAar(pair);
+        }}
       />
     );
   }
@@ -1309,88 +1482,116 @@ export function HuntMapView({
           </p>
           <p className="shop-row-note">{log}</p>
         </div>
-        <button type="button" className="intro-button" onClick={onLeave}>
+        <button type="button" className="intro-button" onClick={leaveHunt}>
           Avslutt jakt
         </button>
       </header>
 
       <div className="hunt-map-layout">
-        <div
-          className="hunt-map-stage"
-          style={
-            {
-              "--hunt-cols": map.cols,
-              "--hunt-rows": map.rows,
-            } as CSSProperties
-          }
-        >
-          <div className="hunt-map-axis hunt-map-axis-y" aria-hidden>
-            {Array.from({ length: map.rows }, (_, i) => {
-              const rowFromBottom = map.rows - 1 - i;
-              return <span key={i}>{rowLetter(rowFromBottom)}</span>;
-            })}
-          </div>
-
-          <div className="hunt-map-canvas">
-            <img
-              src={terrainMapSrc(terrain)}
-              alt={`Jaktkart ${getHuntMap(mapId).label}`}
-              className="hunt-map-img"
-              draggable={false}
-            />
-
-            <div className="hunt-map-grid">
-              {cells.map((cell) => {
-                const isPlayer = cell.row === pos.row && cell.col === pos.col;
-                const isStart =
-                  cell.row === map.start.row && cell.col === map.start.col;
-                const isSelected =
-                  selected &&
-                  cell.row === selected.row &&
-                  cell.col === selected.col;
-                return (
-                  <button
-                    key={cell.label}
-                    type="button"
-                    className={[
-                      "hunt-map-cell",
-                      isPlayer ? "is-player" : "",
-                      isStart ? "is-start" : "",
-                      isSelected ? "is-selected" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    style={{
-                      gridColumn: cell.col + 1,
-                      gridRow: map.rows - cell.row,
-                    }}
-                    onClick={() =>
-                      onCellClick({ row: cell.row, col: cell.col })
-                    }
-                    title={`${cell.label} · Effort ${cell.effort}/5`}
-                  >
-                    <span className="hunt-map-cell-label">
-                      {cell.label}
-                      <span className="hunt-map-cell-effort">
-                        E{cell.effort}
-                      </span>
-                    </span>
-                    {isPlayer ? (
-                      <span className="hunt-map-player" aria-label="Du">
-                        ●
-                      </span>
-                    ) : null}
-                  </button>
-                );
+        <div className="hunt-map-main">
+          <div
+            className="hunt-map-stage"
+            style={
+              {
+                "--hunt-cols": map.cols,
+                "--hunt-rows": map.rows,
+              } as CSSProperties
+            }
+          >
+            <div className="hunt-map-axis hunt-map-axis-y" aria-hidden>
+              {Array.from({ length: map.rows }, (_, i) => {
+                const rowFromBottom = map.rows - 1 - i;
+                return <span key={i}>{rowLetter(rowFromBottom)}</span>;
               })}
+            </div>
+
+            <div className="hunt-map-canvas">
+              <img
+                src={terrainMapSrc(terrain)}
+                alt={`Jaktkart ${getHuntMap(mapId).label}`}
+                className="hunt-map-img"
+                draggable={false}
+              />
+
+              <div className="hunt-map-grid">
+                {cells.map((cell) => {
+                  const isPlayer = cell.row === pos.row && cell.col === pos.col;
+                  const isStart =
+                    cell.row === map.start.row && cell.col === map.start.col;
+                  const isSelected =
+                    selected &&
+                    cell.row === selected.row &&
+                    cell.col === selected.col;
+                  return (
+                    <button
+                      key={cell.label}
+                      type="button"
+                      className={[
+                        "hunt-map-cell",
+                        isPlayer ? "is-player" : "",
+                        isStart ? "is-start" : "",
+                        isSelected ? "is-selected" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={{
+                        gridColumn: cell.col + 1,
+                        gridRow: map.rows - cell.row,
+                      }}
+                      onClick={() =>
+                        onCellClick({ row: cell.row, col: cell.col })
+                      }
+                      title={`${cell.label} · Effort ${cell.effort}/5`}
+                    >
+                      <span className="hunt-map-cell-label">
+                        {cell.label}
+                        <span className="hunt-map-cell-effort">
+                          E{cell.effort}
+                        </span>
+                      </span>
+                      {isPlayer ? (
+                        <span className="hunt-map-player" aria-label="Du">
+                          ●
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="hunt-map-axis hunt-map-axis-x" aria-hidden>
+              {Array.from({ length: map.cols }, (_, i) => (
+                <span key={i}>{i + 1}</span>
+              ))}
             </div>
           </div>
 
-          <div className="hunt-map-axis hunt-map-axis-x" aria-hidden>
-            {Array.from({ length: map.cols }, (_, i) => (
-              <span key={i}>{i + 1}</span>
-            ))}
-          </div>
+          {selected && panel === "study" ? (
+            <div
+              className="hunt-map-cell-blowup"
+              style={
+                {
+                  "--hunt-cols": map.cols,
+                  "--hunt-rows": map.rows,
+                  "--blowup-col": selected.col,
+                  "--blowup-row-from-top": map.rows - 1 - selected.row,
+                } as CSSProperties
+              }
+            >
+              <p className="hunt-map-cell-blowup-label">
+                Rute {cellLabel(selected)} — nærbilde
+              </p>
+              <div className="hunt-map-cell-blowup-frame">
+                <img
+                  src={terrainMapSrc(terrain)}
+                  alt={`Forstørret rute ${cellLabel(selected)}`}
+                  className="hunt-map-cell-blowup-img"
+                  draggable={false}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <aside className="hunt-side-panel">
@@ -1398,13 +1599,6 @@ export function HuntMapView({
             <>
               <p className="intro-line intro-gift">
                 Rute {cellLabel(selected)}
-              </p>
-              <p className="shop-row-note">
-                Effort {selectedEffort}/5 — {describeEffort(selectedEffort)}
-              </p>
-              <p className="shop-row-note">
-                {CELL_WIDTH_M} m · {baseMinutesForEffort(selectedEffort).toFixed(0)}{" "}
-                min ved speed 1
               </p>
               <p className="shop-row-note">
                 Fra {cellLabel(pos)}: {inspectTrip.steps} ruter ·{" "}
@@ -1496,26 +1690,28 @@ export function HuntMapView({
                 <button
                   type="button"
                   className="intro-button"
-                  onClick={() => {
-                    setLog("Velg en rute på kartet for å gå videre.");
-                    setPanel("idle");
-                  }}
+                  onClick={() => setPanel("eat")}
                 >
-                  Move on
+                  Eat/Rest
                 </button>
                 <button
                   type="button"
                   className="intro-button"
-                  onClick={() => setPanel("eat")}
+                  onClick={() => {
+                    setSelected(null);
+                    setPanel("study");
+                    setLog(
+                      "Study map — klikk rundt på ruter. Go back avslutter.",
+                    );
+                  }}
                 >
-                  Eat
-                </button>
-                <button type="button" className="intro-button" onClick={restTen}>
-                  Rest 10 minutes
+                  Study map
                 </button>
               </div>
               <p className="shop-row-note">
-                Tiur {formatBirdRating(terrain.tiurRating)} · Orrhane{" "}
+                Klikk en rute for pace og «Go here», eller bruk Study map for
+                detaljer og zoom. Tiur{" "}
+                {formatBirdRating(terrain.tiurRating)} · Orrhane{" "}
                 {formatBirdRating(terrain.orrhaneRating)} · mørkt kl{" "}
                 {formatHuntClock(HUNT_DARK_MINUTES)}
                 {!huntingAllowed ? " · skuddlys over" : ""}
@@ -1524,41 +1720,201 @@ export function HuntMapView({
             </>
           ) : null}
 
+          {panel === "study" ? (
+            <>
+              <p className="intro-line intro-gift">Study map</p>
+              {selected && selectedEffort != null && inspectTrip ? (
+                <>
+                  <p className="intro-line">
+                    Rute {cellLabel(selected)}
+                  </p>
+                  <p className="shop-row-note">
+                    Effort {selectedEffort}/5 — {describeEffort(selectedEffort)}
+                  </p>
+                  {selectedBirdChance != null ? (
+                    <p className="shop-row-note">
+                      Fuglesannsynlighet ~{selectedBirdChance}% (
+                      {describeBirdChance(selectedBirdChance)}) · tiur{" "}
+                      {formatBirdRating(terrain.tiurRating)} i terrenget
+                    </p>
+                  ) : null}
+                  <p className="shop-row-note">
+                    {CELL_WIDTH_M} m ·{" "}
+                    {baseMinutesForEffort(selectedEffort).toFixed(0)} min ved
+                    speed 1
+                  </p>
+                  <p className="shop-row-note">
+                    Fra {cellLabel(pos)}: {inspectTrip.steps} ruter ·{" "}
+                    {inspectTrip.minutes} min med «{pace.label}»
+                  </p>
+
+                  <fieldset className="hunt-pace-fieldset">
+                    <legend>Oppførsel / fart</legend>
+                    {HUNT_PACES.map((p) => {
+                      const mins = pathTravelMinutes(map.id, pos, selected, p)
+                        .minutes;
+                      return (
+                        <label key={p.id} className="hunt-pace-option">
+                          <input
+                            type="radio"
+                            name="hunt-pace-study"
+                            checked={paceId === p.id}
+                            onChange={() => setPaceId(p.id)}
+                          />
+                          <span>
+                            <strong>{p.label}</strong>
+                            <span className="shop-row-note">
+                              {mins} min · spot {pct(p.spottingProbability)} ·
+                              spd {p.speed}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+
+                  {!hasHeadlamp ? (
+                    <p className="shop-row-note">
+                      Uten hodelykt: vær ved bilen før{" "}
+                      {formatHuntClock(HUNT_DARK_MINUTES)} — ellers camp ute og
+                      spis fuglene dine.
+                    </p>
+                  ) : null}
+
+                  <div className="hunt-side-actions">
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={goHere}
+                      disabled={
+                        !canWalkAtNight(hasHeadlamp, clockMinutes) ||
+                        (!hasHeadlamp &&
+                          isHuntDark(clockMinutes + inspectTrip.minutes) &&
+                          !isAtParking(selected, map))
+                      }
+                    >
+                      Go here
+                    </button>
+                  </div>
+                  <p className="shop-row-note">
+                    Klikk andre ruter for å sammenligne. «Go back» avslutter
+                    Study map.
+                  </p>
+                </>
+              ) : (
+                <p className="shop-row-note">
+                  Klikk rundt på ruter for effort, fuglesannsynlighet og
+                  nærbilde. Du er i {cellLabel(pos)}. Kl{" "}
+                  {formatHuntClock(clockMinutes)}.
+                </p>
+              )}
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => {
+                  setSelected(null);
+                  setPanel("arrived");
+                }}
+              >
+                Go back
+              </button>
+            </>
+          ) : null}
+
           {panel === "idle" ? (
             <>
               <p className="intro-line intro-gift">Planlegg neste trekk</p>
               <p className="shop-row-note">
-                Klikk en rute for stats og «Go here». Kl{" "}
+                Åpne «Study map» for å studere ruter. Kl{" "}
                 {formatHuntClock(clockMinutes)}.
               </p>
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => setPanel("arrived")}
+              >
+                Go back
+              </button>
             </>
           ) : null}
 
           {panel === "eat" ? (
             <>
-              <p className="intro-line intro-gift">Eat</p>
+              <p className="intro-line intro-gift">Eat / Rest</p>
               <p className="shop-row-note">
-                {EAT_ACTION_MINUTES} min per item. Mat fra kit/sekk:
+                Body / Mind = andel av full stamina. Velg handling:
               </p>
+
+              <p className="hunt-eat-section">Mat i kit</p>
               {edible.length === 0 ? (
                 <p className="shop-row-note">Ingen spiselig mat i kit.</p>
               ) : (
                 <ul className="hunt-eat-list">
-                  {edible.map(({ item, qty, stam, canEat }) => (
+                  {edible.map(({ item, qty, recovery, canEat, needsBoil }) => (
                     <li key={item.id}>
                       <button
                         type="button"
-                        className="intro-button"
+                        className="intro-button hunt-eat-option"
                         disabled={!canEat}
                         onClick={() => eatItem(item.id)}
                       >
-                        {item.brand} {item.name} ×{qty}
-                        {canEat ? ` · +${stam} stam` : " · krever koking"}
+                        <span className="hunt-eat-option-title">
+                          {item.brand} {item.name} ×{qty}
+                        </span>
+                        <span className="hunt-eat-option-meta">
+                          {needsBoil
+                            ? "Krever koking (brenner + gass)"
+                            : recovery
+                              ? `Body +${formatStaminaPct(recovery.bodyGain)} · Mind +${formatStaminaPct(recovery.mindGain)} · ${recovery.minutes} min`
+                              : "—"}
+                        </span>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
+
+              <p className="hunt-eat-section">Drikke</p>
+              <ul className="hunt-eat-list">
+                <li>
+                  <button
+                    type="button"
+                    className="intro-button hunt-eat-option"
+                    disabled={!hasThermos}
+                    onClick={drinkCoffee}
+                  >
+                    <span className="hunt-eat-option-title">
+                      {COFFEE_RECOVERY.label}
+                    </span>
+                    <span className="hunt-eat-option-meta">
+                      {hasThermos
+                        ? `Body +${formatStaminaPct(COFFEE_RECOVERY.bodyGain)} · Mind +${formatStaminaPct(COFFEE_RECOVERY.mindGain)} · ${COFFEE_RECOVERY.minutes} min`
+                        : "Krever termos i kit"}
+                    </span>
+                  </button>
+                </li>
+              </ul>
+
+              <p className="hunt-eat-section">Hvile</p>
+              <ul className="hunt-eat-list">
+                <li>
+                  <button
+                    type="button"
+                    className="intro-button hunt-eat-option"
+                    onClick={lightTyribal}
+                  >
+                    <span className="hunt-eat-option-title">
+                      {TYRIBAL_RECOVERY.label}
+                    </span>
+                    <span className="hunt-eat-option-meta">
+                      Mind → 100% · Body +
+                      {formatStaminaPct(TYRIBAL_RECOVERY.bodyGain)} ·{" "}
+                      {TYRIBAL_RECOVERY.minutes} min
+                    </span>
+                  </button>
+                </li>
+              </ul>
+
               <button
                 type="button"
                 className="intro-button"

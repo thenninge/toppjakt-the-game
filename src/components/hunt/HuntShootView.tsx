@@ -21,7 +21,6 @@ import {
   RANGE_DISTANCE_M,
 } from "@/lib/range/precision";
 import {
-  dropBelowLosMm,
   sampleTrajectory,
 } from "@/lib/ballistics/trajectory";
 import {
@@ -32,16 +31,19 @@ import {
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
+import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
+import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
+import type { HuntRangeSource } from "@/components/hunt/HuntShotConditions";
 import { KestrelFasitView } from "@/components/hunt/KestrelFasitView";
+import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
   clampTurretMm,
-  clicksForDropMm,
   effectiveZeroOffsetMm,
   getInventoryQty,
-  ZERO_CLICK_MM,
   zeroingKey,
+  type DopeCardEntry,
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
@@ -74,6 +76,8 @@ type HuntShootViewProps = {
   trueDistanceM: number;
   /** What LRF showed (player dials from this). */
   measuredDistanceM: number;
+  /** LRF reading vs Aware Shoot estimate. */
+  rangeSource?: HuntRangeSource;
   /** Exact BDX+Kestrel hold from perfect zero (null if not equipped). */
   ballisticHold?: BallisticHoldSolution | null;
   /** True local crosswind (m/s, +from left) for this shot bearing. */
@@ -89,6 +93,9 @@ type HuntShootViewProps = {
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  dopeCard?: DopeCardEntry[];
+  /** CB Customs bedding MOA delta (negative = tighter). */
+  customsMoaDelta?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
   onEnsureZeroing: (
@@ -122,6 +129,7 @@ const DEFAULT_SCOPE_ZOOM = 12;
 export function HuntShootView({
   trueDistanceM,
   measuredDistanceM,
+  rangeSource = "estimated",
   ballisticHold = null,
   crosswindMs = 0,
   densityRatio = 1,
@@ -133,6 +141,8 @@ export function HuntShootView({
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  dopeCard = [],
+  customsMoaDelta = 0,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -181,8 +191,6 @@ export function HuntShootView({
       ? clampTurretMm(Math.round(ballisticHold.dialYMmAt100))
       : 0,
   );
-  const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
-  const [wobbleMm, setWobbleMm] = useState({ x: 0, y: 0 });
   const [status, setStatus] = useState(
     ballisticHold
       ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
@@ -194,9 +202,13 @@ export function HuntShootView({
   }>({ phase: "idle", remainingMs: 0 });
   const [triggerUi, setTriggerUi] = useState({
     pending: false,
-    progress: 0,
     targetPct: 0,
   });
+  const { fillRef: triggerFillRef, paintTriggerProgress, resetTriggerProgress } =
+    useTriggerBarPaint();
+  const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const targetScaleRef = useRef(1);
+  const vitalOffRef = useRef({ x: 0, y: 0 });
   const [recoilActive, setRecoilActive] = useState(false);
   const [fired, setFired] = useState(false);
   const [lastImpact, setLastImpact] = useState<{
@@ -214,8 +226,8 @@ export function HuntShootView({
     left: false,
     right: false,
   });
-  const aimRef = useRef(aimMm);
-  const wobbleRef = useRef(wobbleMm);
+  const aimRef = useRef({ x: 0, y: 0 });
+  const wobbleRef = useRef({ x: 0, y: 0 });
   const distanceRef = useRef(trueDistanceM);
   const crosswindRef = useRef(crosswindMs);
   const firedRef = useRef(false);
@@ -276,12 +288,6 @@ export function HuntShootView({
   useEffect(() => {
     fatigueRef.current = { physicalFatigue, mentalFatigue };
   }, [physicalFatigue, mentalFatigue]);
-  useEffect(() => {
-    aimRef.current = aimMm;
-  }, [aimMm]);
-  useEffect(() => {
-    wobbleRef.current = wobbleMm;
-  }, [wobbleMm]);
   useEffect(() => {
     distanceRef.current = trueDistanceM;
   }, [trueDistanceM]);
@@ -356,6 +362,7 @@ export function HuntShootView({
       ammo: selectedAmmo.ammo,
       stock: stock?.stock,
       affinity,
+      customsMoaDelta,
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(
@@ -456,9 +463,9 @@ export function HuntShootView({
 
   function abortTrigger(reason: string) {
     triggerRef.current = { held: false, startedAtMs: null };
+    resetTriggerProgress();
     setTriggerUi((prev) => ({
       pending: false,
-      progress: 0,
       targetPct: prev.targetPct,
     }));
     if (reason) setStatus(reason);
@@ -469,9 +476,9 @@ export function HuntShootView({
     focusRef.current = { held: true, startedAtMs: nowMs };
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
+    resetTriggerProgress();
     setTriggerUi({
       pending: false,
-      progress: 0,
       targetPct: markMs / TRIGGER_BAR_MS,
     });
   }
@@ -482,7 +489,8 @@ export function HuntShootView({
       abortTrigger("Fokus sluppet — avtrekk avbrutt.");
     }
     triggerMarkRef.current = null;
-    setTriggerUi({ pending: false, progress: 0, targetPct: 0 });
+    resetTriggerProgress();
+    setTriggerUi({ pending: false, targetPct: 0 });
   }
 
   function beginTrigger(nowMs: number) {
@@ -493,7 +501,8 @@ export function HuntShootView({
       return;
     }
     triggerRef.current = { held: true, startedAtMs: nowMs };
-    setTriggerUi((prev) => ({ ...prev, pending: true, progress: 0 }));
+    paintTriggerProgress(0);
+    setTriggerUi((prev) => ({ ...prev, pending: true }));
     setStatus("Avtrekk — slipp Space på merket.");
   }
 
@@ -502,10 +511,10 @@ export function HuntShootView({
     const markMs = triggerMarkRef.current;
     if (!trig.held || trig.startedAtMs == null || markMs == null) {
       triggerRef.current = { held: false, startedAtMs: null };
+      resetTriggerProgress();
       setTriggerUi((prev) => ({
         ...prev,
         pending: false,
-        progress: 0,
       }));
       return;
     }
@@ -519,9 +528,9 @@ export function HuntShootView({
     );
     triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
     triggerRef.current = { held: false, startedAtMs: null };
+    resetTriggerProgress();
     setTriggerUi((prev) => ({
       pending: false,
-      progress: 0,
       targetPct: prev.targetPct,
     }));
     fireShotRef.current();
@@ -592,6 +601,18 @@ export function HuntShootView({
     let last = performance.now();
     let uiAccum = 0;
 
+    function paintScopeWorld() {
+      const el = scopeWorldRef.current;
+      if (!el) return;
+      const ax = aimRef.current.x + wobbleRef.current.x;
+      const ay = aimRef.current.y + wobbleRef.current.y;
+      const scale = targetScaleRef.current;
+      const vo = vitalOffRef.current;
+      const panPxX = (vo.x + tiurMmToNativePx(ax)) * scale;
+      const panPxY = (vo.y + tiurMmToNativePx(ay)) * scale;
+      el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+    }
+
     function tick(now: number) {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
@@ -607,7 +628,6 @@ export function HuntShootView({
       x = Math.max(-aimLimit, Math.min(aimLimit, x));
       y = Math.max(-aimLimit, Math.min(aimLimit, y));
       aimRef.current = { x, y };
-      setAimMm({ x, y });
 
       const calm = effectiveCalmWithFocus(
         weaponCalmRef.current,
@@ -618,7 +638,7 @@ export function HuntShootView({
       const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
-      const nextWobble = {
+      wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
           Math.sin(t * 5.3 + ph.b) * amp * 0.35 +
@@ -628,18 +648,14 @@ export function HuntShootView({
           Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
           Math.sin(t * 9.5 + 1) * amp * 0.15,
       };
-      wobbleRef.current = nextWobble;
-      setWobbleMm(nextWobble);
+
+      paintScopeWorld();
 
       const trig = triggerRef.current;
       if (trig.held && trig.startedAtMs != null) {
         const elapsed = now - trig.startedAtMs;
         const prog = Math.min(1, elapsed / TRIGGER_BAR_MS);
-        setTriggerUi((prev) => ({
-          ...prev,
-          pending: true,
-          progress: prog,
-        }));
+        paintTriggerProgress(prog);
         if (elapsed >= TRIGGER_BAR_MS) {
           releaseTrigger(trig.startedAtMs + TRIGGER_BAR_MS);
         }
@@ -685,18 +701,10 @@ export function HuntShootView({
     scope.scope,
     trueDistanceM,
   );
-  const displayAimX = aimMm.x + wobbleMm.x;
-  const displayAimY = aimMm.y + wobbleMm.y;
   const vitalOff = tiurVitalOffsetFromImageCenterPx();
-  const panPxX =
-    (vitalOff.x + tiurMmToNativePx(displayAimX)) * targetScale;
-  const panPxY =
-    (vitalOff.y + tiurMmToNativePx(displayAimY)) * targetScale;
+  targetScaleRef.current = targetScale;
+  vitalOffRef.current = vitalOff;
 
-  const dropMmBelieved = selectedAmmo
-    ? dropBelowLosMm(selectedAmmo.ammo, measuredDistanceM)
-    : 0;
-  const dropClicks = clicksForDropMm(dropMmBelieved, measuredDistanceM);
   const activeHold =
     ballisticHold && selectedAmmo
       ? exactBallisticHold(
@@ -708,110 +716,21 @@ export function HuntShootView({
       : null;
 
   if (replay && lastImpact) {
-    const aarScale = 2.4;
-    const vitalOffAar = tiurVitalOffsetFromImageCenterPx();
-    const greenD = tiurMmToNativePx(TIUR_INSTANT_KILL_DIAMETER_MM) * aarScale;
-    const redD = tiurMmToNativePx(TIUR_VITAL_DIAMETER_MM) * aarScale;
-    const holeD = Math.max(
-      6,
-      tiurMmToNativePx(lastImpact.diameterMm) * aarScale,
-    );
-    const hitX =
-      (TIUR_IMAGE_NATIVE_W / 2 +
-        vitalOffAar.x +
-        tiurMmToNativePx(lastImpact.xMm)) *
-      aarScale;
-    const hitY =
-      (TIUR_IMAGE_NATIVE_H / 2 +
-        vitalOffAar.y +
-        tiurMmToNativePx(lastImpact.yMm)) *
-      aarScale;
-    const zoneCx =
-      (TIUR_IMAGE_NATIVE_W / 2 + vitalOffAar.x) * aarScale;
-    const zoneCy =
-      (TIUR_IMAGE_NATIVE_H / 2 + vitalOffAar.y) * aarScale;
-
     return (
-      <div
-        className="shooting-range hunt-shoot"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Triggercam replay"
-      >
-        <header className="shop-header">
-          <p className="intro-line intro-gift">Triggercam — after action</p>
-          <p className="shop-row-note">
-            {status} · treff {lastImpact.xMm >= 0 ? "+" : ""}
-            {lastImpact.xMm.toFixed(0)} mm side /{" "}
-            {lastImpact.yMm >= 0 ? "+" : ""}
-            {lastImpact.yMm.toFixed(0)} mm høyde (fra vital-senter)
-            {" · "}
-            sone {replay.zone}
-          </p>
-        </header>
-        <div className="triggercam-aar">
-          <div
-            className="triggercam-aar-frame"
-            style={{
-              width: TIUR_IMAGE_NATIVE_W * aarScale,
-              height: TIUR_IMAGE_NATIVE_H * aarScale,
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={TIUR_TARGET_SRC}
-              alt="Tiur"
-              className="triggercam-aar-bird"
-              width={TIUR_IMAGE_NATIVE_W * aarScale}
-              height={TIUR_IMAGE_NATIVE_H * aarScale}
-              draggable={false}
-            />
-            <span
-              className="triggercam-zone triggercam-zone--vital"
-              style={{
-                width: redD,
-                height: redD,
-                left: zoneCx,
-                top: zoneCy,
-                marginLeft: -redD / 2,
-                marginTop: -redD / 2,
-              }}
-            />
-            <span
-              className="triggercam-zone triggercam-zone--instant"
-              style={{
-                width: greenD,
-                height: greenD,
-                left: zoneCx,
-                top: zoneCy,
-                marginLeft: -greenD / 2,
-                marginTop: -greenD / 2,
-              }}
-            />
-            <span
-              className="bullet-hole triggercam-aar-hole"
-              style={{
-                width: holeD,
-                height: holeD,
-                left: hitX,
-                top: hitY,
-                marginLeft: -holeD / 2,
-                marginTop: -holeD / 2,
-              }}
-            />
-          </div>
-          <p className="spot-binos-hint">
-            Rød ring = vital · grønn = instant kill · rødt hull = treffpunkt
-          </p>
-          <button
-            type="button"
-            className="intro-button"
-            onClick={() => onShotResult(replay)}
-          >
-            Fortsett
-          </button>
-        </div>
-      </div>
+      <HuntShotAarView
+        title="Triggercam — after action"
+        hit={{
+          xMm: lastImpact.xMm,
+          yMm: lastImpact.yMm,
+          diameterMm: lastImpact.diameterMm,
+          zone: replay.zone,
+          kind: replay.kind,
+        }}
+        subtitle={`${status} · treff ${lastImpact.xMm >= 0 ? "+" : ""}${lastImpact.xMm.toFixed(0)} mm side / ${
+          lastImpact.yMm >= 0 ? "+" : ""
+        }${lastImpact.yMm.toFixed(0)} mm høyde (fra vital-senter) · sone ${replay.zone}`}
+        onContinue={() => onShotResult(replay)}
+      />
     );
   }
 
@@ -825,43 +744,18 @@ export function HuntShootView({
       <header className="shop-header">
         <p className="intro-line intro-gift">Fugl observert — skyt!</p>
         <p className="shop-row-note">
-          Kl {formatHuntClock(clockMinutes)} · LRF {measuredDistanceM} m
+          Kl {formatHuntClock(clockMinutes)} ·{" "}
+          {rangeSource === "lrf" ? "LRF" : "Estimat"} {measuredDistanceM} m
           {" · "}
           vital grønn Ø{TIUR_INSTANT_KILL_DIAMETER_MM} mm / rød Ø
           {TIUR_VITAL_DIAMETER_MM} mm
-          {activeHold ? (
-            <>
-              {" · "}
-              Kestrel fasit: {formatHoldClicks(activeHold)}
-              {" · "}
-              crosswind {crosswindMs >= 0 ? "+" : ""}
-              {crosswindMs.toFixed(1)} m/s
-            </>
-          ) : (
-            <>
-              {" · "}
-              drop ≈ {Math.round(dropClicks)} klikk (
-              {(Math.abs(dropClicks) / 10).toFixed(1)} mil)
-              {" · "}
-              crosswind {crosswindMs >= 0 ? "+" : ""}
-              {crosswindMs.toFixed(1)} m/s
-            </>
-          )}
+          {activeHold ? " · Kestrel i kit (fane)" : null}
         </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name} · {scope.brand} {scope.name} (
           {zoom.toFixed(1)}×) · {status}
         </p>
       </header>
-
-      {activeHold ? (
-        <KestrelFasitView
-          hold={activeHold}
-          shotBearingDeg={shotBearingDeg}
-          windFromDeg={windFromDeg}
-          windSpeedMs={windSpeedMs}
-        />
-      ) : null}
 
       <div className="range-toolbar">
         <label className="shop-filter">
@@ -884,22 +778,54 @@ export function HuntShootView({
         </span>
       </div>
 
-      <ScopeTurrets
-        sessionZeroXMm={sessionZeroXMm}
-        sessionZeroYMm={sessionZeroYMm}
-        onNudge={nudgeZero}
-        disabled={fired}
-        actions={
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            disabled={fired}
-            onClick={onAbort}
-          >
-            Avbryt
-          </button>
-        }
-      />
+      <div className="hunt-shoot-dope-row">
+        <ScopeTurrets
+          sessionZeroXMm={sessionZeroXMm}
+          sessionZeroYMm={sessionZeroYMm}
+          onNudge={nudgeZero}
+          disabled={fired}
+          enviroPanel={
+            <HuntShotConditions
+              rangeM={measuredDistanceM}
+              rangeSource={rangeSource}
+              shotBearingDeg={shotBearingDeg}
+              windFromDeg={windFromDeg}
+              windSpeedMs={windSpeedMs}
+              densityRatio={densityRatio}
+              hasKestrel={!!activeHold}
+              dopeCard={dopeCard}
+              ammoId={ammoId}
+              rifleId={rifle?.id ?? null}
+              ammo={selectedAmmo?.ammo ?? null}
+              ammoLabel={
+                selectedAmmo
+                  ? `${selectedAmmo.brand} ${selectedAmmo.name}`
+                  : "Ammo"
+              }
+            />
+          }
+          kestrelPanel={
+            activeHold ? (
+              <KestrelFasitView
+                hold={activeHold}
+                shotBearingDeg={shotBearingDeg}
+                windFromDeg={windFromDeg}
+                windSpeedMs={windSpeedMs}
+              />
+            ) : undefined
+          }
+          actions={
+            <button
+              type="button"
+              className="intro-button sheriff-secondary"
+              disabled={fired}
+              onClick={onAbort}
+            >
+              Avbryt
+            </button>
+          }
+        />
+      </div>
 
       <div className="scope-stage" tabIndex={0}>
         <div className="scope-optic">
@@ -908,12 +834,7 @@ export function HuntShootView({
               recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
             }
           >
-            <div
-              className="scope-world"
-              style={{
-                transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
-              }}
-            >
+            <div ref={scopeWorldRef} className="scope-world">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 className="scope-target hunt-tiur-target"
@@ -1000,11 +921,11 @@ export function HuntShootView({
               className="range-trigger-bar"
               style={
                 {
-                  ["--trigger-pct" as string]: `${triggerUi.progress * 100}%`,
                   ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
                 } as CSSProperties
               }
             >
+              <div ref={triggerFillRef} className="range-trigger-fill" />
               {triggerUi.targetPct > 0 ? (
                 <span className="range-trigger-mark" aria-hidden />
               ) : null}

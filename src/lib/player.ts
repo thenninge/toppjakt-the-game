@@ -1,4 +1,8 @@
 import type { GameCarcass } from "@/lib/hunt/carcass";
+import {
+  EMPTY_CUSTOMS_MODS,
+  type CustomsMods,
+} from "@/lib/customs/spec";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { isAmmoItem } from "@/lib/shop/types";
@@ -53,8 +57,27 @@ export type ShotLogEntry = {
   sessionZeroYMm: number;
 };
 
+/**
+ * Field DOPE card row from the range: ammo + distance → dial clicks.
+ * Elevation is the primary hold; windage stored when dialed.
+ */
+export type DopeCardEntry = {
+  id: string;
+  atMs: number;
+  rifleId: string;
+  scopeId: string;
+  ammoId: string;
+  ammoLabel: string;
+  distanceM: number;
+  /** 0.1 mil elevation clicks (+ down / − up). */
+  elevationClicks: number;
+  /** 0.1 mil windage clicks (+ right / − left). */
+  windageClicks: number;
+};
+
 /** Cap so the log cannot grow without bound in one session. */
 export const MAX_SHOT_LOG_ENTRIES = 200;
+export const MAX_DOPE_CARD_ENTRIES = 80;
 
 /** Paperwork only — never appears in inventory. Required to buy hunting rifles. */
 export type WeaponLicense = {
@@ -96,6 +119,10 @@ export type PlayerStats = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   /** Chronological range series log (newest first). */
   shotLog: ShotLogEntry[];
+  /** Field DOPE card from range (newest first). */
+  dopeCard: DopeCardEntry[];
+  /** CB Customs gunsmith / finish work. */
+  customsMods: CustomsMods;
   /** Booked hunting terrain from inatur.no (null = none chosen yet). */
   selectedHuntingTerrainId: string | null;
   /** Handshake grounds unlocked at Rulles (terrain ids). */
@@ -128,6 +155,7 @@ export const STARTER_HUNT_LOADOUT_IDS = [
   "food-real-turmat",
   "food-boller-5pk",
   "food-polarbrod-ost-skinke",
+  "food-dronning-kokesjokolade",
   "misc-thermos-jula",
   "misc-sittpute-biltema",
   "misc-triggercam",
@@ -145,6 +173,7 @@ export const STARTER_HUNT_QTY: Partial<Record<string, number>> = {
   "food-real-turmat": 3,
   "food-boller-5pk": 1,
   "food-polarbrod-ost-skinke": 1,
+  "food-dronning-kokesjokolade": 1,
 };
 
 export const TEST_RANGE_LICENSE_ID = "license-test-sauer-200str";
@@ -195,6 +224,8 @@ export function createInitialStats(): PlayerStats {
     ammoAffinities: {},
     zeroingProfiles: {},
     shotLog: [],
+    dopeCard: [],
+    customsMods: { ...EMPTY_CUSTOMS_MODS },
     selectedHuntingTerrainId: null,
     unlockedTerrainIds: [],
   };
@@ -205,6 +236,97 @@ export function appendShotLogEntry(
   entry: ShotLogEntry,
 ): ShotLogEntry[] {
   return [entry, ...log].slice(0, MAX_SHOT_LOG_ENTRIES);
+}
+
+/** mm-at-100 m (angular) → 0.1 mil click count. */
+export function mmAt100ToClicks(mmAt100: number): number {
+  return Math.round(mmAt100 / ZERO_CLICK_MM);
+}
+
+/**
+ * Upsert a DOPE row for rifle×ammo×distance (replaces same key).
+ * Newest first.
+ */
+export function addDopeCardEntry(
+  card: DopeCardEntry[],
+  entry: Omit<DopeCardEntry, "id" | "atMs"> & {
+    id?: string;
+    atMs?: number;
+  },
+): DopeCardEntry[] {
+  const next: DopeCardEntry = {
+    id: entry.id ?? `dope-${Date.now()}`,
+    atMs: entry.atMs ?? Date.now(),
+    rifleId: entry.rifleId,
+    scopeId: entry.scopeId,
+    ammoId: entry.ammoId,
+    ammoLabel: entry.ammoLabel,
+    distanceM: Math.round(entry.distanceM),
+    elevationClicks: Math.round(entry.elevationClicks),
+    windageClicks: Math.round(entry.windageClicks),
+  };
+  const rest = card.filter(
+    (e) =>
+      !(
+        e.rifleId === next.rifleId &&
+        e.ammoId === next.ammoId &&
+        e.distanceM === next.distanceM
+      ),
+  );
+  return [next, ...rest].slice(0, MAX_DOPE_CARD_ENTRIES);
+}
+
+export function updateDopeCardEntry(
+  card: DopeCardEntry[],
+  id: string,
+  patch: Partial<
+    Pick<
+      DopeCardEntry,
+      "distanceM" | "elevationClicks" | "windageClicks" | "ammoLabel"
+    >
+  >,
+): DopeCardEntry[] {
+  return card.map((e) => {
+    if (e.id !== id) return e;
+    return {
+      ...e,
+      distanceM:
+        patch.distanceM != null
+          ? Math.max(50, Math.round(patch.distanceM))
+          : e.distanceM,
+      elevationClicks:
+        patch.elevationClicks != null
+          ? Math.round(patch.elevationClicks)
+          : e.elevationClicks,
+      windageClicks:
+        patch.windageClicks != null
+          ? Math.round(patch.windageClicks)
+          : e.windageClicks,
+      ammoLabel:
+        typeof patch.ammoLabel === "string" && patch.ammoLabel.trim()
+          ? patch.ammoLabel.trim()
+          : e.ammoLabel,
+    };
+  });
+}
+
+export function removeDopeCardEntry(
+  card: DopeCardEntry[],
+  id: string,
+): DopeCardEntry[] {
+  return card.filter((e) => e.id !== id);
+}
+
+export function formatDopeElevationClicks(clicks: number): string {
+  if (clicks === 0) return "0";
+  const mil = Math.abs(clicks / 10).toFixed(1);
+  return `${Math.abs(clicks)} (${mil} mil ${clicks < 0 ? "U" : "D"})`;
+}
+
+export function formatDopeWindageClicks(clicks: number): string {
+  if (clicks === 0) return "0";
+  const mil = Math.abs(clicks / 10).toFixed(1);
+  return `${Math.abs(clicks)} (${mil} mil ${clicks < 0 ? "L" : "R"})`;
 }
 
 export function formatZeroAxisMm(
@@ -554,4 +676,73 @@ export function consumeAmmoRound(
       ? stats.kit.filter((id) => id !== ammoId)
       : stats.kit;
   return { stats: { ...stats, inventory, kit }, ok: true };
+}
+
+/** Default Finn.no resale fraction of catalog purchase price. */
+export const FINN_SALE_FRACTION = 0.5;
+
+/** How many inventory units one Finn sale removes (ammo = one eske). */
+export function finnSaleConsumeQty(item: ShopItem): number {
+  return isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
+}
+
+/**
+ * Payout for selling one shop unit on Finn (50% of catalog price by default).
+ * Partial ammo boxes pay proportionally.
+ */
+export function finnSalePayoutNok(
+  item: ShopItem,
+  ownedQty: number,
+  fraction: number = FINN_SALE_FRACTION,
+): { payout: number; consumeQty: number } | null {
+  if (ownedQty <= 0 || item.priceNok <= 0) return null;
+  if (isAmmoItem(item)) {
+    const box = ammoRoundsPerPurchase(item);
+    const consumeQty = Math.min(ownedQty, box);
+    const payout = Math.floor(
+      item.priceNok * fraction * (consumeQty / box),
+    );
+    if (payout <= 0 && consumeQty <= 0) return null;
+    return { payout, consumeQty };
+  }
+  return {
+    payout: Math.floor(item.priceNok * fraction),
+    consumeQty: 1,
+  };
+}
+
+/**
+ * Sell one inventory unit on Finn (catalog price × fraction).
+ * Removes from kit when stock hits zero.
+ */
+export function sellInventoryOnFinn(
+  stats: PlayerStats,
+  itemId: string,
+  fraction: number = FINN_SALE_FRACTION,
+): { stats: PlayerStats; payout: number; consumeQty: number } | null {
+  const item = getShopItem(itemId);
+  if (!item) return null;
+  const owned = getInventoryQty(stats.inventory, itemId);
+  const deal = finnSalePayoutNok(item, owned, fraction);
+  if (!deal) return null;
+  const { inventory, ok } = consumeInventoryItem(
+    stats.inventory,
+    itemId,
+    deal.consumeQty,
+  );
+  if (!ok) return null;
+  const kit =
+    getInventoryQty(inventory, itemId) === 0
+      ? stats.kit.filter((id) => id !== itemId)
+      : stats.kit;
+  return {
+    stats: {
+      ...stats,
+      inventory,
+      kit,
+      balance: stats.balance + deal.payout,
+    },
+    payout: deal.payout,
+    consumeQty: deal.consumeQty,
+  };
 }

@@ -15,6 +15,8 @@ export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
 export const SPOT_ACTION_MINUTES = 5;
 export const EAT_ACTION_MINUTES = 5;
 export const REST_ACTION_MINUTES = 10;
+/** One ettersøk search sweep around the shot / land area. */
+export const ETTERSOK_SEARCH_MINUTES = 30;
 
 /**
  * Trøndelag (midtnorge1): rows A–F (bottom→top), cols 1–7 (left→right).
@@ -48,6 +50,33 @@ export function getCellEffort(
   const row = grid[cell.row];
   if (!row) return 3;
   return row[cell.col] ?? 3;
+}
+
+/**
+ * Map-study estimate of bird likelihood for a cell (not the true spawn).
+ * Combines terrain rating, effort band, and a stable cell hash.
+ */
+export function estimatedBirdChancePct(
+  mapId: HuntMapId,
+  cell: HuntGridCell,
+  terrainBirdRating: number,
+  isParking: boolean,
+): number {
+  if (isParking) return Math.max(2, Math.round(terrainBirdRating * 2));
+  const effort = getCellEffort(mapId, cell);
+  const base = terrainBirdRating * 9; // 9–45 for rating 1–5
+  // Mid-high effort often = denser habitat on these maps.
+  const effortBoost =
+    effort === 1 ? -6 : effort === 2 ? 0 : effort === 3 ? 8 : effort === 4 ? 12 : 6;
+  const hash = ((cell.row * 17 + cell.col * 31) % 13) - 6;
+  return Math.max(4, Math.min(78, Math.round(base + effortBoost + hash)));
+}
+
+export function describeBirdChance(pctChance: number): string {
+  if (pctChance < 15) return "Lav";
+  if (pctChance < 35) return "Moderat";
+  if (pctChance < 55) return "God";
+  return "Høy";
 }
 
 /** Base minutes to cross one cell at speed factor 1. */

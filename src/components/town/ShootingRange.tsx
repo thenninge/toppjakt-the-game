@@ -43,9 +43,11 @@ import {
 } from "@/lib/ballistics/trajectory";
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ShotLogView } from "@/components/town/ShotLogView";
+import { DopeCardView } from "@/components/town/DopeCardView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
+import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
@@ -54,10 +56,12 @@ import {
   effectiveZeroOffsetMm,
   getInventoryQty,
   MAX_TURRET_OFFSET_MM,
+  mmAt100ToClicks,
   ZERO_CLICK_MM,
   zeroingKey,
   type InventoryEntry,
   type ShotLogEntry,
+  type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 
@@ -67,6 +71,9 @@ type ShootingRangeProps = {
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
   shotLog: ShotLogEntry[];
+  dopeCard: DopeCardEntry[];
+  /** CB Customs bedding MOA delta (negative = tighter). */
+  customsMoaDelta?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
   onEnsureZeroing: (
@@ -75,6 +82,17 @@ type ShootingRangeProps = {
     ammoId: string,
   ) => ZeroingProfile;
   onSaveZeroing: (key: string, sessionXMm: number, sessionYMm: number) => void;
+  onAddDope: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
+  onUpdateDope: (
+    id: string,
+    patch: Partial<
+      Pick<
+        DopeCardEntry,
+        "distanceM" | "elevationClicks" | "windageClicks" | "ammoLabel"
+      >
+    >,
+  ) => void;
+  onRemoveDope: (id: string) => void;
   onLogSeries: (entry: ShotLogEntry) => void;
   musicEnabled: boolean;
   onLeave: () => void;
@@ -99,15 +117,20 @@ export function ShootingRange({
   ammoAffinities,
   zeroingProfiles,
   shotLog,
+  dopeCard,
+  customsMoaDelta = 0,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
   onSaveZeroing,
+  onAddDope,
+  onUpdateDope,
+  onRemoveDope,
   onLogSeries,
   musicEnabled,
   onLeave,
 }: ShootingRangeProps) {
-  const [view, setView] = useState<"range" | "shotlog">("range");
+  const [view, setView] = useState<"range" | "shotlog" | "dope">("range");
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
@@ -141,7 +164,6 @@ export function ShootingRange({
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
   const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
-  const [wobbleMm, setWobbleMm] = useState({ x: 0, y: 0 });
   const [shots, setShots] = useState<ShotImpact[]>([]);
   const [measurement, setMeasurement] = useState<GroupMeasurement | null>(
     null,
@@ -155,11 +177,15 @@ export function ShootingRange({
   }>({ phase: "idle", remainingMs: 0 });
   const [triggerUi, setTriggerUi] = useState<{
     pending: boolean;
-    /** 0–1 while holding Space toward break. */
-    progress: number;
     /** 0–1 mark on bar while focused. */
     targetPct: number;
-  }>({ pending: false, progress: 0, targetPct: 0 });
+  }>({ pending: false, targetPct: 0 });
+  const { fillRef: triggerFillRef, paintTriggerProgress, resetTriggerProgress } =
+    useTriggerBarPaint();
+  const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const targetScaleRef = useRef(1);
+  const bullseyeOffRef = useRef({ x: 0, y: 0 });
+  const imgNaturalWRef = useRef(IMG_NATURAL_W);
   const [recoilActive, setRecoilActive] = useState(false);
   const recoilClearRef = useRef<number | null>(null);
 
@@ -170,7 +196,7 @@ export function ShootingRange({
     right: false,
   });
   const aimRef = useRef(aimMm);
-  const wobbleRef = useRef(wobbleMm);
+  const wobbleRef = useRef({ x: 0, y: 0 });
   const measurementRef = useRef(measurement);
   const shotsLenRef = useRef(0);
   const distanceRef = useRef(distanceM);
@@ -242,10 +268,6 @@ export function ShootingRange({
   }, [distanceM]);
 
   useEffect(() => {
-    wobbleRef.current = wobbleMm;
-  }, [wobbleMm]);
-
-  useEffect(() => {
     measurementRef.current = measurement;
   }, [measurement]);
 
@@ -311,6 +333,7 @@ export function ShootingRange({
         ammo: selectedAmmo.ammo,
         stock: stock?.stock,
         affinity,
+        customsMoaDelta,
       };
       const envelopeMoa = combinedDispersionMoa(dispersionInput);
       const pull = triggerPullOffsetMm(
@@ -363,9 +386,9 @@ export function ShootingRange({
 
   function abortTrigger(reason: string) {
     triggerRef.current = { held: false, startedAtMs: null };
+    resetTriggerProgress();
     setTriggerUi((prev) => ({
       pending: false,
-      progress: 0,
       targetPct: prev.targetPct,
     }));
     if (reason) setStatus(reason);
@@ -379,9 +402,9 @@ export function ShootingRange({
     };
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
+    resetTriggerProgress();
     setTriggerUi({
       pending: false,
-      progress: 0,
       targetPct: markMs / TRIGGER_BAR_MS,
     });
     setStatus("Fokus — hold pusten. Slipp Space på merket i avtrekksbaren.");
@@ -394,7 +417,8 @@ export function ShootingRange({
       abortTrigger(abortReason);
     }
     triggerMarkRef.current = null;
-    setTriggerUi({ pending: false, progress: 0, targetPct: 0 });
+    resetTriggerProgress();
+    setTriggerUi({ pending: false, targetPct: 0 });
   }
 
   function releaseTrigger(nowMs: number) {
@@ -402,10 +426,10 @@ export function ShootingRange({
     const markMs = triggerMarkRef.current;
     if (!trig.held || trig.startedAtMs == null) {
       triggerRef.current = { held: false, startedAtMs: null };
+      resetTriggerProgress();
       setTriggerUi((prev) => ({
         ...prev,
         pending: false,
-        progress: 0,
       }));
       return;
     }
@@ -419,9 +443,9 @@ export function ShootingRange({
     );
     triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
     triggerRef.current = { held: false, startedAtMs: null };
+    resetTriggerProgress();
     setTriggerUi((prev) => ({
       pending: false,
-      progress: 0,
       targetPct: prev.targetPct,
     }));
     fireShotRef.current();
@@ -449,7 +473,8 @@ export function ShootingRange({
       held: true,
       startedAtMs: nowMs,
     };
-    setTriggerUi((prev) => ({ ...prev, pending: true, progress: 0 }));
+    paintTriggerProgress(0);
+    setTriggerUi((prev) => ({ ...prev, pending: true }));
     setStatus("Avtrekk… slipp Space på merket");
   }
 
@@ -517,6 +542,19 @@ export function ShootingRange({
     let last = performance.now();
     let uiAccum = 0;
 
+    function paintScopeWorld() {
+      const el = scopeWorldRef.current;
+      if (!el) return;
+      const ax = aimRef.current.x + wobbleRef.current.x;
+      const ay = aimRef.current.y + wobbleRef.current.y;
+      const scale = targetScaleRef.current;
+      const off = bullseyeOffRef.current;
+      const w = imgNaturalWRef.current;
+      const panPxX = (off.x + mmToPx(ax, w)) * scale;
+      const panPxY = (off.y + mmToPx(ay, w)) * scale;
+      el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+    }
+
     function tick(now: number) {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
@@ -532,7 +570,6 @@ export function ShootingRange({
       x = Math.max(-aimLimit, Math.min(aimLimit, x));
       y = Math.max(-aimLimit, Math.min(aimLimit, y));
       aimRef.current = { x, y };
-      setAimMm({ x, y });
 
       const calm = effectiveCalmWithFocus(
         weaponCalmRef.current,
@@ -542,7 +579,7 @@ export function ShootingRange({
       const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
-      const nextWobble = {
+      wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
           Math.sin(t * 5.3 + ph.b) * amp * 0.35 +
@@ -552,18 +589,14 @@ export function ShootingRange({
           Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
           Math.sin(t * 9.5 + 1) * amp * 0.15,
       };
-      wobbleRef.current = nextWobble;
-      setWobbleMm(nextWobble);
+
+      paintScopeWorld();
 
       const trig = triggerRef.current;
       if (trig.held && trig.startedAtMs != null) {
         const elapsed = now - trig.startedAtMs;
         const progress = Math.min(1, Math.max(0, elapsed / TRIGGER_BAR_MS));
-        setTriggerUi((prev) => ({
-          ...prev,
-          pending: true,
-          progress,
-        }));
+        paintTriggerProgress(progress);
         if (elapsed >= TRIGGER_BAR_MS) {
           releaseTrigger(trig.startedAtMs + TRIGGER_BAR_MS);
         }
@@ -594,18 +627,12 @@ export function ShootingRange({
   const targetScale = scope
     ? scopeImageScale(zoom, scope.scope, distanceM)
     : 1;
-  const displayAimX = aimMm.x + wobbleMm.x;
-  const displayAimY = aimMm.y + wobbleMm.y;
-  // POA: pan so the point under the reticle is aim+wobble relative to bullseye
-  // (bullseye ≠ PNG center — offset measured on cba-detail.png).
   const bullseyeOff = cbaBullseyeOffsetFromImageCenterPx(
     IMG_NATURAL_W,
     IMG_NATURAL_H,
   );
-  const panPxX =
-    (bullseyeOff.x + mmToPx(displayAimX, IMG_NATURAL_W)) * targetScale;
-  const panPxY =
-    (bullseyeOff.y + mmToPx(displayAimY, IMG_NATURAL_W)) * targetScale;
+  targetScaleRef.current = targetScale;
+  bullseyeOffRef.current = bullseyeOff;
 
   const ballisticHint = selectedAmmo
     ? (() => {
@@ -680,6 +707,28 @@ export function ShootingRange({
     setStatus("Zero lagret for denne våpen/kikkert/ammo-kombinasjonen.");
   }
 
+  function addCurrentToDope() {
+    if (!rifle || !scope || !selectedAmmo) return;
+    const elev = mmAt100ToClicks(sessionZeroYMm);
+    const wind = mmAt100ToClicks(sessionZeroXMm);
+    onAddDope({
+      rifleId: rifle.id,
+      scopeId: scope.id,
+      ammoId: selectedAmmo.id,
+      ammoLabel: `${selectedAmmo.brand} ${selectedAmmo.name}`,
+      distanceM,
+      elevationClicks: elev,
+      windageClicks: wind,
+    });
+    const elevTxt =
+      elev === 0 ? "0 elev" : `${Math.abs(elev)} ${elev < 0 ? "U" : "D"}`;
+    const windTxt =
+      wind === 0 ? "" : ` · ${Math.abs(wind)} ${wind < 0 ? "L" : "R"}`;
+    setStatus(
+      `DOPE: ${selectedAmmo.name} @ ${distanceM} m → ${elevTxt}${windTxt}`,
+    );
+  }
+
   function changeAmmo(nextAmmoId: string) {
     if (nextAmmoId === ammoId) return;
     setAmmoId(nextAmmoId);
@@ -695,6 +744,8 @@ export function ShootingRange({
     if (next === distanceM) return;
     setDistanceM(next);
     setAimMm({ x: 0, y: 0 });
+    aimRef.current = { x: 0, y: 0 };
+    wobbleRef.current = { x: 0, y: 0 };
     setShots([]);
     setMeasurement(null);
     abortTrigger("");
@@ -707,6 +758,18 @@ export function ShootingRange({
     return (
       <ShotLogView
         entries={shotLog}
+        onBack={() => setView("range")}
+        backLabel="← Tilbake til skytebanen"
+      />
+    );
+  }
+
+  if (view === "dope") {
+    return (
+      <DopeCardView
+        entries={dopeCard}
+        onUpdate={onUpdateDope}
+        onRemove={onRemoveDope}
         onBack={() => setView("range")}
         backLabel="← Tilbake til skytebanen"
       />
@@ -925,19 +988,37 @@ export function ShootingRange({
         sessionZeroYMm={sessionZeroYMm}
         onNudge={nudgeZero}
         actions={
-          <button
-            type="button"
-            className="intro-button"
-            disabled={
-              !comboKey ||
-              (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
-              Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
-              Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
-            }
-            onClick={saveCurrentZero}
-          >
-            Lagre zero
-          </button>
+          <>
+            <button
+              type="button"
+              className="intro-button"
+              disabled={
+                !comboKey ||
+                (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
+                Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
+                Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
+              }
+              onClick={saveCurrentZero}
+            >
+              Lagre zero
+            </button>
+            <button
+              type="button"
+              className="intro-button sheriff-secondary"
+              disabled={!rifle || !scope || !selectedAmmo}
+              onClick={addCurrentToDope}
+              title="Lagre ammo + avstand + klikk til felt-DOPE"
+            >
+              Add to DOPE
+            </button>
+            <button
+              type="button"
+              className="intro-button sheriff-secondary"
+              onClick={() => setView("dope")}
+            >
+              Se/edit DOPE ({dopeCard.length})
+            </button>
+          </>
         }
       />
 
@@ -959,12 +1040,7 @@ export function ShootingRange({
                   : "scope-viewport"
               }
             >
-              <div
-                className="scope-world"
-                style={{
-                  transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
-                }}
-              >
+                <div ref={scopeWorldRef} className="scope-world">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   className="scope-target"
@@ -1055,10 +1131,10 @@ export function ShootingRange({
                 className="range-trigger-bar"
                 aria-hidden
                 style={{
-                  ["--trigger-pct" as string]: `${triggerUi.progress * 100}%`,
                   ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
                 }}
               >
+                <div ref={triggerFillRef} className="range-trigger-fill" />
                 {triggerUi.targetPct > 0 ? (
                   <span className="range-trigger-mark" />
                 ) : null}

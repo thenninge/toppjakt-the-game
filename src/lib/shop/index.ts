@@ -63,7 +63,7 @@ export {
 export type { Score10 } from "./score";
 export { clampScore10, formatScore10, SCORE10_MIN, SCORE10_MAX } from "./score";
 export type { MiscSpec } from "@/lib/misc/spec";
-export { miscFeltWeightGrams, isHeadlampMisc } from "@/lib/misc/spec";
+export { miscFeltWeightGrams, isHeadlampMisc, isCamcorderMisc } from "@/lib/misc/spec";
 export type { LrfSpec, ScopeSpec, ScopeClickUnit, ThermalSpec } from "@/lib/optics/spec";
 export { measureDistanceWithLrf } from "@/lib/optics/spec";
 export type { StockSpec } from "@/lib/stock/spec";
@@ -100,11 +100,16 @@ export {
 export type { SkiSpec } from "@/lib/ski/spec";
 export type { BipodSpec } from "@/lib/bipod/spec";
 export { bipodWeaponCalmGrams } from "@/lib/bipod/spec";
-export type { FoodSpec, FoodKind } from "@/lib/food/spec";
+export type { FoodSpec, FoodKind, FoodRecovery } from "@/lib/food/spec";
 export {
   kitCanBoil,
   effectiveFoodStamina,
+  effectiveFoodRecovery,
+  formatStaminaPct,
   isCookGear,
+  THERMOS_ITEM_ID,
+  COFFEE_RECOVERY,
+  TYRIBAL_RECOVERY,
 } from "@/lib/food/spec";
 export {
   computeKitTopSpeedKmh,

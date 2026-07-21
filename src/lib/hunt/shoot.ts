@@ -20,6 +20,12 @@ export const TIUR_IMAGE_NATIVE_H = 138;
 /** Pike Pro misc — after-action impact replay on hunt shots. */
 export const TRIGGERCAM_ITEM_ID = "misc-triggercam";
 
+/** Tripod camcorder — better ettersøk overview; deploy costs nerve. */
+export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
+
+/** Nerve bump (0–1 scale) when deploying camcorder before the shot. */
+export const CAMCORDER_SETUP_NERVE = 0.2;
+
 /**
  * Reference scope viewport size (px) — matches `.scope-viewport` (~28rem).
  * Used to convert binos FOV-% into a CSS image scale.

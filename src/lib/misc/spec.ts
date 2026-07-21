@@ -28,6 +28,11 @@ export type MiscSpec = {
   enduranceGrams: number;
   /** Allows walking after skuddlys ends (17:00) when packed in kit. */
   isHeadlamp?: boolean;
+  /**
+   * Hunt camcorder — deploy before shot for better ettersøk cues
+   * (direction + land distance), at a nervousness cost.
+   */
+  isCamcorder?: boolean;
 };
 
 /** Placeholder net contribution to felt load (can be negative = net help). */
@@ -40,4 +45,8 @@ export function miscFeltWeightGrams(
 
 export function isHeadlampMisc(misc: MiscSpec): boolean {
   return !!misc.isHeadlamp;
+}
+
+export function isCamcorderMisc(misc: MiscSpec): boolean {
+  return !!misc.isCamcorder;
 }
