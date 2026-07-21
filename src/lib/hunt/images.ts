@@ -81,6 +81,9 @@ const EAT_IMAGES: string[] = [
 
 export const REST_TIRED_IMAGE = "/images/rest_tired.png";
 
+/** Forced camp when stranded without headlamp after dark. */
+export const CAMP_NIGHT_IMAGE = "/images/eat2.png";
+
 /** Forced rest when physical stamina is empty (fatigue = 1). */
 export const FORCED_REST_MINUTES = 60;
 
@@ -143,9 +146,10 @@ export function pickEatImage(): string {
   return pickRandomImage(EAT_IMAGES);
 }
 
-/** Eyes: 1 real second = 1 game second. Binos: 1 real = 5 game. */
+/** Eyes: 1 real second = 1 game second. Binos/thermal: 1 real = 5 game. */
 export const SPOT_TIME_FACTOR_EYES = 1;
 export const SPOT_TIME_FACTOR_BINOS = 5;
+export const SPOT_TIME_FACTOR_THERMAL = 5;
 
 /** Fallback bino zoom when kit magnification is unknown (10× class). */
 export const DEFAULT_BINOS_MAGNIFICATION = 10;

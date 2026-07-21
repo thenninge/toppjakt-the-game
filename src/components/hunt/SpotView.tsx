@@ -5,6 +5,7 @@ import {
   DEFAULT_BINOS_MAGNIFICATION,
   SPOT_TIME_FACTOR_BINOS,
   SPOT_TIME_FACTOR_EYES,
+  SPOT_TIME_FACTOR_THERMAL,
 } from "@/lib/hunt/images";
 import {
   findBirdUnderLrfReticle,
@@ -16,8 +17,9 @@ import {
   type LrfSpec,
 } from "@/lib/optics/spec";
 import { formatHuntClock } from "@/lib/hunt/travel";
+import { ThermalCanvas } from "@/components/hunt/ThermalCanvas";
 
-export type SpotMode = "eyes" | "binos";
+export type SpotMode = "eyes" | "binos" | "thermal";
 
 export type BirdObservedInfo = {
   placement: BirdVisualPlacement;
@@ -34,20 +36,35 @@ type SpotViewProps = {
   magnification?: number;
   /** LRF error model — required to range a bird. */
   lrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
+  /** Thermal zoom when equipped. */
+  thermalMagnification?: number;
+  /** Thermal sensor block size — higher = poorer resolution. */
+  thermalPixelFactor?: number;
+  /** Integrated LRF on thermal unit (Condor CQ35). */
+  thermalLrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
   /** Absolute hunt clock in minutes (for HUD). */
   clockMinutes: number;
   /** Player has binoculars in kit. */
   hasBinos: boolean;
+  /** Player has thermal spotter in kit. */
+  hasThermal?: boolean;
   /** Equipped binos have a laser rangefinder. */
   hasLrf?: boolean;
   /** Label for HUD, e.g. brand + name. */
   binosLabel?: string | null;
+  thermalLabel?: string | null;
   /** Called with game-seconds elapsed while looking. */
   onGameSeconds: (seconds: number) => void;
   /** LRF locked a bird — parent enters shoot mode. */
   onBirdObserved: (info: BirdObservedInfo) => void;
   onDone: (info: { mode: SpotMode; gameSeconds: number }) => void;
 };
+
+function spotTimeFactor(mode: SpotMode): number {
+  if (mode === "binos") return SPOT_TIME_FACTOR_BINOS;
+  if (mode === "thermal") return SPOT_TIME_FACTOR_THERMAL;
+  return SPOT_TIME_FACTOR_EYES;
+}
 
 function BirdOverlay({
   placement,
@@ -75,24 +92,31 @@ function BirdOverlay({
 /**
  * Same landscape frame for eyes and binos (identical placement %).
  * Binos = circular crop + real optic zoom; pan 0–100 covers the full eyes view.
+ * Thermal = pixelated B&W heat map; birds render sharp white-hot.
  */
 export function SpotView({
   imageSrc,
   birdPlacements = [],
   magnification = DEFAULT_BINOS_MAGNIFICATION,
   lrfSpec = null,
+  thermalMagnification = 3,
+  thermalPixelFactor = 10,
+  thermalLrfSpec = null,
   clockMinutes,
   hasBinos,
+  hasThermal = false,
   hasLrf = false,
   binosLabel,
+  thermalLabel,
   onGameSeconds,
   onBirdObserved,
   onDone,
 }: SpotViewProps) {
-  const zoom = Math.max(1, magnification);
+  const binoZoom = Math.max(1, magnification);
+  const thermalZoom = Math.max(1, thermalMagnification);
   const [mode, setMode] = useState<SpotMode>("eyes");
-  const timeFactor =
-    mode === "binos" ? SPOT_TIME_FACTOR_BINOS : SPOT_TIME_FACTOR_EYES;
+  const zoom = mode === "thermal" ? thermalZoom : binoZoom;
+  const timeFactor = spotTimeFactor(mode);
   const [lookedGameSec, setLookedGameSec] = useState(0);
   const lookedRef = useRef(0);
   const modeRef = useRef<SpotMode>(mode);
@@ -118,11 +142,7 @@ export function SpotView({
       const realSec = (now - last) / 1000;
       last = now;
       if (realSec <= 0 || realSec > 2) return;
-      const factor =
-        modeRef.current === "binos"
-          ? SPOT_TIME_FACTOR_BINOS
-          : SPOT_TIME_FACTOR_EYES;
-      const gameSec = realSec * factor;
+      const gameSec = realSec * spotTimeFactor(modeRef.current);
       lookedRef.current += gameSec;
       setLookedGameSec(lookedRef.current);
       onGameSecondsRef.current(gameSec);
@@ -141,18 +161,27 @@ export function SpotView({
     return () => window.removeEventListener("keydown", onKey);
   }, [onDone]);
 
-  function enterBinos() {
+  function focusOnBird(targetMode: "binos" | "thermal") {
     const focus =
-      birdPlacements.find((p) => visibleInSpotMode(p.distanceM, "binos")) ??
+      birdPlacements.find((p) => visibleInSpotMode(p.distanceM, targetMode)) ??
       null;
     if (focus) {
       setPan({ x: focus.x, y: focus.y });
     }
-    setMode("binos");
+    setMode(targetMode);
+    setLrfReading(null);
+  }
+
+  function enterBinos() {
+    focusOnBird("binos");
+  }
+
+  function enterThermal() {
+    focusOnBird("thermal");
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
-    if (mode !== "binos") return;
+    if (mode !== "binos" && mode !== "thermal") return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
       pointerId: e.pointerId,
@@ -167,7 +196,6 @@ export function SpotView({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    // Drag distance as % of viewport / zoom → full image reachable.
     const sensX = (100 / Math.max(1, rect.width)) / zoom;
     const sensY = (100 / Math.max(1, rect.height)) / zoom;
     const dx = e.clientX - drag.startX;
@@ -183,14 +211,14 @@ export function SpotView({
     }
   }
 
-  function fireLrf() {
+  function fireLrf(activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null) {
     const visible = birdPlacements.filter((p) =>
-      visibleInSpotMode(p.distanceM, "binos"),
+      visibleInSpotMode(p.distanceM, mode),
     );
     const hit = findBirdUnderLrfReticle(visible, pan, zoom);
-    if (hit && lrfSpec) {
+    if (hit && activeLrf) {
       const measured = Math.round(
-        measureDistanceWithLrf(hit.distanceM, lrfSpec),
+        measureDistanceWithLrf(hit.distanceM, activeLrf),
       );
       setLrfReading(`${measured} m`);
       onBirdObserved({
@@ -211,6 +239,23 @@ export function SpotView({
     visibleInSpotMode(p.distanceM, mode),
   );
 
+  const activeLrf =
+    mode === "thermal" && thermalLrfSpec
+      ? thermalLrfSpec
+      : mode === "binos" && hasLrf
+        ? lrfSpec
+        : null;
+  const showLrf = !!activeLrf;
+
+  const modeTitle =
+    mode === "binos"
+      ? `Kikkert ${binoZoom}×${binosLabel ? ` — ${binosLabel}` : ""}`
+      : mode === "thermal"
+        ? `Termisk ${thermalZoom}×${thermalLabel ? ` — ${thermalLabel}` : ""}`
+        : "Spotting med øynene";
+
+  const isOpticMode = mode === "binos" || mode === "thermal";
+
   /** Same % coordinate system as eyes; zoom crops into pan point. */
   const worldStyle = {
     width: `${zoom * 100}%`,
@@ -223,16 +268,12 @@ export function SpotView({
     <div className="spot-view" role="dialog" aria-modal="true" aria-label="Spotting">
       <header className="spot-view-hud">
         <div>
-          <p className="intro-line intro-gift">
-            {mode === "binos"
-              ? `Kikkert ${zoom}×${binosLabel ? ` — ${binosLabel}` : ""}`
-              : "Spotting med øynene"}
-          </p>
+          <p className="intro-line intro-gift">{modeTitle}</p>
           <p className="shop-row-note">
             Kl {formatHuntClock(clockMinutes)} · sett i{" "}
             {lookedMin > 0 ? `${lookedMin} min ` : ""}
             {lookedSec} s spilltid · tid ×{timeFactor}
-            {mode === "binos" ? " · dra for å speide hele bildet" : ""}
+            {isOpticMode ? " · dra for å speide hele bildet" : ""}
             {lrfReading ? ` · LRF ${lrfReading}` : ""}
           </p>
         </div>
@@ -242,20 +283,38 @@ export function SpotView({
               Use binos
             </button>
           ) : null}
-          {mode === "binos" ? (
+          {mode === "eyes" && hasThermal ? (
+            <button type="button" className="intro-button" onClick={enterThermal}>
+              Use thermal
+            </button>
+          ) : null}
+          {mode === "binos" && hasThermal ? (
+            <button type="button" className="intro-button" onClick={enterThermal}>
+              Use thermal
+            </button>
+          ) : null}
+          {mode === "thermal" && hasBinos ? (
+            <button type="button" className="intro-button" onClick={enterBinos}>
+              Use binos
+            </button>
+          ) : null}
+          {isOpticMode ? (
             <button
               type="button"
               className="intro-button"
-              onClick={() => setMode("eyes")}
+              onClick={() => {
+                setMode("eyes");
+                setLrfReading(null);
+              }}
             >
               Eyes only
             </button>
           ) : null}
-          {mode === "binos" && hasLrf ? (
+          {showLrf ? (
             <button
               type="button"
               className="intro-button spot-lrf-btn"
-              onClick={fireLrf}
+              onClick={() => fireLrf(activeLrf)}
             >
               LRF
             </button>
@@ -274,7 +333,11 @@ export function SpotView({
 
       <div
         className={
-          mode === "binos" ? "spot-eyes-frame spot-binos-frame" : "spot-eyes-frame"
+          mode === "binos"
+            ? "spot-eyes-frame spot-binos-frame"
+            : mode === "thermal"
+              ? "spot-eyes-frame spot-thermal-frame"
+              : "spot-eyes-frame"
         }
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -293,7 +356,7 @@ export function SpotView({
               <BirdOverlay key={p.birdId} placement={p} />
             ))}
           </>
-        ) : (
+        ) : mode === "binos" ? (
           <>
             <div className="spot-binos-world" style={worldStyle}>
               <img
@@ -314,11 +377,35 @@ export function SpotView({
               <span className="spot-lrf-readout">{lrfReading}</span>
             ) : null}
           </>
+        ) : (
+          <>
+            <ThermalCanvas
+              imageSrc={imageSrc}
+              birdPlacements={visibleBirds}
+              pan={pan}
+              zoom={zoom}
+              pixelFactor={thermalPixelFactor}
+              className="spot-thermal-canvas"
+            />
+            <div className="spot-thermal-scanlines" aria-hidden />
+            {showLrf ? (
+              <span className="spot-lrf-reticle" aria-hidden />
+            ) : null}
+            {showLrf && lrfReading ? (
+              <span className="spot-lrf-readout">{lrfReading}</span>
+            ) : null}
+          </>
         )}
       </div>
       {mode === "binos" ? (
         <p className="spot-binos-hint">
           Dra for å speide hele landskapet · sikt LRF på fuglen og trykk LRF
+        </p>
+      ) : null}
+      {mode === "thermal" ? (
+        <p className="spot-binos-hint">
+          Termisk — dra for å speide · hvite flekker = varm fugl
+          {showLrf ? " · LRF integrert" : ""}
         </p>
       ) : null}
     </div>

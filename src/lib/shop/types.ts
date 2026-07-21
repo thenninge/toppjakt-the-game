@@ -2,7 +2,7 @@ import type { AmmoSpec, ProjectileType } from "@/lib/ammo/spec";
 import type { CamoSpec } from "@/lib/camo/spec";
 import type { CarrySpec } from "@/lib/carry/spec";
 import type { MiscSpec } from "@/lib/misc/spec";
-import type { LrfSpec, ScopeSpec } from "@/lib/optics/spec";
+import type { LrfSpec, ScopeSpec, ThermalSpec } from "@/lib/optics/spec";
 import type { StockSpec } from "@/lib/stock/spec";
 import type { RifleSpec } from "@/lib/rifle/spec";
 import type { BallisticsSpec } from "@/lib/ballistics/spec";
@@ -12,6 +12,7 @@ import type { FoodSpec } from "@/lib/food/spec";
 
 export type ShopCategory =
   | "lrf"
+  | "thermal"
   | "scope"
   | "suppressor"
   | "stock"
@@ -50,6 +51,7 @@ export type AmmoShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -67,6 +69,7 @@ export type CamoShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -84,6 +87,7 @@ export type CarryShopItem = ShopItemBase & {
   camo?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -101,6 +105,7 @@ export type MiscShopItem = ShopItemBase & {
   camo?: never;
   carry?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -118,6 +123,25 @@ export type LrfShopItem = ShopItemBase & {
   camo?: never;
   carry?: never;
   misc?: never;
+  scope?: never;
+  stock?: never;
+  rifle?: never;
+  ballistics?: never;
+  ski?: never;
+  bipod?: never;
+  food?: never;
+  thermal?: never;
+};
+
+export type ThermalShopItem = ShopItemBase & {
+  category: "thermal";
+  thermal: ThermalSpec;
+  weightGrams: number;
+  ammo?: never;
+  camo?: never;
+  carry?: never;
+  misc?: never;
+  lrf?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -153,6 +177,7 @@ export type StockShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   rifle?: never;
   ballistics?: never;
@@ -170,6 +195,7 @@ export type RifleShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   ballistics?: never;
@@ -187,6 +213,7 @@ export type BallisticsShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -204,6 +231,7 @@ export type SkiShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -221,6 +249,7 @@ export type BipodShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -238,6 +267,7 @@ export type FoodShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -255,6 +285,7 @@ export type GearShopItem = ShopItemBase & {
     | "chestrig"
     | "misc"
     | "lrf"
+    | "thermal"
     | "scope"
     | "stock"
     | "rifle"
@@ -268,6 +299,7 @@ export type GearShopItem = ShopItemBase & {
   carry?: never;
   misc?: never;
   lrf?: never;
+  thermal?: never;
   scope?: never;
   stock?: never;
   rifle?: never;
@@ -282,6 +314,7 @@ export type ShopItem =
   | CarryShopItem
   | MiscShopItem
   | LrfShopItem
+  | ThermalShopItem
   | ScopeShopItem
   | StockShopItem
   | RifleShopItem
@@ -308,6 +341,7 @@ export type CatalogDraft = {
   carry?: CarrySpec;
   misc?: MiscSpec;
   lrf?: LrfSpec;
+  thermal?: ThermalSpec;
   scope?: ScopeSpec;
   stock?: StockSpec;
   rifle?: RifleSpec;
@@ -335,6 +369,10 @@ export function isMiscItem(item: ShopItem): item is MiscShopItem {
 
 export function isLrfItem(item: ShopItem): item is LrfShopItem {
   return item.category === "lrf";
+}
+
+export function isThermalItem(item: ShopItem): item is ThermalShopItem {
+  return item.category === "thermal";
 }
 
 export function isScopeItem(item: ShopItem): item is ScopeShopItem {
@@ -367,6 +405,7 @@ export function isFoodItem(item: ShopItem): item is FoodShopItem {
 
 export const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
   lrf: "LRF / Avstandsmålere",
+  thermal: "Termisk / Spotters",
   scope: "Scopes",
   suppressor: "Lyddempere",
   stock: "Stokker",
@@ -384,6 +423,7 @@ export const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
 
 export const SHOP_CATEGORIES: ShopCategory[] = [
   "lrf",
+  "thermal",
   "scope",
   "suppressor",
   "bipod",

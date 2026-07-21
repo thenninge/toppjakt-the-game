@@ -249,6 +249,34 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     },
   },
 
+  // --- Thermal spotters ---
+  {
+    id: "thermal-hikmicro-lynx-le10",
+    category: "thermal",
+    brand: "Hikmicro",
+    name: "Lynx LE10",
+    priceNok: 6490,
+    note: "Håndholdt termisk spotter. 256×192 — ser varme, ikke detaljer.",
+    thermal: {
+      pixelFactor: 6,
+      magnification: 2.8,
+    },
+  },
+  {
+    id: "thermal-hikmicro-condor-cq35-lrf",
+    category: "thermal",
+    brand: "Hikmicro",
+    name: "Condor CQ35 LRF",
+    priceNok: 29900,
+    note: "Termisk kikkert m/integrert avstandsmåler. 384×288 sensor.",
+    thermal: {
+      pixelFactor: 3,
+      magnification: 3.5,
+      hasIntegratedLrf: true,
+      rangeErrorPercent: 1.5,
+    },
+  },
+
   // --- Scopes ---
   {
     id: "scope-nf-nx8-4-32-moa",
@@ -2235,6 +2263,24 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     priceNok: 149,
     note: "Kaffe er også kit. Weight + Endurance-offset.",
     misc: { enduranceGrams: 2000 },
+  },
+  {
+    id: "misc-nightcore-nu21",
+    category: "misc",
+    brand: "Nitecore",
+    name: "NU21",
+    priceNok: 349,
+    note: "Hodelykt — gå tilbake til bilen etter mørkets frembrudd. Uten denne: camp ute.",
+    misc: { enduranceGrams: 0, isHeadlamp: true },
+  },
+  {
+    id: "misc-nightcore-hc60",
+    category: "misc",
+    brand: "Nitecore",
+    name: "HC60",
+    priceNok: 1099,
+    note: "Sterk hodelykt m/USB-lading. Samme nattgåing, bedre lys og litt mindre vekt i sekken.",
+    misc: { enduranceGrams: 150, isHeadlamp: true },
   },
   {
     id: "misc-triggercam",

@@ -24,6 +24,10 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "lrf-clas-ohlson-golf": 175,
   "lrf-magasinet-budget-binos": 650,
 
+  // Thermal
+  "thermal-hikmicro-lynx-le10": 420,
+  "thermal-hikmicro-condor-cq35-lrf": 890,
+
   // Scopes
   "scope-nf-nx8-4-32-moa": 810,
   "scope-nf-nx8-4-32-mrad": 810,
@@ -158,6 +162,8 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-garmin-foretrex-801": 88,
   "misc-sittpute-biltema": 120,
   "misc-thermos-jula": 380,
+  "misc-nightcore-nu21": 68,
+  "misc-nightcore-hc60": 128,
   "misc-triggercam": 460,
 
   // Chestrigs
@@ -241,6 +247,8 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
 export function defaultWeightGrams(category: ShopCategory): number {
   switch (category) {
     case "lrf":
+      return 500;
+    case "thermal":
       return 500;
     case "scope":
       return 700;

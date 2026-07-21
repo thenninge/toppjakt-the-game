@@ -55,8 +55,9 @@ import {
   removeCarcassFromStatsCounts,
   type GameCarcass,
 } from "@/lib/hunt/carcass";
-import { isAmmoItem, isCamoItem, isFoodItem, isRifleItem } from "@/lib/shop/types";
+import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
+import { isHeadlampMisc } from "@/lib/misc/spec";
 import {
   getHuntingTerrain,
   type HuntingTerrainId,
@@ -250,6 +251,27 @@ export function IntroScreen() {
     });
   }
 
+  function consumeHuntCarcasses(carcassIds: string[]) {
+    if (carcassIds.length === 0) return;
+    const idSet = new Set(carcassIds);
+    setStats((prev) => {
+      const eaten = prev.carcasses.filter((c) => idSet.has(c.id));
+      let tiur = prev.tiur;
+      let orrhaner = prev.orrhaner;
+      for (const c of eaten) {
+        const counts = removeCarcassFromStatsCounts(tiur, orrhaner, c.species);
+        tiur = counts.tiur;
+        orrhaner = counts.orrhaner;
+      }
+      return {
+        ...prev,
+        tiur,
+        orrhaner,
+        carcasses: prev.carcasses.filter((c) => !idSet.has(c.id)),
+      };
+    });
+  }
+
   function sellCarcasses(carcassIds: string[]) {
     const idSet = new Set(carcassIds);
     setStats((prev) => {
@@ -360,6 +382,12 @@ export function IntroScreen() {
         (id) => {
           const item = resolvePlayerItem(id);
           return item && isCamoItem(item) ? camoSlot(item.camo) : undefined;
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return item && isMiscItem(item) && isHeadlampMisc(item.misc)
+            ? "headlamp"
+            : undefined;
         },
       ),
     }));
@@ -592,6 +620,8 @@ export function IntroScreen() {
             onEnsureZeroing={ensureComboZero}
             onConsumeFood={consumeHuntFood}
             onBirdHarvested={harvestBird}
+            carcasses={stats.carcasses}
+            onConsumeCarcasses={consumeHuntCarcasses}
             onLeave={endHunt}
           />
         ) : null}

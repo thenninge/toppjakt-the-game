@@ -42,6 +42,7 @@ const EXCLUSIVE_KIT_CATEGORIES = new Set([
   "skis",
   "ballistics",
   "lrf",
+  "thermal",
   "bipod",
 ]);
 
@@ -524,6 +525,7 @@ export function toggleKitItem(
   getCategory: (id: string) => string | undefined,
   getFoodKind?: (id: string) => string | undefined,
   getCamoSlot?: (id: string) => string | undefined,
+  getMiscSlot?: (id: string) => string | undefined,
 ): string[] {
   if (kit.includes(itemId)) {
     return kit.filter((id) => id !== itemId);
@@ -536,6 +538,11 @@ export function toggleKitItem(
   const foodKind = getFoodKind?.(itemId);
   if (foodKind === "stove" || foodKind === "fuel") {
     const without = kit.filter((id) => getFoodKind?.(id) !== foodKind);
+    return [...without, itemId];
+  }
+  const miscSlot = getMiscSlot?.(itemId);
+  if (miscSlot) {
+    const without = kit.filter((id) => getMiscSlot?.(id) !== miscSlot);
     return [...without, itemId];
   }
   // One per camo/apparel slot (suit, buff, beanie, gloves, boots, ski_boots).

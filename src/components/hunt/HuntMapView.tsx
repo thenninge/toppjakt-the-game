@@ -16,6 +16,8 @@ import {
 import { getHuntPace, HUNT_PACES, type HuntPaceId } from "@/lib/hunt/pace";
 import {
   baseMinutesForEffort,
+  canHuntAtTime,
+  canWalkAtNight,
   CELL_WIDTH_M,
   clampFatigue,
   describeEffort,
@@ -25,13 +27,17 @@ import {
   getCellEffort,
   HUNT_DAY_START_MINUTES,
   HUNT_DARK_MINUTES,
+  isAtParking,
   isHuntDark,
+  isStrandedAtNight,
+  minutesUntilDawn,
   pathTravelMinutes,
   REST_ACTION_MINUTES,
   travelMinutesForCell,
   type EffortScore,
 } from "@/lib/hunt/travel";
 import {
+  CAMP_NIGHT_IMAGE,
   FORCED_REST_MINUTES,
   isBakedSpotImage,
   pickEatImage,
@@ -51,9 +57,18 @@ import {
   isCamoItem,
   isFoodItem,
   isLrfItem,
+  isMiscItem,
+  isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
 import { kitCanBoil, effectiveFoodStamina } from "@/lib/food/spec";
+import { isHeadlampMisc } from "@/lib/misc/spec";
+import {
+  createCarcassFromHarvest,
+  speciesLabelNb,
+  type BirdHarvestInput,
+  type GameCarcass,
+} from "@/lib/hunt/carcass";
 import { SpotView, type SpotMode } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
 import { WalkView } from "@/components/hunt/WalkView";
@@ -73,11 +88,6 @@ import {
   type HuntBird,
 } from "@/lib/hunt/birds";
 import type { HuntShotResult } from "@/lib/hunt/shoot";
-import {
-  createCarcassFromHarvest,
-  type BirdHarvestInput,
-  type GameCarcass,
-} from "@/lib/hunt/carcass";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
 import { DEFAULT_BINOS_MAGNIFICATION } from "@/lib/hunt/images";
 import {
@@ -109,6 +119,8 @@ type HuntMapViewProps = {
   ) => ZeroingProfile;
   onConsumeFood: (itemId: string) => boolean;
   onBirdHarvested: (carcass: GameCarcass) => void;
+  carcasses: GameCarcass[];
+  onConsumeCarcasses: (carcassIds: string[]) => void;
   onLeave: () => void;
 };
 
@@ -173,6 +185,16 @@ type ForcedRestSession = {
   imageSrc: string;
 };
 
+type ForcedCampPrompt = {
+  imageSrc: string;
+};
+
+type CampOvernightSession = {
+  imageSrc: string;
+  durationMinutes: number;
+  subtitle: string;
+};
+
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
@@ -195,6 +217,8 @@ export function HuntMapView({
   onEnsureZeroing,
   onConsumeFood,
   onBirdHarvested,
+  carcasses,
+  onConsumeCarcasses,
   onLeave,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
@@ -211,7 +235,7 @@ export function HuntMapView({
   const [paceId, setPaceId] = useState<HuntPaceId>("normal");
   const [panel, setPanel] = useState<PanelMode>("arrived");
   const [log, setLog] = useState(
-    "Du er på parkeringsplassen. Klokka er 08:00 — skuddlyst.",
+    "Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.",
   );
   const [walkSession, setWalkSession] = useState<WalkSession | null>(null);
   const [spotSession, setSpotSession] = useState<SpotSession | null>(null);
@@ -220,6 +244,10 @@ export function HuntMapView({
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
   const [eatSession, setEatSession] = useState<EatSession | null>(null);
   const [forcedRest, setForcedRest] = useState<ForcedRestSession | null>(null);
+  const [forcedCamp, setForcedCamp] = useState<ForcedCampPrompt | null>(null);
+  const [campOvernight, setCampOvernight] = useState<CampOvernightSession | null>(
+    null,
+  );
   const [birds, setBirds] = useState<HuntBird[]>(() =>
     map ? spawnTiurOnMap(map) : [],
   );
@@ -235,6 +263,22 @@ export function HuntMapView({
   const binosMagnification = binoItem
     ? lrfOpticalMagnification(binoItem)
     : DEFAULT_BINOS_MAGNIFICATION;
+  const thermalItem = useMemo(
+    () => kitItems.find(isThermalItem) ?? null,
+    [kitItems],
+  );
+  const hasThermal = !!thermalItem;
+  const thermalLabel = thermalItem
+    ? `${thermalItem.brand} ${thermalItem.name}`
+    : null;
+  const thermalMagnification = thermalItem?.thermal.magnification ?? 3;
+  const thermalPixelFactor = thermalItem?.thermal.pixelFactor ?? 10;
+  const thermalLrfSpec = useMemo(() => {
+    if (!thermalItem?.thermal.hasIntegratedLrf) return null;
+    return {
+      rangeErrorPercent: thermalItem.thermal.rangeErrorPercent ?? 2,
+    };
+  }, [thermalItem]);
   const kestrelItem = useMemo(
     () =>
       kitItems.find(
@@ -276,6 +320,13 @@ export function HuntMapView({
       ),
     [kitItems],
   );
+  const hasHeadlamp = useMemo(
+    () =>
+      kitItems.some(
+        (i) => isMiscItem(i) && isHeadlampMisc(i.misc),
+      ),
+    [kitItems],
+  );
 
   function syncClockFromRef() {
     setClockMinutes(Math.floor(clockSecondsRef.current / 60));
@@ -307,10 +358,12 @@ export function HuntMapView({
     setShotPairs([]);
     setEatSession(null);
     setForcedRest(null);
+    setForcedCamp(null);
+    setCampOvernight(null);
     setBirds(spawnTiurOnMap(map));
     setFlushQueue([]);
     pendingForcedRestRef.current = false;
-    setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlyst.");
+    setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.");
   }, [terrainId, map]);
 
   useEffect(() => {
@@ -323,6 +376,8 @@ export function HuntMapView({
         !walkSession &&
         !eatSession &&
         !forcedRest &&
+        !forcedCamp &&
+        !campOvernight &&
         !flushCurrent
       ) {
         onLeave();
@@ -338,6 +393,36 @@ export function HuntMapView({
     walkSession,
     eatSession,
     forcedRest,
+    forcedCamp,
+    campOvernight,
+    flushCurrent,
+  ]);
+
+  function triggerStrandedCamp(reason: string) {
+    setSpotSession(null);
+    setAwareSession(null);
+    setShootSession(null);
+    setSelected(null);
+    setPanel("arrived");
+    setForcedCamp({ imageSrc: CAMP_NIGHT_IMAGE });
+    setLog(reason);
+  }
+
+  useEffect(() => {
+    if (!map || walkSession || forcedCamp || campOvernight || flushCurrent) return;
+    const atParking = isAtParking(pos, map);
+    if (!isStrandedAtNight(clockMinutes, hasHeadlamp, atParking)) return;
+    triggerStrandedCamp(
+      "Mørket — uten hodelykt må du campe. Spis fuglene dine og legg deg.",
+    );
+  }, [
+    clockMinutes,
+    hasHeadlamp,
+    pos,
+    map,
+    walkSession,
+    forcedCamp,
+    campOvernight,
     flushCurrent,
   ]);
 
@@ -391,6 +476,8 @@ export function HuntMapView({
   const activeMap = map;
   const mapId = terrain.mapId as HuntMapId;
   const dark = isHuntDark(clockMinutes);
+  const huntingAllowed = canHuntAtTime(clockMinutes);
+  const atParking = isAtParking(pos, activeMap);
   const pace = getHuntPace(paceId);
   const hereEffort = getCellEffort(activeMap.id, pos);
 
@@ -423,6 +510,8 @@ export function HuntMapView({
       shootSession ||
       eatSession ||
       forcedRest ||
+      forcedCamp ||
+      campOvernight ||
       flushCurrent
     )
       return;
@@ -451,6 +540,23 @@ export function HuntMapView({
     const usedPace = getHuntPace(paceId);
     const trip = pathTravelMinutes(activeMap.id, pos, selected, usedPace);
     if (trip.steps === 0) return;
+
+    const destAtParking = isAtParking(selected, activeMap);
+    const arrivalMin = clockMinutes + trip.minutes;
+    if (!canWalkAtNight(hasHeadlamp, clockMinutes)) {
+      setLog("For mørkt å gå uten hodelykt. Camp her eller kom deg til bilen.");
+      return;
+    }
+    if (
+      !hasHeadlamp &&
+      arrivalMin >= HUNT_DARK_MINUTES &&
+      !destAtParking
+    ) {
+      setLog(
+        "Turen tar for lang tid — uten hodelykt må du være ved bilen før 17:00.",
+      );
+      return;
+    }
 
     setWalkSession({
       imageSrc: pickWalkImage(),
@@ -484,9 +590,22 @@ export function HuntMapView({
 
     const walkLog =
       `Gikk til ${cellLabel(walkSession.to)} på ${walkSession.minutes} min (${usedPace.label}, ${walkSession.path.length} ruter).` +
-      (nowDark ? " Det er mørkt — skuddlyst er over." : "");
+      (nowDark ? " Det er mørkt — skuddlys er over." : "");
 
     setWalkSession(null);
+
+    if (
+      isStrandedAtNight(
+        Math.floor(clockSecondsRef.current / 60),
+        hasHeadlamp,
+        isAtParking(walkSession.to, activeMap),
+      )
+    ) {
+      triggerStrandedCamp(
+        "Du kom ikke til bilen før mørket. Uten hodelykt må du campe her.",
+      );
+      return;
+    }
 
     if (flush.events.length > 0) {
       pendingForcedRestRef.current = nextFatigue.physical >= 1;
@@ -517,6 +636,10 @@ export function HuntMapView({
   }
 
   function beginSpot() {
+    if (!canHuntAtTime(clockMinutes)) {
+      setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
+      return;
+    }
     // Start tile: hand-composited spot_test landscape + same sprite placement
     // as other cells (so perch height / FOV can be judged on this photo).
     const atStart =
@@ -530,7 +653,7 @@ export function HuntMapView({
   function finishSpot(info: { mode: SpotMode; gameSeconds: number }) {
     const lookMin = info.gameSeconds / 60;
     const strain =
-      info.mode === "binos"
+      info.mode === "binos" || info.mode === "thermal"
         ? 0.02 * pace.mentalStrain
         : 0.015 * pace.mentalStrain;
     setMentalFatigue((m) => clampFatigue(m + strain * Math.max(1, lookMin)));
@@ -539,7 +662,12 @@ export function HuntMapView({
       lookMin >= 1
         ? `${lookMin.toFixed(1)} min`
         : `${Math.round(info.gameSeconds)} s`;
-    const modeLabel = info.mode === "binos" ? "Binos" : "Øyne";
+    const modeLabel =
+      info.mode === "binos"
+        ? "Binos"
+        : info.mode === "thermal"
+          ? "Termisk"
+          : "Øyne";
     const imageSrc = spotSession?.imageSrc ?? "";
     const placements = spotSession?.birdPlacements ?? [];
     const bakedNote = isBakedSpotImage(imageSrc)
@@ -577,6 +705,12 @@ export function HuntMapView({
     measuredDistanceM: number;
     gameSeconds: number;
   }) {
+    if (!canHuntAtTime(clockMinutes)) {
+      setSpotSession(null);
+      setLog("Skuddlys over — du rekker ikke å gå til skudd nå.");
+      setPanel("arrived");
+      return;
+    }
     const imageSrc = spotSession?.imageSrc ?? pickSpotImage();
     const lookMin = info.gameSeconds / 60;
     setMentalFatigue((m) =>
@@ -629,6 +763,12 @@ export function HuntMapView({
 
   function proceedFromAware(stance?: AwareShootStance) {
     if (!awareSession) return;
+    if (!canHuntAtTime(clockMinutes)) {
+      setAwareSession(null);
+      setLog("Skuddlys over (17:00) — ingen skudd i mørket.");
+      setPanel("arrived");
+      return;
+    }
     if (awareSession.ettersokPairId) {
       const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
       const recoveryOnly = !!awareSession.recoveryOnly;
@@ -882,6 +1022,38 @@ export function HuntMapView({
     setPanel("arrived");
   }
 
+  function beginCampOvernight() {
+    const ids = carcasses.map((c) => c.id);
+    const ateCount = ids.length;
+    if (ateCount > 0) {
+      onConsumeCarcasses(ids);
+    }
+    const subtitle =
+      ateCount > 0
+        ? `Du spiste ${ateCount} ${ateCount === 1 ? "fugl" : "fugler"} fra sekken — ikke noe å selge på Vebjørn i morgen.`
+        : "Tom sekk — sulten natt under stjernene.";
+    const duration = minutesUntilDawn(clockMinutes);
+    setForcedCamp(null);
+    setCampOvernight({
+      imageSrc: CAMP_NIGHT_IMAGE,
+      durationMinutes: duration,
+      subtitle,
+    });
+  }
+
+  function finishCampOvernight() {
+    if (!campOvernight) return;
+    advanceClockMinutes(campOvernight.durationMinutes);
+    setPhysicalFatigue((p) => clampFatigue(p - 0.35));
+    setMentalFatigue((m) => clampFatigue(m - 0.2));
+    const mins = Math.floor(clockSecondsRef.current / 60);
+    setLog(
+      `Morgen — kl ${formatHuntClock(mins)}. Skuddlys igjen til 17:00. Kom deg til bilen før mørket.`,
+    );
+    setCampOvernight(null);
+    setPanel("arrived");
+  }
+
   const inspectTrip =
     selected && map
       ? pathTravelMinutes(map.id, pos, selected, pace)
@@ -915,6 +1087,66 @@ export function HuntMapView({
         clockMinutes={clockMinutes}
         onContinue={finishForcedRest}
         ariaLabel="Tvungen hvile"
+      />
+    );
+  }
+
+  if (forcedCamp) {
+    return (
+      <div
+        className="walk-view"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tvungen camp"
+      >
+        <div className="walk-view-frame">
+          <img
+            src={forcedCamp.imageSrc}
+            alt=""
+            className="walk-view-img"
+            draggable={false}
+          />
+          <div className="walk-view-veil" aria-hidden />
+          <div className="walk-view-copy">
+            <p className="intro-line intro-gift">Camp — mørkt ute</p>
+            <p className="intro-line">
+              Uten hodelykt kommer du ikke videre. Du må spise det du har med av
+              fugl og legge deg til morgenen.
+            </p>
+            {carcasses.length > 0 ? (
+              <ul className="hunt-eat-list">
+                {carcasses.map((c) => (
+                  <li key={c.id} className="shop-row-note">
+                    {speciesLabelNb(c.species)} · {formatHuntClock(clockMinutes)}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="shop-row-note">Ingen fugl i sekken — sulten natt.</p>
+            )}
+            <button
+              type="button"
+              className="intro-button"
+              onClick={beginCampOvernight}
+            >
+              Spis fuglene og legg deg
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (campOvernight) {
+    return (
+      <AtmospherePauseView
+        imageSrc={campOvernight.imageSrc}
+        title="Camping under stjernene"
+        subtitle={campOvernight.subtitle}
+        durationMinutes={campOvernight.durationMinutes}
+        clockMinutes={clockMinutes}
+        onContinue={finishCampOvernight}
+        ariaLabel="Camp over natten"
       />
     );
   }
@@ -993,10 +1225,15 @@ export function HuntMapView({
         birdPlacements={spotSession.birdPlacements}
         magnification={binosMagnification}
         lrfSpec={lrfSpec}
+        thermalMagnification={thermalMagnification}
+        thermalPixelFactor={thermalPixelFactor}
+        thermalLrfSpec={thermalLrfSpec}
         clockMinutes={clockMinutes}
         hasBinos={hasBinos}
+        hasThermal={hasThermal}
         hasLrf={hasBinos}
         binosLabel={binosLabel}
+        thermalLabel={thermalLabel}
         onGameSeconds={addGameSeconds}
         onBirdObserved={onBirdObserved}
         onDone={finishSpot}
@@ -1029,7 +1266,7 @@ export function HuntMapView({
             <span className={dark ? "hunt-clock is-dark" : "hunt-clock"}>
               Kl {formatHuntClock(clockMinutes)}
             </span>
-            {dark ? " · mørkt (skuddlyst slutt 17:00)" : " · skuddlyst til 17:00"}
+            {dark ? " · mørkt (skuddlys slutt 17:00)" : " · skuddlys til 17:00"}
             {" · "}
             Rute {cellLabel(pos)} · Effort {hereEffort}/5
             {" · "}
@@ -1166,8 +1403,28 @@ export function HuntMapView({
                 })}
               </fieldset>
 
+              {!hasHeadlamp && inspectTrip ? (
+                <p className="shop-row-note">
+                  Uten hodelykt: vær ved bilen før{" "}
+                  {formatHuntClock(HUNT_DARK_MINUTES)} — ellers camp ute og spis
+                  fuglene dine.
+                </p>
+              ) : null}
+
               <div className="hunt-side-actions">
-                <button type="button" className="intro-button" onClick={goHere}>
+                <button
+                  type="button"
+                  className="intro-button"
+                  onClick={goHere}
+                  disabled={
+                    !canWalkAtNight(hasHeadlamp, clockMinutes) ||
+                    (!hasHeadlamp &&
+                      inspectTrip != null &&
+                      clockMinutes + inspectTrip.minutes >= HUNT_DARK_MINUTES &&
+                      selected != null &&
+                      !isAtParking(selected, map))
+                  }
+                >
                   Go here
                 </button>
                 <button
@@ -1199,6 +1456,7 @@ export function HuntMapView({
                   type="button"
                   className="intro-button"
                   onClick={beginSpot}
+                  disabled={!huntingAllowed}
                 >
                   Spot for birds
                 </button>
@@ -1227,6 +1485,8 @@ export function HuntMapView({
                 Tiur {formatBirdRating(terrain.tiurRating)} · Orrhane{" "}
                 {formatBirdRating(terrain.orrhaneRating)} · mørkt kl{" "}
                 {formatHuntClock(HUNT_DARK_MINUTES)}
+                {!huntingAllowed ? " · skuddlys over" : ""}
+                {hasHeadlamp ? " · hodelykt i kit" : " · ingen hodelykt"}
               </p>
             </>
           ) : null}

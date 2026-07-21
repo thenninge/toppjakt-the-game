@@ -100,9 +100,9 @@ export function visibleWithEyes(distanceM: number): boolean {
 
 export function visibleInSpotMode(
   distanceM: number,
-  mode: "eyes" | "binos",
+  mode: "eyes" | "binos" | "thermal",
 ): boolean {
-  if (mode === "binos") return true;
+  if (mode === "binos" || mode === "thermal") return true;
   return visibleWithEyes(distanceM);
 }
 

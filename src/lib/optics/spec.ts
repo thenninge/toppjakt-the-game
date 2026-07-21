@@ -54,6 +54,20 @@ export type LrfSpec = {
   magnification?: number;
 };
 
+export type ThermalSpec = {
+  /**
+   * Sensor quality proxy — higher = blockier image (poorer resolution).
+   * Budget handheld ≈ 6; premium scope-class ≈ 3–4.
+   */
+  pixelFactor: number;
+  /** Digital / optical zoom factor for panning FOV. */
+  magnification: number;
+  /** Built-in laser rangefinder (e.g. Condor CQ35 LRF). */
+  hasIntegratedLrf?: boolean;
+  /** Symmetric LRF error band when {@link hasIntegratedLrf}. */
+  rangeErrorPercent?: number;
+};
+
 /** Resolve optical zoom for spotting (name like 10x42 if spec omits it). */
 export function lrfOpticalMagnification(item: {
   name: string;

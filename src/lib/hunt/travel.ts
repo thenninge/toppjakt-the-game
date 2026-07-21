@@ -11,7 +11,7 @@ export const EFFORT_MIN_MINUTES = 10;
 export const EFFORT_MAX_MINUTES = 30;
 
 export const HUNT_DAY_START_MINUTES = 8 * 60; // 08:00
-export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlyst over
+export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
 export const SPOT_ACTION_MINUTES = 5;
 export const EAT_ACTION_MINUTES = 5;
 export const REST_ACTION_MINUTES = 10;
@@ -108,6 +108,43 @@ export function formatHuntClock(absoluteMinutes: number): string {
 
 export function isHuntDark(absoluteMinutes: number): boolean {
   return absoluteMinutes >= HUNT_DARK_MINUTES;
+}
+
+/** Spotting / shooting only before skuddlys ends at 17:00. */
+export function canHuntAtTime(absoluteMinutes: number): boolean {
+  return absoluteMinutes < HUNT_DARK_MINUTES;
+}
+
+/** Walking after 17:00 requires a headlamp in kit. */
+export function canWalkAtNight(
+  hasHeadlamp: boolean,
+  absoluteMinutes: number,
+): boolean {
+  if (!isHuntDark(absoluteMinutes)) return true;
+  return hasHeadlamp;
+}
+
+export function isAtParking(
+  cell: HuntGridCell,
+  map: Pick<HuntMapAsset, "start">,
+): boolean {
+  return cell.row === map.start.row && cell.col === map.start.col;
+}
+
+/** Game minutes from current time until next 08:00. */
+export function minutesUntilDawn(absoluteMinutes: number): number {
+  const day = 24 * 60;
+  if (absoluteMinutes < HUNT_DARK_MINUTES) return 0;
+  return day - absoluteMinutes + HUNT_DAY_START_MINUTES;
+}
+
+/** Stranded in the field after dark without a headlamp. */
+export function isStrandedAtNight(
+  absoluteMinutes: number,
+  hasHeadlamp: boolean,
+  atParking: boolean,
+): boolean {
+  return isHuntDark(absoluteMinutes) && !hasHeadlamp && !atParking;
 }
 
 export function clampFatigue(value: number): number {

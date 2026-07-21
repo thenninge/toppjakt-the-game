@@ -26,6 +26,8 @@ export type MiscSpec = {
    * 0 = pure dead weight (e.g. soft case in the truck).
    */
   enduranceGrams: number;
+  /** Allows walking after skuddlys ends (17:00) when packed in kit. */
+  isHeadlamp?: boolean;
 };
 
 /** Placeholder net contribution to felt load (can be negative = net help). */
@@ -34,4 +36,8 @@ export function miscFeltWeightGrams(
   misc: MiscSpec,
 ): number {
   return weightGrams - misc.enduranceGrams;
+}
+
+export function isHeadlampMisc(misc: MiscSpec): boolean {
+  return !!misc.isHeadlamp;
 }

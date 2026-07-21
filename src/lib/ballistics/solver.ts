@@ -190,12 +190,12 @@ export function formatKestrelLcd(
   const bearing = Math.round(((opts.shotBearingDeg % 360) + 360) % 360);
   const distM = Math.round(solution.distanceM);
   const clock = formatWindClockFacing(opts.windFromDeg, opts.shotBearingDeg);
-  const mph = Math.round(opts.windSpeedMs * 2.237);
+  const windMs = opts.windSpeedMs.toFixed(1);
 
   return {
     elevLine,
     windLine,
     tgtLine: `Tgt...  ${String(bearing).padStart(3, "0")}°  ${distM}m`,
-    windEnvLine: `Wind... ${clock}  ${mph}mph`,
+    windEnvLine: `Wind... ${clock}  ${windMs}m/s`,
   };
 }

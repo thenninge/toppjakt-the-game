@@ -13,6 +13,7 @@ import {
   isCamoItem,
   isCarryItem,
   isLrfItem,
+  isThermalItem,
   isMiscItem,
   isScopeItem,
   isStockItem,
@@ -390,6 +391,7 @@ export function PikeProShop({
           const carry = isCarryItem(item) ? item.carry : null;
           const misc = isMiscItem(item) ? item.misc : null;
           const lrf = isLrfItem(item) ? item.lrf : null;
+          const thermal = isThermalItem(item) ? item.thermal : null;
           const scope = isScopeItem(item) ? item.scope : null;
           const stock = isStockItem(item) ? item.stock : null;
           const rifle = isRifleItem(item) ? item.rifle : null;
@@ -452,6 +454,7 @@ export function PikeProShop({
                     weight {item.weightGrams} g · endurance{" "}
                     {misc.enduranceGrams} · felt{" "}
                     {miscFeltWeightGrams(item.weightGrams, misc)} g
+                    {misc.isHeadlamp ? " · hodelykt (nattgåing etter 17:00)" : ""}
                   </span>
                 ) : null}
                 {lrf ? (
@@ -463,6 +466,14 @@ export function PikeProShop({
                     {lrf.hasOnboardBallistics
                       ? ` · Intern ballistikk: ${lrf.ballisticSystem ?? "ja"} (forecast / full-value — Kestrel 5700 Elite gir lokal fasit)`
                       : " · Kun avstand — vurder Kestrel 5700 Elite for fasit"}
+                  </span>
+                ) : null}
+                {thermal ? (
+                  <span className="shop-row-ballistics">
+                    {thermal.magnification}× · pixel {thermal.pixelFactor}
+                    {thermal.hasIntegratedLrf
+                      ? ` · LRF ±${thermal.rangeErrorPercent ?? "?"}%`
+                      : " · kun termisk"}
                   </span>
                 ) : null}
                 {scope ? (
