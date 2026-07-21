@@ -44,6 +44,8 @@ import {
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeTurrets } from "@/components/range/ScopeTurrets";
+import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
@@ -207,8 +209,6 @@ export function ShootingRange({
         xMm: angularMmAtDistance(sessionZeroXMm, distanceM),
         yMm: angularMmAtDistance(sessionZeroYMm, distanceM),
       };
-  const zeroClicksX = Math.round(sessionZeroXMm / ZERO_CLICK_MM);
-  const zeroClicksY = Math.round(sessionZeroYMm / ZERO_CLICK_MM);
 
   const calmFactor = useMemo(
     () =>
@@ -701,6 +701,8 @@ export function ShootingRange({
     setStatus(`Avstand satt til ${next} m — ny serie.`);
   }
 
+  const setupLocked = shots.length > 0 && !measurement;
+
   if (view === "shotlog") {
     return (
       <ShotLogView
@@ -780,159 +782,164 @@ export function ShootingRange({
     <div className="shooting-range">
       <LocationNav
         onBackToTown={onLeave}
-        hint="F = fokus + avtrekksmerke · piltaster · hold/slipp Space på merket (3 s bar) · +/− zoom"
+        hint="Velg avstand + ammo · dra zoom-ringen (kl. 8→12→4) · F / Space-avtrekk"
       />
 
       <header className="shop-header">
-        <p className="intro-line intro-gift">
-          Shooting Range — CBA {distanceM} m
-        </p>
+        <p className="intro-line intro-gift">Shooting Range</p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name}
           {" · "}
-          {scope.brand} {scope.name} ({zoom.toFixed(1)}× / {scope.scope.minZoom}
-          –{scope.scope.maxZoom}×)
+          {scope.brand} {scope.name}
           {" · "}
           kit-calm {calmFactor.toFixed(2)}
-          {bipod ? " (bipod)" : " (uten bipod)"}
-          {suppressor ? " + can" : ""}
-          {ballisticHint ? ` · ${ballisticHint}` : ""}
+          {bipod ? " · bipod" : " · uten bipod"}
+          {suppressor ? " · can" : ""}
         </p>
+        {ballisticHint ? (
+          <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
+        ) : null}
       </header>
 
-      <div className="range-toolbar">
-        <label className="shop-filter">
-          Avstand
-          <select
-            value={distanceM}
-            disabled={shots.length > 0 && !measurement}
-            onChange={(e) =>
-              changeDistance(Number(e.target.value) as RangeDistanceM)
-            }
+      <section className="range-setup" aria-label="Serieoppsett">
+        <div className="range-setup-block">
+          <p className="range-setup-label" id="range-distance-label">
+            Avstand
+          </p>
+          <div
+            className="range-segment"
+            role="group"
+            aria-labelledby="range-distance-label"
           >
             {RANGE_DISTANCES_M.map((d) => (
-              <option key={d} value={d}>
-                {d} m
-              </option>
+              <button
+                key={d}
+                type="button"
+                className={
+                  distanceM === d
+                    ? "range-seg-btn is-active"
+                    : "range-seg-btn"
+                }
+                disabled={setupLocked}
+                aria-pressed={distanceM === d}
+                onClick={() => changeDistance(d)}
+              >
+                <span className="range-seg-value">{d}</span>
+                <span className="range-seg-unit">m</span>
+              </button>
             ))}
-          </select>
-        </label>
-        <label className="shop-filter">
-          Ammo
-          <select
-            value={ammoId}
-            disabled={shots.length > 0 && !measurement}
-            onChange={(e) => {
-              changeAmmo(e.target.value);
-            }}
+          </div>
+        </div>
+
+        <div className="range-setup-block">
+          <div className="range-setup-label-row">
+            <p className="range-setup-label" id="range-ammo-label">
+              Ammunisjon
+            </p>
+            <span
+              className={
+                ammoRemaining <= 0
+                  ? "range-shot-count is-empty"
+                  : "range-shot-count"
+              }
+            >
+              {ammoRemaining} i eske
+            </span>
+          </div>
+          <ul
+            className="range-ammo-list"
+            role="listbox"
+            aria-labelledby="range-ammo-label"
           >
             {ammoOptions.map((a) => {
               const rounds = getInventoryQty(inventory, a.id);
+              const selected = a.id === ammoId;
+              const empty = rounds <= 0;
               return (
-                <option key={a.id} value={a.id}>
-                  {a.brand} {a.name} ({a.ammo.caliber}) · {rounds} igjen
-                </option>
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    className={
+                      selected
+                        ? "range-ammo-option is-selected"
+                        : empty
+                          ? "range-ammo-option is-empty"
+                          : "range-ammo-option"
+                    }
+                    disabled={setupLocked || (empty && !selected)}
+                    onClick={() => changeAmmo(a.id)}
+                  >
+                    <span className="range-ammo-main">
+                      <span className="range-ammo-name">
+                        {a.brand} {a.name}
+                      </span>
+                      <span className="range-ammo-meta">
+                        {a.ammo.caliber}
+                        {" · "}
+                        {a.ammo.projectileType}
+                        {" · "}
+                        v0 {a.ammo.v0}
+                      </span>
+                    </span>
+                    <span
+                      className={
+                        empty
+                          ? "range-ammo-qty is-empty"
+                          : "range-ammo-qty"
+                      }
+                    >
+                      {rounds}
+                      <span className="range-ammo-qty-label">stk</span>
+                    </span>
+                  </button>
+                </li>
               );
             })}
-          </select>
-        </label>
-        <span
-          className={
-            ammoRemaining <= 0
-              ? "range-shot-count is-empty"
-              : "range-shot-count"
-          }
-        >
-          Patroner {ammoRemaining}
-        </span>
+          </ul>
+          {setupLocked ? (
+            <p className="range-setup-lock">
+              Serie i gang — trykk «Ny serie» for å bytte avstand eller ammo.
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <div className="range-status-strip">
         <span className="range-shot-count">
-          Skudd {shots.length}/{SHOTS_PER_SERIES}
+          Serie {shots.length}/{SHOTS_PER_SERIES}
         </span>
-        <span className="range-shot-count">
-          Zero {effectiveZero.xMm.toFixed(0)}mm side /{" "}
-          {effectiveZero.yMm.toFixed(0)}mm hoyde
+        <span className="shop-row-note">
+          Zero {effectiveZero.xMm.toFixed(0)} mm side /{" "}
+          {effectiveZero.yMm.toFixed(0)} mm høyde
         </span>
-        <label className="shop-filter range-zoom-slider">
-          Zoom {zoom.toFixed(1)}×
-          <input
-            type="range"
-            min={scope.scope.minZoom}
-            max={scope.scope.maxZoom}
-            step={0.1}
-            value={zoom}
-            onChange={(e) =>
-              setZoom(clampScopeZoom(Number(e.target.value), scope.scope))
-            }
-          />
-          <span className="range-zoom-ends">
-            {scope.scope.minZoom}× – {scope.scope.maxZoom}×
-          </span>
-        </label>
+        <span className="shop-row-note">
+          Zoom {zoom.toFixed(1)}× ({scope.scope.minZoom}–{scope.scope.maxZoom}×)
+          — dra ringen over kikkerten (kl. 8→12→4)
+        </span>
       </div>
 
-      <div className="range-zero-panel">
-        <div className="range-zero-group">
-          <span className="shop-row-note">
-            Windage:{" "}
-            {zeroClicksX === 0
-              ? "0.0 mil"
-              : `${Math.abs(zeroClicksX / 10).toFixed(1)} mil ${
-                  zeroClicksX < 0 ? "L" : "R"
-                }`}
-          </span>
+      <ScopeTurrets
+        sessionZeroXMm={sessionZeroXMm}
+        sessionZeroYMm={sessionZeroYMm}
+        onNudge={nudgeZero}
+        actions={
           <button
             type="button"
-            className="intro-button sheriff-secondary"
-            onClick={() => nudgeZero("x", -ZERO_CLICK_MM)}
+            className="intro-button"
+            disabled={
+              !comboKey ||
+              (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
+              Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
+              Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
+            }
+            onClick={saveCurrentZero}
           >
-            Windage L
+            Lagre zero
           </button>
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            onClick={() => nudgeZero("x", ZERO_CLICK_MM)}
-          >
-            Windage R
-          </button>
-        </div>
-        <div className="range-zero-group">
-          <span className="shop-row-note">
-            Elevation:{" "}
-            {zeroClicksY === 0
-              ? "0.0 mil"
-              : `${Math.abs(zeroClicksY / 10).toFixed(1)} mil ${
-                  zeroClicksY < 0 ? "U" : "D"
-                }`}
-          </span>
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            onClick={() => nudgeZero("y", -ZERO_CLICK_MM)}
-          >
-            Elevation U
-          </button>
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            onClick={() => nudgeZero("y", ZERO_CLICK_MM)}
-          >
-            Elevation D
-          </button>
-        </div>
-        <button
-          type="button"
-          className="intro-button"
-          disabled={
-            !comboKey ||
-            (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
-            Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
-            Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
-          }
-          onClick={saveCurrentZero}
-        >
-          Lagre zero
-        </button>
-      </div>
+        }
+      />
 
       {measurement ? (
         <SeriesMeasureView
@@ -944,55 +951,62 @@ export function ShootingRange({
         />
       ) : (
         <div className="scope-stage" tabIndex={0}>
-          <div
-            className={
-              recoilActive
-                ? "scope-viewport is-recoiling"
-                : "scope-viewport"
-            }
-          >
+          <div className="scope-optic">
             <div
-              className="scope-world"
-              style={{
-                transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
-              }}
+              className={
+                recoilActive
+                  ? "scope-viewport is-recoiling"
+                  : "scope-viewport"
+              }
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                className="scope-target"
-                src={IMG_SRC}
-                alt="CBA blink"
-                draggable={false}
-                width={IMG_NATURAL_W}
-                height={IMG_NATURAL_H}
+              <div
+                className="scope-world"
+                style={{
+                  transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  className="scope-target"
+                  src={IMG_SRC}
+                  alt="CBA blink"
+                  draggable={false}
+                  width={IMG_NATURAL_W}
+                  height={IMG_NATURAL_H}
+                />
+                {shots.map((s, i) => {
+                  const hx = bullseyeOff.x + mmToPx(s.xMm, IMG_NATURAL_W);
+                  const hy = bullseyeOff.y + mmToPx(s.yMm, IMG_NATURAL_W);
+                  const d = mmToPx(s.diameterMm, IMG_NATURAL_W);
+                  return (
+                    <span
+                      key={`hole-${i}`}
+                      className="bullet-hole"
+                      style={{
+                        left: `calc(50% + ${hx}px)`,
+                        top: `calc(50% + ${hy}px)`,
+                        width: `${d}px`,
+                        height: `${d}px`,
+                        marginLeft: `${-d / 2}px`,
+                        marginTop: `${-d / 2}px`,
+                      }}
+                      title={`#${i + 1} · Ø ${s.diameterMm.toFixed(1)} mm`}
+                    />
+                  );
+                })}
+              </div>
+              <ScopeReticle
+                scope={scope.scope}
+                zoom={zoom}
+                imgScale={zoomScale}
               />
-              {shots.map((s, i) => {
-                const hx = bullseyeOff.x + mmToPx(s.xMm, IMG_NATURAL_W);
-                const hy = bullseyeOff.y + mmToPx(s.yMm, IMG_NATURAL_W);
-                const d = mmToPx(s.diameterMm, IMG_NATURAL_W);
-                return (
-                  <span
-                    key={`hole-${i}`}
-                    className="bullet-hole"
-                    style={{
-                      left: `calc(50% + ${hx}px)`,
-                      top: `calc(50% + ${hy}px)`,
-                      width: `${d}px`,
-                      height: `${d}px`,
-                      marginLeft: `${-d / 2}px`,
-                      marginTop: `${-d / 2}px`,
-                    }}
-                    title={`#${i + 1} · Ø ${s.diameterMm.toFixed(1)} mm`}
-                  />
-                );
-              })}
+              <div className="scope-vignette" aria-hidden />
             </div>
-            <ScopeReticle
+            <ScopeZoomRing
               scope={scope.scope}
               zoom={zoom}
-              imgScale={zoomScale}
+              onChange={(z) => setZoom(z)}
             />
-            <div className="scope-vignette" aria-hidden />
           </div>
 
           <div className="range-timer-stack">

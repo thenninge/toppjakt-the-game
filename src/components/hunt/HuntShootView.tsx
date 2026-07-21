@@ -30,6 +30,8 @@ import {
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeTurrets } from "@/components/range/ScopeTurrets";
+import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { KestrelFasitView } from "@/components/hunt/KestrelFasitView";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
@@ -257,8 +259,6 @@ export function HuntShootView({
         xMm: angularMmAtDistance(sessionZeroXMm, trueDistanceM),
         yMm: angularMmAtDistance(sessionZeroYMm, trueDistanceM),
       };
-  const zeroClicksX = Math.round(sessionZeroXMm / ZERO_CLICK_MM);
-  const zeroClicksY = Math.round(sessionZeroYMm / ZERO_CLICK_MM);
 
   const calmFactor = useMemo(
     () =>
@@ -879,125 +879,76 @@ export function HuntShootView({
           </select>
         </label>
         <span className="range-shot-count">Patroner {ammoRemaining}</span>
-        <label className="shop-filter range-zoom-slider">
-          Zoom {zoom.toFixed(1)}×
-          <input
-            type="range"
-            min={scope.scope.minZoom}
-            max={scope.scope.maxZoom}
-            step={0.1}
-            value={zoom}
-            disabled={fired}
-            onChange={(e) =>
-              setZoom(clampScopeZoom(Number(e.target.value), scope.scope))
-            }
-          />
-        </label>
+        <span className="shop-row-note">
+          Zoom {zoom.toFixed(1)}× — dra ringen over kikkerten (kl. 8→12→4)
+        </span>
       </div>
 
-      <div className="range-zero-panel">
-        <div className="range-zero-group">
-          <span className="shop-row-note">
-            Windage:{" "}
-            {zeroClicksX === 0
-              ? "0.0 mil"
-              : `${Math.abs(zeroClicksX / 10).toFixed(1)} mil ${
-                  zeroClicksX < 0 ? "L" : "R"
-                }`}
-          </span>
+      <ScopeTurrets
+        sessionZeroXMm={sessionZeroXMm}
+        sessionZeroYMm={sessionZeroYMm}
+        onNudge={nudgeZero}
+        disabled={fired}
+        actions={
           <button
             type="button"
             className="intro-button sheriff-secondary"
             disabled={fired}
-            onClick={() => nudgeZero("x", -ZERO_CLICK_MM)}
+            onClick={onAbort}
           >
-            Windage L
+            Avbryt
           </button>
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            disabled={fired}
-            onClick={() => nudgeZero("x", ZERO_CLICK_MM)}
-          >
-            Windage R
-          </button>
-        </div>
-        <div className="range-zero-group">
-          <span className="shop-row-note">
-            Elevation:{" "}
-            {zeroClicksY === 0
-              ? "0.0 mil"
-              : `${Math.abs(zeroClicksY / 10).toFixed(1)} mil ${
-                  zeroClicksY < 0 ? "U" : "D"
-                }`}
-          </span>
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            disabled={fired}
-            onClick={() => nudgeZero("y", -ZERO_CLICK_MM)}
-          >
-            Elevation U
-          </button>
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            disabled={fired}
-            onClick={() => nudgeZero("y", ZERO_CLICK_MM)}
-          >
-            Elevation D
-          </button>
-        </div>
-        <button
-          type="button"
-          className="intro-button sheriff-secondary"
-          disabled={fired}
-          onClick={onAbort}
-        >
-          Avbryt
-        </button>
-      </div>
+        }
+      />
 
       <div className="scope-stage" tabIndex={0}>
-        <div
-          className={
-            recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
-          }
-        >
+        <div className="scope-optic">
           <div
-            className="scope-world"
-            style={{
-              transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
-            }}
+            className={
+              recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
+            }
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              className="scope-target hunt-tiur-target"
-              src={TIUR_TARGET_SRC}
-              alt="Tiur"
-              draggable={false}
-              width={TIUR_IMAGE_NATIVE_W}
-              height={TIUR_IMAGE_NATIVE_H}
-              style={{ width: TIUR_IMAGE_NATIVE_W, height: TIUR_IMAGE_NATIVE_H }}
-            />
-            {lastImpact ? (
-              <span
-                className="bullet-hole"
-                style={{
-                  width: tiurMmToNativePx(lastImpact.diameterMm),
-                  height: tiurMmToNativePx(lastImpact.diameterMm),
-                  left: `calc(50% + ${vitalOff.x + tiurMmToNativePx(lastImpact.xMm)}px)`,
-                  top: `calc(50% + ${vitalOff.y + tiurMmToNativePx(lastImpact.yMm)}px)`,
-                  marginLeft: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
-                  marginTop: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
-                }}
+            <div
+              className="scope-world"
+              style={{
+                transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className="scope-target hunt-tiur-target"
+                src={TIUR_TARGET_SRC}
+                alt="Tiur"
+                draggable={false}
+                width={TIUR_IMAGE_NATIVE_W}
+                height={TIUR_IMAGE_NATIVE_H}
+                style={{ width: TIUR_IMAGE_NATIVE_W, height: TIUR_IMAGE_NATIVE_H }}
               />
-            ) : null}
+              {lastImpact ? (
+                <span
+                  className="bullet-hole"
+                  style={{
+                    width: tiurMmToNativePx(lastImpact.diameterMm),
+                    height: tiurMmToNativePx(lastImpact.diameterMm),
+                    left: `calc(50% + ${vitalOff.x + tiurMmToNativePx(lastImpact.xMm)}px)`,
+                    top: `calc(50% + ${vitalOff.y + tiurMmToNativePx(lastImpact.yMm)}px)`,
+                    marginLeft: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
+                    marginTop: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
+                  }}
+                />
+              ) : null}
+            </div>
+            <ScopeReticle
+              scope={scope.scope}
+              zoom={zoom}
+              imgScale={reticleScale}
+            />
           </div>
-          <ScopeReticle
+          <ScopeZoomRing
             scope={scope.scope}
             zoom={zoom}
-            imgScale={reticleScale}
+            onChange={(z) => setZoom(z)}
+            disabled={fired}
           />
         </div>
 

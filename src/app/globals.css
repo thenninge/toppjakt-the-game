@@ -1906,6 +1906,209 @@ body {
   width: min(52rem, 100%);
 }
 
+.range-ballistic-hint {
+  color: var(--accent-gold);
+}
+
+.range-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem 0.75rem;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.range-setup-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.range-setup-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.range-setup-label {
+  margin: 0;
+  font-family: var(--font-display), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--canyon-dust);
+}
+
+.range-setup-lock {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  color: var(--accent-gold);
+}
+
+.range-segment {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.range-seg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+  margin: 0;
+  padding: 0.45rem 0.35rem;
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  color: var(--canyon-sand);
+  background: #1a1410;
+  border: 1px solid #5a4030;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.range-seg-btn:hover:not(:disabled),
+.range-seg-btn:focus-visible:not(:disabled) {
+  color: var(--accent-gold);
+  border-color: var(--accent-gold);
+  outline: none;
+}
+
+.range-seg-btn.is-active {
+  color: var(--prompt-green);
+  border-color: #4a7a3a;
+  background: rgba(143, 239, 106, 0.1);
+}
+
+.range-seg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.range-seg-value {
+  font-size: 1.35rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.range-seg-unit {
+  font-size: 0.85rem;
+  color: var(--canyon-dust);
+}
+
+.range-seg-btn.is-active .range-seg-unit {
+  color: var(--prompt-green);
+}
+
+.range-ammo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 11.5rem;
+  overflow-y: auto;
+}
+
+.range-ammo-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  color: var(--canyon-sand);
+  background: #1a1410;
+  border: 1px solid #5a4030;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.range-ammo-option:hover:not(:disabled),
+.range-ammo-option:focus-visible:not(:disabled) {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  outline: none;
+}
+
+.range-ammo-option.is-selected {
+  border-color: #4a7a3a;
+  background: rgba(143, 239, 106, 0.1);
+  color: var(--canyon-sand);
+  box-shadow: inset 3px 0 0 var(--prompt-green);
+}
+
+.range-ammo-option.is-empty:not(.is-selected) {
+  opacity: 0.5;
+}
+
+.range-ammo-option:disabled {
+  cursor: not-allowed;
+}
+
+.range-ammo-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.range-ammo-name {
+  font-size: 1.05rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.range-ammo-meta {
+  font-size: 0.92rem;
+  color: var(--canyon-dust);
+}
+
+.range-ammo-option.is-selected .range-ammo-meta {
+  color: #b7d4a4;
+}
+
+.range-ammo-qty {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-gold);
+}
+
+.range-ammo-qty.is-empty {
+  color: var(--danger-rust);
+}
+
+.range-ammo-qty-label {
+  font-size: 0.75rem;
+  color: var(--canyon-dust);
+}
+
+.range-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.55rem 0.85rem;
+}
+
 .range-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1956,6 +2159,676 @@ body {
   gap: 0.4rem;
 }
 
+/* Scope turrets — elevation (top) + windage (side) dial pods */
+.scope-turrets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.75rem 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #5a4030;
+  background:
+    linear-gradient(165deg, rgba(42, 32, 24, 0.92) 0%, rgba(18, 14, 10, 0.88) 100%);
+  box-shadow: inset 0 1px 0 rgba(232, 212, 168, 0.06);
+}
+
+.scope-turrets-view-toggle {
+  flex: 1 1 100%;
+  display: inline-flex;
+  align-self: center;
+  justify-content: center;
+  gap: 0;
+  border: 1px solid #6b5238;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.scope-turrets-view-btn {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+  padding: 0.28rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--canyon-dust);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.scope-turrets-view-btn + .scope-turrets-view-btn {
+  border-left: 1px solid #6b5238;
+}
+
+.scope-turrets-view-btn:hover:not(:disabled),
+.scope-turrets-view-btn:focus-visible:not(:disabled) {
+  color: var(--accent-gold);
+  outline: none;
+}
+
+.scope-turrets-view-btn.is-active {
+  background: rgba(90, 70, 40, 0.45);
+  color: var(--accent-gold);
+}
+
+.scope-turrets-view-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.scope-turret {
+  flex: 1 1 11rem;
+  max-width: 16rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.55rem 0.55rem;
+  border: 1px solid #6b5238;
+  background: linear-gradient(180deg, #2a2118 0%, #16110c 100%);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(196, 165, 116, 0.1);
+}
+
+.scope-turret.scope-turret-view--shooter {
+  max-width: 18rem;
+  flex-basis: 13rem;
+}
+
+.scope-turret.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.scope-turret-head {
+  text-align: center;
+  line-height: 1.15;
+}
+
+.scope-turret-title {
+  margin: 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+.scope-turret-axis {
+  margin: 0.1rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--canyon-dust);
+  opacity: 0.85;
+}
+
+.scope-turret-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 7.2rem;
+}
+
+.scope-turret--elevation .scope-turret-body {
+  flex-direction: column;
+}
+
+.scope-turret--windage .scope-turret-body {
+  flex-direction: row;
+}
+
+.scope-turret-view--shooter.scope-turret--elevation .scope-turret-body,
+.scope-turret-view--shooter.scope-turret--windage .scope-turret-body {
+  flex-direction: column;
+  min-height: 8.6rem;
+}
+
+.scope-turret-view--shooter .scope-turret-click-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.scope-turret-click {
+  flex: 0 0 auto;
+  min-width: 2.6rem;
+  min-height: 2.15rem;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid #8a6a48;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #3a2a1e 0%, #1c1510 100%);
+  color: var(--canyon-sand);
+  font-family: var(--font-display), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(232, 212, 168, 0.12);
+}
+
+.scope-turret-click:hover:not(:disabled),
+.scope-turret-click:focus-visible:not(:disabled) {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  outline: none;
+}
+
+.scope-turret-click:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #241a14 0%, #120e0a 100%);
+}
+
+.scope-turret-click:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.scope-turret-drum {
+  position: relative;
+  width: 6.1rem;
+  height: 6.1rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.scope-turret-drum-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid #4a3828;
+  background:
+    radial-gradient(circle at 40% 32%, #3a2c20 0%, #1a1410 62%, #0c0a08 100%);
+  box-shadow:
+    inset 0 0 0 1px #2a2018,
+    0 0 0 1px #1a120c;
+}
+
+.scope-turret-hash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.5px;
+  height: 0.42rem;
+  margin: -0.21rem 0 0 -0.75px;
+  background: rgba(196, 165, 116, 0.55);
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.scope-turret-hash--major {
+  height: 0.62rem;
+  margin-top: -0.31rem;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(232, 212, 168, 0.85);
+}
+
+.scope-turret-cap {
+  position: absolute;
+  width: 3.65rem;
+  height: 3.65rem;
+  border-radius: 50%;
+  border: 2px solid #8a6a48;
+  background:
+    conic-gradient(
+      from 0deg,
+      #2e2218 0deg 9deg,
+      #1a1410 9deg 18deg,
+      #2e2218 18deg 27deg,
+      #1a1410 27deg 36deg,
+      #2e2218 36deg 45deg,
+      #1a1410 45deg 54deg,
+      #2e2218 54deg 63deg,
+      #1a1410 63deg 72deg,
+      #2e2218 72deg 81deg,
+      #1a1410 81deg 90deg,
+      #2e2218 90deg 99deg,
+      #1a1410 99deg 108deg,
+      #2e2218 108deg 117deg,
+      #1a1410 117deg 126deg,
+      #2e2218 126deg 135deg,
+      #1a1410 135deg 144deg,
+      #2e2218 144deg 153deg,
+      #1a1410 153deg 162deg,
+      #2e2218 162deg 171deg,
+      #1a1410 171deg 180deg,
+      #2e2218 180deg 189deg,
+      #1a1410 189deg 198deg,
+      #2e2218 198deg 207deg,
+      #1a1410 207deg 216deg,
+      #2e2218 216deg 225deg,
+      #1a1410 225deg 234deg,
+      #2e2218 234deg 243deg,
+      #1a1410 243deg 252deg,
+      #2e2218 252deg 261deg,
+      #1a1410 261deg 270deg,
+      #2e2218 270deg 279deg,
+      #1a1410 279deg 288deg,
+      #2e2218 288deg 297deg,
+      #1a1410 297deg 306deg,
+      #2e2218 306deg 315deg,
+      #1a1410 315deg 324deg,
+      #2e2218 324deg 333deg,
+      #1a1410 333deg 342deg,
+      #2e2218 342deg 351deg,
+      #1a1410 351deg 360deg
+    );
+  box-shadow:
+    0 0 0 1px #1a120c,
+    0 3px 10px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(232, 212, 168, 0.16);
+  transition: transform 0.12s ease-out;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.scope-turret-cap-knurl {
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  border: 1px solid rgba(90, 70, 48, 0.7);
+  background: radial-gradient(circle at 38% 30%, #3a2a1e, #120e0a 70%);
+}
+
+.scope-turret-cap-index {
+  position: absolute;
+  top: 0.18rem;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin-left: -0.28rem;
+  border-left: 0.28rem solid transparent;
+  border-right: 0.28rem solid transparent;
+  border-bottom: 0.45rem solid var(--accent-gold);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+
+.scope-turret-readout {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 50%;
+  background: rgba(10, 8, 6, 0.88);
+  border: 1px solid #5a4030;
+  pointer-events: none;
+  text-align: center;
+  line-height: 1.05;
+}
+
+.scope-turret-readout-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.scope-turret-view--overhead .scope-turret-readout-line {
+  /* mil already on the cap face */
+  display: none;
+}
+
+.scope-turret-mil {
+  font-family: var(--font-display), monospace;
+  font-size: 0.78rem;
+  color: var(--accent-gold);
+}
+
+.scope-turret-mil small {
+  font-size: 0.55rem;
+  color: var(--canyon-dust);
+  font-weight: normal;
+}
+
+.scope-turret-clicks {
+  font-size: 0.52rem;
+  color: var(--canyon-dust);
+  letter-spacing: 0.01em;
+  max-width: 2.6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-turret-readout-line .scope-turret-clicks {
+  max-width: none;
+  font-size: 0.62rem;
+}
+
+.scope-turret-step {
+  margin: 0;
+  font-size: 0.62rem;
+  color: rgba(196, 165, 116, 0.7);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* --- Shooter's perspective cylinder --- */
+.scope-turret-shooter {
+  width: 100%;
+  max-width: 14.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  user-select: none;
+}
+
+.scope-turret-shooter-main {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.scope-turret-shooter--vertical {
+  max-width: 7.5rem;
+  align-self: center;
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-main {
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 7.8rem;
+}
+
+.scope-turret-shooter-knurl {
+  height: 0.85rem;
+  border-radius: 3px 3px 0 0;
+  border: 1px solid #1a120c;
+  border-bottom: none;
+  background:
+    repeating-linear-gradient(
+      -28deg,
+      #1a1410 0 3px,
+      #3a2a1e 3px 6px,
+      #120e0a 6px 9px,
+      #2e2218 9px 12px
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(232, 212, 168, 0.12),
+    0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-knurl {
+  width: 0.85rem;
+  height: auto;
+  align-self: stretch;
+  border-radius: 0 3px 3px 0;
+  border: 1px solid #1a120c;
+  border-left: none;
+  background:
+    repeating-linear-gradient(
+      -62deg,
+      #1a1410 0 3px,
+      #3a2a1e 3px 6px,
+      #120e0a 6px 9px,
+      #2e2218 9px 12px
+    );
+}
+
+.scope-turret-shooter-cylinder {
+  position: relative;
+  height: 3.35rem;
+  overflow: hidden;
+  border: 1px solid #0a0806;
+  background: linear-gradient(180deg, #2a2a2a 0%, #0c0c0c 45%, #1a1a1a 100%);
+  cursor: ew-resize;
+  touch-action: none;
+  box-shadow:
+    inset 0 8px 12px rgba(0, 0, 0, 0.45),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.35);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-cylinder {
+  width: 3.55rem;
+  height: auto;
+  align-self: stretch;
+  flex: 1 1 auto;
+  cursor: ns-resize;
+  background: linear-gradient(90deg, #2a2a2a 0%, #0c0c0c 45%, #1a1a1a 100%);
+  box-shadow:
+    inset 8px 0 12px rgba(0, 0, 0, 0.45),
+    inset -6px 0 10px rgba(0, 0, 0, 0.35);
+}
+
+.scope-turret-shooter-shade {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.scope-turret-shooter--horizontal .scope-turret-shooter-shade--a {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 22%;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.78), transparent);
+}
+
+.scope-turret-shooter--horizontal .scope-turret-shooter-shade--b {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 22%;
+  background: linear-gradient(270deg, rgba(0, 0, 0, 0.78), transparent);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-shade--a {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 22%;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.78), transparent);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-shade--b {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22%;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.78), transparent);
+}
+
+.scope-turret-shooter-band {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1;
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-band {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.scope-turret-shooter-tick {
+  width: 14px;
+  flex: 0 0 14px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.12rem;
+  padding-bottom: 0.2rem;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-tick {
+  width: 100%;
+  height: 14px;
+  flex: 0 0 14px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.28rem;
+  padding: 0 0 0 0.35rem;
+}
+
+.scope-turret-shooter-num {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f2f2f2;
+  line-height: 1;
+  text-shadow: 0 1px 0 #000;
+  /* stay upright even on the vertical windage drum */
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+
+.scope-turret-shooter-rev2 {
+  position: absolute;
+  top: 0.2rem;
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: rgba(242, 242, 242, 0.7);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-rev2 {
+  top: 50%;
+  right: 0.15rem;
+  left: auto;
+  transform: translateY(-50%);
+}
+
+.scope-turret-shooter-hash {
+  width: 1.5px;
+  height: 0.55rem;
+  background: rgba(240, 240, 240, 0.75);
+}
+
+.scope-turret-shooter-tick.is-major .scope-turret-shooter-hash {
+  width: 2px;
+  height: 0.78rem;
+  background: #fff;
+}
+
+.scope-turret-shooter-tick.is-semi .scope-turret-shooter-hash {
+  width: 1.75px;
+  height: 0.66rem;
+  background: rgba(250, 250, 250, 0.92);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-hash {
+  width: 0.55rem;
+  height: 1.5px;
+  order: -1;
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-tick.is-major .scope-turret-shooter-hash {
+  width: 0.78rem;
+  height: 2px;
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-tick.is-semi .scope-turret-shooter-hash {
+  width: 0.66rem;
+  height: 1.75px;
+}
+
+.scope-turret-shooter-tick.is-current .scope-turret-shooter-num {
+  display: inline-block;
+  padding: 0.05rem 0.18rem;
+  border: 1.5px solid #fff;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+}
+
+.scope-turret-shooter-tick.is-current:not(.is-major) .scope-turret-shooter-num {
+  font-size: 0.62rem;
+}
+
+.scope-turret-shooter-base {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.35rem 0.4rem 0.4rem;
+  border: 1px solid #1a120c;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-base {
+  width: 2.35rem;
+  flex: 0 0 auto;
+  align-self: stretch;
+  justify-content: center;
+  border-top: 1px solid #1a120c;
+  border-right: none;
+  border-radius: 3px 0 0 3px;
+  padding: 0.35rem 0.25rem;
+}
+
+.scope-turret-shooter-index {
+  width: 0;
+  height: 0;
+  border-left: 0.38rem solid transparent;
+  border-right: 0.38rem solid transparent;
+  border-bottom: 0.55rem solid #fff;
+  filter: drop-shadow(0 1px 0 #000);
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-index {
+  border-left: none;
+  border-right: none;
+  border-bottom: 0.38rem solid transparent;
+  border-top: 0.38rem solid transparent;
+  border-left: 0.55rem solid #fff;
+}
+
+.scope-turret-shooter-legend {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #f0f0f0;
+}
+
+.scope-turret-shooter--vertical .scope-turret-shooter-legend {
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.scope-turrets-actions {
+  flex: 1 1 8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 7.5rem;
+  max-width: 12rem;
+}
+
+.scope-turrets-actions .intro-button {
+  width: 100%;
+}
+
 .scope-stage {
   outline: none;
   display: flex;
@@ -1964,11 +2837,20 @@ body {
   gap: 0.55rem;
 }
 
-.scope-viewport {
+.scope-optic {
   position: relative;
   width: min(100%, 28rem);
   aspect-ratio: 1;
-  margin: 0 auto;
+  /* Room for the power-ring knob outside the glass */
+  padding: 1.15rem;
+  box-sizing: border-box;
+}
+
+.scope-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 0;
   border-radius: 50%;
   overflow: hidden;
   border: 4px solid #2a2218;
@@ -1977,6 +2859,84 @@ body {
     inset 0 0 40px rgba(0, 0, 0, 0.55),
     0 12px 32px rgba(0, 0, 0, 0.55);
   background: #0a0806;
+}
+
+/* Magnification ring — lower rim 8 o'clock → 4 o'clock */
+.scope-zoom-ring {
+  position: absolute;
+  inset: 1.15rem;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.scope-zoom-ring.is-disabled {
+  opacity: 0.4;
+}
+
+.scope-zoom-track {
+  position: absolute;
+  inset: 0;
+}
+
+.scope-zoom-tick {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: rgba(196, 165, 116, 0.45);
+  border: 1px solid rgba(26, 18, 12, 0.65);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.scope-zoom-knob {
+  position: absolute;
+  z-index: 2;
+  width: 2.55rem;
+  height: 2.55rem;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid #8a6a48;
+  background: linear-gradient(160deg, #3a2a1e 0%, #1a1410 55%, #120e0a 100%);
+  box-shadow:
+    0 0 0 1px #1a120c,
+    0 3px 8px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(232, 212, 168, 0.18);
+  color: var(--accent-gold);
+  font-family: var(--font-display), monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.scope-zoom-knob:hover:not(:disabled),
+.scope-zoom-knob:focus-visible:not(:disabled) {
+  border-color: var(--accent-gold);
+  outline: none;
+}
+
+.scope-zoom-knob.is-dragging {
+  cursor: grabbing;
+  border-color: var(--prompt-green);
+  color: var(--prompt-green);
+}
+
+.scope-zoom-knob:disabled {
+  cursor: not-allowed;
+}
+
+.scope-zoom-knob-value {
+  line-height: 1;
+  pointer-events: none;
 }
 
 .scope-viewport.is-recoiling {
@@ -2336,7 +3296,7 @@ body {
 }
 
 @media (max-width: 520px) {
-  .scope-viewport {
+  .scope-optic {
     width: min(100%, 22rem);
   }
 

@@ -72,15 +72,19 @@ export function formatWindSpeed(ms: number): string {
   return `${ms.toFixed(1)} m/s`;
 }
 
-/** Crosswind component (m/s) for a shot bearing (degrees, where the rifle points). */
+/** Crosswind component (m/s) for a shot bearing (degrees, where the rifle points).
+ * Sign: **+ = wind from the left** (9 o'clock) → bullet drifts right → dial L.
+ * − = wind from the right (3 o'clock) → dial R.
+ */
 export function crosswindMs(
   windSpeedMs: number,
   windFromDeg: number,
   shotBearingDeg: number,
 ): number {
-  // Wind vector blows toward windFrom+180; crosswind = sin(angle between).
+  // Wind FROM angle relative to shot. sin(+90°) = wind from right of muzzle,
+  // so we negate to get the shooter's "from left" convention used by windDriftMm.
   const angle = ((windFromDeg - shotBearingDeg) * Math.PI) / 180;
-  return windSpeedMs * Math.sin(angle);
+  return -windSpeedMs * Math.sin(angle);
 }
 
 /**
