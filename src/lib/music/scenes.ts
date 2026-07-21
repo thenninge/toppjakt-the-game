@@ -6,6 +6,8 @@ export type MusicScene =
   | "town"
   | "home"
   | "shop"
+  | "market"
+  | "bar"
   | "sheriff"
   | "range"
   | "hunt";
@@ -21,6 +23,8 @@ export const MUSIC_TRACKS: Record<MusicScene, string | null> = {
   town: INTRO_TOWN_TRACK,
   home: "/music/home/inventory.mp3",
   shop: "/music/shop/shop.mp3",
+  market: "/music/market/meatmark.mp3",
+  bar: "/music/bar/ompa.mp3",
   sheriff: "/music/sheriff/lensmann.mp3",
   range: null,
   hunt: "/music/hunt/map%20music.mp3",
@@ -59,9 +63,9 @@ export function musicSceneFromGame({
       case "pike-pro-shop":
         return "shop";
       case "meat-market":
-        return "town";
+        return "market";
       case "rulles":
-        return "town";
+        return "bar";
       case "home":
         return "home";
       case "shooting-range":

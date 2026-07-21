@@ -687,6 +687,8 @@ export function IntroScreen() {
           location !== "sheriff" &&
           location !== "pike-pro-shop" &&
           location !== "home" &&
+          location !== "meat-market" &&
+          location !== "rulles" &&
           location !== "shooting-range" && (
           <div className="intro-dialogue">
             <p className="intro-line intro-gift">{location}</p>
