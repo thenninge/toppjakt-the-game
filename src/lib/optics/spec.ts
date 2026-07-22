@@ -90,6 +90,22 @@ export type ThermalSpec = {
   rangeErrorPercent?: number;
 };
 
+/**
+ * Clear circular aperture as % of half the shorter frame edge
+ * (`radial-gradient` closest-side). Higher price → thinner black bezel
+ * → more of the spotting image visible at the same magnification.
+ *
+ *   0–7 000 kr  → 65 % (budsjett)
+ *   7–15 000 kr → 75 % (mid)
+ *   over 15 000 → 95 % (premium)
+ */
+export function opticAperturePercent(priceNok: number): number {
+  const p = Number.isFinite(priceNok) ? Math.max(0, priceNok) : 0;
+  if (p <= 7000) return 65;
+  if (p <= 15000) return 75;
+  return 95;
+}
+
 /** Resolve optical zoom for spotting (name like 10x42 if spec omits it). */
 export function lrfOpticalMagnification(item: {
   name: string;

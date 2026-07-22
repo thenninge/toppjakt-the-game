@@ -2678,6 +2678,8 @@ export function HuntMapView({
         thermalPixelFactor={thermalPixelFactor}
         thermalTimeFactor={thermalTimeFactor}
         thermalLrfSpec={thermalLrfSpec}
+        binosPriceNok={binoItem?.priceNok ?? 0}
+        thermalPriceNok={thermalItem?.priceNok ?? 0}
         clockMinutes={clockMinutes}
         hasBinos={hasBinos}
         hasThermal={hasThermal}

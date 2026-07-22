@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import {
   DEFAULT_BINOS_MAGNIFICATION,
   SPOT_TIME_FACTOR_BINOS,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/hunt/birds";
 import {
   measureDistanceWithLrf,
+  opticAperturePercent,
   type LrfSpec,
 } from "@/lib/optics/spec";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
@@ -53,6 +54,10 @@ type SpotViewProps = {
   thermalTimeFactor?: number;
   /** Integrated LRF on thermal unit (Condor CQ35). */
   thermalLrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
+  /** Shop price of equipped binos — drives circular bezel thickness. */
+  binosPriceNok?: number;
+  /** Shop price of equipped thermal — drives circular bezel thickness. */
+  thermalPriceNok?: number;
   /** Absolute hunt clock in minutes (for HUD). */
   clockMinutes: number;
   /** Player has binoculars in kit. */
@@ -217,6 +222,8 @@ export function SpotView({
   thermalPixelFactor = 10,
   thermalTimeFactor = SPOT_TIME_FACTOR_THERMAL,
   thermalLrfSpec = null,
+  binosPriceNok = 0,
+  thermalPriceNok = 0,
   clockMinutes,
   hasBinos,
   hasThermal = false,
@@ -579,6 +586,13 @@ export function SpotView({
         : "Spotting med øynene";
 
   const isOpticMode = mode === "binos" || mode === "thermal";
+  const opticAperture =
+    mode === "thermal"
+      ? opticAperturePercent(thermalPriceNok)
+      : opticAperturePercent(binosPriceNok);
+  const opticFrameStyle = {
+    "--optic-aperture": opticAperture,
+  } as CSSProperties;
 
   /**
    * Live look direction: optic centre = pan.x in landscape %;
@@ -713,6 +727,7 @@ export function SpotView({
               ? "spot-eyes-frame spot-thermal-frame"
               : "spot-eyes-frame spot-eyes-frame-clickable"
         }
+        style={isOpticMode ? opticFrameStyle : undefined}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -770,7 +785,7 @@ export function SpotView({
                 />
               ))}
             </div>
-            <div className="spot-binos-vignette" aria-hidden />
+            <div className="spot-optic-vignette" aria-hidden />
             {showLrf ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
@@ -790,6 +805,7 @@ export function SpotView({
               onLandscapeReady={() => setLandscapeReady(true)}
             />
             <div className="spot-thermal-scanlines" aria-hidden />
+            <div className="spot-optic-vignette" aria-hidden />
             {showLrf ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
@@ -807,14 +823,20 @@ export function SpotView({
       {mode === "binos" ? (
         <p className="spot-binos-hint">
           {showLrf
-            ? "Piltaster (tap = lite steg, hold = raskere) eller dra · sikt med rød sirkel og trykk F / Space / LRF"
-            : "Piltaster (tap = lite steg, hold = raskere) eller dra · klikk på fuglen for å låse (ingen LRF)"}
+            ? "Sirkulært syn · piltaster / dra · sikt med rød sirkel og trykk F / Space / LRF"
+            : "Sirkulært syn · piltaster / dra · klikk på fuglen for å låse (ingen LRF)"}
+          {binosPriceNok > 0
+            ? ` · blender ${opticAperture}% (dyrere = tynnere ramme)`
+            : ""}
         </p>
       ) : null}
       {mode === "thermal" ? (
         <p className="spot-binos-hint">
-          Termisk — piltaster / dra · hvite flekker = varm fugl
+          Sirkulært termisk syn · piltaster / dra · grå silhuett = varm fugl
           {showLrf ? " · LRF integrert" : ""}
+          {thermalPriceNok > 0
+            ? ` · blender ${opticAperture}% (dyrere = tynnere ramme)`
+            : ""}
         </p>
       ) : null}
     </div>
