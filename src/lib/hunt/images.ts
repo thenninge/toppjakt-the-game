@@ -3,6 +3,7 @@
  *
  *   /images/spot/     — spotting landscapes
  *   /images/spot/placement/ — marker guides (shape/color → species/range)
+ *   /images/prespotted/ — extreme-caution auto-spot splash
  *   /images/walk/     — travel between cells
  *   /images/eat/      — eat / rest pauses
  *   /images/rest/     — forced rest
@@ -85,6 +86,13 @@ const WALK_IMAGES: string[] = [
   "/images/walk/walk20.png",
   "/images/walk/walk21.png",
   "/images/walk/walk22.png",
+];
+
+/** Extreme-caution auto-spot splash — /public/images/prespotted/ */
+const PRESPOTTED_IMAGES: string[] = [
+  "/images/prespotted/prespotted1.png",
+  "/images/prespotted/prespotted2.png",
+  "/images/prespotted/prespotted3.png",
 ];
 
 /** Eat / Rest pauses — /public/images/eat/ */
@@ -187,6 +195,11 @@ export function pickFunnImage(): string {
 /** Random tyribål image for overnight camp. */
 export function pickFireImage(): string {
   return pickRandomImage(FIRE_IMAGES);
+}
+
+/** Extreme-caution: spotted the bird before it spotted you. */
+export function pickPrespottedImage(): string {
+  return pickRandomImage(PRESPOTTED_IMAGES);
 }
 
 /** Eyes: 1 real second = 1 game second. Binos: 1 real = 5 game. */

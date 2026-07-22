@@ -43,7 +43,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Gammel hogst",
     region: "Østlandet",
     blurb: "Billig leie, tynt med fugl (10 tiur) — men du kommer deg ut.",
-    pricePerDayNok: 500,
+    pricePerDayNok: 250,
     tiurRating: 1,
     orrhaneRating: 2,
     mapId: "ostlandet1",
@@ -54,7 +54,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Bjørkeskog",
     region: "Østlandet",
     blurb: "Middels pris og middels fugl (15 tiur) — trygg standard.",
-    pricePerDayNok: 1000,
+    pricePerDayNok: 500,
     tiurRating: 3,
     orrhaneRating: 3,
     mapId: "ostlandet2",
@@ -65,7 +65,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Myrkanter",
     region: "Trøndelag",
     blurb: "Dyreste inatur-teig — fullt med fugl (20 tiur). Parker i A7.",
-    pricePerDayNok: 2000,
+    pricePerDayNok: 1000,
     tiurRating: 4,
     orrhaneRating: 5,
     mapId: "midtnorge1",
@@ -76,7 +76,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Hogstflate nord",
     region: "Østlandet",
     blurb: "Nytt inatur-felt med tydelige orrekanter og tiurtopper i tett skog.",
-    pricePerDayNok: 1500,
+    pricePerDayNok: 750,
     tiurRating: 3,
     orrhaneRating: 4,
     mapId: "inatur1",
@@ -87,7 +87,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Granskog sør",
     region: "Østlandet",
     blurb: "Klassisk granskog — bra med tiur i mørke bestånd, orre i åpningene.",
-    pricePerDayNok: 1800,
+    pricePerDayNok: 900,
     tiurRating: 4,
     orrhaneRating: 3,
     mapId: "inatur2",
@@ -98,7 +98,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Svenskegrensa",
     region: "Østlandet",
     blurb: "Langs grensa — variert terreng med mange markerte sitteplasser.",
-    pricePerDayNok: 2200,
+    pricePerDayNok: 1100,
     tiurRating: 4,
     orrhaneRating: 4,
     mapId: "svenskegrensa",
@@ -110,7 +110,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     region: "Østlandet",
     blurb:
       "Kari Stubb sitt lille stykke (10 tiur). «Ikke skyt mot hytta. Den er forsikret, men jeg er ikke.»",
-    pricePerDayNok: 700,
+    pricePerDayNok: 350,
     tiurRating: 2,
     orrhaneRating: 3,
     mapId: "ostlandet1",
@@ -123,7 +123,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     region: "Østlandet",
     blurb:
       "Kristian Olav sin skråning (15 tiur). Bra med orre — hvis du ikke tråkker i potetene.",
-    pricePerDayNok: 1600,
+    pricePerDayNok: 800,
     tiurRating: 3,
     orrhaneRating: 4,
     mapId: "ostlandet2",
@@ -136,7 +136,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     region: "Østlandet / «privat»",
     blurb:
       "Carl Otto Løvenskiolds fineste (20 tiur). Du er gjest — oppfør deg deretter.",
-    pricePerDayNok: 12000,
+    pricePerDayNok: 6000,
     tiurRating: 5,
     orrhaneRating: 5,
     mapId: "midtnorge1",
@@ -155,13 +155,13 @@ export function getHuntingTerrain(
 /**
  * How many tiur spawn on the map for this lease.
  * Cheap → thin; mid → decent; expensive → full.
- *   ≤ 700 kr  → 10
- *   ≤ 1600 kr → 15
+ *   ≤ 350 kr  → 10
+ *   ≤ 800 kr  → 15
  *   else      → 20
  */
 export function tiurSpawnCountForTerrain(terrain: HuntingTerrain): number {
-  if (terrain.pricePerDayNok <= 700) return 10;
-  if (terrain.pricePerDayNok <= 1600) return 15;
+  if (terrain.pricePerDayNok <= 350) return 10;
+  if (terrain.pricePerDayNok <= 800) return 15;
   return 20;
 }
 

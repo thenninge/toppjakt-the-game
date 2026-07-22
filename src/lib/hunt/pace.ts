@@ -28,7 +28,8 @@ export const HUNT_PACES: HuntPace[] = [
   {
     id: "extreme-caution",
     label: "Extreme caution",
-    blurb: "Saktere, ser nesten alt i trærne. Mentalt krevende.",
+    blurb:
+      "Saktere, ser nesten alt. 15 % sjanse for å spotte fugl før den ser deg.",
     spottingProbability: 0.95,
     speed: 0.3,
     mentalStrain: 1,
@@ -68,3 +69,9 @@ export function getHuntPace(id: HuntPaceId): HuntPace {
   if (!found) return HUNT_PACES[2]!;
   return found;
 }
+
+/**
+ * Chance to auto-spot a bird after arriving on Extreme caution
+ * («ser fuglen før den ser deg»).
+ */
+export const EXTREME_CAUTION_PRESPOT_CHANCE = 0.15;

@@ -21,9 +21,14 @@ function luminanceToThermal(r: number, g: number, b: number): number {
 }
 
 /**
- * Pixelated thermal background + sharp white-hot bird blobs.
- * Landscape % and bird centres match binos (object-fit: fill).
- * Blob size uses each sprite's topp aspect so it lines up with the photo.
+ * Peak bird heat after ~40% intensity cut vs pure white
+ * (255 × 0.6 ≈ 153) — blends more with the gray terrain.
+ */
+const THERMAL_BIRD_GRAY = Math.round(255 * 0.6);
+
+/**
+ * Pixelated thermal background + bird silhouettes (same topp shape as binos),
+ * drawn as muted heat gray instead of glowing white blobs.
  */
 export function ThermalCanvas({
   imageSrc,
@@ -37,6 +42,7 @@ export function ThermalCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const sampleRef = useRef<ImageData | null>(null);
+  const spriteCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const onLandscapeReadyRef = useRef(onLandscapeReady);
   onLandscapeReadyRef.current = onLandscapeReady;
 
@@ -125,10 +131,18 @@ export function ThermalCanvas({
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, 0, 0, cols, rows, 0, 0, w, h);
 
+    // Birds: same topp silhouette as binos, muted heat gray.
+    ctx.imageSmoothingEnabled = true;
+    const g = THERMAL_BIRD_GRAY;
     for (const p of birdPlacements) {
       const lx = (1 - zoom) * pan.x + p.x * zoom;
       const ly = (1 - zoom) * pan.y + p.y * zoom;
       if (lx < -8 || lx > 108 || ly < -8 || ly > 108) continue;
+
+      const spriteImg = spriteCacheRef.current.get(p.imageSrc);
+      if (!spriteImg || !spriteImg.complete || spriteImg.naturalWidth <= 0) {
+        continue;
+      }
 
       const cx = (lx / 100) * w;
       const cy = (ly / 100) * h;
@@ -136,15 +150,29 @@ export function ThermalCanvas({
       const sprite = getBirdSprite(p.spriteId);
       const aspect = sprite.toppH / Math.max(1, sprite.toppW);
       const birdH = birdW * aspect;
+      const dw = Math.max(1, Math.ceil(birdW));
+      const dh = Math.max(1, Math.ceil(birdH));
 
-      ctx.fillStyle = "#ffffff";
-      ctx.shadowColor = "rgba(255,255,255,0.75)";
-      ctx.shadowBlur = 10 * dpr;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, birdW / 2, birdH / 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      const sil = document.createElement("canvas");
+      sil.width = dw;
+      sil.height = dh;
+      const silCtx = sil.getContext("2d");
+      if (!silCtx) continue;
+      silCtx.clearRect(0, 0, dw, dh);
+      silCtx.drawImage(spriteImg, 0, 0, dw, dh);
+      silCtx.globalCompositeOperation = "source-in";
+      silCtx.fillStyle = `rgb(${g}, ${g}, ${g})`;
+      silCtx.fillRect(0, 0, dw, dh);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (p.flip) ctx.scale(-1, 1);
+      ctx.shadowColor = `rgba(${g}, ${g}, ${g}, 0.28)`;
+      ctx.shadowBlur = 3 * dpr;
+      ctx.drawImage(sil, -birdW / 2, -birdH / 2, birdW, birdH);
+      ctx.restore();
     }
+    ctx.shadowBlur = 0;
   }, [birdPlacements, pan, pixelFactor, zoom]);
 
   useEffect(() => {
@@ -160,6 +188,40 @@ export function ThermalCanvas({
     if (img.complete && img.naturalWidth > 0) onLoad();
     return () => img.removeEventListener("load", onLoad);
   }, [imageSrc, draw]);
+
+  /** Preload topp sprites so thermal silhouettes match binos. */
+  useEffect(() => {
+    const cache = spriteCacheRef.current;
+    const srcs = [...new Set(birdPlacements.map((p) => p.imageSrc))];
+    let cancelled = false;
+    let pending = 0;
+
+    const maybeDraw = () => {
+      if (!cancelled && pending <= 0) draw();
+    };
+
+    for (const src of srcs) {
+      const existing = cache.get(src);
+      if (existing?.complete && existing.naturalWidth > 0) continue;
+      pending += 1;
+      const img = new Image();
+      cache.set(src, img);
+      img.onload = () => {
+        pending -= 1;
+        maybeDraw();
+      };
+      img.onerror = () => {
+        pending -= 1;
+        maybeDraw();
+      };
+      img.src = src;
+    }
+    maybeDraw();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [birdPlacements, draw]);
 
   useEffect(() => {
     draw();

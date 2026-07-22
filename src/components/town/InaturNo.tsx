@@ -39,9 +39,9 @@ function formatDayRate(nok: number): string {
 }
 
 function terrainTierLabel(pricePerDayNok: number): string {
-  if (pricePerDayNok <= 500) return "Budsjett";
-  if (pricePerDayNok <= 1000) return "Standard";
-  if (pricePerDayNok <= 3000) return "Premium";
+  if (pricePerDayNok <= 250) return "Budsjett";
+  if (pricePerDayNok <= 500) return "Standard";
+  if (pricePerDayNok <= 1500) return "Premium";
   return "Finmark";
 }
 

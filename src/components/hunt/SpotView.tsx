@@ -75,6 +75,12 @@ type SpotViewProps = {
   /** LRF locked a bird — parent enters shoot mode. */
   onBirdObserved: (info: BirdObservedInfo) => void;
   onDone: (info: { mode: SpotMode; gameSeconds: number }) => void;
+  /**
+   * Extreme-caution auto-spot: open already in binos, pan on the bird,
+   * ready for F / Space LRF.
+   */
+  initialMode?: SpotMode;
+  initialPan?: { x: number; y: number };
 };
 
 /** Single arrow tap — landscape % step. */
@@ -199,7 +205,7 @@ function clampPan(n: number): number {
 /**
  * Same landscape frame for eyes and binos (identical placement %).
  * Binos = circular crop + real optic zoom; pan 0–100 covers the full eyes view.
- * Thermal = pixelated B&W heat map; birds render sharp white-hot.
+ * Thermal = pixelated B&W heat map; birds render as muted topp silhouettes.
  */
 export function SpotView({
   imageSrc,
@@ -223,6 +229,8 @@ export function SpotView({
   onGameSeconds,
   onBirdObserved,
   onDone,
+  initialMode = "eyes",
+  initialPan,
 }: SpotViewProps) {
   const binoZoom = Math.max(1, magnification);
   const thermalZoom = Math.max(1, thermalMagnification);
@@ -230,7 +238,13 @@ export function SpotView({
     Number.isFinite(thermalTimeFactor) && thermalTimeFactor > 0
       ? thermalTimeFactor
       : SPOT_TIME_FACTOR_THERMAL;
-  const [mode, setMode] = useState<SpotMode>("eyes");
+  const startMode: SpotMode =
+    initialMode === "binos" && hasBinos
+      ? "binos"
+      : initialMode === "thermal" && hasThermal
+        ? "thermal"
+        : "eyes";
+  const [mode, setMode] = useState<SpotMode>(startMode);
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
   const zoom = mode === "thermal" ? thermalZoom : binoZoom;
@@ -248,7 +262,11 @@ export function SpotView({
   const thermalBatteryRef = useRef(thermalBatteryGameSec);
   thermalBatteryRef.current = thermalBatteryGameSec;
 
-  const [pan, setPan] = useState({ x: 50, y: 50 });
+  const startPan = {
+    x: initialPan?.x ?? 50,
+    y: initialPan?.y ?? 50,
+  };
+  const [pan, setPan] = useState(startPan);
   const panRef = useRef(pan);
   panRef.current = pan;
   const keysRef = useRef<PanKeys>({

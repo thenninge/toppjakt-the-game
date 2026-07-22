@@ -14,7 +14,7 @@ import {
   terrainMapSrc,
   tiurSpawnCountForTerrain,
 } from "@/lib/hunt/terrain";
-import { getHuntPace, HUNT_PACES, type HuntPaceId } from "@/lib/hunt/pace";
+import { getHuntPace, HUNT_PACES, type HuntPaceId, EXTREME_CAUTION_PRESPOT_CHANCE } from "@/lib/hunt/pace";
 import {
   baseMinutesForEffort,
   canHuntAtTime,
@@ -44,6 +44,7 @@ import {
   pickEatImage,
   pickFireImage,
   pickFunnImage,
+  pickPrespottedImage,
   pickSpotImage,
   pickWalkImage,
   REST_TIRED_IMAGE,
@@ -104,6 +105,7 @@ import {
   flushDirectionHeadline,
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
+  panToCenterOnBird,
   pickFluktImage,
   resolveFlushesOnPath,
   spawnTiurOnMap,
@@ -257,6 +259,9 @@ type SpotSession = {
   birdPlacements: BirdVisualPlacement[];
   /** Landscape facing — shown on the spotting compass. */
   viewBearingDeg: number;
+  /** Extreme-caution auto-spot: open in binos on the bird. */
+  initialMode?: SpotMode;
+  initialPan?: { x: number; y: number };
 };
 
 type ShootSession = {
@@ -447,6 +452,11 @@ export function HuntMapView({
   /** Missed midnight at the car — lose catch, overnight. */
   const [lostCatchReveal, setLostCatchReveal] = useState(false);
   const midnightHandledRef = useRef(false);
+  /** Extreme caution: spotted bird before it spotted you. */
+  const [prespotReveal, setPrespotReveal] = useState<{
+    imageSrc: string;
+    focusBirdId: string;
+  } | null>(null);
   const [birds, setBirds] = useState<HuntBird[]>(() =>
     map
       ? spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
@@ -666,7 +676,8 @@ export function HuntMapView({
         !campOvernight &&
         !flushCurrent &&
         !endexReveal &&
-        !lostCatchReveal
+        !lostCatchReveal &&
+        !prespotReveal
       ) {
         if (map && isAtParking(pos, map)) {
           leaveHunt();
@@ -690,6 +701,7 @@ export function HuntMapView({
     flushCurrent,
     endexReveal,
     lostCatchReveal,
+    prespotReveal,
   ]);
 
   function triggerLostCatchOvernight() {
@@ -1135,6 +1147,27 @@ export function HuntMapView({
     }
 
     setLog(walkLog);
+    if (
+      !nowDark &&
+      walkSession.paceId === "extreme-caution" &&
+      hasBinos &&
+      Math.random() < EXTREME_CAUTION_PRESPOT_CHANCE
+    ) {
+      const prepared = prepareSpotAtPos({ birdList: flush.birds });
+      if (prepared && prepared.birdPlacements.length > 0) {
+        const focus =
+          prepared.birdPlacements[
+            Math.floor(Math.random() * prepared.birdPlacements.length)
+          ]!;
+        pendingForcedRestRef.current = nextFatigue.physical >= 1;
+        setPrespotReveal({
+          imageSrc: pickPrespottedImage(),
+          focusBirdId: focus.birdId,
+        });
+        return;
+      }
+    }
+
     if (triggerForcedRestIfNeeded(nextFatigue.physical)) return;
     setPanel("arrived");
   }
@@ -1205,11 +1238,17 @@ export function HuntMapView({
     latentSpotNerveRef.current = next;
   }
 
-  function beginSpot(opts?: { reuseImageSrc?: string | null }) {
-    if (!canHuntAtTime(clockMinutes)) {
-      setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
-      return;
-    }
+  /**
+   * Bind birds in the current cell to a spot landscape (sticky per cell).
+   * Returns null when hunting is closed; otherwise session payload.
+   */
+  function prepareSpotAtPos(opts?: {
+    reuseImageSrc?: string | null;
+    birdList?: HuntBird[];
+  }): SpotSession | null {
+    if (!canHuntAtTime(clockMinutes)) return null;
+
+    const birdList = opts?.birdList ?? birds;
     const cellKey = `${pos.row},${pos.col}`;
     const marked = spotImagesWithPerches();
     const isUsableSpotSrc = (src: string) =>
@@ -1230,10 +1269,9 @@ export function HuntMapView({
         ? marked[Math.floor(Math.random() * marked.length)]!
         : pickSpotImage());
 
-    const here = birdsInCell(birds, pos);
+    const here = birdsInCell(birdList, pos);
     const hereIds = new Set(here.map((b) => b.id));
 
-    // Same landscape + same seats if still perched (spooked birds drop out).
     if (cachedOk && cachedOk.imageSrc === imageSrc) {
       const sticky = cachedOk.placements.filter((p) => hereIds.has(p.birdId));
       const viewBearingDeg = Number.isFinite(cachedOk.viewBearingDeg)
@@ -1243,22 +1281,17 @@ export function HuntMapView({
         ...prev,
         [cellKey]: { imageSrc, placements: sticky, viewBearingDeg },
       }));
-      const syncedBirds = birds.map((b) => {
+      const syncedBirds = birdList.map((b) => {
         const p = sticky.find((x) => x.birdId === b.id);
         return p ? { ...b, distanceM: p.distanceM } : b;
       });
       setBirds(syncedBirds);
       seedLatentSpotNerve(sticky, syncedBirds);
-      setSpotSession({
-        imageSrc,
-        birdPlacements: sticky,
-        viewBearingDeg,
-      });
-      return;
+      return { imageSrc, birdPlacements: sticky, viewBearingDeg };
     }
 
     const viewBearingDeg = rollSpotViewBearingDeg();
-    const bound = bindBirdsToSpotImage(birds, pos, imageSrc, {
+    const bound = bindBirdsToSpotImage(birdList, pos, imageSrc, {
       fillAllPerches: false,
     });
     setSpotLayoutByCell((prev) => ({
@@ -1267,11 +1300,55 @@ export function HuntMapView({
     }));
     setBirds(bound.birds);
     seedLatentSpotNerve(bound.placements, bound.birds);
-    setSpotSession({
+    return {
       imageSrc,
       birdPlacements: bound.placements,
       viewBearingDeg,
+    };
+  }
+
+  function beginSpot(opts?: {
+    reuseImageSrc?: string | null;
+    initialMode?: SpotMode;
+    focusBirdId?: string;
+  }) {
+    if (!canHuntAtTime(clockMinutes)) {
+      setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
+      return;
+    }
+    const prepared = prepareSpotAtPos({
+      reuseImageSrc: opts?.reuseImageSrc,
     });
+    if (!prepared) {
+      setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
+      return;
+    }
+
+    let initialPan: { x: number; y: number } | undefined;
+    let initialMode = opts?.initialMode;
+    if (opts?.focusBirdId && prepared.birdPlacements.length > 0) {
+      const focus =
+        prepared.birdPlacements.find((p) => p.birdId === opts.focusBirdId) ??
+        prepared.birdPlacements[0]!;
+      initialPan = panToCenterOnBird(focus, binosMagnification);
+      initialMode = initialMode ?? "binos";
+    }
+
+    setSpotSession({
+      ...prepared,
+      initialMode,
+      initialPan,
+    });
+  }
+
+  function finishPrespotReveal() {
+    if (!prespotReveal) return;
+    const focusBirdId = prespotReveal.focusBirdId;
+    setPrespotReveal(null);
+    setLog(
+      "Du går forsiktig og observant og ser fuglen før den ser deg — kikkert klar.",
+    );
+    beginSpot({ initialMode: "binos", focusBirdId });
   }
 
   function finishSpot(info: { mode: SpotMode; gameSeconds: number }) {
@@ -1321,7 +1398,12 @@ export function HuntMapView({
       );
     }
     setSpotSession(null);
-    setPanel("arrived");
+    if (pendingForcedRestRef.current) {
+      pendingForcedRestRef.current = false;
+      setForcedRest({ imageSrc: REST_TIRED_IMAGE });
+    } else {
+      setPanel("arrived");
+    }
   }
 
   function onBirdObserved(info: {
@@ -2619,6 +2701,24 @@ export function HuntMapView({
         onGameSeconds={addGameSeconds}
         onBirdObserved={onBirdObserved}
         onDone={finishSpot}
+        initialMode={spotSession.initialMode}
+        initialPan={spotSession.initialPan}
+      />
+    );
+  }
+
+  if (prespotReveal) {
+    return (
+      <AtmospherePauseView
+        imageSrc={prespotReveal.imageSrc}
+        title="Fugl spottet"
+        subtitle="Du går forsiktig og observant og ser fuglen før den ser deg."
+        durationMinutes={0}
+        holdMs={4500}
+        clockMinutes={clockMinutes}
+        onContinue={finishPrespotReveal}
+        skipLabel="Til kikkert"
+        ariaLabel="Fugl spottet før den ser deg"
       />
     );
   }

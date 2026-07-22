@@ -214,6 +214,25 @@ export function findBirdUnderLrfReticle(
   return best;
 }
 
+/**
+ * Pan so the bird sits under the LRF reticle (lens centre at 50 %, 50 %).
+ * Same transform as {@link isBirdUnderLrfReticle}.
+ */
+export function panToCenterOnBird(
+  placement: Pick<BirdVisualPlacement, "x" | "y">,
+  zoom: number,
+): { x: number; y: number } {
+  const z = Math.max(1, zoom);
+  if (z <= 1.001) {
+    return { x: placement.x, y: placement.y };
+  }
+  const clamp = (n: number) => Math.max(0, Math.min(100, n));
+  return {
+    x: clamp((50 - placement.x * z) / (1 - z)),
+    y: clamp((50 - placement.y * z) / (1 - z)),
+  };
+}
+
 const DIR_DELTA: Record<FlushDirection, { dRow: number; dCol: number }> = {
   N: { dRow: 1, dCol: 0 },
   NE: { dRow: 1, dCol: 1 },

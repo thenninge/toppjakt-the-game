@@ -1334,7 +1334,16 @@ body {
 }
 
 .hunt-map-cell.is-start {
-  box-shadow: inset 0 0 0 1px rgba(120, 180, 255, 0.45);
+  box-shadow: inset 0 0 0 3px #3a3a3a;
+  border-color: #2a2a2a;
+}
+
+.hunt-map-cell.is-start.is-player {
+  /* Keep parking frame visible under gold player highlight. */
+  box-shadow:
+    inset 0 0 0 3px #3a3a3a,
+    inset 0 0 0 5px var(--accent-gold);
+  background: rgba(212, 168, 75, 0.18);
 }
 
 .hunt-map-cell.is-player {
