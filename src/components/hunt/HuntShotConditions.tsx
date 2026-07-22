@@ -12,6 +12,7 @@ import {
 } from "@/lib/player";
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import { LapuaBallisticsApp } from "@/components/hunt/LapuaBallisticsApp";
+import { POWDER_TEMP_REFERENCE_C } from "@/lib/ballistics/powderTemp";
 
 export type HuntRangeSource = "lrf" | "estimated" | "range";
 
@@ -21,14 +22,15 @@ type HuntShotConditionsProps = {
   shotBearingDeg: number;
   windFromDeg: number;
   windSpeedMs: number;
-  densityRatio?: number;
+  /** Live air temperature (°C) — shown in Enviro; Lapua prefills Temp dial. */
+  temperatureC?: number;
   /** When false, remind player to compute windage themselves. */
   hasKestrel?: boolean;
   dopeCard?: DopeCardEntry[];
   ammoId?: string | null;
   rifleId?: string | null;
   /** Active ammo for the ballistics app (required for App panel). */
-  ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
+  ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel" | "caliber"> | null;
   ammoLabel?: string;
 };
 
@@ -41,7 +43,7 @@ export function HuntShotConditions({
   shotBearingDeg,
   windFromDeg,
   windSpeedMs,
-  densityRatio = 1,
+  temperatureC = POWDER_TEMP_REFERENCE_C,
   hasKestrel = false,
   dopeCard = [],
   ammoId = null,
@@ -49,6 +51,9 @@ export function HuntShotConditions({
   ammo = null,
   ammoLabel = "Ammo",
 }: HuntShotConditionsProps) {
+  const tempC = Number.isFinite(temperatureC)
+    ? temperatureC
+    : POWDER_TEMP_REFERENCE_C;
   const bearing = ((Math.round(shotBearingDeg) % 360) + 360) % 360;
   const windFrom = ((Math.round(windFromDeg) % 360) + 360) % 360;
   const shotCompass = compassLabelFromDeg(bearing);
@@ -120,13 +125,23 @@ export function HuntShotConditions({
           </div>
         </div>
 
+        <div className="hunt-shot-cond">
+          <span className="hunt-shot-cond-label">Temp</span>
+          <span className="hunt-shot-cond-value">
+            {tempC.toFixed(1)}°C
+            <small>
+              {hasKestrel ? "Kestrel / dV/dT" : "still inn i App"}
+            </small>
+          </span>
+        </div>
+
         {!hasKestrel ? (
           <p className="hunt-shot-cond-hint">
-            Bruk App til høyre: sett range + vind, dial tårnene.
+            Bruk App til høyre: sett range + vind + temp, dial tårnene.
           </p>
         ) : (
           <p className="hunt-shot-cond-hint">
-            App = estimat · Kestrel-fanen = fasit.
+            App = estimat · Kestrel bruker live temp + dV/dT automatisk.
           </p>
         )}
 
@@ -174,8 +189,8 @@ export function HuntShotConditions({
             initialRangeM={rangeM}
             liveWindSpeedMs={windSpeedMs}
             liveWindFromDeg={windFromDeg}
+            liveTemperatureC={tempC}
             shotBearingDeg={shotBearingDeg}
-            densityRatio={densityRatio}
           />
         ) : (
           <p className="hunt-dope-empty">Velg ammo for å bruke appen.</p>

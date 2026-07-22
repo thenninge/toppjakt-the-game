@@ -7,6 +7,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   bearingHitsWedge,
   bearingIsSafe,
@@ -336,8 +337,8 @@ export function AwareAppView({
   hunterRef.current = hunter;
   const destRef = useRef(destination);
   destRef.current = destination;
-  const nerveRef = useRef(nerve);
-  nerveRef.current = nerve;
+  /** Source of truth for the rAF sim — do not sync from state (wipes instant bumps). */
+  const nerveRef = useRef(0);
   const moveHoldRef = useRef(0);
   const flushedRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -385,6 +386,7 @@ export function AwareAppView({
     hasKestrel && hasBdx && ammo
       ? exactBallisticHold(ammo, planDistanceM, shotCrosswind, {
           densityRatio: density,
+          powderTempC: windSnap.temperatureC,
         })
       : null;
 
@@ -779,9 +781,12 @@ export function AwareAppView({
       ENCOUNTER_NERVE.nerveCap,
       nerveRef.current + CAMCORDER_SETUP_NERVE,
     );
+    // Force paint now so the bar jumps before the next rAF tick.
     nerveRef.current = next;
-    setNerve(next);
-    setCamcorderReady(true);
+    flushSync(() => {
+      setNerve(next);
+      setCamcorderReady(true);
+    });
     setStatus(
       next >= ENCOUNTER_NERVE.flushThreshold
         ? "Camcorder oppe — men fuglen er svært urolig (+20% nervøsitet)!"

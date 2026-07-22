@@ -1,39 +1,50 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import {
+  densityRatioFromTempC,
   exactBallisticHold,
   formatWindClockFacing,
 } from "@/lib/ballistics/solver";
-import { crosswindMs } from "@/lib/weather/spec";
+import {
+  muzzleVelocityAtPowderTempC,
+  powderTempDvDtMpsPerC,
+  POWDER_TEMP_REFERENCE_C,
+} from "@/lib/ballistics/powderTemp";
+import { crosswindMs, MAX_WIND_SPEED_MS } from "@/lib/weather/spec";
 
 type LapuaBallisticsAppProps = {
-  ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel">;
+  ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel" | "caliber">;
   ammoLabel: string;
   /** Suggested starting range (LRF / Aware). */
   initialRangeM: number;
   /** Live wind — prefill only; player dials the app. */
   liveWindSpeedMs: number;
   liveWindFromDeg: number;
+  /** Live air / powder temp — prefill only; player must dial Temp. */
+  liveTemperatureC: number;
   shotBearingDeg: number;
-  densityRatio?: number;
 };
 
 const RANGE_VALUES = Array.from({ length: 41 }, (_, i) => 50 + i * 10); // 50–450
-const WIND_VALUES = Array.from({ length: 21 }, (_, i) => i); // 0–20 m/s
+/** Match hunt wind band — birds rarely sit above ~5 m/s. */
+const WIND_VALUES = Array.from(
+  { length: MAX_WIND_SPEED_MS + 1 },
+  (_, i) => i,
+); // 0–5 m/s
+const TEMP_MIN_C = -25;
+const TEMP_MAX_C = 30;
+/** Cosmetic incline wheel only — not used in game ballistics. */
 const ANGLE_VALUES = [-15, -10, -5, 0, 5, 10, 15];
-/** Clock faces for wind direction relative to shot (Lapua-style). */
-const WIND_CLOCKS = [
-  "12:00",
-  "1:30",
-  "3:00",
-  "4:30",
-  "6:00",
-  "7:30",
-  "9:00",
-  "10:30",
-] as const;
+/** Snap wind arrow to Lapua-style half-hour clock faces (45°). */
+const WIND_SNAP_DEG = 45;
 
 function snapTo(values: number[], n: number): number {
   return values.reduce((best, v) =>
@@ -41,31 +52,34 @@ function snapTo(values: number[], n: number): number {
   );
 }
 
-function clockToRelativeDeg(clock: string): number {
-  const [hs, ms] = clock.split(":").map(Number);
-  const hours = (hs % 12) + (ms === 30 ? 0.5 : 0);
-  return (hours / 12) * 360;
+function clampTempC(n: number): number {
+  const t = Math.round(Number.isFinite(n) ? n : POWDER_TEMP_REFERENCE_C);
+  return Math.min(TEMP_MAX_C, Math.max(TEMP_MIN_C, t));
 }
 
-function nearestClock(
-  windFromDeg: number,
-  shotBearingDeg: number,
-): (typeof WIND_CLOCKS)[number] {
-  const label = formatWindClockFacing(windFromDeg, shotBearingDeg);
-  // Map "12:00" / "3:00" style to our set (half-hours only).
-  const normalized =
-    label.includes(":30") || label.endsWith(":00")
-      ? label.replace(/^12:/, "12:")
-      : label;
-  const match = WIND_CLOCKS.find((c) => c === normalized);
-  if (match) return match;
-  // Fallback: pick closest by relative angle.
-  const rel = ((windFromDeg - shotBearingDeg) % 360 + 360) % 360;
-  return WIND_CLOCKS.reduce((best, c) => {
-    const d = Math.abs(clockToRelativeDeg(c) - rel);
-    const bd = Math.abs(clockToRelativeDeg(best) - rel);
-    return d < bd ? c : best;
-  });
+/** Relative wind-from vs shot: 0° = 12 o'clock (headwind), clockwise. */
+function relativeWindDeg(windFromDeg: number, shotBearingDeg: number): number {
+  return ((windFromDeg - shotBearingDeg) % 360 + 360) % 360;
+}
+
+function snapWindRelDeg(deg: number): number {
+  const n = ((Math.round(deg / WIND_SNAP_DEG) * WIND_SNAP_DEG) % 360 + 360) % 360;
+  return n;
+}
+
+/** Pointer angle: 0 at top, clockwise (matches clock face). */
+function pointerAngleDeg(
+  el: HTMLElement,
+  clientX: number,
+  clientY: number,
+): number {
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const rad = Math.atan2(clientX - cx, cy - clientY);
+  let deg = (rad * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  return deg;
 }
 
 function WheelColumn({
@@ -140,9 +154,48 @@ function WheelColumn({
   );
 }
 
+/** Compact temp dial bottom-right of the circle. */
+function TempStepper({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="lapua-temp-stepper" aria-label="Temperatur (krut)">
+      <span className="lapua-temp-label">Temp</span>
+      <div className="lapua-temp-controls">
+        <button
+          type="button"
+          className="lapua-temp-btn"
+          disabled={value >= TEMP_MAX_C}
+          onClick={() => onChange(clampTempC(value + 1))}
+          aria-label="Temp opp"
+        >
+          ▲
+        </button>
+        <span className="lapua-temp-value" aria-live="polite">
+          {value}
+          <small>°C</small>
+        </span>
+        <button
+          type="button"
+          className="lapua-temp-btn"
+          disabled={value <= TEMP_MIN_C}
+          onClick={() => onChange(clampTempC(value - 1))}
+          aria-label="Temp ned"
+        >
+          ▼
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
- * Phone-style ballistics app (Lapua-inspired): dial range + wind → elev / windage mrad.
- * Player must set the inputs; solution drives what they dial on the turrets.
+ * Phone-style ballistics app (Lapua-inspired):
+ * dial range + wind speed + powder temp; wind dir = red arrow on ring.
  */
 export function LapuaBallisticsApp({
   ammo,
@@ -150,31 +203,39 @@ export function LapuaBallisticsApp({
   initialRangeM,
   liveWindSpeedMs,
   liveWindFromDeg,
+  liveTemperatureC,
   shotBearingDeg,
-  densityRatio = 1,
 }: LapuaBallisticsAppProps) {
+  const dialRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
   const [rangeM, setRangeM] = useState(() =>
     snapTo(RANGE_VALUES, Math.round(initialRangeM)),
   );
   const [windSpeed, setWindSpeed] = useState(() =>
     snapTo(WIND_VALUES, Math.round(liveWindSpeedMs)),
   );
+  const [tempC, setTempC] = useState(() => clampTempC(liveTemperatureC));
+  /** Cosmetic only — incline wheel, not used for hold. */
   const [angleDeg, setAngleDeg] = useState(0);
-  const [windClock, setWindClock] = useState(() =>
-    nearestClock(liveWindFromDeg, shotBearingDeg),
+  const [windRelDeg, setWindRelDeg] = useState(() =>
+    snapWindRelDeg(relativeWindDeg(liveWindFromDeg, shotBearingDeg)),
   );
 
   const windFromDeg =
-    ((shotBearingDeg + clockToRelativeDeg(windClock)) % 360 + 360) % 360;
+    ((shotBearingDeg + windRelDeg) % 360 + 360) % 360;
 
   const hold = useMemo(() => {
     const cw = crosswindMs(windSpeed, windFromDeg, shotBearingDeg);
-    // Angle: mild cosine range correction (rifleman's rule-ish).
-    const effectiveRange = rangeM * Math.cos((angleDeg * Math.PI) / 180);
-    return exactBallisticHold(ammo, Math.max(50, effectiveRange), cw, {
-      densityRatio,
+    return exactBallisticHold(ammo, Math.max(50, rangeM), cw, {
+      densityRatio: densityRatioFromTempC(tempC),
+      powderTempC: tempC,
     });
-  }, [ammo, rangeM, windSpeed, windFromDeg, shotBearingDeg, angleDeg, densityRatio]);
+  }, [ammo, rangeM, windSpeed, windFromDeg, shotBearingDeg, tempC]);
+
+  const v0AtTemp = muzzleVelocityAtPowderTempC(ammo.v0, tempC, ammo.caliber);
+  const dvdt = powderTempDvDtMpsPerC(ammo.caliber);
+  const windClock = formatWindClockFacing(windFromDeg, shotBearingDeg);
 
   const elevMrad = Math.abs(hold.elevationClicks) / 10;
   const windMrad = Math.abs(hold.windageClicks) / 10;
@@ -194,6 +255,53 @@ export function LapuaBallisticsApp({
   const elevClicks = Math.round(Math.abs(hold.elevationClicks));
   const windClicks = Math.round(Math.abs(hold.windageClicks));
 
+  const setWindFromPointer = useCallback((clientX: number, clientY: number) => {
+    const el = dialRef.current;
+    if (!el) return;
+    setWindRelDeg(snapWindRelDeg(pointerAngleDeg(el, clientX, clientY)));
+  }, []);
+
+  const onArrowPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setWindFromPointer(e.clientX, e.clientY);
+  };
+
+  const onArrowPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!draggingRef.current) return;
+    setWindFromPointer(e.clientX, e.clientY);
+  };
+
+  const onArrowPointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    draggingRef.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  /** Click/drag on the ring rim (not the wheels) to place the arrow. */
+  const onDialPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest(".lapua-wheels")) return;
+    e.preventDefault();
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setWindFromPointer(e.clientX, e.clientY);
+  };
+
+  const onDialPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    setWindFromPointer(e.clientX, e.clientY);
+  };
+
+  const onDialPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    draggingRef.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
   return (
     <div className="lapua-app" aria-label="Ballistics-app">
       <header className="lapua-app-header">
@@ -203,48 +311,79 @@ export function LapuaBallisticsApp({
         </span>
       </header>
 
-      <div className="lapua-app-inputs">
-        <div className="lapua-wind-dir">
-          <span className="lapua-wind-dir-label">Wind Direction</span>
-          <select
-            className="lapua-wind-dir-select"
-            value={windClock}
-            onChange={(e) =>
-              setWindClock(e.target.value as (typeof WIND_CLOCKS)[number])
-            }
-            aria-label="Vindretning (klokke)"
-          >
-            {WIND_CLOCKS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+      <div className="lapua-dial-wrap">
+        <div
+          className="lapua-wind-clock"
+          title="Relativ vindretning (klokke)"
+        >
+          <span className="lapua-wind-clock-value">{windClock}</span>
+          <span className="lapua-wind-clock-label">Vindretning</span>
         </div>
 
-        <div className="lapua-wheels">
-          <WheelColumn
-            label="Range"
-            unit="m"
-            values={RANGE_VALUES}
-            value={rangeM}
-            onChange={setRangeM}
-          />
-          <WheelColumn
-            label="Wind"
-            unit="m/s"
-            values={WIND_VALUES}
-            value={windSpeed}
-            onChange={setWindSpeed}
-          />
-          <WheelColumn
-            label="Angle"
-            unit="deg"
-            values={ANGLE_VALUES}
-            value={angleDeg}
-            onChange={setAngleDeg}
-          />
+        <div
+          ref={dialRef}
+          className="lapua-app-inputs"
+          onPointerDown={onDialPointerDown}
+          onPointerMove={onDialPointerMove}
+          onPointerUp={onDialPointerUp}
+          onPointerCancel={onDialPointerUp}
+          role="slider"
+          aria-label="Vindretning rundt sirkelen"
+          aria-valuemin={0}
+          aria-valuemax={360}
+          aria-valuenow={windRelDeg}
+          aria-valuetext={`${windClock} (${Math.round(windRelDeg)}°)`}
+          tabIndex={0}
+        >
+          <span className="lapua-shot-marker" title="Skyteretning (12)" aria-hidden>
+            ⌖
+          </span>
+
+          <div
+            className="lapua-wind-arrow"
+            style={{ transform: `rotate(${windRelDeg}deg)` }}
+            aria-hidden
+          >
+            <button
+              type="button"
+              className="lapua-wind-arrow-grip"
+              aria-label={`Dra vindpil — ${windClock}`}
+              onPointerDown={onArrowPointerDown}
+              onPointerMove={onArrowPointerMove}
+              onPointerUp={onArrowPointerUp}
+              onPointerCancel={onArrowPointerUp}
+            />
+          </div>
+
+          <div
+            className="lapua-wheels"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <WheelColumn
+              label="Avstand"
+              unit="m"
+              values={RANGE_VALUES}
+              value={rangeM}
+              onChange={setRangeM}
+            />
+            <WheelColumn
+              label="Vind"
+              unit="m/s"
+              values={WIND_VALUES}
+              value={windSpeed}
+              onChange={setWindSpeed}
+            />
+            <WheelColumn
+              label="Vinkel"
+              unit="deg"
+              values={ANGLE_VALUES}
+              value={angleDeg}
+              onChange={setAngleDeg}
+            />
+          </div>
         </div>
+
+        <TempStepper value={tempC} onChange={setTempC} />
       </div>
 
       <div className="lapua-app-results">
@@ -290,9 +429,14 @@ export function LapuaBallisticsApp({
         </div>
       </div>
 
+      <p className="lapua-app-meta">
+        v0 {Math.round(v0AtTemp)} m/s @ {tempC}°C · dV/dT {dvdt} m/s/°C · ref{" "}
+        {POWDER_TEMP_REFERENCE_C}°C = {ammo.v0} m/s
+      </p>
+
       <p className="lapua-app-hint">
-        Still Range + Wind her, dial tårnene etter mrad — DOPE kan avvike litt
-        over ~200 m.
+        Dra rød pil rundt sirkelen = vindretning · Temp nede til høyre · Vinkel
+        (deg) er kun UI.
       </p>
     </div>
   );

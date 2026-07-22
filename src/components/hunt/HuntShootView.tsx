@@ -29,6 +29,7 @@ import {
   formatHoldClicks,
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
+import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -49,6 +50,7 @@ import {
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
+import { applyScopeClickError } from "@/lib/optics/spec";
 import {
   isAmmoItem,
   isBipodItem,
@@ -85,6 +87,8 @@ type HuntShootViewProps = {
   crosswindMs?: number;
   /** Atmosphere density ratio from live temperature. */
   densityRatio?: number;
+  /** Live air / powder temperature (°C) for dV/dT + Enviro. */
+  temperatureC?: number;
   /** Shot bearing toward bird (for Kestrel LCD). */
   shotBearingDeg?: number;
   windFromDeg?: number;
@@ -138,6 +142,7 @@ export function HuntShootView({
   ballisticHold = null,
   crosswindMs = 0,
   densityRatio = 1,
+  temperatureC = 15,
   shotBearingDeg = 0,
   windFromDeg = 0,
   windSpeedMs = 0,
@@ -323,6 +328,10 @@ export function HuntShootView({
   useEffect(() => {
     densityRef.current = densityRatio;
   }, [densityRatio]);
+  const powderTempRef = useRef(temperatureC);
+  useEffect(() => {
+    powderTempRef.current = temperatureC;
+  }, [temperatureC]);
 
   /** Kestrel AB auto-dials elev + windage from fasit. */
   useEffect(() => {
@@ -331,7 +340,7 @@ export function HuntShootView({
       selectedAmmo.ammo,
       measuredDistanceM,
       crosswindMs,
-      { densityRatio },
+      { densityRatio, powderTempC: temperatureC },
     );
     setSessionZeroXMm(clampTurretMm(Math.round(hold.dialXMmAt100)));
     setSessionZeroYMm(clampTurretMm(Math.round(hold.dialYMmAt100)));
@@ -342,6 +351,7 @@ export function HuntShootView({
     measuredDistanceM,
     crosswindMs,
     densityRatio,
+    temperatureC,
     ballisticHold,
     fired,
   ]);
@@ -398,18 +408,43 @@ export function HuntShootView({
       dispersionInput,
       distanceRef.current,
       Math.random,
-      { densityRatio: densityRef.current },
+      {
+        densityRatio: densityRef.current,
+        powderTempC: powderTempRef.current,
+      },
     );
     // Spin is already in `shot`; add local wind drift separately.
     const windMm = exactBallisticHold(
       selectedAmmo.ammo,
       distanceRef.current,
       crosswindRef.current,
-      { densityRatio: densityRef.current },
+      {
+        densityRatio: densityRef.current,
+        powderTempC: powderTempRef.current,
+      },
     ).windDriftMm;
+    const clickErr = scope.scope.clickErrorPercent ?? 0;
+    const realizedZero = zeroProfile
+      ? effectiveZeroOffsetMm(
+          zeroProfile,
+          sessionZeroXMm,
+          sessionZeroYMm,
+          distanceRef.current,
+          { clickErrorPercent: clickErr },
+        )
+      : {
+          xMm: angularMmAtDistance(
+            applyScopeClickError(sessionZeroXMm, clickErr),
+            distanceRef.current,
+          ),
+          yMm: angularMmAtDistance(
+            applyScopeClickError(sessionZeroYMm, clickErr),
+            distanceRef.current,
+          ),
+        };
     const impact = {
-      xMm: shot.xMm + effectiveZero.xMm + windMm,
-      yMm: shot.yMm + effectiveZero.yMm,
+      xMm: shot.xMm + realizedZero.xMm + windMm,
+      yMm: shot.yMm + realizedZero.yMm,
       diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
     };
 
@@ -436,9 +471,14 @@ export function HuntShootView({
       Math.random,
       shotGeom,
     );
-    const impactVelocityMps = sampleTrajectory(
+    const ammoLive = ammoAtPowderTemp(
       selectedAmmo.ammo,
+      powderTempRef.current,
+    );
+    const impactVelocityMps = sampleTrajectory(
+      ammoLive,
       distanceRef.current,
+      { densityRatio: densityRef.current },
     ).velocityMps;
     const result: HuntShotResult = {
       kind,
@@ -453,7 +493,7 @@ export function HuntShootView({
       ammoLabel: `${selectedAmmo.brand} ${selectedAmmo.name}`,
       caliber: selectedAmmo.ammo.caliber,
       projectileType: selectedAmmo.ammo.projectileType,
-      v0: selectedAmmo.ammo.v0,
+      v0: ammoLive.v0,
     };
     const pullFactor = triggerPullRef.current;
     const pullLabel =
@@ -753,7 +793,7 @@ export function HuntShootView({
           selectedAmmo.ammo,
           measuredDistanceM,
           crosswindMs,
-          { densityRatio },
+          { densityRatio, powderTempC: temperatureC },
         )
       : null;
 
@@ -835,7 +875,7 @@ export function HuntShootView({
               shotBearingDeg={shotBearingDeg}
               windFromDeg={windFromDeg}
               windSpeedMs={windSpeedMs}
-              densityRatio={densityRatio}
+              temperatureC={temperatureC}
               hasKestrel={!!activeHold}
               dopeCard={dopeCard}
               ammoId={ammoId}

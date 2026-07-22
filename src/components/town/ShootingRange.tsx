@@ -67,6 +67,7 @@ import {
   type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
+import { applyScopeClickError } from "@/lib/optics/spec";
 import { densityRatioFromTempC } from "@/lib/ballistics/solver";
 import type { DayWeather } from "@/lib/weather/spec";
 
@@ -316,7 +317,7 @@ export function ShootingRange({
   }, [rifle, scope, selectedAmmo, onEnsureZeroing]);
 
   fireShotRef.current = () => {
-    if (!ready || !rifle || !selectedAmmo) return;
+    if (!ready || !rifle || !selectedAmmo || !scope) return;
     if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
       setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
       return;
@@ -374,10 +375,34 @@ export function ShootingRange({
         poa,
         dispersionInput,
         distanceRef.current,
+        Math.random,
+        {
+          densityRatio,
+          powderTempC: weather.live.temperatureC,
+        },
       );
+      const clickErr = scope.scope.clickErrorPercent ?? 0;
+      const realizedZero = zeroProfile
+        ? effectiveZeroOffsetMm(
+            zeroProfile,
+            sessionZeroXMm,
+            sessionZeroYMm,
+            distanceRef.current,
+            { clickErrorPercent: clickErr },
+          )
+        : {
+            xMm: angularMmAtDistance(
+              applyScopeClickError(sessionZeroXMm, clickErr),
+              distanceRef.current,
+            ),
+            yMm: angularMmAtDistance(
+              applyScopeClickError(sessionZeroYMm, clickErr),
+              distanceRef.current,
+            ),
+          };
       const impact: ShotImpact = {
-        xMm: shot.xMm + effectiveZero.xMm,
-        yMm: shot.yMm + effectiveZero.yMm,
+        xMm: shot.xMm + realizedZero.xMm,
+        yMm: shot.yMm + realizedZero.yMm,
         diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
       };
       const pullFactor = triggerPullRef.current;
@@ -1037,7 +1062,7 @@ export function ShootingRange({
               shotBearingDeg={rangeShotBearingDeg}
               windFromDeg={weather.live.windFromDeg}
               windSpeedMs={weather.live.windSpeedMs}
-              densityRatio={densityRatio}
+              temperatureC={weather.live.temperatureC}
               hasKestrel={hasKestrel}
               dopeCard={dopeCard}
               ammoId={ammoId}

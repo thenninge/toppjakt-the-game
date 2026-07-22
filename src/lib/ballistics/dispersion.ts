@@ -38,6 +38,7 @@ import {
   DEFAULT_TWIST_INCHES,
   DEFAULT_ZERO_DISTANCE_M,
 } from "@/lib/ballistics/trajectory";
+import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
 
 /** 1 MOA ≈ 29.4 mm at 100 m. */
 export const MM_PER_MOA_AT_100M = 29.4;
@@ -126,15 +127,17 @@ export function ammoV0SigmaMps(ammo: AmmoSpec): number {
   return DEFAULT_V0_SIGMA_MPS;
 }
 
-/** Sample realized muzzle velocity for one shot. */
+/** Sample realized muzzle velocity for one shot (optional powder temp). */
 export function sampleMuzzleVelocity(
   ammo: AmmoSpec,
   random: () => number = Math.random,
+  powderTempC: number = 15,
 ): { v0: number; deltaV0: number } {
+  const base = ammoAtPowderTemp(ammo, powderTempC);
   const sigma = ammoV0SigmaMps(ammo);
   const { z0 } = boxMuller(random);
   const deltaV0 = z0 * sigma;
-  return { v0: Math.max(50, ammo.v0 + deltaV0), deltaV0 };
+  return { v0: Math.max(50, base.v0 + deltaV0), deltaV0 };
 }
 
 /**
@@ -178,11 +181,16 @@ export function sampleShotFromPoa(
   input: DispersionInput,
   distanceM: number,
   random: () => number = Math.random,
-  opts?: { densityRatio?: number },
+  opts?: { densityRatio?: number; powderTempC?: number },
 ): SampledShot {
+  const powderTempC = opts?.powderTempC ?? 15;
   const envelope = combinedDispersionMoa(input);
   const { xMoa, yMoa } = sampleAngularOffsetMoa(envelope, random);
-  const { v0, deltaV0 } = sampleMuzzleVelocity(input.ammo, random);
+  const { v0, deltaV0 } = sampleMuzzleVelocity(
+    input.ammo,
+    random,
+    powderTempC,
+  );
   const traj = sampleTrajectory(
     { v0, bc: input.ammo.bc, bcModel: input.ammo.bcModel },
     distanceM,

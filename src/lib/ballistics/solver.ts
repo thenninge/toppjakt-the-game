@@ -10,6 +10,10 @@ import {
   sampleTrajectory,
   type TrajectoryOptions,
 } from "@/lib/ballistics/trajectory";
+import {
+  ammoAtPowderTemp,
+  POWDER_TEMP_REFERENCE_C,
+} from "@/lib/ballistics/powderTemp";
 import { ZERO_CLICK_MM } from "@/lib/player";
 
 /**
@@ -81,17 +85,19 @@ export type BallisticHoldSolution = {
  * Dial values cancel drop + spin + crosswind so POA on vitals = POI.
  */
 export function exactBallisticHold(
-  ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel">,
+  ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> & { caliber?: string },
   distanceM: number,
   crosswindMs: number,
-  opts?: TrajectoryOptions,
+  opts?: TrajectoryOptions & { powderTempC?: number },
 ): BallisticHoldSolution {
-  const traj = sampleTrajectory(ammo, distanceM, opts);
+  const powderTempC = opts?.powderTempC ?? POWDER_TEMP_REFERENCE_C;
+  const ammoEff = ammoAtPowderTemp(ammo, powderTempC);
+  const traj = sampleTrajectory(ammoEff, distanceM, opts);
   const wDrift = windDriftMm(
     crosswindMs,
     traj.timeOfFlightS,
     distanceM,
-    ammo.v0,
+    ammoEff.v0,
   );
   const windageMm = traj.spinDriftMm + wDrift;
   const dropMm = traj.dropBelowLosMm;

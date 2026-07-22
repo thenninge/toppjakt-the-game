@@ -109,6 +109,7 @@ export {
   isCookGear,
   THERMOS_ITEM_ID,
   COFFEE_RECOVERY,
+  SHORT_REST_RECOVERY,
   TYRIBAL_RECOVERY,
 } from "@/lib/food/spec";
 export {

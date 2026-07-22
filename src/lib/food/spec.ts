@@ -88,6 +88,14 @@ export const COFFEE_RECOVERY: FoodRecovery & { label: string } = {
   minutes: 5,
 };
 
+/** Short sit-down rest — no fire, does not flush birds. */
+export const SHORT_REST_RECOVERY: FoodRecovery & { label: string } = {
+  label: "Rest for 10 minutes",
+  bodyGain: 0.12,
+  mindGain: 0.15,
+  minutes: 10,
+};
+
 export const TYRIBAL_RECOVERY = {
   label: "Tyribål!",
   /** Shown on the eat/rest option — fire clears the cell. */

@@ -16,17 +16,34 @@ export type ScopeSpec = {
   reticleId?: string;
   clickUnit: ScopeClickUnit;
   /**
-   * How true each turret click tracks the nominal click value.
-   * 1.0 = perfect tracking; 0.9 ≈ 10% average click-size error.
-   * Engine: realizedClick ≈ nominalClick * clickAccuracyFactor (± noise later).
+   * Symmetric turret click-size error (± percent of nominal).
+   * 0 = exact 0.1 mil / ¼ MOA; 10 = each dialed click may realize ±10%.
+   * Applied to player dials (saved + session), not factory cold-bore base.
    */
-  clickAccuracyFactor: number;
+  clickErrorPercent: number;
   /**
    * Residual aiming error (MOA) after dialing turrets back to mechanical zero.
    * Lower = better zero retention. Premium ~0.05–0.12; budget ~0.5–1.2+.
    */
   zeroRetentionInaccuracy: number;
 };
+
+/**
+ * Scale dialed mm-at-100 m by this scope's click error band.
+ * `clickErrorPercent` 10 → multiply by U(0.9, 1.1).
+ */
+export function applyScopeClickError(
+  dialedMmAt100: number,
+  clickErrorPercent: number,
+  random: () => number = Math.random,
+): number {
+  if (!Number.isFinite(dialedMmAt100) || dialedMmAt100 === 0) {
+    return dialedMmAt100;
+  }
+  const err = Math.max(0, clickErrorPercent) / 100;
+  if (err <= 0) return dialedMmAt100;
+  return dialedMmAt100 * (1 + (random() * 2 - 1) * err);
+}
 
 export type LrfSpec = {
   /**

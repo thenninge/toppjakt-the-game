@@ -20,7 +20,7 @@
  *    (small at 100 m, critical at long range).
  * 4. **Wind** — True live crosswind vs what the player *believes*
  *    (Kestrel local reading vs LRF/AB forecast + full-value windage).
- * 5. **Scope click / dial error** — `clickAccuracyFactor`,
+ * 5. **Scope click / dial error** — `clickErrorPercent` (±% of nominal click),
  *    `zeroRetentionInaccuracy`, wrong hold / wrong turret math.
  * 6. **Range error** — LRF `rangeErrorPercent` → wrong drop/wind hold.
  * 7. **Atmosphere** — Temp, pressure/altitude, humidity (BC path).

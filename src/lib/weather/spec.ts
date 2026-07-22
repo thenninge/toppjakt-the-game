@@ -39,6 +39,12 @@ export const FORECAST_WIND_SPEED_ERROR_PERCENT = 18;
 export const FORECAST_WIND_DIR_ERROR_DEG = 25;
 export const FORECAST_TEMP_ERROR_C = 2;
 
+/**
+ * Cap for hunt wind (m/s). Above ~5 m/s birds rarely sit in trees —
+ * keep the playable band 0–5.
+ */
+export const MAX_WIND_SPEED_MS = 5;
+
 const COMPASS = [
   "N",
   "NNE",
@@ -113,7 +119,9 @@ export function createDayWeather(
   const random = opts?.random ?? Math.random;
   const truthMorning: WeatherSnapshot = {
     temperatureC: Math.round((-2 + random() * 12) * 10) / 10,
-    windSpeedMs: Math.round((1.5 + random() * 8) * 10) / 10,
+    // Calm–moderate mountain wind; capped so birds still sit.
+    windSpeedMs:
+      Math.round((0.4 + random() * (MAX_WIND_SPEED_MS - 0.4)) * 10) / 10,
     windFromDeg: Math.round(random() * 360),
   };
 
@@ -133,7 +141,7 @@ export function createDayWeather(
           10,
       ) / 10,
       0,
-      30,
+      MAX_WIND_SPEED_MS,
     ),
     windFromDeg: normalizeDeg(
       truthMorning.windFromDeg +
@@ -167,9 +175,9 @@ export function advanceLiveWeather(
           (live.temperatureC + randn(random) * 0.08) * 10,
         ) / 10,
       windSpeedMs: clamp(
-        Math.round((live.windSpeedMs + randn(random) * 0.15) * 10) / 10,
+        Math.round((live.windSpeedMs + randn(random) * 0.12) * 10) / 10,
         0,
-        25,
+        MAX_WIND_SPEED_MS,
       ),
       windFromDeg: normalizeDeg(live.windFromDeg + randn(random) * 4),
     };

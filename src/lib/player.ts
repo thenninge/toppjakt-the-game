@@ -3,6 +3,7 @@ import {
   EMPTY_CUSTOMS_MODS,
   type CustomsMods,
 } from "@/lib/customs/spec";
+import { applyScopeClickError } from "@/lib/optics/spec";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { isAmmoItem } from "@/lib/shop/types";
@@ -544,18 +545,33 @@ export function ensureZeroingProfile(
 /**
  * Effective POI shift on paper at `distanceM`.
  * Profile + session are stored as mm-at-100 m (0.1 mil clicks × 10).
+ * Optional `clickErrorPercent` scales player dials (saved + session) ±%.
  */
 export function effectiveZeroOffsetMm(
   profile: ZeroingProfile,
   sessionXMm = 0,
   sessionYMm = 0,
   distanceM = 100,
+  opts?: {
+    clickErrorPercent?: number;
+    random?: () => number;
+  },
 ): { xMm: number; yMm: number } {
-  const x100 = profile.baseXMm + profile.savedXMm + sessionXMm;
-  const y100 = profile.baseYMm + profile.savedYMm + sessionYMm;
+  const random = opts?.random ?? Math.random;
+  const errPct = opts?.clickErrorPercent ?? 0;
+  const dialX = applyScopeClickError(
+    profile.savedXMm + sessionXMm,
+    errPct,
+    random,
+  );
+  const dialY = applyScopeClickError(
+    profile.savedYMm + sessionYMm,
+    errPct,
+    random,
+  );
   return {
-    xMm: angularMmAtDistance(x100, distanceM),
-    yMm: angularMmAtDistance(y100, distanceM),
+    xMm: angularMmAtDistance(profile.baseXMm + dialX, distanceM),
+    yMm: angularMmAtDistance(profile.baseYMm + dialY, distanceM),
   };
 }
 

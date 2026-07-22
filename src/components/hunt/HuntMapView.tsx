@@ -66,6 +66,7 @@ import {
 } from "@/lib/shop/types";
 import {
   COFFEE_RECOVERY,
+  SHORT_REST_RECOVERY,
   THERMOS_ITEM_ID,
   TYRIBAL_RECOVERY,
   effectiveFoodRecovery,
@@ -967,6 +968,7 @@ export function HuntMapView({
     if (hasExactBallistics && primaryAmmo) {
       hold = exactBallisticHold(primaryAmmo.ammo, measured, cw, {
         densityRatio: density,
+        powderTempC: weather.live.temperatureC,
       });
     }
 
@@ -1087,6 +1089,7 @@ export function HuntMapView({
     if (hasExactBallistics && primaryAmmo) {
       hold = exactBallisticHold(primaryAmmo.ammo, distanceM, cw, {
         densityRatio: density,
+        powderTempC: weather.live.temperatureC,
       });
     }
     setAwareSession(null);
@@ -1521,6 +1524,17 @@ export function HuntMapView({
     });
   }
 
+  function takeShortRest() {
+    setEatSession({
+      imageSrc: pickEatImage(),
+      itemId: null,
+      label: SHORT_REST_RECOVERY.label,
+      bodyGain: SHORT_REST_RECOVERY.bodyGain,
+      mindGain: SHORT_REST_RECOVERY.mindGain,
+      minutes: SHORT_REST_RECOVERY.minutes,
+    });
+  }
+
   function lightTyribal() {
     if (map) {
       const flushed = flushAllBirdsFromCell(birds, pos, map);
@@ -1817,6 +1831,7 @@ export function HuntMapView({
         ballisticHold={shootSession.ballisticHold}
         crosswindMs={shootSession.crosswindMs}
         densityRatio={shootSession.densityRatio}
+        temperatureC={weather.live.temperatureC}
         shotBearingDeg={shootSession.bearingDeg}
         windFromDeg={weather.live.windFromDeg}
         windSpeedMs={weather.live.windSpeedMs}
@@ -2408,6 +2423,23 @@ export function HuntMapView({
 
               <p className="hunt-eat-section">Hvile</p>
               <ul className="hunt-eat-list">
+                <li>
+                  <button
+                    type="button"
+                    className="intro-button hunt-eat-option"
+                    onClick={takeShortRest}
+                  >
+                    <span className="hunt-eat-option-title">
+                      {SHORT_REST_RECOVERY.label}
+                    </span>
+                    <span className="hunt-eat-option-meta">
+                      Body +
+                      {formatStaminaPct(SHORT_REST_RECOVERY.bodyGain)} · Mind +
+                      {formatStaminaPct(SHORT_REST_RECOVERY.mindGain)} ·{" "}
+                      {SHORT_REST_RECOVERY.minutes} min
+                    </span>
+                  </button>
+                </li>
                 <li>
                   <button
                     type="button"

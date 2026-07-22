@@ -482,7 +482,7 @@ export function PikeProShop({
                 {scope ? (
                   <span className="shop-row-ballistics">
                     zoom {scope.minZoom}–{scope.maxZoom}× · {scope.clickUnit} ·
-                    click×{scope.clickAccuracyFactor.toFixed(2)} · zero-ret{" "}
+                    klikk ±{scope.clickErrorPercent}% · zero-ret{" "}
                     {scope.zeroRetentionInaccuracy.toFixed(2)} MOA
                   </span>
                 ) : null}
