@@ -10,6 +10,7 @@ import {
   computeWeaponCalmFactor,
   effectiveCalmWithFocus,
   ensureAmmoAffinity,
+  fatigueDispersionFactor,
   focusPhase,
   focusRemainingMs,
   rollTriggerTargetMs,
@@ -104,9 +105,9 @@ type HuntShootViewProps = {
     ammoId: string,
   ) => ZeroingProfile;
   musicEnabled: boolean;
-  /** Hunt BODY fatigue 0–1 (1 = exhausted). Increases weapon shake. */
+  /** Hunt BODY fatigue 0–1 (1 = exhausted). Cuts calm → more weapon shake. */
   physicalFatigue?: number;
-  /** Hunt MIND fatigue 0–1 (1 = exhausted). Increases weapon shake. */
+  /** Hunt MIND fatigue 0–1 (1 = exhausted). Widens MOA envelope up to 2×. */
   mentalFatigue?: number;
   /** Same horizontal flip as spotting (placement.flip). */
   birdFlip?: boolean;
@@ -380,6 +381,7 @@ export function HuntShootView({
       stock: stock?.stock,
       affinity,
       customsMoaDelta,
+      dispersionScale: fatigueDispersionFactor(fatigueRef.current),
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(

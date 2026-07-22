@@ -40,6 +40,8 @@ type SpotViewProps = {
   thermalMagnification?: number;
   /** Thermal sensor block size — higher = poorer resolution. */
   thermalPixelFactor?: number;
+  /** Real→game time while in thermal (battery drains at same rate). */
+  thermalTimeFactor?: number;
   /** Integrated LRF on thermal unit (Condor CQ35). */
   thermalLrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
   /** Absolute hunt clock in minutes (for HUD). */
@@ -83,9 +85,13 @@ type PanKeys = {
   right: number | null;
 };
 
-function spotTimeFactor(mode: SpotMode): number {
+function spotTimeFactor(mode: SpotMode, thermalTimeFactor: number): number {
   if (mode === "binos") return SPOT_TIME_FACTOR_BINOS;
-  if (mode === "thermal") return SPOT_TIME_FACTOR_THERMAL;
+  if (mode === "thermal") {
+    return Number.isFinite(thermalTimeFactor) && thermalTimeFactor > 0
+      ? thermalTimeFactor
+      : SPOT_TIME_FACTOR_THERMAL;
+  }
   return SPOT_TIME_FACTOR_EYES;
 }
 
@@ -128,6 +134,7 @@ export function SpotView({
   lrfSpec = null,
   thermalMagnification = 3,
   thermalPixelFactor = 10,
+  thermalTimeFactor = SPOT_TIME_FACTOR_THERMAL,
   thermalLrfSpec = null,
   clockMinutes,
   hasBinos,
@@ -144,13 +151,19 @@ export function SpotView({
 }: SpotViewProps) {
   const binoZoom = Math.max(1, magnification);
   const thermalZoom = Math.max(1, thermalMagnification);
+  const thermalFactor =
+    Number.isFinite(thermalTimeFactor) && thermalTimeFactor > 0
+      ? thermalTimeFactor
+      : SPOT_TIME_FACTOR_THERMAL;
   const [mode, setMode] = useState<SpotMode>("eyes");
   const zoom = mode === "thermal" ? thermalZoom : binoZoom;
-  const timeFactor = spotTimeFactor(mode);
+  const timeFactor = spotTimeFactor(mode, thermalFactor);
   const [lookedGameSec, setLookedGameSec] = useState(0);
   const lookedRef = useRef(0);
   const modeRef = useRef<SpotMode>(mode);
   modeRef.current = mode;
+  const thermalFactorRef = useRef(thermalFactor);
+  thermalFactorRef.current = thermalFactor;
   const onGameSecondsRef = useRef(onGameSeconds);
   onGameSecondsRef.current = onGameSeconds;
   const onThermalBatteryDrainRef = useRef(onThermalBatteryDrain);
@@ -188,20 +201,22 @@ export function SpotView({
       const realSec = (now - last) / 1000;
       last = now;
       if (realSec <= 0 || realSec > 2) return;
-      const factor = spotTimeFactor(modeRef.current);
+      const factor = spotTimeFactor(modeRef.current, thermalFactorRef.current);
+      if (!Number.isFinite(factor) || factor <= 0) return;
       let gameSec = realSec * factor;
+      if (!Number.isFinite(gameSec)) return;
       if (modeRef.current === "thermal" && onThermalBatteryDrainRef.current) {
         const before = thermalBatteryRef.current;
         const left = onThermalBatteryDrainRef.current(gameSec);
-        thermalBatteryRef.current = left;
-        gameSec = Math.max(0, before - left);
-        if (left <= 0) {
+        thermalBatteryRef.current = Number.isFinite(left) ? left : 0;
+        gameSec = Math.max(0, before - thermalBatteryRef.current);
+        if (thermalBatteryRef.current <= 0) {
           modeRef.current = hasBinos ? "binos" : "eyes";
           setMode(modeRef.current);
           setLrfReading(null);
         }
       }
-      if (gameSec <= 0) return;
+      if (!Number.isFinite(gameSec) || gameSec <= 0) return;
       lookedRef.current += gameSec;
       setLookedGameSec(lookedRef.current);
       onGameSecondsRef.current(gameSec);

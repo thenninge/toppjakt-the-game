@@ -11,10 +11,11 @@
  * ## Error budget (must all participate in long-range P(hit))
  *
  * 1. **POA** — Where the reticle actually was when the shot broke
- *    (shooter wobble, focus/breath, bipod/can calm, BODY/MIND fatigue,
+ *    (shooter wobble, focus/breath, bipod/can calm, BODY fatigue → less calm,
  *    trigger-break quality vs the F-rolled mark on the 3 s bar).
- * 2. **Angular dispersion** — Gaussian rifle + ammo (+ stock, affinity).
- *    Catalog MOA = N σ (default 2). See `dispersion.ts`.
+ * 2. **Angular dispersion** — Gaussian rifle + ammo (+ stock, affinity),
+ *    scaled up to 2× by MIND fatigue. Catalog MOA = N σ (default 2).
+ *    See `dispersion.ts`.
  * 3. **v0 variation** — Per-shot muzzle velocity SD → drop / TOF error
  *    (small at 100 m, critical at long range).
  * 4. **Wind** — True live crosswind vs what the player *believes*

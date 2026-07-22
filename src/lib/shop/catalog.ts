@@ -260,6 +260,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     thermal: {
       pixelFactor: 6,
       magnification: 2.8,
+      timeFactor: 20,
     },
   },
   {
@@ -272,6 +273,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     thermal: {
       pixelFactor: 3,
       magnification: 3.5,
+      timeFactor: 30,
       hasIntegratedLrf: true,
       rangeErrorPercent: 1.5,
     },

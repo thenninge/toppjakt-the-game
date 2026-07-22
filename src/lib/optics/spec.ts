@@ -62,6 +62,11 @@ export type ThermalSpec = {
   pixelFactor: number;
   /** Digital / optical zoom factor for panning FOV. */
   magnification: number;
+  /**
+   * Real→game time multiplier while spotting in thermal (also drains battery).
+   * Budget ≈ 20×; premium ≈ 30× (burns clock faster — observe efficiently).
+   */
+  timeFactor?: number;
   /** Built-in laser rangefinder (e.g. Condor CQ35 LRF). */
   hasIntegratedLrf?: boolean;
   /** Symmetric LRF error band when {@link hasIntegratedLrf}. */

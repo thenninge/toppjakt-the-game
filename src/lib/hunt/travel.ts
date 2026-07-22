@@ -149,6 +149,7 @@ export function formatHuntClock(absoluteMinutes: number): string {
 /** Minutes since local 00:00 (0…1439), wrapping multi-day absolute clocks. */
 export function huntTimeOfDayMinutes(absoluteMinutes: number): number {
   const day = 24 * 60;
+  if (!Number.isFinite(absoluteMinutes)) return HUNT_DAY_START_MINUTES;
   return ((Math.floor(absoluteMinutes) % day) + day) % day;
 }
 
@@ -185,6 +186,7 @@ export function isAtParking(
 
 /** Game minutes from current time until next 08:00. */
 export function minutesUntilDawn(absoluteMinutes: number): number {
+  if (!Number.isFinite(absoluteMinutes)) return 1;
   const day = 24 * 60;
   const tod = huntTimeOfDayMinutes(absoluteMinutes);
   // Already in skuddlys window.

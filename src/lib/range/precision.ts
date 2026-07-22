@@ -362,16 +362,21 @@ export function triggerPullOffsetMm(
 
 /**
  * How hard physical fatigue (BODY empty → 1) cuts hold steadiness.
- * At 1.0 physical fatigue, calm is multiplied by (1 − this).
+ * At 1.0 physical fatigue, calm is multiplied by (1 − this) → −50% calm.
  */
-export const PHYSICAL_FATIGUE_CALM_PENALTY = 0.55;
+export const PHYSICAL_FATIGUE_CALM_PENALTY = 0.5;
 /**
- * How hard mental fatigue (MIND empty → 1) cuts hold steadiness.
- * At 1.0 mental fatigue, calm is multiplied by (1 − this).
+ * @deprecated Mental fatigue no longer cuts calm — it widens MOA instead.
+ * Kept so old docs/callers don't break; {@link fatigueCalmFactor} ignores MIND.
  */
-export const MENTAL_FATIGUE_CALM_PENALTY = 0.4;
-/** Floor so wobble never explodes if both bars are empty. */
-export const FATIGUE_CALM_FLOOR = 0.25;
+export const MENTAL_FATIGUE_CALM_PENALTY = 0;
+/** Floor so wobble never explodes if BODY is empty and gear calm is low. */
+export const FATIGUE_CALM_FLOOR = 0.2;
+/**
+ * At 1.0 mental fatigue (MIND empty), rifle+ammo envelope is scaled by this
+ * (e.g. 0.4 MOA setup → 0.8 MOA). Linear from 1 at fresh MIND.
+ */
+export const MENTAL_FATIGUE_DISPERSION_MAX_MULT = 2;
 
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
@@ -386,15 +391,27 @@ export type ShooterFatigueInput = {
 };
 
 /**
- * Calm multiplier from BODY/MIND fatigue (higher fatigue → lower calm → more shake).
- * Fresh hunter → 1. Both bars empty → ≈ {@link FATIGUE_CALM_FLOOR}.
+ * Calm multiplier from BODY fatigue (higher fatigue → lower calm → more shake).
+ * Fresh → 1. BODY empty → 0.5 (−50% calm). MIND does not affect calm.
  */
 export function fatigueCalmFactor(fatigue: ShooterFatigueInput = {}): number {
   const physical = clamp01(fatigue.physicalFatigue ?? 0);
-  const mental = clamp01(fatigue.mentalFatigue ?? 0);
   const physicalMult = 1 - physical * PHYSICAL_FATIGUE_CALM_PENALTY;
-  const mentalMult = 1 - mental * MENTAL_FATIGUE_CALM_PENALTY;
-  return Math.max(FATIGUE_CALM_FLOOR, physicalMult * mentalMult);
+  return Math.max(FATIGUE_CALM_FLOOR, physicalMult);
+}
+
+/**
+ * Angular envelope scale from MIND fatigue.
+ * Fresh → 1. MIND empty → {@link MENTAL_FATIGUE_DISPERSION_MAX_MULT} (2×).
+ */
+export function fatigueDispersionFactor(
+  fatigue: ShooterFatigueInput | number = {},
+): number {
+  const mental =
+    typeof fatigue === "number"
+      ? clamp01(fatigue)
+      : clamp01(fatigue.mentalFatigue ?? 0);
+  return 1 + mental * (MENTAL_FATIGUE_DISPERSION_MAX_MULT - 1);
 }
 
 export function wobbleAmplitudeMm(

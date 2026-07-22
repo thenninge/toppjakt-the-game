@@ -118,6 +118,7 @@ import { pickShotVideoForResult } from "@/lib/hunt/vids";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
 import {
   DEFAULT_BINOS_MAGNIFICATION,
+  SPOT_TIME_FACTOR_THERMAL,
   THERMAL_BATTERY_GAME_MINUTES,
 } from "@/lib/hunt/images";
 import {
@@ -393,6 +394,12 @@ export function HuntMapView({
     : null;
   const thermalMagnification = thermalItem?.thermal.magnification ?? 3;
   const thermalPixelFactor = thermalItem?.thermal.pixelFactor ?? 10;
+  const thermalTimeFactor = (() => {
+    const raw = thermalItem?.thermal.timeFactor;
+    return Number.isFinite(raw) && (raw as number) > 0
+      ? (raw as number)
+      : SPOT_TIME_FACTOR_THERMAL;
+  })();
   const thermalLrfSpec = useMemo(() => {
     if (!thermalItem?.thermal.hasIntegratedLrf) return null;
     return {
@@ -466,15 +473,21 @@ export function HuntMapView({
   );
 
   function syncClockFromRef() {
+    const sec = clockSecondsRef.current;
+    if (!Number.isFinite(sec)) {
+      clockSecondsRef.current = HUNT_DAY_START_MINUTES * 60;
+    }
     setClockMinutes(Math.floor(clockSecondsRef.current / 60));
   }
 
   function advanceClockMinutes(deltaMin: number) {
+    if (!Number.isFinite(deltaMin)) return;
     clockSecondsRef.current += deltaMin * 60;
     syncClockFromRef();
   }
 
   function addGameSeconds(sec: number) {
+    if (!Number.isFinite(sec) || sec === 0) return;
     clockSecondsRef.current += sec;
     syncClockFromRef();
   }
@@ -1868,6 +1881,7 @@ export function HuntMapView({
         lrfSpec={lrfSpec}
         thermalMagnification={thermalMagnification}
         thermalPixelFactor={thermalPixelFactor}
+        thermalTimeFactor={thermalTimeFactor}
         thermalLrfSpec={thermalLrfSpec}
         clockMinutes={clockMinutes}
         hasBinos={hasBinos}
@@ -1878,6 +1892,9 @@ export function HuntMapView({
         thermalBatteryGameSec={thermalBatteryGameSec}
         thermalBatteryMaxGameSec={thermalBatteryMaxGameSec}
         onThermalBatteryDrain={(wantGameSec) => {
+          if (!Number.isFinite(wantGameSec) || wantGameSec <= 0) {
+            return thermalBatteryGameSecRef.current;
+          }
           const next = Math.max(
             0,
             thermalBatteryGameSecRef.current - wantGameSec,

@@ -471,6 +471,9 @@ export function PikeProShop({
                 {thermal ? (
                   <span className="shop-row-ballistics">
                     {thermal.magnification}× · pixel {thermal.pixelFactor}
+                    {thermal.timeFactor != null
+                      ? ` · tid ×${thermal.timeFactor}`
+                      : ""}
                     {thermal.hasIntegratedLrf
                       ? ` · LRF ±${thermal.rangeErrorPercent ?? "?"}%`
                       : " · kun termisk"}

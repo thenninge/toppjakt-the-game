@@ -59,11 +59,17 @@ export type DispersionInput = {
   affinity: number;
   /** Negative = tighter (CB Customs bedding / søylebedding). */
   customsMoaDelta?: number;
+  /**
+   * Multiplier on the combined envelope (mental fatigue: 1 = fresh, 2 = exhausted).
+   * Applied after rifle+ammo+stock+customs.
+   */
+  dispersionScale?: number;
 };
 
 /**
  * Combined angular envelope in MOA (the N-σ figure from catalog terms).
- * rifle + (ammo × affinity) + stock delta + customs bedding.
+ * rifle + (ammo × affinity) + stock delta + customs bedding,
+ * then optional {@link DispersionInput.dispersionScale} (e.g. MIND fatigue).
  */
 export function combinedDispersionMoa(input: DispersionInput): number {
   const ammoMoa = Math.max(0, input.ammo.maxAchievableMoa) * input.affinity;
@@ -74,7 +80,11 @@ export function combinedDispersionMoa(input: DispersionInput): number {
   if (input.customsMoaDelta) {
     moa += input.customsMoaDelta;
   }
-  return Math.max(0.05, moa);
+  const scale =
+    input.dispersionScale != null && Number.isFinite(input.dispersionScale)
+      ? Math.max(1, input.dispersionScale)
+      : 1;
+  return Math.max(0.05, moa * scale);
 }
 
 /** 1σ angular dispersion (MOA) from the combined N-σ envelope. */
