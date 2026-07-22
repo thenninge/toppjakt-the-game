@@ -1429,6 +1429,56 @@ body {
   overflow: hidden;
 }
 
+/* Standard compass — top of the spotting frame (always equipped). */
+.spot-compass {
+  position: absolute;
+  top: 0.45rem;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  transform: translateX(-50%);
+  padding: 0.28rem 0.7rem;
+  border: 1px solid rgba(196, 165, 116, 0.45);
+  border-radius: 2px;
+  background: rgba(10, 8, 6, 0.78);
+  color: rgba(245, 230, 200, 0.95);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+.spot-compass-caption {
+  color: rgba(196, 165, 116, 0.75);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+}
+
+.spot-compass-needle {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 0.32rem solid transparent;
+  border-right: 0.32rem solid transparent;
+  border-bottom: 0.85rem solid var(--accent-gold);
+  filter: drop-shadow(0 1px 1px #000);
+  transform-origin: 50% 65%;
+}
+
+.spot-compass-dir {
+  font-weight: 700;
+  color: var(--accent-gold);
+  font-size: 0.9rem;
+}
+
+.spot-compass-deg {
+  color: rgba(245, 230, 200, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
 .spot-eyes-img {
   display: block;
   width: 100%;
@@ -2391,8 +2441,18 @@ body {
 
 .walk-view-copy .intro-gift,
 .walk-view-copy .intro-line,
-.walk-view-copy .shop-row-note {
+.walk-view-copy .shop-row-note,
+.walk-view-copy .walk-view-highlight {
   margin: 0;
+}
+
+.walk-view-highlight {
+  color: var(--accent-gold);
+  font-size: clamp(1.35rem, 4vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
 }
 
 .walk-view-clock {

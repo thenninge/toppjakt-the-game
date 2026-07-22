@@ -677,17 +677,38 @@ export function flushAllBirdsFromCell(
   return { birds: next, flushedCount: here.length };
 }
 
+/** Norwegian compass name for flush direction (N → nord, SW → sørvest, …). */
+export function flushDirectionNb(direction: FlushDirection): string {
+  const labels: Record<FlushDirection, string> = {
+    N: "nord",
+    NE: "nordøst",
+    E: "øst",
+    SE: "sørøst",
+    S: "sør",
+    SW: "sørvest",
+    W: "vest",
+    NW: "nordvest",
+  };
+  return labels[direction];
+}
+
+/** Short splash headline: "I retning SV — sørvest". */
+export function flushDirectionHeadline(event: FlushEvent): string {
+  return `I retning ${event.direction} — ${flushDirectionNb(event.direction)}`;
+}
+
 export function flushMessage(event: FlushEvent): string {
   const species = event.species === "tiur" ? "Tiuren" : "Orrhanen";
+  const dir = flushDirectionHeadline(event);
   if (event.gone) {
     return (
-      "Fuglen er skremt igjen og borte for godt. " +
+      `${species} letter ${dir.toLowerCase()} — og er borte for godt. ` +
       "Du innser at du er en dårlig jeger og burde håndtert situasjonen bedre."
     );
   }
   return (
-    `Du hører vingeslag og ser opp. ${species} letter ` +
-    `(spook ${event.spookCount}/${MAX_SPOOKS_BEFORE_GONE}) i retning ${event.direction}. ` +
+    `Du hører vingeslag og ser opp. ${species} letter ${dir.toLowerCase()} ` +
+    `(spook ${event.spookCount}/${MAX_SPOOKS_BEFORE_GONE}). ` +
     `Én spook til og den er borte.`
   );
 }

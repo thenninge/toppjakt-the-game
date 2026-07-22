@@ -16,6 +16,8 @@ import {
   measureDistanceWithLrf,
   type LrfSpec,
 } from "@/lib/optics/spec";
+import { compassLabelFromDeg } from "@/lib/aware/ettersok";
+import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import { ThermalCanvas } from "@/components/hunt/ThermalCanvas";
 
@@ -34,6 +36,11 @@ type SpotViewProps = {
   imageSrc: string;
   /** Birds present in this cell, already placed in the landscape. */
   birdPlacements?: BirdVisualPlacement[];
+  /**
+   * Compass degrees the landscape faces (0 = N). Standard gear —
+   * always shown so the player can orient søk / skuddpar.
+   */
+  viewBearingDeg: number;
   /** Optical magnification of equipped binos (e.g. 10). */
   magnification?: number;
   /** LRF error model — required to range a bird. */
@@ -197,6 +204,7 @@ function clampPan(n: number): number {
 export function SpotView({
   imageSrc,
   birdPlacements = [],
+  viewBearingDeg,
   magnification = DEFAULT_BINOS_MAGNIFICATION,
   lrfSpec = null,
   thermalMagnification = 3,
@@ -223,6 +231,8 @@ export function SpotView({
       ? thermalTimeFactor
       : SPOT_TIME_FACTOR_THERMAL;
   const [mode, setMode] = useState<SpotMode>("eyes");
+  /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
+  const [landscapeReady, setLandscapeReady] = useState(false);
   const zoom = mode === "thermal" ? thermalZoom : binoZoom;
   const timeFactor = spotTimeFactor(mode, thermalFactor);
   const [lookedGameSec, setLookedGameSec] = useState(0);
@@ -260,6 +270,25 @@ export function SpotView({
     activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null,
   ) => void>(() => {});
   const activeLrfRef = useRef<Pick<LrfSpec, "rangeErrorPercent"> | null>(null);
+
+  // Landscape first — bird <img> tags must not decode before the photo, or they flash alone.
+  useEffect(() => {
+    let cancelled = false;
+    setLandscapeReady(false);
+    const img = new Image();
+    const markReady = () => {
+      if (!cancelled) setLandscapeReady(true);
+    };
+    img.addEventListener("load", markReady);
+    img.addEventListener("error", markReady);
+    img.src = imageSrc;
+    if (img.complete && img.naturalWidth > 0) markReady();
+    return () => {
+      cancelled = true;
+      img.removeEventListener("load", markReady);
+      img.removeEventListener("error", markReady);
+    };
+  }, [imageSrc]);
 
   useEffect(() => {
     let last = performance.now();
@@ -455,6 +484,7 @@ export function SpotView({
   }
 
   function fireLrf(activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null) {
+    if (!landscapeReady) return;
     const visible = birdPlacements.filter((p) =>
       visibleInSpotMode(p.distanceM, mode),
     );
@@ -490,6 +520,8 @@ export function SpotView({
   const visibleBirds = birdPlacements.filter((p) =>
     visibleInSpotMode(p.distanceM, mode),
   );
+  /** Never mount bird sprites until the landscape has painted. */
+  const birdsOnFrame = landscapeReady ? visibleBirds : [];
 
   const activeLrf =
     mode === "thermal" && thermalLrfSpec
@@ -503,7 +535,8 @@ export function SpotView({
 
   /** Eyes always; binos only without LRF reticle. Never with LRF / thermal. */
   const birdClickEnabled =
-    mode === "eyes" || (mode === "binos" && !showLrf);
+    landscapeReady &&
+    (mode === "eyes" || (mode === "binos" && !showLrf));
 
   function onBirdClick(placement: BirdVisualPlacement) {
     if (!birdClickEnabled) return;
@@ -516,7 +549,7 @@ export function SpotView({
     if (rect.width <= 0 || rect.height <= 0) return;
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
     const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-    const hit = findBirdNearPoint(visibleBirds, xPct, yPct);
+    const hit = findBirdNearPoint(birdsOnFrame, xPct, yPct);
     if (hit) onBirdClick(hit);
   }
 
@@ -528,6 +561,15 @@ export function SpotView({
         : "Spotting med øynene";
 
   const isOpticMode = mode === "binos" || mode === "thermal";
+
+  /**
+   * Live look direction: optic centre = pan.x in landscape %;
+   * eyes = full frame centre (same as sticky view bearing).
+   */
+  const lookXPct = isOpticMode ? pan.x : 50;
+  const lookBearingDeg = bearingFromSpotFrame(viewBearingDeg, lookXPct);
+  const lookBearing = ((Math.round(lookBearingDeg) % 360) + 360) % 360;
+  const lookCompass = compassLabelFromDeg(lookBearing);
 
   /** Same % coordinate system for eyes / binos / thermal. */
   const worldStyle = {
@@ -659,6 +701,20 @@ export function SpotView({
         onPointerCancel={onPointerUp}
         onClick={onFrameClick}
       >
+        <div
+          className="spot-compass"
+          role="img"
+          aria-label={`Kompass — ser mot ${lookCompass} (${lookBearing}°)`}
+        >
+          <span className="spot-compass-caption">Ser mot</span>
+          <span
+            className="spot-compass-needle"
+            style={{ transform: `rotate(${lookBearing}deg)` }}
+            aria-hidden
+          />
+          <span className="spot-compass-dir">{lookCompass}</span>
+          <span className="spot-compass-deg">{lookBearing}°</span>
+        </div>
         {mode === "eyes" ? (
           <>
             <div className="spot-binos-world" style={eyesWorldStyle}>
@@ -667,8 +723,9 @@ export function SpotView({
                 alt="Landskap"
                 className="spot-binos-world-img"
                 draggable={false}
+                onLoad={() => setLandscapeReady(true)}
               />
-              {visibleBirds.map((p) => (
+              {birdsOnFrame.map((p) => (
                 <BirdOverlay
                   key={p.birdId}
                   placement={p}
@@ -685,8 +742,9 @@ export function SpotView({
                 alt=""
                 className="spot-binos-world-img"
                 draggable={false}
+                onLoad={() => setLandscapeReady(true)}
               />
-              {visibleBirds.map((p) => (
+              {birdsOnFrame.map((p) => (
                 <BirdOverlay
                   key={p.birdId}
                   placement={p}
@@ -706,11 +764,12 @@ export function SpotView({
           <>
             <ThermalCanvas
               imageSrc={imageSrc}
-              birdPlacements={visibleBirds}
+              birdPlacements={birdsOnFrame}
               pan={pan}
               zoom={zoom}
               pixelFactor={thermalPixelFactor}
               className="spot-thermal-canvas"
+              onLandscapeReady={() => setLandscapeReady(true)}
             />
             <div className="spot-thermal-scanlines" aria-hidden />
             {showLrf ? (
@@ -724,7 +783,7 @@ export function SpotView({
       </div>
       {mode === "eyes" ? (
         <p className="spot-binos-hint">
-          Rød og lilla fugler er synlige med øynene — klikk på fuglen for å låse
+          Kompass øverst viser retning — rød/lilla fugl: klikk for å låse
         </p>
       ) : null}
       {mode === "binos" ? (

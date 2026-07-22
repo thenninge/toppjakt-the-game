@@ -2379,6 +2379,15 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   // --- Misc kult kit (rest) ---
   // Every misc item: weightGrams + misc.enduranceGrams (felt ≈ weight − endurance).
   {
+    id: "misc-suunto-a-10",
+    category: "misc",
+    brand: "Suunto",
+    name: "A-10 Speilkompass",
+    priceNok: 0,
+    note: "Standard i kit (gratis) — retning i spotting. Billig og nødvendig for søk/skuddpar uten kamera.",
+    misc: { enduranceGrams: 0 },
+  },
+  {
     id: "misc-sittpute-biltema",
     category: "misc",
     brand: "Biltema",

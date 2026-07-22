@@ -170,6 +170,7 @@ export const STARTER_HUNT_LOADOUT_IDS = [
   "misc-thermos-jula",
   "misc-sittpute-biltema",
   "misc-triggercam",
+  "misc-suunto-a-10",
   "camo-pinewood-lappland",
   "camo-buff-autumn-realtree",
   "camo-beanie-forest-swedteam",

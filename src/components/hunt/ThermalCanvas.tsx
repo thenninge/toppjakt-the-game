@@ -10,6 +10,8 @@ type ThermalCanvasProps = {
   /** Higher = blockier (poorer sensor). */
   pixelFactor: number;
   className?: string;
+  /** Fired once the landscape bitmap is ready (birds may then be drawn). */
+  onLandscapeReady?: () => void;
 };
 
 /** Map landscape luminance to flat B&W thermal gray. */
@@ -30,10 +32,13 @@ export function ThermalCanvas({
   zoom,
   pixelFactor,
   className,
+  onLandscapeReady,
 }: ThermalCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const sampleRef = useRef<ImageData | null>(null);
+  const onLandscapeReadyRef = useRef(onLandscapeReady);
+  onLandscapeReadyRef.current = onLandscapeReady;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -147,8 +152,12 @@ export function ThermalCanvas({
     const img = new Image();
     img.src = imageSrc;
     imgRef.current = img;
-    const onLoad = () => draw();
+    const onLoad = () => {
+      onLandscapeReadyRef.current?.();
+      draw();
+    };
     img.addEventListener("load", onLoad);
+    if (img.complete && img.naturalWidth > 0) onLoad();
     return () => img.removeEventListener("load", onLoad);
   }, [imageSrc, draw]);
 

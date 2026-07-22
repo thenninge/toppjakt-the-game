@@ -163,6 +163,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-weatherflow-weathermeter": 70,
   "misc-clas-ohlson-anemometer": 95,
   "misc-garmin-foretrex-801": 88,
+  "misc-suunto-a-10": 48,
   "misc-sittpute-biltema": 120,
   "misc-thermos-jula": 380,
   "misc-nightcore-nu21": 68,

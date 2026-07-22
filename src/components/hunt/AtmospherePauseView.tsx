@@ -6,6 +6,8 @@ import { formatHuntClock } from "@/lib/hunt/travel";
 type AtmospherePauseViewProps = {
   imageSrc: string;
   title: string;
+  /** Large emphasis line under the title (e.g. flight direction). */
+  highlight?: string;
   subtitle?: string;
   durationMinutes: number;
   /** Clock when the pause started. */
@@ -29,6 +31,7 @@ function animDurationMs(durationMinutes: number): number {
 export function AtmospherePauseView({
   imageSrc,
   title,
+  highlight,
   subtitle,
   durationMinutes,
   clockMinutes,
@@ -97,6 +100,9 @@ export function AtmospherePauseView({
         <div className="walk-view-veil" aria-hidden />
         <div className="walk-view-copy">
           <p className="intro-line intro-gift">{title}</p>
+          {highlight ? (
+            <p className="walk-view-highlight">{highlight}</p>
+          ) : null}
           {subtitle ? <p className="intro-line">{subtitle}</p> : null}
           <p className="shop-row-note walk-view-clock">
             Kl {formatHuntClock(displayMinutes)}

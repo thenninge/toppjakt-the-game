@@ -99,6 +99,7 @@ import {
   bindBirdsToSpotImage,
   birdsInCell,
   flushAllBirdsFromCell,
+  flushDirectionHeadline,
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
   pickFluktImage,
@@ -116,6 +117,7 @@ import {
   TRIGGERCAM_ITEM_ID,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
+import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { pickShotVideoForResult } from "@/lib/hunt/vids";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
 import {
@@ -210,7 +212,17 @@ type WalkSession = {
 type SpotCellLayout = {
   imageSrc: string;
   placements: BirdVisualPlacement[];
+  /**
+   * Compass degrees the landscape faces (0 = N). Sticky with the photo
+   * so spotting → Aware / ettersøk share the same general direction.
+   */
+  viewBearingDeg: number;
 };
+
+/** Roll a stable 8-wind view bearing for a new spot landscape. */
+function rollSpotViewBearingDeg(random: () => number = Math.random): number {
+  return Math.floor(random() * 8) * 45;
+}
 
 /** Live-bird nerve — may run hidden in Spot before discovery. */
 type BirdEncounter = {
@@ -236,6 +248,8 @@ type BirdMapContact = {
 type SpotSession = {
   imageSrc: string;
   birdPlacements: BirdVisualPlacement[];
+  /** Landscape facing — shown on the spotting compass. */
+  viewBearingDeg: number;
 };
 
 type ShootSession = {
@@ -777,28 +791,7 @@ export function HuntMapView({
           birdEncounterRef.current = null;
           setBirdEncounter(null);
         }
-        if (spotOpen) {
-          setSpotSession((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  birdPlacements: prev.birdPlacements.filter(
-                    (p) => p.birdId !== birdId,
-                  ),
-                }
-              : null,
-          );
-        }
-        if (!result.event) {
-          setLog("Fuglen ble for nervøs — den letter.");
-          setPanel("arrived");
-        } else {
-          if (result.event.gone) {
-            setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
-          }
-          setFlushQueue([result.event]);
-          setLog(`Fuglen ble for nervøs — ${flushMessage(result.event)}`);
-        }
+        queueNervousFlush(result.event);
         return { nerve: tick.nerve, flushed: true as const };
       };
 
@@ -1051,6 +1044,28 @@ export function HuntMapView({
     }
   }
 
+  /**
+   * Nerve flush from Spot / Aware / Shoot — always leave encounter UIs and
+   * play the «Fuglen flyr» splash with flight direction.
+   */
+  function queueNervousFlush(event: FlushEvent | null) {
+    setSpotSession(null);
+    setAwareSession(null);
+    setShootSession(null);
+    setBirdEncounter(null);
+    birdEncounterRef.current = null;
+    if (!event) {
+      setLog("Fuglen ble for nervøs — den letter.");
+      setPanel("arrived");
+      return;
+    }
+    if (event.gone) {
+      setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
+    }
+    setFlushQueue([event]);
+    setLog(`Fuglen ble for nervøs — ${flushMessage(event)}`);
+  }
+
   function seedLatentSpotNerve(
     placements: BirdVisualPlacement[],
     birdList: HuntBird[],
@@ -1110,9 +1125,12 @@ export function HuntMapView({
     // Same landscape + same seats if still perched (spooked birds drop out).
     if (cachedOk && cachedOk.imageSrc === imageSrc) {
       const sticky = cachedOk.placements.filter((p) => hereIds.has(p.birdId));
+      const viewBearingDeg = Number.isFinite(cachedOk.viewBearingDeg)
+        ? cachedOk.viewBearingDeg
+        : rollSpotViewBearingDeg();
       setSpotLayoutByCell((prev) => ({
         ...prev,
-        [cellKey]: { imageSrc, placements: sticky },
+        [cellKey]: { imageSrc, placements: sticky, viewBearingDeg },
       }));
       const syncedBirds = birds.map((b) => {
         const p = sticky.find((x) => x.birdId === b.id);
@@ -1123,22 +1141,25 @@ export function HuntMapView({
       setSpotSession({
         imageSrc,
         birdPlacements: sticky,
+        viewBearingDeg,
       });
       return;
     }
 
+    const viewBearingDeg = rollSpotViewBearingDeg();
     const bound = bindBirdsToSpotImage(birds, pos, imageSrc, {
       fillAllPerches: false,
     });
     setSpotLayoutByCell((prev) => ({
       ...prev,
-      [cellKey]: { imageSrc, placements: bound.placements },
+      [cellKey]: { imageSrc, placements: bound.placements, viewBearingDeg },
     }));
     setBirds(bound.birds);
     seedLatentSpotNerve(bound.placements, bound.birds);
     setSpotSession({
       imageSrc,
       birdPlacements: bound.placements,
+      viewBearingDeg,
     });
   }
 
@@ -1206,6 +1227,10 @@ export function HuntMapView({
     }
     const forfeitNote = forfeitUncommittedShotPairs();
     const imageSrc = spotSession?.imageSrc ?? pickSpotImage();
+    const viewBearingDeg =
+      spotSession?.viewBearingDeg ??
+      spotLayoutByCell[`${pos.row},${pos.col}`]?.viewBearingDeg ??
+      rollSpotViewBearingDeg();
     if (spotSession?.imageSrc) {
       const cellKey = `${pos.row},${pos.col}`;
       setSpotLayoutByCell((prev) => {
@@ -1216,6 +1241,7 @@ export function HuntMapView({
           [cellKey]: {
             imageSrc: spotSession.imageSrc,
             placements: spotSession.birdPlacements,
+            viewBearingDeg,
           },
         };
       });
@@ -1230,8 +1256,10 @@ export function HuntMapView({
       : info.measuredDistanceM;
     const birdId = info.placement.birdId;
     const prior = birdMapContacts[birdId];
-    // Same bird → same Aware-map seat (bearing/pos); only first lock rolls random.
-    const birdBearing = prior?.bearingDeg ?? Math.random() * 360;
+    // Same bird → same Aware-map seat; first lock follows spotting compass + frame X.
+    const birdBearing =
+      prior?.bearingDeg ??
+      bearingFromSpotFrame(viewBearingDeg, info.placement.x);
     const birdPos =
       prior?.birdPos ?? birdMarkerOnAwareMap(measured, birdBearing);
     if (!prior) {
@@ -1470,17 +1498,7 @@ export function HuntMapView({
       delete next[id];
       return next;
     });
-    setAwareSession(null);
-    setBirdEncounter(null);
-    if (!result.event) {
-      setPanel("arrived");
-      return;
-    }
-    if (result.event.gone) {
-      setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
-    }
-    setFlushQueue([result.event]);
-    setLog(flushMessage(result.event));
+    queueNervousFlush(result.event);
   }
 
   function abortShoot() {
@@ -2112,13 +2130,14 @@ export function HuntMapView({
       <AtmospherePauseView
         key={flushCurrent.birdId}
         imageSrc={flushCurrent.imageSrc}
-        title="Flukt!"
+        title="Fuglen flyr!"
+        highlight={flushDirectionHeadline(flushCurrent)}
         subtitle={flushMessage(flushCurrent)}
         durationMinutes={2}
         holdMs={5000}
         clockMinutes={clockMinutes}
         onContinue={finishFlush}
-        ariaLabel="Fugl fløy"
+        ariaLabel="Fuglen flyr"
       />
     );
   }
@@ -2304,18 +2323,7 @@ export function HuntMapView({
             delete next[id];
             return next;
           });
-          setShootSession(null);
-          setBirdEncounter(null);
-          if (!result.event) {
-            setLog("Fuglen ble for nervøs — den letter.");
-            setPanel("arrived");
-            return;
-          }
-          if (result.event.gone) {
-            setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
-          }
-          setFlushQueue([result.event]);
-          setLog(`Fuglen ble for nervøs — ${flushMessage(result.event)}`);
+          queueNervousFlush(result.event);
         }}
         onNerveChange={(nerve) => {
           setBirdEncounter((prev) => {
@@ -2387,6 +2395,7 @@ export function HuntMapView({
       <SpotView
         imageSrc={spotSession.imageSrc}
         birdPlacements={spotSession.birdPlacements}
+        viewBearingDeg={spotSession.viewBearingDeg}
         magnification={binosMagnification}
         lrfSpec={lrfSpec}
         thermalMagnification={thermalMagnification}
