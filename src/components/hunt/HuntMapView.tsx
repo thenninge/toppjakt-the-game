@@ -434,7 +434,12 @@ export function HuntMapView({
     null,
   );
   const [birds, setBirds] = useState<HuntBird[]>(() =>
-    map ? spawnTiurOnMap(map, tiurSpawnCount) : [],
+    map
+      ? spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
+          tiurRating: terrain?.tiurRating,
+          orrhaneRating: terrain?.orrhaneRating,
+        })
+      : [],
   );
   const birdsRef = useRef(birds);
   birdsRef.current = birds;
@@ -544,6 +549,10 @@ export function HuntMapView({
     () => kitItems.some((i) => i.id === TRIGGERCAM_ITEM_ID),
     [kitItems],
   );
+  const hasSuppressor = useMemo(
+    () => kitItems.some((i) => i.category === "suppressor"),
+    [kitItems],
+  );
 
   function syncClockFromRef() {
     const sec = clockSecondsRef.current;
@@ -589,11 +598,16 @@ export function HuntMapView({
     setForcedRest(null);
     setForcedCamp(null);
     setCampOvernight(null);
-    setBirds(spawnTiurOnMap(map, tiurSpawnCount));
+    setBirds(
+      spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
+        tiurRating: terrain?.tiurRating,
+        orrhaneRating: terrain?.orrhaneRating,
+      }),
+    );
     setFlushQueue([]);
     pendingForcedRestRef.current = false;
     setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.");
-  }, [terrainId, map, tiurSpawnCount]);
+  }, [terrainId, map, tiurSpawnCount, terrain?.tiurRating, terrain?.orrhaneRating]);
 
   useEffect(() => {
     saveShotPairsForTerrain(terrainId, shotPairs);
@@ -1822,8 +1836,8 @@ export function HuntMapView({
       birds: nextBirds,
       cell: pos,
       map,
-      resultKind: result.kind,
       excludeBirdId: isContact ? id : undefined,
+      hasSuppressor,
     });
     nextBirds = flush.birds;
     setBirds(nextBirds);
@@ -1859,15 +1873,13 @@ export function HuntMapView({
     }
 
     const stayNote =
-      result.kind === "ettersok"
-        ? flush.flushedIds.length > 0
-          ? ` Alle andre fugler i ruta letter (ettersøk).`
-          : ""
-        : flush.stayedIds.length > 0
-          ? ` ${flush.stayedIds.length === 1 ? "Én fugl" : `${flush.stayedIds.length} fugler`} kan ha blitt sittende.`
-          : flush.flushedIds.length > 0
-            ? " De andre letter."
-            : "";
+      flush.stayedIds.length > 0
+        ? ` ${flush.stayedIds.length === 1 ? "Én fugl" : `${flush.stayedIds.length} fugler`} ble sittende${hasSuppressor ? " (lyddemper)" : ""}.`
+        : flush.flushedIds.length > 0
+          ? hasSuppressor
+            ? " Fuglene i ruta letter (lyddemper demper litt — ikke nok)."
+            : " Fuglene i ruta letter av skuddlyden."
+          : "";
 
     if (isContact) {
       const recoveryOnly =

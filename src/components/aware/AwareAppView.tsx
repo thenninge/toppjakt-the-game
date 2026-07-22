@@ -54,6 +54,7 @@ import {
 import {
   ETTERSOK_MINUTES_PER_TRACK_POINT,
   MINUTES_PER_100M,
+  TREE_RECOVERY_MINUTES_PER_100M,
   ettersokMinutesForSearch,
   formatHuntClock,
   treeRecoveryMinutes,
@@ -344,7 +345,7 @@ export function AwareAppView({
       pair?.resultKind === "instant_kill" ||
       pair?.resultKind === "vital_kill"
     ) {
-      return `Hent/søk — drept fugl i treet. Trykk «Hent ved treet» (${treeRecoveryMinutes(pair.distanceM)} min · 10 min/100 m).`;
+      return `Hent/søk — drept fugl i treet. Trykk «Hent ved treet» (${treeRecoveryMinutes(pair.distanceM)} min · ${TREE_RECOVERY_MINUTES_PER_100M} min/100 m).`;
     }
     if (pair?.resultKind === "ettersok" && pair.fleeObservation) {
       return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt + ${MINUTES_PER_100M} min/100 m), deretter utfør ettersøk.`;
@@ -1330,8 +1331,8 @@ export function AwareAppView({
                       <p className="shop-row-note">
                         Drept fugl i treet. Gå ut og hent den —{" "}
                         {treeRecoveryMinutes(activePair.distanceM)} min (
-                        {MINUTES_PER_100M} min/100 m · {activePair.distanceM}{" "}
-                        m).
+                        {TREE_RECOVERY_MINUTES_PER_100M} min/100 m ·{" "}
+                        {activePair.distanceM} m).
                       </p>
                       <button
                         type="button"

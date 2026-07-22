@@ -82,10 +82,30 @@ export const TIUR_SPAWN_COUNT = 20;
 export const FLUKT_IMAGES = ["/images/birds/flukt/flukt1.png"] as const;
 
 /**
- * After a shot: chance each remaining bird in the cell stays perched
- * (miss, or other birds when several shared the tree).
+ * After a shot: chance each bird in the cell stays perched.
+ * Without suppressor most fly (95%); with suppressor more stay (85% fly).
  */
-export const POST_SHOT_STAY_CHANCE = 0.15;
+export const POST_SHOT_FLUSH_CHANCE_OPEN = 0.95;
+export const POST_SHOT_FLUSH_CHANCE_SUPPRESSED = 0.85;
+
+/** @deprecated Use postShotStayChance(hasSuppressor). */
+export const POST_SHOT_STAY_CHANCE = 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED;
+
+/** Chance a second bird of the same species shares the cell on spawn. */
+export const TIUR_COMPANION_CHANCE = 0.2;
+export const ORRHANE_COMPANION_CHANCE = 0.4;
+
+export function postShotStayChance(hasSuppressor: boolean): number {
+  return hasSuppressor
+    ? 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED
+    : 1 - POST_SHOT_FLUSH_CHANCE_OPEN;
+}
+
+export function companionChanceForSpecies(species: BirdSpecies): number {
+  return species === "orrhane"
+    ? ORRHANE_COMPANION_CHANCE
+    : TIUR_COMPANION_CHANCE;
+}
 
 /** @deprecated Prefer pickBirdSpriteId + getBirdSprite. */
 export const TIUR_TOPP_IMAGES = [
@@ -261,13 +281,18 @@ export function relocateBirdCell(
 }
 
 /**
- * Spawn `count` tiur across the map. Several birds may share a cell.
- * Always places one on the start cell (parking) for visual placement testing.
+ * Spawn birds across the map (tiur / orrhane mix from terrain ratings).
+ * Several birds may share a cell. Same-species companions:
+ * tiur +20 %, orrhane +40 %. Always places one on the start cell for testing.
  */
 export function spawnTiurOnMap(
   map: HuntMapAsset,
   count: number = TIUR_SPAWN_COUNT,
   random: () => number = Math.random,
+  opts?: {
+    tiurRating?: number;
+    orrhaneRating?: number;
+  },
 ): HuntBird[] {
   const birds: HuntBird[] = [];
   const startKey = cellKey(map.start);
@@ -279,26 +304,40 @@ export function spawnTiurOnMap(
     }
   }
 
-  // Guaranteed test bird on start (A7 on Trøndelag map).
-  birds.push({
-    id: "tiur-1",
-    species: "tiur",
-    cell: { ...map.start },
-    distanceM: rollBirdDistance(random),
-    spookCount: 0,
-  });
+  const tiurRating = Math.max(0, opts?.tiurRating ?? 3);
+  const orrhaneRating = Math.max(0, opts?.orrhaneRating ?? 2);
+  const speciesWeight = tiurRating + orrhaneRating;
 
-  if (cells.length === 0) return birds;
+  const pickSpecies = (): BirdSpecies => {
+    if (speciesWeight <= 0) return "tiur";
+    return random() < orrhaneRating / speciesWeight ? "orrhane" : "tiur";
+  };
 
-  for (let i = 1; i < count; i++) {
-    const pick = cells[Math.floor(random() * cells.length)]!;
+  let nextId = 1;
+  const pushBird = (species: BirdSpecies, cell: HuntGridCell) => {
     birds.push({
-      id: `tiur-${i + 1}`,
-      species: "tiur",
-      cell: { ...pick },
+      id: `${species}-${nextId++}`,
+      species,
+      cell: { ...cell },
       distanceM: rollBirdDistance(random),
       spookCount: 0,
     });
+  };
+
+  // Guaranteed test bird on start (A7 on Trøndelag map).
+  pushBird("tiur", { ...map.start });
+
+  if (cells.length === 0) return birds;
+
+  const primaryCount = Math.max(0, count - 1);
+  for (let i = 0; i < primaryCount; i++) {
+    const pick = cells[Math.floor(random() * cells.length)]!;
+    const species = pickSpecies();
+    pushBird(species, pick);
+    // Flocking: one optional companion of the same species (no chain).
+    if (random() < companionChanceForSpecies(species)) {
+      pushBird(species, pick);
+    }
   }
   return birds;
 }
@@ -619,23 +658,25 @@ export type PostShotFlushResult = {
 };
 
 /**
- * After a shot: remaining birds in `cell` either stay (15%) or fly away.
- * Ettersøk shot → every bird leaves (no stay).
+ * After a shot: every bird still in `cell` rolls stay vs flush.
+ * Without suppressor: 95 % fly. With suppressor: 85 % fly.
+ * Applies to the shot-at bird (on miss) and any companions in the cell.
  */
 export function applyPostShotBirdFlush(input: {
   birds: HuntBird[];
   cell: HuntGridCell;
   map: HuntMapAsset;
-  /** `ettersok` flushes everyone; otherwise each bird may stay. */
-  resultKind: string;
   /** Already-removed kill / ettersøk bird — skip if still present. */
   excludeBirdId?: string;
+  /** Kit has a suppressor on the rifle. */
+  hasSuppressor?: boolean;
   stayChance?: number;
   random?: () => number;
 }): PostShotFlushResult {
   const random = input.random ?? Math.random;
-  const stayChance = input.stayChance ?? POST_SHOT_STAY_CHANCE;
-  const forceFlushAll = input.resultKind === "ettersok";
+  const stayChance =
+    input.stayChance ??
+    postShotStayChance(!!input.hasSuppressor);
   let next = input.birds.map((b) => ({ ...b, cell: { ...b.cell } }));
   const stayedIds: string[] = [];
   const flushedIds: string[] = [];
@@ -647,7 +688,7 @@ export function applyPostShotBirdFlush(input: {
   );
 
   for (const bird of here) {
-    const stay = !forceFlushAll && random() < stayChance;
+    const stay = random() < stayChance;
     if (stay) {
       stayedIds.push(bird.id);
       continue;
