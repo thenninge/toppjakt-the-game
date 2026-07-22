@@ -305,6 +305,10 @@ body {
   background: linear-gradient(180deg, #8ec8a8 0%, #3d7a58 100%);
 }
 
+.hunt-stamina-bar-fill-bird {
+  background: linear-gradient(180deg, #e8a060 0%, #a04028 100%);
+}
+
 .hunt-stamina-bar-label {
   display: flex;
   flex-direction: column;

@@ -372,7 +372,7 @@ Samme «trykk»-familie som dårlig kamo og mye bevegelse. Fuglen akkumulerer ne
 
 Camcorder gir bedre ettersøk-cue (retning + landingsavstand) etter treff, men kan trigge flush hvis nerve allerede er høy.
 
-**Enviro / Lapua (skudd-HUD):** nerven fra Aware bæres inn. Mens Enviro-fanen er åpen går klokken ×5 (`ENVIRO_TIME_FACTOR`); nerve tickes videre med `tickEncounterNerve` (avstand + camo, still) **pluss** app-faffe (`ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC`) — ikke en egen nedtelling fra null. Flush ved `ENCOUNTER_NERVE.flushThreshold`.
+**Enviro / Lapua (skudd-HUD):** nerven fra Aware bæres inn. I hele skyte-view (Oversikt / Shooter / Enviro / Kestrel) tickes nerve med **samme still-rate som Aware** (`tickEncounterNerve` på real-tid, ikke bevegelse). Enviro-fanen alene kjører klokka ×5 (`ENVIRO_TIME_FACTOR`). «Back to Aware» returnerer til Aware med oppdatert nerve. Flush ved `ENCOUNTER_NERVE.flushThreshold`.
 
 Legacy snapshot-formel (range/HUD-placeholder):
 

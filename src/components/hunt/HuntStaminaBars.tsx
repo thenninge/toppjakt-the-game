@@ -5,7 +5,7 @@ import { clampFatigue } from "@/lib/hunt/travel";
 type StaminaBarProps = {
   label: string;
   value: number;
-  /** Optional fill color override (e.g. battery). */
+  /** Optional fill color override (e.g. battery / bird). */
   fillClassName?: string;
 };
 
@@ -52,15 +52,27 @@ type HuntStaminaBarsProps = {
    * Shown left of BODY when provided (kit has thermal).
    */
   thermalBattery?: number | null;
+  /**
+   * Bird nervousness 0–1 (1 = flush). Shown left of BATT/BODY after LRF/click lock.
+   */
+  birdNerve?: number | null;
 };
 
 export function HuntStaminaBars({
   physical,
   mental,
   thermalBattery = null,
+  birdNerve = null,
 }: HuntStaminaBarsProps) {
   return (
     <div className="hunt-stamina-bars" aria-label="Stamina">
+      {birdNerve != null ? (
+        <StaminaBar
+          label="BIRD"
+          value={birdNerve}
+          fillClassName="hunt-stamina-bar-fill-bird"
+        />
+      ) : null}
       {thermalBattery != null ? (
         <StaminaBar
           label="BATT"

@@ -94,6 +94,8 @@ type AwareAppViewProps = {
    * All player choices add on top of this baseline until flush.
    */
   initialBirdNerve?: number;
+  /** Camcorder already deployed (e.g. returning from shoot). */
+  initialCamcorderReady?: boolean;
   /** Has LRF — Shoot-tab still useful, but less critical. */
   hasLrf?: boolean;
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
@@ -110,6 +112,10 @@ type AwareAppViewProps = {
   onGameSeconds: (sec: number) => void;
   onProceedToShoot: (stance?: AwareShootStance) => void;
   onBirdFlushed: (nervousness: number) => void;
+  /** Live nerve for global HUD BIRD bar (0–cap). */
+  onNerveChange?: (nerve: number) => void;
+  /** Footer leave button label (default Back to Spot). */
+  abortLabel?: string;
   onAbort: () => void;
   /** Called when a skuddpar is confirmed found (tree / ettersøk). */
   onPairFound?: (pair: ShotPair) => void;
@@ -286,6 +292,7 @@ export function AwareAppView({
   initialBird = null,
   camoBirdSpot = 0.55,
   initialBirdNerve = 0,
+  initialCamcorderReady = false,
   hasLrf = false,
   ammo = null,
   hasKestrel = false,
@@ -299,6 +306,8 @@ export function AwareAppView({
   onGameSeconds,
   onProceedToShoot,
   onBirdFlushed,
+  onNerveChange,
+  abortLabel = "Back to Spot",
   onAbort,
   onPairFound,
 }: AwareAppViewProps) {
@@ -307,7 +316,7 @@ export function AwareAppView({
     focusPairId ? "track" : "aware",
   );
   const [scanned, setScanned] = useState(true);
-  const [camcorderReady, setCamcorderReady] = useState(false);
+  const [camcorderReady, setCamcorderReady] = useState(initialCamcorderReady);
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? { x: 50, y: 50 },
   );
@@ -357,6 +366,8 @@ export function AwareAppView({
   const nerveRef = useRef(
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, initialBirdNerve)),
   );
+  const onNerveChangeRef = useRef(onNerveChange);
+  onNerveChangeRef.current = onNerveChange;
   const moveHoldRef = useRef(0);
   const flushedRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -552,6 +563,7 @@ export function AwareAppView({
         });
         nerveRef.current = result.nerve;
         setNerve(result.nerve);
+        onNerveChangeRef.current?.(result.nerve);
         if (result.flushes) {
           flushedRef.current = true;
           onBirdFlushedRef.current(result.nerve);
@@ -823,6 +835,7 @@ export function AwareAppView({
       setNerve(next);
       setCamcorderReady(true);
     });
+    onNerveChangeRef.current?.(next);
     setStatus(
       next >= ENCOUNTER_NERVE.flushThreshold
         ? "Camcorder oppe — men fuglen er svært urolig (+20% nervøsitet)!"
@@ -1389,7 +1402,7 @@ export function AwareAppView({
             className="intro-button sheriff-secondary"
             onClick={onAbort}
           >
-            Avbryt
+            {abortLabel}
           </button>
           {focusPairId ? (
             <button

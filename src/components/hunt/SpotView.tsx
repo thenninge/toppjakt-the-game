@@ -637,7 +637,7 @@ export function SpotView({
               onDone({ mode, gameSeconds: lookedRef.current })
             }
           >
-            Done spotting
+            Done spotting/map
           </button>
         </div>
       </header>

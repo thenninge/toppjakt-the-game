@@ -74,7 +74,6 @@ import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import {
   ENCOUNTER_NERVE,
-  ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC,
   ENVIRO_TIME_FACTOR,
   tickEncounterNerve,
 } from "@/lib/game/nervousness";
@@ -131,8 +130,15 @@ type HuntShootViewProps = {
   onShotResult: (result: HuntShotResult) => void;
   /** Advance hunt clock (Enviro tab runs at 5×). */
   onGameSeconds?: (sec: number) => void;
-  /** Bird flushed when combined nerve (distance/camo + Enviro faffe) hits threshold. */
+  /** Bird flushed when combined nerve (distance/camo) hits threshold. */
   onBirdFlushedFromWait?: () => void;
+  /** Live nerve for global HUD BIRD bar (0–cap). */
+  onNerveChange?: (nerve: number) => void;
+  /**
+   * Leave shoot back to Aware with current nerve (Back to Aware).
+   * Prefer this over plain abort when returning to the stalk map.
+   */
+  onBackToAware?: (nerve: number) => void;
 };
 
 type Keys = {
@@ -181,6 +187,8 @@ export function HuntShootView({
   onShotResult,
   onGameSeconds,
   onBirdFlushedFromWait,
+  onNerveChange,
+  onBackToAware,
 }: HuntShootViewProps) {
   const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
   const mmToPx = (mm: number) => birdMmToNativePx(mm, shotGeom);
@@ -229,6 +237,8 @@ export function HuntShootView({
       : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
   );
   const [hudTab, setHudTab] = useState<ScopeHudTab>("overhead");
+  const hudTabRef = useRef(hudTab);
+  hudTabRef.current = hudTab;
   const birdNerveRef = useRef(
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
   );
@@ -238,6 +248,10 @@ export function HuntShootView({
   onGameSecondsRef.current = onGameSeconds;
   const onBirdFlushedFromWaitRef = useRef(onBirdFlushedFromWait);
   onBirdFlushedFromWaitRef.current = onBirdFlushedFromWait;
+  const onNerveChangeRef = useRef(onNerveChange);
+  onNerveChangeRef.current = onNerveChange;
+  const onBackToAwareRef = useRef(onBackToAware);
+  onBackToAwareRef.current = onBackToAware;
   const [focusUi, setFocusUi] = useState<{
     phase: "idle" | "focused" | "fatigued";
     remainingMs: number;
@@ -269,34 +283,42 @@ export function HuntShootView({
   } | null>(null);
   const [replay, setReplay] = useState<HuntShotResult | null>(null);
 
-  // Enviro / Lapua: clock ×5; nerve = distance/camo (still) + app-faffe — not a solo timer.
+  // Shoot HUD: same still-nerve rate as Aware (real seconds). Enviro only speeds the clock.
   useEffect(() => {
-    if (hudTab !== "enviro" || fired) return;
+    if (fired) return;
     let last = performance.now();
     const id = window.setInterval(() => {
       const now = performance.now();
       const realSec = Math.min(0.5, (now - last) / 1000);
       last = now;
       if (realSec <= 0) return;
-      const gameSec = realSec * ENVIRO_TIME_FACTOR;
-      onGameSecondsRef.current?.(gameSec);
-      const tick = tickEncounterNerve(birdNerveRef.current, gameSec, {
+      if (hudTabRef.current === "enviro") {
+        onGameSecondsRef.current?.(realSec * ENVIRO_TIME_FACTOR);
+      }
+      const tick = tickEncounterNerve(birdNerveRef.current, realSec, {
         distanceM: distanceRef.current,
         isMoving: false,
         moveHoldSec: 0,
         camoBirdSpot: camoBirdSpotRef.current,
       });
-      const withFaffe = Math.min(
-        ENCOUNTER_NERVE.nerveCap,
-        tick.nerve + gameSec * ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC,
-      );
-      birdNerveRef.current = withFaffe;
-      if (tick.flushes || withFaffe >= ENCOUNTER_NERVE.flushThreshold) {
+      birdNerveRef.current = tick.nerve;
+      onNerveChangeRef.current?.(tick.nerve);
+      if (tick.flushes) {
         onBirdFlushedFromWaitRef.current?.();
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [hudTab, fired]);
+  }, [fired]);
+
+  function leaveToAware() {
+    if (firedRef.current) return;
+    const nerve = birdNerveRef.current;
+    if (onBackToAwareRef.current) {
+      onBackToAwareRef.current(nerve);
+      return;
+    }
+    onAbort();
+  }
 
   const hasTriggercam = kitItems.some((i) => i.id === TRIGGERCAM_ITEM_ID);
 
@@ -662,7 +684,7 @@ export function HuntShootView({
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        if (!firedRef.current) onAbort();
+        if (!firedRef.current) leaveToAware();
         return;
       }
       if (!ready || firedRef.current) return;
@@ -714,7 +736,7 @@ export function HuntShootView({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [ready, scope, onAbort]);
+  }, [ready, scope, onAbort, onBackToAware]);
 
   useEffect(() => {
     if (!ready || fired) return;
@@ -822,8 +844,8 @@ export function HuntShootView({
     return (
       <div className="spot-view" role="dialog" aria-modal="true">
         <p className="intro-line">Mangler rifle, scope eller ammo i kit.</p>
-        <button type="button" className="intro-button" onClick={onAbort}>
-          Avbryt
+        <button type="button" className="intro-button" onClick={leaveToAware}>
+          Back to Aware
         </button>
       </div>
     );
@@ -961,9 +983,9 @@ export function HuntShootView({
               type="button"
               className="intro-button sheriff-secondary"
               disabled={fired}
-              onClick={onAbort}
+              onClick={leaveToAware}
             >
-              Avbryt
+              Back to Aware
             </button>
           }
         />

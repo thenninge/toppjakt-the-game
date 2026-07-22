@@ -97,6 +97,7 @@ import {
 import {
   applyPostShotBirdFlush,
   bindBirdsToSpotImage,
+  birdsInCell,
   flushAllBirdsFromCell,
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
@@ -130,7 +131,11 @@ import {
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
-import { initialEncounterNerve } from "@/lib/game/nervousness";
+import {
+  ENCOUNTER_NERVE,
+  initialEncounterNerve,
+  tickEncounterNerve,
+} from "@/lib/game/nervousness";
 import type { ShotHitFasit, ShotPair } from "@/lib/aware/types";
 import { caliberBulletDiameterMm } from "@/lib/range/precision";
 import {
@@ -159,6 +164,11 @@ export type HuntHudStatus = {
    * Null when kit has no thermal.
    */
   thermalBattery: number | null;
+  /**
+   * Live bird nerve 0–1 (1 = flush) after LRF/click lock.
+   * Null when no active bird encounter.
+   */
+  birdNerve: number | null;
 };
 
 type HuntMapViewProps = {
@@ -195,6 +205,32 @@ type WalkSession = {
   minutes: number;
   path: HuntGridCell[];
   paceId: HuntPaceId;
+};
+
+type SpotCellLayout = {
+  imageSrc: string;
+  placements: BirdVisualPlacement[];
+};
+
+/** Live-bird nerve — may run hidden in Spot before discovery. */
+type BirdEncounter = {
+  birdId: string;
+  distanceM: number;
+  /** Raw nerve 0–cap (HUD shows nerve / flushThreshold when discovered). */
+  nerve: number;
+  /** False until LRF/click lock — BIRD bar stays hidden. */
+  discovered: boolean;
+};
+
+type LatentSpotNerve = {
+  distanceM: number;
+  nerve: number;
+};
+
+/** Aware-map seat for a live bird — sticky until spook / end hunt. */
+type BirdMapContact = {
+  bearingDeg: number;
+  birdPos: CellPoint;
 };
 
 type SpotSession = {
@@ -240,6 +276,10 @@ type AwareSession = {
    * False/undefined = wounded ettersøk; harvest on found.
    */
   recoveryOnly?: boolean;
+  /** Nerve to restore when returning from shoot (Back to Aware). */
+  returnNerve?: number;
+  /** Camcorder was already deployed this encounter. */
+  returnCamcorderActive?: boolean;
 };
 
 type EatSession = {
@@ -331,10 +371,22 @@ export function HuntMapView({
   );
   const [walkSession, setWalkSession] = useState<WalkSession | null>(null);
   const [spotSession, setSpotSession] = useState<SpotSession | null>(null);
-  /** Spot landscape sticky per cell for this hunt round (cleared on end / terrain reset). */
-  const [spotImageByCell, setSpotImageByCell] = useState<
-    Record<string, string>
+  /** Spot image + bird seats sticky per cell for this hunt (until spooked / end hunt). */
+  const [spotLayoutByCell, setSpotLayoutByCell] = useState<
+    Record<string, SpotCellLayout>
   >({});
+  /** Aware map bearing/pos sticky per birdId until spooked. */
+  const [birdMapContacts, setBirdMapContacts] = useState<
+    Record<string, BirdMapContact>
+  >({});
+  /** Live bird encounter for HUD BIRD bar + background nerve tick. */
+  const [birdEncounter, setBirdEncounter] = useState<BirdEncounter | null>(
+    null,
+  );
+  const birdEncounterRef = useRef<BirdEncounter | null>(null);
+  birdEncounterRef.current = birdEncounter;
+  /** Per-bird nerve while spotting (before/without discovery). */
+  const latentSpotNerveRef = useRef<Record<string, LatentSpotNerve>>({});
   const [shootSession, setShootSession] = useState<ShootSession | null>(null);
   const [awareSession, setAwareSession] = useState<AwareSession | null>(null);
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
@@ -368,6 +420,8 @@ export function HuntMapView({
   const [birds, setBirds] = useState<HuntBird[]>(() =>
     map ? spawnTiurOnMap(map, tiurSpawnCount) : [],
   );
+  const birdsRef = useRef(birds);
+  birdsRef.current = birds;
   const [flushQueue, setFlushQueue] = useState<FlushEvent[]>([]);
   const flushCurrent = flushQueue[0] ?? null;
   const pendingForcedRestRef = useRef(false);
@@ -509,7 +563,10 @@ export function HuntMapView({
     setShootSession(null);
     setAwareSession(null);
     setPendingPostShot(null);
-    setSpotImageByCell({});
+    setSpotLayoutByCell({});
+    setBirdMapContacts({});
+    setBirdEncounter(null);
+    latentSpotNerveRef.current = {};
     setShotPairs(loadShotPairsForHuntStart(terrainId));
     setFindHitAar(null);
     setEatSession(null);
@@ -650,6 +707,16 @@ export function HuntMapView({
           ? thermalBatteryGameSec / thermalBatteryMaxGameSec
           : 0
         : null,
+      birdNerve:
+        birdEncounter?.discovered
+          ? Math.min(
+              1,
+              Math.max(
+                0,
+                birdEncounter.nerve / ENCOUNTER_NERVE.flushThreshold,
+              ),
+            )
+          : null,
     });
   }, [
     clockMinutes,
@@ -658,8 +725,115 @@ export function HuntMapView({
     thermalBatteryGameSec,
     thermalBatteryMaxGameSec,
     hasThermal,
+    birdEncounter,
     onHudChange,
   ]);
+
+  // Spot: tick all latent birds. Map: tick discovered encounter only.
+  const inAwareOrShoot = !!(awareSession || shootSession);
+  const spotOpen = !!spotSession;
+  const discoveredActive = !!(birdEncounter?.discovered);
+  useEffect(() => {
+    if (inAwareOrShoot || !map) return;
+    if (!spotOpen && !discoveredActive) return;
+    let last = performance.now();
+    const id = window.setInterval(() => {
+      const now = performance.now();
+      const realSec = Math.min(0.5, (now - last) / 1000);
+      last = now;
+      if (realSec <= 0) return;
+
+      const flushOne = (birdId: string, distanceM: number, nerve: number) => {
+        const tick = tickEncounterNerve(nerve, realSec, {
+          distanceM,
+          isMoving: false,
+          moveHoldSec: 0,
+          camoBirdSpot,
+        });
+        if (!tick.flushes) return { nerve: tick.nerve, flushed: false as const };
+        const result = spookBird(birdsRef.current, birdId, map);
+        setBirds(result.birds);
+        setSpotLayoutByCell((prev) => {
+          const layouts: Record<string, SpotCellLayout> = {};
+          for (const [key, layout] of Object.entries(prev)) {
+            layouts[key] = {
+              ...layout,
+              placements: layout.placements.filter((p) => p.birdId !== birdId),
+            };
+          }
+          return layouts;
+        });
+        setBirdMapContacts((prev) => {
+          if (!(birdId in prev)) return prev;
+          const contacts = { ...prev };
+          delete contacts[birdId];
+          return contacts;
+        });
+        delete latentSpotNerveRef.current[birdId];
+        const enc = birdEncounterRef.current;
+        if (enc?.birdId === birdId) {
+          birdEncounterRef.current = null;
+          setBirdEncounter(null);
+        }
+        if (spotOpen) {
+          setSpotSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  birdPlacements: prev.birdPlacements.filter(
+                    (p) => p.birdId !== birdId,
+                  ),
+                }
+              : null,
+          );
+        }
+        if (!result.event) {
+          setLog("Fuglen ble for nervøs — den letter.");
+          setPanel("arrived");
+        } else {
+          if (result.event.gone) {
+            setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
+          }
+          setFlushQueue([result.event]);
+          setLog(`Fuglen ble for nervøs — ${flushMessage(result.event)}`);
+        }
+        return { nerve: tick.nerve, flushed: true as const };
+      };
+
+      if (spotOpen) {
+        const latent = latentSpotNerveRef.current;
+        const discovered = birdEncounterRef.current;
+        for (const birdId of Object.keys(latent)) {
+          const entry = latent[birdId]!;
+          // Discovered bird is ticked via encounter below when on map; in spot sync both.
+          const baseNerve =
+            discovered?.birdId === birdId ? discovered.nerve : entry.nerve;
+          const outcome = flushOne(birdId, entry.distanceM, baseNerve);
+          if (outcome.flushed) return;
+          latent[birdId] = { ...entry, nerve: outcome.nerve };
+          if (discovered?.birdId === birdId) {
+            const next: BirdEncounter = {
+              ...discovered,
+              nerve: outcome.nerve,
+              distanceM: entry.distanceM,
+            };
+            birdEncounterRef.current = next;
+            setBirdEncounter(next);
+          }
+        }
+        return;
+      }
+
+      const enc = birdEncounterRef.current;
+      if (!enc?.discovered) return;
+      const outcome = flushOne(enc.birdId, enc.distanceM, enc.nerve);
+      if (outcome.flushed) return;
+      const next: BirdEncounter = { ...enc, nerve: outcome.nerve };
+      birdEncounterRef.current = next;
+      setBirdEncounter(next);
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoBirdSpot]);
 
   if (!terrain || !map) {
     return (
@@ -797,6 +971,30 @@ export function HuntMapView({
       activeMap,
     );
     setBirds(flush.birds);
+    if (flush.events.length > 0) {
+      const gone = new Set(flush.events.map((e) => e.birdId));
+      setSpotLayoutByCell((prev) => {
+        const next: Record<string, SpotCellLayout> = {};
+        for (const [key, layout] of Object.entries(prev)) {
+          next[key] = {
+            ...layout,
+            placements: layout.placements.filter((p) => !gone.has(p.birdId)),
+          };
+        }
+        return next;
+      });
+      setBirdMapContacts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const rid of gone) {
+          if (rid in next) {
+            delete next[rid];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
 
     const walkLog =
       `Gikk til ${cellLabel(walkSession.to)} på ${walkSession.minutes} min (${usedPace.label}, ${walkSession.path.length} ruter).` +
@@ -851,6 +1049,34 @@ export function HuntMapView({
     }
   }
 
+  function seedLatentSpotNerve(
+    placements: BirdVisualPlacement[],
+    birdList: HuntBird[],
+  ) {
+    const next = { ...latentSpotNerveRef.current };
+    const present = new Set(placements.map((p) => p.birdId));
+    for (const p of placements) {
+      const existing = next[p.birdId];
+      if (existing) {
+        next[p.birdId] = { ...existing, distanceM: p.distanceM };
+      } else {
+        const spook =
+          birdList.find((b) => b.id === p.birdId)?.spookCount ?? 0;
+        next[p.birdId] = {
+          distanceM: p.distanceM,
+          nerve: initialEncounterNerve(spook),
+        };
+      }
+    }
+    for (const id of Object.keys(next)) {
+      if (present.has(id)) continue;
+      const enc = birdEncounterRef.current;
+      if (enc?.discovered && enc.birdId === id) continue;
+      delete next[id];
+    }
+    latentSpotNerveRef.current = next;
+  }
+
   function beginSpot(opts?: { reuseImageSrc?: string | null }) {
     if (!canHuntAtTime(clockMinutes)) {
       setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
@@ -866,21 +1092,48 @@ export function HuntMapView({
       opts?.reuseImageSrc && isUsableSpotSrc(opts.reuseImageSrc)
         ? opts.reuseImageSrc
         : null;
-    const cached = spotImageByCell[cellKey];
-    const cachedOk = cached && isUsableSpotSrc(cached) ? cached : null;
+    const cached = spotLayoutByCell[cellKey];
+    const cachedOk =
+      cached && isUsableSpotSrc(cached.imageSrc) ? cached : null;
     const imageSrc =
       preferred ??
-      cachedOk ??
+      cachedOk?.imageSrc ??
       (marked.length > 0
         ? marked[Math.floor(Math.random() * marked.length)]!
         : pickSpotImage());
-    setSpotImageByCell((prev) =>
-      prev[cellKey] === imageSrc ? prev : { ...prev, [cellKey]: imageSrc },
-    );
+
+    const here = birdsInCell(birds, pos);
+    const hereIds = new Set(here.map((b) => b.id));
+
+    // Same landscape + same seats if still perched (spooked birds drop out).
+    if (cachedOk && cachedOk.imageSrc === imageSrc) {
+      const sticky = cachedOk.placements.filter((p) => hereIds.has(p.birdId));
+      setSpotLayoutByCell((prev) => ({
+        ...prev,
+        [cellKey]: { imageSrc, placements: sticky },
+      }));
+      const syncedBirds = birds.map((b) => {
+        const p = sticky.find((x) => x.birdId === b.id);
+        return p ? { ...b, distanceM: p.distanceM } : b;
+      });
+      setBirds(syncedBirds);
+      seedLatentSpotNerve(sticky, syncedBirds);
+      setSpotSession({
+        imageSrc,
+        birdPlacements: sticky,
+      });
+      return;
+    }
+
     const bound = bindBirdsToSpotImage(birds, pos, imageSrc, {
       fillAllPerches: false,
     });
+    setSpotLayoutByCell((prev) => ({
+      ...prev,
+      [cellKey]: { imageSrc, placements: bound.placements },
+    }));
     setBirds(bound.birds);
+    seedLatentSpotNerve(bound.placements, bound.birds);
     setSpotSession({
       imageSrc,
       birdPlacements: bound.placements,
@@ -952,11 +1205,17 @@ export function HuntMapView({
     const imageSrc = spotSession?.imageSrc ?? pickSpotImage();
     if (spotSession?.imageSrc) {
       const cellKey = `${pos.row},${pos.col}`;
-      setSpotImageByCell((prev) =>
-        prev[cellKey] === spotSession.imageSrc
-          ? prev
-          : { ...prev, [cellKey]: spotSession.imageSrc },
-      );
+      setSpotLayoutByCell((prev) => {
+        const cur = prev[cellKey];
+        if (cur?.imageSrc === spotSession.imageSrc) return prev;
+        return {
+          ...prev,
+          [cellKey]: {
+            imageSrc: spotSession.imageSrc,
+            placements: spotSession.birdPlacements,
+          },
+        };
+      });
     }
     const lookMin = info.gameSeconds / 60;
     setMentalFatigue((m) =>
@@ -966,8 +1225,18 @@ export function HuntMapView({
     const measured = hasExactBallistics
       ? Math.round(trueDist)
       : info.measuredDistanceM;
-    // Random shot direction for this contact (LRF gives distance only).
-    const birdBearing = Math.random() * 360;
+    const birdId = info.placement.birdId;
+    const prior = birdMapContacts[birdId];
+    // Same bird → same Aware-map seat (bearing/pos); only first lock rolls random.
+    const birdBearing = prior?.bearingDeg ?? Math.random() * 360;
+    const birdPos =
+      prior?.birdPos ?? birdMarkerOnAwareMap(measured, birdBearing);
+    if (!prior) {
+      setBirdMapContacts((prev) => ({
+        ...prev,
+        [birdId]: { bearingDeg: birdBearing, birdPos },
+      }));
+    }
     const cw = crosswindMs(
       weather.live.windSpeedMs,
       weather.live.windFromDeg,
@@ -982,6 +1251,27 @@ export function HuntMapView({
       });
     }
 
+    const spooked =
+      birds.find((b) => b.id === birdId)?.spookCount ?? 0;
+    const activeEnc = birdEncounterRef.current;
+    const latent = latentSpotNerveRef.current[birdId];
+    const startNerve =
+      activeEnc?.birdId === birdId
+        ? activeEnc.nerve
+        : (latent?.nerve ?? initialEncounterNerve(spooked));
+    const enc: BirdEncounter = {
+      birdId,
+      distanceM: trueDist,
+      nerve: startNerve,
+      discovered: true,
+    };
+    birdEncounterRef.current = enc;
+    setBirdEncounter(enc);
+    latentSpotNerveRef.current[birdId] = {
+      distanceM: trueDist,
+      nerve: startNerve,
+    };
+
     setSpotSession(null);
     setAwareSession({
       imageSrc,
@@ -993,7 +1283,7 @@ export function HuntMapView({
       birdBearingDeg: birdBearing,
       densityRatio: density,
       hunterPos: { x: 50, y: 50 },
-      birdPos: birdMarkerOnAwareMap(measured, birdBearing),
+      birdPos,
     });
     setLog(
       (forfeitNote ? `${forfeitNote} ` : "") +
@@ -1009,8 +1299,20 @@ export function HuntMapView({
       return;
     }
     setAwareSession(null);
+    setBirdEncounter(null);
     setLog("Du lukker Aware. Fuglen er fortsatt der.");
     setPanel("arrived");
+  }
+
+  /** Leave Aware stalk back to Spot — nerve keeps running. */
+  function backToSpotFromAware() {
+    if (awareSession?.ettersokPairId) {
+      abortAware();
+      return;
+    }
+    setAwareSession(null);
+    beginSpot();
+    setLog("Tilbake til spotting — fuglen er fortsatt nervøs.");
   }
 
   /**
@@ -1103,6 +1405,19 @@ export function HuntMapView({
       });
     }
     setAwareSession(null);
+    const nerve = Math.max(0, stance?.birdNerve ?? birdEncounterRef.current?.nerve ?? 0);
+    setBirdEncounter((prev) => {
+      const next: BirdEncounter = {
+        birdId: session.bird.birdId,
+        distanceM,
+        nerve,
+        discovered: true,
+      };
+      birdEncounterRef.current = prev
+        ? { ...prev, distanceM, nerve, discovered: true }
+        : next;
+      return birdEncounterRef.current;
+    });
     setShootSession({
       imageSrc: session.imageSrc,
       bird: {
@@ -1119,7 +1434,7 @@ export function HuntMapView({
       birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
       camcorderActive: !!stance?.camcorderActive,
       rangeSource: hasBinos ? "lrf" : "estimated",
-      birdNerve: Math.max(0, stance?.birdNerve ?? 0),
+      birdNerve: nerve,
     });
     setLog(
       hold
@@ -1133,7 +1448,24 @@ export function HuntMapView({
     const id = awareSession.bird.birdId;
     const result = spookBird(birds, id, map);
     setBirds(result.birds);
+    setSpotLayoutByCell((prev) => {
+      const next: Record<string, SpotCellLayout> = {};
+      for (const [key, layout] of Object.entries(prev)) {
+        next[key] = {
+          ...layout,
+          placements: layout.placements.filter((p) => p.birdId !== id),
+        };
+      }
+      return next;
+    });
+    setBirdMapContacts((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setAwareSession(null);
+    setBirdEncounter(null);
     if (!result.event) {
       setPanel("arrived");
       return;
@@ -1147,8 +1479,52 @@ export function HuntMapView({
 
   function abortShoot() {
     setShootSession(null);
+    setBirdEncounter(null);
     setLog("Du senker våpenet. Fuglen er fortsatt der.");
     setPanel("arrived");
+  }
+
+  /** Leave shoot HUD back to the same Aware stalk (nerve carried over). */
+  function returnToAwareFromShoot(nerve: number) {
+    if (!shootSession) return;
+    const s = shootSession;
+    const nextNerve = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      Math.max(0, nerve),
+    );
+    setShootSession(null);
+    setBirdEncounter((prev) => {
+      const next: BirdEncounter = {
+        birdId: s.bird.birdId,
+        distanceM: s.trueDistanceM,
+        nerve: nextNerve,
+        discovered: true,
+      };
+      return prev
+        ? { ...prev, distanceM: s.trueDistanceM, nerve: nextNerve, discovered: true }
+        : next;
+    });
+    birdEncounterRef.current = {
+      birdId: s.bird.birdId,
+      distanceM: s.trueDistanceM,
+      nerve: nextNerve,
+      discovered: true,
+    };
+    setAwareSession({
+      imageSrc: s.imageSrc,
+      bird: s.bird,
+      trueDistanceM: s.trueDistanceM,
+      measuredDistanceM: s.measuredDistanceM,
+      ballisticHold: s.ballisticHold,
+      crosswindMs: s.crosswindMs,
+      densityRatio: s.densityRatio,
+      birdBearingDeg: s.bearingDeg,
+      hunterPos: s.hunterPos,
+      birdPos: s.birdPos,
+      returnNerve: nextNerve,
+      returnCamcorderActive: !!s.camcorderActive,
+    });
+    setLog("Tilbake til Aware — fuglen er fortsatt der.");
   }
 
   function openPendingPostShotTrack() {
@@ -1186,6 +1562,7 @@ export function HuntMapView({
     const recoveryOnly =
       pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill";
     setPendingPostShot(null);
+    setBirdEncounter(null);
     if (pair.cell.row !== pos.row || pair.cell.col !== pos.col) {
       setPos({ ...pair.cell });
       setLog(`Du går til ${pair.cellLabel} for å hente/søke etter fuglen.`);
@@ -1225,7 +1602,7 @@ export function HuntMapView({
     const stayed = pendingPostShot.stayedCount;
     const reuseImageSrc =
       pendingPostShot.aware?.imageSrc ??
-      spotImageByCell[`${pos.row},${pos.col}`] ??
+      spotLayoutByCell[`${pos.row},${pos.col}`]?.imageSrc ??
       null;
     setPendingPostShot(null);
     setLog(
@@ -1269,6 +1646,7 @@ export function HuntMapView({
 
   function onHuntShotResult(result: HuntShotResult) {
     if (!shootSession || !map) return;
+    setBirdEncounter(null);
     const id = shootSession.bird.birdId;
     const dist = result.measuredDistanceM;
     const stand = shootSession.hunterPos;
@@ -1423,6 +1801,36 @@ export function HuntMapView({
     });
     nextBirds = flush.birds;
     setBirds(nextBirds);
+
+    const removedIds = new Set<string>([
+      ...(isContact ? [id] : []),
+      ...flush.flushedIds,
+    ]);
+    if (removedIds.size > 0) {
+      setSpotLayoutByCell((prev) => {
+        const next: Record<string, SpotCellLayout> = {};
+        for (const [key, layout] of Object.entries(prev)) {
+          next[key] = {
+            ...layout,
+            placements: layout.placements.filter(
+              (p) => !removedIds.has(p.birdId),
+            ),
+          };
+        }
+        return next;
+      });
+      setBirdMapContacts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const rid of removedIds) {
+          if (rid in next) {
+            delete next[rid];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
 
     const stayNote =
       result.kind === "ettersok"
@@ -1863,6 +2271,7 @@ export function HuntMapView({
         onConsumeAmmo={onConsumeAmmo}
         onEnsureZeroing={onEnsureZeroing}
         onAbort={abortShoot}
+        onBackToAware={returnToAwareFromShoot}
         onShotResult={onHuntShotResult}
         onGameSeconds={addGameSeconds}
         onBirdFlushedFromWait={() => {
@@ -1870,7 +2279,24 @@ export function HuntMapView({
           const id = shootSession.bird.birdId;
           const result = spookBird(birds, id, map);
           setBirds(result.birds);
+          setSpotLayoutByCell((prev) => {
+            const next: Record<string, SpotCellLayout> = {};
+            for (const [key, layout] of Object.entries(prev)) {
+              next[key] = {
+                ...layout,
+                placements: layout.placements.filter((p) => p.birdId !== id),
+              };
+            }
+            return next;
+          });
+          setBirdMapContacts((prev) => {
+            if (!(id in prev)) return prev;
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
           setShootSession(null);
+          setBirdEncounter(null);
           if (!result.event) {
             setLog("Fuglen ble for nervøs — den letter.");
             setPanel("arrived");
@@ -1881,6 +2307,14 @@ export function HuntMapView({
           }
           setFlushQueue([result.event]);
           setLog(`Fuglen ble for nervøs — ${flushMessage(result.event)}`);
+        }}
+        onNerveChange={(nerve) => {
+          setBirdEncounter((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev, nerve };
+            birdEncounterRef.current = next;
+            return next;
+          });
         }}
       />
     );
@@ -1897,9 +2331,15 @@ export function HuntMapView({
         initialBird={awareSession.birdPos ?? null}
         weather={weather}
         camoBirdSpot={camoBirdSpot}
-        initialBirdNerve={initialEncounterNerve(
-          birds.find((b) => b.id === awareSession.bird.birdId)?.spookCount ?? 0,
-        )}
+        initialBirdNerve={
+          awareSession.returnNerve ??
+          birdEncounter?.nerve ??
+          initialEncounterNerve(
+            birds.find((b) => b.id === awareSession.bird.birdId)?.spookCount ??
+              0,
+          )
+        }
+        initialCamcorderReady={!!awareSession.returnCamcorderActive}
         hasLrf={hasBinos}
         ammo={primaryAmmo?.ammo ?? null}
         hasKestrel={!!kestrelItem}
@@ -1913,7 +2353,18 @@ export function HuntMapView({
         onGameSeconds={addGameSeconds}
         onProceedToShoot={proceedFromAware}
         onBirdFlushed={onAwareBirdFlushed}
-        onAbort={abortAware}
+        onNerveChange={(nerve) => {
+          setBirdEncounter((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev, nerve };
+            birdEncounterRef.current = next;
+            return next;
+          });
+        }}
+        abortLabel={awareSession.ettersokPairId ? "Avbryt" : "Back to Spot"}
+        onAbort={
+          awareSession.ettersokPairId ? abortAware : backToSpotFromAware
+        }
         onPairFound={(pair) => {
           setFindReveal({ imageSrc: pickFunnImage(), pair });
         }}

@@ -56,9 +56,8 @@ export const ENCOUNTER_NERVE = {
 } as const;
 
 /**
- * Extra nerve per *game* second while the player knotes Lapua/Enviro
- * (on top of distance / camo / movement already in {@link tickEncounterNerve}).
- * Tunable — not a standalone flush timer.
+ * @deprecated Shoot HUD uses the same still rate as Aware (no extra app faffe).
+ * Kept for reference / possible future dial-in pressure.
  */
 export const ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC = 0.004;
 
