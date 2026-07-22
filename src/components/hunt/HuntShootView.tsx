@@ -57,18 +57,17 @@ import {
   type ShopItem,
 } from "@/lib/shop/types";
 import {
+  birdMmToNativePx,
+  birdScopeImageScale,
+  birdShotGeom,
+  birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
-  TIUR_IMAGE_NATIVE_H,
-  TIUR_IMAGE_NATIVE_W,
   TIUR_INSTANT_KILL_DIAMETER_MM,
-  TIUR_TARGET_SRC,
   TIUR_VITAL_DIAMETER_MM,
   TRIGGERCAM_ITEM_ID,
-  tiurMmToNativePx,
-  tiurScopeImageScale,
-  tiurVitalOffsetFromImageCenterPx,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
+import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import type { CSSProperties } from "react";
 
@@ -109,6 +108,10 @@ type HuntShootViewProps = {
   physicalFatigue?: number;
   /** Hunt MIND fatigue 0–1 (1 = exhausted). Increases weapon shake. */
   mentalFatigue?: number;
+  /** Same horizontal flip as spotting (placement.flip). */
+  birdFlip?: boolean;
+  /** Topp/target pair chosen at spot time. */
+  birdSpriteId?: BirdSpriteId;
   onAbort: () => void;
   onShotResult: (result: HuntShotResult) => void;
 };
@@ -150,9 +153,13 @@ export function HuntShootView({
   musicEnabled,
   physicalFatigue = 0,
   mentalFatigue = 0,
+  birdFlip = false,
+  birdSpriteId = "tiur-1",
   onAbort,
   onShotResult,
 }: HuntShootViewProps) {
+  const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
+  const mmToPx = (mm: number) => birdMmToNativePx(mm, shotGeom);
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
@@ -217,6 +224,8 @@ export function HuntShootView({
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const vitalOffRef = useRef({ x: 0, y: 0 });
+  const geomRef = useRef(shotGeom);
+  geomRef.current = shotGeom;
   const [recoilActive, setRecoilActive] = useState(false);
   const [fired, setFired] = useState(false);
   const [lastImpact, setLastImpact] = useState<{
@@ -422,6 +431,8 @@ export function HuntShootView({
       impact.xMm,
       impact.yMm,
       selectedAmmo.ammo.damageFactor,
+      Math.random,
+      shotGeom,
     );
     const impactVelocityMps = sampleTrajectory(
       selectedAmmo.ammo,
@@ -619,8 +630,9 @@ export function HuntShootView({
       const ay = aimRef.current.y + wobbleRef.current.y;
       const scale = targetScaleRef.current;
       const vo = vitalOffRef.current;
-      const panPxX = (vo.x + tiurMmToNativePx(ax)) * scale;
-      const panPxY = (vo.y + tiurMmToNativePx(ay)) * scale;
+      const g = geomRef.current;
+      const panPxX = (vo.x + birdMmToNativePx(ax, g)) * scale;
+      const panPxY = (vo.y + birdMmToNativePx(ay, g)) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
     }
 
@@ -719,12 +731,17 @@ export function HuntShootView({
   }
 
   const reticleScale = scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M);
-  const targetScale = tiurScopeImageScale(
+  const targetScale = birdScopeImageScale(
     zoom,
     scope.scope,
     trueDistanceM,
+    shotGeom.nativeW,
   );
-  const vitalOff = tiurVitalOffsetFromImageCenterPx();
+  const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
+  // Flipped sprite mirrors vital X around image centre — keep reticle on chest.
+  const vitalOff = birdFlip
+    ? { x: -vitalBase.x, y: vitalBase.y }
+    : vitalBase;
   targetScaleRef.current = targetScale;
   vitalOffRef.current = vitalOff;
 
@@ -742,6 +759,8 @@ export function HuntShootView({
     return (
       <HuntShotAarView
         title="Triggercam — after action"
+        birdFlip={birdFlip}
+        birdSpriteId={birdSpriteId}
         hit={{
           xMm: lastImpact.xMm,
           yMm: lastImpact.yMm,
@@ -891,26 +910,27 @@ export function HuntShootView({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   className="scope-target hunt-tiur-target"
-                  src={TIUR_TARGET_SRC}
-                  alt="Tiur"
+                  src={shotGeom.displaySrc}
+                  alt="Fugl"
                   draggable={false}
-                  width={TIUR_IMAGE_NATIVE_W}
-                  height={TIUR_IMAGE_NATIVE_H}
+                  width={shotGeom.nativeW}
+                  height={shotGeom.nativeH}
                   style={{
-                    width: TIUR_IMAGE_NATIVE_W,
-                    height: TIUR_IMAGE_NATIVE_H,
+                    width: shotGeom.nativeW,
+                    height: shotGeom.nativeH,
+                    transform: birdFlip ? "scaleX(-1)" : undefined,
                   }}
                 />
                 {lastImpact ? (
                   <span
                     className="bullet-hole"
                     style={{
-                      width: tiurMmToNativePx(lastImpact.diameterMm),
-                      height: tiurMmToNativePx(lastImpact.diameterMm),
-                      left: `calc(50% + ${vitalOff.x + tiurMmToNativePx(lastImpact.xMm)}px)`,
-                      top: `calc(50% + ${vitalOff.y + tiurMmToNativePx(lastImpact.yMm)}px)`,
-                      marginLeft: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
-                      marginTop: -tiurMmToNativePx(lastImpact.diameterMm) / 2,
+                      width: mmToPx(lastImpact.diameterMm),
+                      height: mmToPx(lastImpact.diameterMm),
+                      left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
+                      top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
+                      marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
+                      marginTop: -mmToPx(lastImpact.diameterMm) / 2,
                     }}
                   />
                 ) : null}

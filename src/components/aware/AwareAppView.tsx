@@ -25,6 +25,8 @@ import {
 import {
   estimateEttersokFind,
   impactFromShot,
+  SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
+  SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
 } from "@/lib/aware/ettersok";
 import {
   type AwareAppMode,
@@ -52,6 +54,7 @@ import {
 } from "@/lib/hunt/maps";
 import {
   ETTERSOK_MINUTES_PER_TRACK_POINT,
+  TREE_RECOVERY_MINUTES,
   ettersokMinutesForTrackPoints,
   formatHuntClock,
 } from "@/lib/hunt/travel";
@@ -113,6 +116,12 @@ type MoveKeys = {
 
 const MOVE_SPEED_MPS = 14;
 const MOVE_PCT_PER_SEC = MOVE_SPEED_MPS / AWARE_METERS_PER_PCT;
+/** Game seconds per real second while sneaking toward an Aware plan point. */
+const AWARE_SNEAK_TIME_FACTOR = 10;
+/** Ambient Aware clock when standing still (unchanged feel). */
+const AWARE_IDLE_TIME_FACTOR = 8;
+/** Extra nerve while moving — stalking was too safe. */
+const AWARE_SNEAK_NERVE_MULT = 2;
 
 /** Aware Shoot wizard: stand → skuddretning → avstand → lagre. */
 type ShootWizard =
@@ -303,11 +312,17 @@ export function AwareAppView({
       return "Trykk på kartet for trygg sone · hold piltaster for å flytte deg. Hold øye med nervøsitet.";
     }
     const pair = shotPairs.find((p) => p.id === focusPairId);
+    if (
+      pair?.resultKind === "instant_kill" ||
+      pair?.resultKind === "vital_kill"
+    ) {
+      return `Hent/søk — drept fugl i treet. Trykk «Hent ved treet» (${TREE_RECOVERY_MINUTES} min).`;
+    }
     if (pair?.resultKind === "ettersok" && pair.fleeObservation) {
       return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt), deretter utfør ettersøk.`;
     }
     if (pair?.fleeObservation?.text) return pair.fleeObservation.text;
-    return "Track — skuddpar: stand → stiplet linje → tre (+ ~20 m søkeradius). Finn riktig tre.";
+    return "Hent/søk — lagret skuddpar: stand → stiplet linje → tre. Finn riktig tre eller følg flukt.";
   });
   const [activePairId, setActivePairId] = useState<string | null>(
     focusPairId,
@@ -351,6 +366,10 @@ export function AwareAppView({
   const planDistanceM = distanceMBetween(planOrigin, birdWorld);
   const planBearing = bearingDegFromTo(planOrigin, birdWorld);
   const planning = destination != null;
+  /** Walk distance from current stand to the clicked Aware plan point. */
+  const walkToPlanM = planning
+    ? distanceMBetween(hunter, destination)
+    : null;
 
   const dangerWedges = useMemo(
     () => dangerWedgesForCell(map.id, cell),
@@ -445,14 +464,6 @@ export function AwareAppView({
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
 
-      const gameDt = dt * 8;
-      accGame += gameDt;
-      if (accGame >= 1) {
-        const whole = Math.floor(accGame);
-        accGame -= whole;
-        onGameSecondsRef.current(whole);
-      }
-
       if (stalking && !flushedRef.current) {
         const keys = keysRef.current;
         const moving =
@@ -480,8 +491,21 @@ export function AwareAppView({
         }
         setMoveHoldSec(moveHoldRef.current);
 
+        // 10× while sneaking; idle keeps ambient clock.
+        const timeFactor = moving
+          ? AWARE_SNEAK_TIME_FACTOR
+          : AWARE_IDLE_TIME_FACTOR;
+        const gameDt = dt * timeFactor;
+        accGame += gameDt;
+        if (accGame >= 1) {
+          const whole = Math.floor(accGame);
+          accGame -= whole;
+          onGameSecondsRef.current(whole);
+        }
+
         const dist = distanceMBetween(hunterRef.current, birdWorld);
-        const result = tickEncounterNerve(nerveRef.current, dt, {
+        const nerveDt = moving ? dt * AWARE_SNEAK_NERVE_MULT : dt;
+        const result = tickEncounterNerve(nerveRef.current, nerveDt, {
           distanceM: dist,
           isMoving: moving,
           moveHoldSec: moveHoldRef.current,
@@ -493,6 +517,14 @@ export function AwareAppView({
         if (result.flushes) {
           flushedRef.current = true;
           onBirdFlushedRef.current(result.nerve);
+        }
+      } else {
+        const gameDt = dt * AWARE_IDLE_TIME_FACTOR;
+        accGame += gameDt;
+        if (accGame >= 1) {
+          const whole = Math.floor(accGame);
+          accGame -= whole;
+          onGameSecondsRef.current(whole);
         }
       }
 
@@ -525,27 +557,24 @@ export function AwareAppView({
     if (!stalking || mode !== "aware") return;
     const point = mapClickPoint(e);
     setDestination(point);
+    const walkM = Math.round(distanceMBetween(hunter, point));
+    const birdM = Math.round(distanceMBetween(point, birdWorld));
     setStatus(
-      `Planleggingsmål satt. Kakene / skuddlinje fra målet — hold piltast for å gå dit.`,
+      `Planleggingsmål satt (${walkM} m å gå · ${birdM} m til fugl derfra). Hold piltast for å snike dit.`,
     );
     stageRef.current?.focus();
   }
 
   function startShootPair() {
     const stand = { ...hunter };
-    const rangeM = Math.min(
-      450,
-      Math.max(50, Math.round(liveDistanceM) || 200),
-    );
-    const bearingDeg = Math.round(liveBearing);
     setShootWizard({
       phase: "direction",
       stand,
-      rangeM,
-      bearingDeg,
+      rangeM: SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
+      bearingDeg: SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
     });
     setStatus(
-      "Skuddpar: sett skuddretning, deretter avstand — lagre treffpunkt.",
+      "Skuddpar: retning starter på 0° / 250 m — juster til faktisk vinkel og avstand, deretter lagre.",
     );
   }
 
@@ -575,6 +604,7 @@ export function AwareAppView({
       resultKind: "ettersok",
       trackPoints: [],
       found: null,
+      skuddparCommitted: true,
     };
     onShotPairsChange([pair, ...shotPairs]);
     setActivePairId(pair.id);
@@ -588,6 +618,14 @@ export function AwareAppView({
   function addTrackPoint(e: MouseEvent<HTMLDivElement>) {
     if (!activePair || mode !== "track") return;
     if (activePair.found === true) return;
+    // Tree kills: only «Hent ved treet» — no søkespor / ettersøk.
+    if (
+      activePair.resultKind === "instant_kill" ||
+      activePair.resultKind === "vital_kill"
+    ) {
+      return;
+    }
+    if (activePair.resultKind !== "ettersok") return;
     const point = mapClickPoint(e);
     const next = shotPairs.map((p) =>
       p.id === activePair.id
@@ -670,12 +708,21 @@ export function AwareAppView({
 
   function markRecoveredAtTree() {
     if (!activePair || activePair.found === true) return;
+    if (
+      activePair.resultKind !== "instant_kill" &&
+      activePair.resultKind !== "vital_kill"
+    ) {
+      return;
+    }
+    onGameSeconds(TREE_RECOVERY_MINUTES * 60);
     const updated: ShotPair = { ...activePair, found: true };
     const next = shotPairs.map((p) =>
       p.id === activePair.id ? updated : p,
     );
     onShotPairsChange(next);
-    setStatus("Hentet ved treet — fasit på treffpunkt.");
+    setStatus(
+      `Hentet ved treet (+${TREE_RECOVERY_MINUTES} min) — fasit på treffpunkt.`,
+    );
     onPairFound?.(updated);
   }
 
@@ -896,13 +943,22 @@ export function AwareAppView({
 
         <div className="aware-panel">
           <p className="aware-cell-label">
-            Celle {cellLabel(cell)} ·{" "}
-            {planning ? "fra mål " : ""}
-            {Math.round(planDistanceM)} m · skyteretning{" "}
-            {Math.round(planBearing)}°
-            {planning
-              ? ` · her ${Math.round(liveDistanceM)} m / ${Math.round(liveBearing)}°`
-              : ""}
+            Celle {cellLabel(cell)}
+            {planning ? (
+              <>
+                {" · "}mål→fugl {Math.round(planDistanceM)} m /{" "}
+                {Math.round(planBearing)}°
+                {" · "}her→fugl {Math.round(liveDistanceM)} m /{" "}
+                {Math.round(liveBearing)}°
+                {" · "}her→mål {Math.round(walkToPlanM ?? 0)} m
+              </>
+            ) : (
+              <>
+                {" · "}
+                {Math.round(liveDistanceM)} m · skyteretning{" "}
+                {Math.round(liveBearing)}°
+              </>
+            )}
           </p>
           {stalking ? (
             <p className="shop-row-note aware-weather-line">{nerveHint}</p>
@@ -979,8 +1035,8 @@ export function AwareAppView({
             <div className="aware-actions">
               <p className="shop-row-note">
                 {hasLrf
-                  ? "Shoot: lås stand → sett skuddretning → sett avstand → lagre."
-                  : "Uten LRF er Shoot nødvendig: sett retning og avstand til treffpunkt for ettersøk."}
+                  ? "Shoot: lås stand → juster retning (fra 0°) → juster avstand (fra 250 m) → lagre."
+                  : "Uten LRF er Shoot nødvendig: juster retning (fra 0°) og avstand (fra 250 m) til treffpunkt."}
               </p>
 
               {shootWizard.phase === "idle" ? (
@@ -1174,8 +1230,8 @@ export function AwareAppView({
                     activePair.resultKind === "vital_kill") ? (
                     <>
                       <p className="shop-row-note">
-                        Drept fugl: skuddparet peker på treet. Marker spor eller
-                        bekreft henting.
+                        Drept fugl i treet. Gå ut og hent den —{" "}
+                        {TREE_RECOVERY_MINUTES} min.
                       </p>
                       <button
                         type="button"
@@ -1183,7 +1239,7 @@ export function AwareAppView({
                         disabled={activePair.found === true}
                         onClick={markRecoveredAtTree}
                       >
-                        Hentet ved treet
+                        Hent ved treet ({TREE_RECOVERY_MINUTES} min)
                       </button>
                     </>
                   ) : activePair?.resultKind === "ettersok" ? (
@@ -1191,12 +1247,12 @@ export function AwareAppView({
                       <ol className="aware-ettersok-steps">
                         <li>
                           Trykk på kartet og legg et <strong>søkespor</strong>{" "}
-                          i fluktretningen (
+                          ut fra lagret skuddpar (
                           {ETTERSOK_MINUTES_PER_TRACK_POINT} min per punkt).
                         </li>
                         <li>
                           Kjør <strong>Ettersøk</strong> — tiden summeres fra
-                          sporpunktene. Sporene blir liggende på kartet.
+                          sporpunktene.
                         </li>
                       </ol>
                       <p className="shop-row-note">
@@ -1243,7 +1299,7 @@ export function AwareAppView({
                     </>
                   ) : (
                     <p className="shop-row-note">
-                      Trykk på kartet for spor. Deretter ettersøk.
+                      Ingen gyldig skuddpar for henting/søk.
                     </p>
                   )}
                 </>

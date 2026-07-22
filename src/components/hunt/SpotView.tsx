@@ -60,6 +60,23 @@ type SpotViewProps = {
   onDone: (info: { mode: SpotMode; gameSeconds: number }) => void;
 };
 
+/** Single arrow tap — landscape % step. */
+const OPTIC_PAN_TAP_PCT = 1.35;
+/** Hold longer than this before continuous pan. */
+const OPTIC_PAN_HOLD_MS = 160;
+/** Continuous pan speed after hold starts (% / s). */
+const OPTIC_PAN_HOLD_SPEED = 14;
+/** Extra speed per second of holding (% / s²). */
+const OPTIC_PAN_HOLD_ACCEL = 28;
+const OPTIC_PAN_HOLD_MAX = 48;
+
+type PanKeys = {
+  up: number | null;
+  down: number | null;
+  left: number | null;
+  right: number | null;
+};
+
 function spotTimeFactor(mode: SpotMode): number {
   if (mode === "binos") return SPOT_TIME_FACTOR_BINOS;
   if (mode === "thermal") return SPOT_TIME_FACTOR_THERMAL;
@@ -87,6 +104,10 @@ function BirdOverlay({
       }}
     />
   );
+}
+
+function clampPan(n: number): number {
+  return Math.max(0, Math.min(100, n));
 }
 
 /**
@@ -125,6 +146,14 @@ export function SpotView({
   onGameSecondsRef.current = onGameSeconds;
 
   const [pan, setPan] = useState({ x: 50, y: 40 });
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const keysRef = useRef<PanKeys>({
+    up: null,
+    down: null,
+    left: null,
+    right: null,
+  });
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -151,22 +180,114 @@ export function SpotView({
   }, []);
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    function nudge(dx: number, dy: number) {
+      const next = {
+        x: clampPan(panRef.current.x + dx),
+        y: clampPan(panRef.current.y + dy),
+      };
+      panRef.current = next;
+      setPan(next);
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
         onDone({ mode: modeRef.current, gameSeconds: lookedRef.current });
+        return;
       }
+      const optic =
+        modeRef.current === "binos" || modeRef.current === "thermal";
+      if (!optic) return;
+
+      const dir =
+        e.key === "ArrowUp"
+          ? "up"
+          : e.key === "ArrowDown"
+            ? "down"
+            : e.key === "ArrowLeft"
+              ? "left"
+              : e.key === "ArrowRight"
+                ? "right"
+                : null;
+      if (!dir) return;
+      e.preventDefault();
+      if (keysRef.current[dir] != null) return;
+
+      const now = performance.now();
+      keysRef.current[dir] = now;
+      // Tap = one small step (hold continues in rAF).
+      const step = OPTIC_PAN_TAP_PCT;
+      if (dir === "up") nudge(0, -step);
+      if (dir === "down") nudge(0, step);
+      if (dir === "left") nudge(-step, 0);
+      if (dir === "right") nudge(step, 0);
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === "ArrowUp") keysRef.current.up = null;
+      if (e.key === "ArrowDown") keysRef.current.down = null;
+      if (e.key === "ArrowLeft") keysRef.current.left = null;
+      if (e.key === "ArrowRight") keysRef.current.right = null;
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, [onDone]);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+
+    function tick(now: number) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const optic =
+        modeRef.current === "binos" || modeRef.current === "thermal";
+      if (optic) {
+        const k = keysRef.current;
+        let dx = 0;
+        let dy = 0;
+        const holdSpeed = (since: number | null): number => {
+          if (since == null) return 0;
+          const held = now - since;
+          if (held < OPTIC_PAN_HOLD_MS) return 0;
+          const t = (held - OPTIC_PAN_HOLD_MS) / 1000;
+          return Math.min(
+            OPTIC_PAN_HOLD_MAX,
+            OPTIC_PAN_HOLD_SPEED + t * OPTIC_PAN_HOLD_ACCEL,
+          );
+        };
+        dy -= holdSpeed(k.up) * dt;
+        dy += holdSpeed(k.down) * dt;
+        dx -= holdSpeed(k.left) * dt;
+        dx += holdSpeed(k.right) * dt;
+        if (dx !== 0 || dy !== 0) {
+          const next = {
+            x: clampPan(panRef.current.x + dx),
+            y: clampPan(panRef.current.y + dy),
+          };
+          panRef.current = next;
+          setPan(next);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   function focusOnBird(targetMode: "binos" | "thermal") {
     const focus =
       birdPlacements.find((p) => visibleInSpotMode(p.distanceM, targetMode)) ??
       null;
     if (focus) {
-      setPan({ x: focus.x, y: focus.y });
+      const next = { x: focus.x, y: focus.y };
+      panRef.current = next;
+      setPan(next);
     }
     setMode(targetMode);
     setLrfReading(null);
@@ -200,9 +321,11 @@ export function SpotView({
     const sensY = (100 / Math.max(1, rect.height)) / zoom;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-    const nextX = Math.max(0, Math.min(100, drag.origX - dx * sensX * 1.15));
-    const nextY = Math.max(0, Math.min(100, drag.origY - dy * sensY * 1.15));
-    setPan({ x: nextX, y: nextY });
+    const nextX = clampPan(drag.origX - dx * sensX * 1.15);
+    const nextY = clampPan(drag.origY - dy * sensY * 1.15);
+    const next = { x: nextX, y: nextY };
+    panRef.current = next;
+    setPan(next);
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
@@ -256,12 +379,20 @@ export function SpotView({
 
   const isOpticMode = mode === "binos" || mode === "thermal";
 
-  /** Same % coordinate system as eyes; zoom crops into pan point. */
+  /** Same % coordinate system for eyes / binos / thermal. */
   const worldStyle = {
     width: `${zoom * 100}%`,
     height: `${zoom * 100}%`,
     left: `${(1 - zoom) * pan.x}%`,
     top: `${(1 - zoom) * pan.y}%`,
+  } as const;
+
+  /** Eyes = zoom 1, pan irrelevant; still same world box as optics. */
+  const eyesWorldStyle = {
+    width: "100%",
+    height: "100%",
+    left: "0%",
+    top: "0%",
   } as const;
 
   return (
@@ -273,7 +404,7 @@ export function SpotView({
             Kl {formatHuntClock(clockMinutes)} · sett i{" "}
             {lookedMin > 0 ? `${lookedMin} min ` : ""}
             {lookedSec} s spilltid · tid ×{timeFactor}
-            {isOpticMode ? " · dra for å speide hele bildet" : ""}
+            {isOpticMode ? " · piltaster / dra for å speide" : ""}
             {lrfReading ? ` · LRF ${lrfReading}` : ""}
           </p>
         </div>
@@ -346,15 +477,17 @@ export function SpotView({
       >
         {mode === "eyes" ? (
           <>
-            <img
-              src={imageSrc}
-              alt="Landskap"
-              className="spot-eyes-img"
-              draggable={false}
-            />
-            {visibleBirds.map((p) => (
-              <BirdOverlay key={p.birdId} placement={p} />
-            ))}
+            <div className="spot-binos-world" style={eyesWorldStyle}>
+              <img
+                src={imageSrc}
+                alt="Landskap"
+                className="spot-binos-world-img"
+                draggable={false}
+              />
+              {visibleBirds.map((p) => (
+                <BirdOverlay key={p.birdId} placement={p} />
+              ))}
+            </div>
           </>
         ) : mode === "binos" ? (
           <>
@@ -399,12 +532,13 @@ export function SpotView({
       </div>
       {mode === "binos" ? (
         <p className="spot-binos-hint">
-          Dra for å speide hele landskapet · sikt LRF på fuglen og trykk LRF
+          Piltaster (tap = lite steg, hold = raskere) eller dra · sikt LRF og
+          trykk LRF
         </p>
       ) : null}
       {mode === "thermal" ? (
         <p className="spot-binos-hint">
-          Termisk — dra for å speide · hvite flekker = varm fugl
+          Termisk — piltaster / dra · hvite flekker = varm fugl
           {showLrf ? " · LRF integrert" : ""}
         </p>
       ) : null}

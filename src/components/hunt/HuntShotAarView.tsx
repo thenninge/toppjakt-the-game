@@ -1,16 +1,15 @@
 "use client";
 
 import {
-  TIUR_IMAGE_NATIVE_H,
-  TIUR_IMAGE_NATIVE_W,
+  birdMmToNativePx,
+  birdShotGeom,
+  birdVitalOffsetFromImageCenterPx,
   TIUR_INSTANT_KILL_DIAMETER_MM,
-  TIUR_TARGET_SRC,
   TIUR_VITAL_DIAMETER_MM,
-  tiurMmToNativePx,
-  tiurVitalOffsetFromImageCenterPx,
   type HuntShotResultKind,
   type HuntShotZone,
 } from "@/lib/hunt/shoot";
+import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 
 export type HuntShotHitFasit = {
   xMm: number;
@@ -26,32 +25,43 @@ type HuntShotAarViewProps = {
   title?: string;
   subtitle?: string;
   continueLabel?: string;
+  /** Same horizontal flip as spotting / shoot. */
+  birdFlip?: boolean;
+  /** Topp/target pair — AAR shows the topp sprite (not the target guide). */
+  birdSpriteId?: BirdSpriteId;
   onContinue: () => void;
 };
 
 /**
- * After-action / find fasit: bird + vital rings + impact hole (same as Triggercam AAR).
+ * After-action / find fasit: topp sprite + CSS vital rings + impact hole.
+ * Target PNGs are analysis-only (zone centres); never shown to the player.
  */
 export function HuntShotAarView({
   hit,
   title = "Fasit — treffpunkt",
   subtitle,
   continueLabel = "Fortsett",
+  birdFlip = false,
+  birdSpriteId = "tiur-1",
   onContinue,
 }: HuntShotAarViewProps) {
+  const geom = birdShotGeom(birdSpriteId);
   const aarScale = 2.4;
-  const vitalOffAar = tiurVitalOffsetFromImageCenterPx();
-  const greenD = tiurMmToNativePx(TIUR_INSTANT_KILL_DIAMETER_MM) * aarScale;
-  const redD = tiurMmToNativePx(TIUR_VITAL_DIAMETER_MM) * aarScale;
-  const holeD = Math.max(6, tiurMmToNativePx(hit.diameterMm) * aarScale);
+  const mmToPx = (mm: number) => birdMmToNativePx(mm, geom);
+  const vitalBase = birdVitalOffsetFromImageCenterPx(geom);
+  const vitalOff = birdFlip
+    ? { x: -vitalBase.x, y: vitalBase.y }
+    : vitalBase;
+
+  const greenD = mmToPx(TIUR_INSTANT_KILL_DIAMETER_MM) * aarScale;
+  const redD = mmToPx(TIUR_VITAL_DIAMETER_MM) * aarScale;
+  const holeD = Math.max(6, mmToPx(hit.diameterMm) * aarScale);
   const hitX =
-    (TIUR_IMAGE_NATIVE_W / 2 + vitalOffAar.x + tiurMmToNativePx(hit.xMm)) *
-    aarScale;
+    (geom.nativeW / 2 + vitalOff.x + mmToPx(hit.xMm)) * aarScale;
   const hitY =
-    (TIUR_IMAGE_NATIVE_H / 2 + vitalOffAar.y + tiurMmToNativePx(hit.yMm)) *
-    aarScale;
-  const zoneCx = (TIUR_IMAGE_NATIVE_W / 2 + vitalOffAar.x) * aarScale;
-  const zoneCy = (TIUR_IMAGE_NATIVE_H / 2 + vitalOffAar.y) * aarScale;
+    (geom.nativeH / 2 + vitalOff.y + mmToPx(hit.yMm)) * aarScale;
+  const zoneCx = (geom.nativeW / 2 + vitalOff.x) * aarScale;
+  const zoneCy = (geom.nativeH / 2 + vitalOff.y) * aarScale;
 
   const detail =
     subtitle ??
@@ -74,18 +84,19 @@ export function HuntShotAarView({
         <div
           className="triggercam-aar-frame"
           style={{
-            width: TIUR_IMAGE_NATIVE_W * aarScale,
-            height: TIUR_IMAGE_NATIVE_H * aarScale,
+            width: geom.nativeW * aarScale,
+            height: geom.nativeH * aarScale,
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={TIUR_TARGET_SRC}
-            alt="Tiur"
+            src={geom.displaySrc}
+            alt="Fugl"
             className="triggercam-aar-bird"
-            width={TIUR_IMAGE_NATIVE_W * aarScale}
-            height={TIUR_IMAGE_NATIVE_H * aarScale}
+            width={geom.nativeW * aarScale}
+            height={geom.nativeH * aarScale}
             draggable={false}
+            style={birdFlip ? { transform: "scaleX(-1)" } : undefined}
           />
           <span
             className="triggercam-zone triggercam-zone--vital"

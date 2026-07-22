@@ -6,6 +6,7 @@
 import type { BirdHarvestInput } from "@/lib/hunt/carcass";
 import type { HuntGridCell } from "@/lib/hunt/maps";
 import type { HuntShotResultKind, HuntShotZone } from "@/lib/hunt/shoot";
+import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 import type { FleeObservation } from "@/lib/aware/ettersok";
 
 export type AwareAppMode = "aware" | "shoot" | "track";
@@ -38,6 +39,9 @@ export type ShotHitFasit = {
   diameterMm: number;
   zone: HuntShotZone;
   kind: HuntShotResultKind;
+  /** Topp/target pair used for this shot (AAR). */
+  birdSpriteId?: BirdSpriteId;
+  birdFlip?: boolean;
 };
 
 export type ShotPair = {
@@ -90,6 +94,11 @@ export type ShotPair = {
   harvestDraft?: BirdHarvestInput;
   /** True impact on bird — revealed when the bird/tree is found. */
   hitFasit?: ShotHitFasit;
+  /**
+   * Camcorder / triggercam auto-save, or player saved in Shoot.
+   * Uncommitted pairs can still be tracked until you shoot another bird.
+   */
+  skuddparCommitted?: boolean;
 };
 
 /** Map endpoint for the visible skuddpar (aim point). */

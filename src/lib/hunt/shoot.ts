@@ -1,7 +1,7 @@
 /**
- * Hunt shot geometry — tiur toppjakt target vs vital zones.
+ * Hunt shot geometry — bird topp target vs vital zones.
  *
- * Zones (from designer indicator on tiurtopp1):
+ * Zones (from designer rings on `*_target/*targetN.png`):
  *   Green = instant kill (any ammo)
  *   Red   = vital; outside green, ammo damageFactor decides clean kill vs ettersøk
  *   Body  = wound / ettersøk
@@ -12,8 +12,15 @@
 
 import type { ScopeSpec } from "@/lib/optics/spec";
 import { spriteWidthPctForDistance } from "@/lib/hunt/birds";
+import {
+  getBirdSprite,
+  type BirdSpriteDef,
+  type BirdSpriteId,
+} from "@/lib/hunt/birdSprites";
 
+/** @deprecated Prefer sprite.toppSrc via getBirdSprite. */
 export const TIUR_TARGET_SRC = "/images/birds/tiur/tiurtopp1.png";
+/** @deprecated Prefer sprite.toppW / toppH. */
 export const TIUR_IMAGE_NATIVE_W = 88;
 export const TIUR_IMAGE_NATIVE_H = 138;
 
@@ -36,7 +43,7 @@ export const CAMCORDER_SETUP_NERVE = 0.2;
 export const SCOPE_VIEWPORT_REF_PX = 448;
 
 /**
- * Real-world height represented by the full sprite (for zone mm math).
+ * Real-world height represented by the full topp sprite (zone mm math).
  * Independent of on-screen scale — only hit geometry.
  */
 export const TIUR_SPRITE_HEIGHT_MM = 480;
@@ -45,21 +52,16 @@ export const TIUR_SPRITE_WIDTH_MM =
   TIUR_SPRITE_HEIGHT_MM * (TIUR_IMAGE_NATIVE_W / TIUR_IMAGE_NATIVE_H);
 
 /**
- * Zone diameters from indicator overlay on the sprite (measured).
- * Fixed physical size — does not change with distance.
+ * Zone diameters — physical size on the bird (from original tiurtopp1 guide).
+ * Green = instant kill; red = vital ring.
  */
-/** Green circle — instant kill regardless of ammo. */
 export const TIUR_INSTANT_KILL_DIAMETER_MM = 66;
-/** Red circle — vital area (includes green). */
 export const TIUR_VITAL_DIAMETER_MM = 114;
 
 /** @deprecated Prefer TIUR_INSTANT_KILL_DIAMETER_MM / TIUR_VITAL_DIAMETER_MM. */
 export const TIUR_VITAL_DIAMETER_MM_LEGACY = TIUR_VITAL_DIAMETER_MM;
 
-/**
- * Zone centre in native sprite pixels (chest — from indicator + asset).
- * Origin top-left of tiurtopp1.png (88×138). Shifted 10% of width right.
- */
+/** @deprecated Prefer getBirdSprite(id).vitalCxPx */
 export const TIUR_VITAL_CX_PX = Math.round(32 + TIUR_IMAGE_NATIVE_W * 0.1);
 export const TIUR_VITAL_CY_PX = 78;
 
@@ -92,15 +94,78 @@ export type HuntShotResult = {
   v0?: number;
 };
 
+export type BirdShotGeom = {
+  spriteId: BirdSpriteId;
+  /** Scope / spotting / AAR display (topp). */
+  displaySrc: string;
+  /** Analysis guide with baked rings — not shown in UI. */
+  targetGuideSrc: string;
+  nativeW: number;
+  nativeH: number;
+  vitalCxPx: number;
+  vitalCyPx: number;
+  /** Target-guide vital (source measurement before map-to-topp). */
+  targetVitalCxPx: number;
+  targetVitalCyPx: number;
+  targetW: number;
+  targetH: number;
+  spriteHeightMm: number;
+  spriteWidthMm: number;
+};
+
+export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
+  const s = getBirdSprite(spriteId);
+  const spriteHeightMm = TIUR_SPRITE_HEIGHT_MM;
+  const spriteWidthMm = spriteHeightMm * (s.toppW / s.toppH);
+  return {
+    spriteId,
+    displaySrc: s.toppSrc,
+    targetGuideSrc: s.targetSrc,
+    nativeW: s.toppW,
+    nativeH: s.toppH,
+    vitalCxPx: s.vitalCxPx,
+    vitalCyPx: s.vitalCyPx,
+    targetVitalCxPx: s.targetVitalCxPx,
+    targetVitalCyPx: s.targetVitalCyPx,
+    targetW: s.targetW,
+    targetH: s.targetH,
+    spriteHeightMm,
+    spriteWidthMm,
+  };
+}
+
+export function birdNativePxPerMm(geom: Pick<BirdShotGeom, "nativeH" | "spriteHeightMm">): number {
+  return geom.nativeH / geom.spriteHeightMm;
+}
+
+export function birdMmToNativePx(
+  mm: number,
+  geom: Pick<BirdShotGeom, "nativeH" | "spriteHeightMm">,
+): number {
+  return mm * birdNativePxPerMm(geom);
+}
+
+/** Offset from image centre to vital centre (native topp px). */
+export function birdVitalOffsetFromImageCenterPx(
+  geom: Pick<BirdShotGeom, "nativeW" | "nativeH" | "vitalCxPx" | "vitalCyPx">,
+): { x: number; y: number } {
+  return {
+    x: geom.vitalCxPx - geom.nativeW / 2,
+    y: geom.vitalCyPx - geom.nativeH / 2,
+  };
+}
+
+/** @deprecated Prefer birdNativePxPerMm(birdShotGeom(...)). */
 export function tiurNativePxPerMm(): number {
   return TIUR_IMAGE_NATIVE_H / TIUR_SPRITE_HEIGHT_MM;
 }
 
+/** @deprecated Prefer birdMmToNativePx. */
 export function tiurMmToNativePx(mm: number): number {
   return mm * tiurNativePxPerMm();
 }
 
-/** Offset from image centre to vital centre (native px). */
+/** @deprecated Prefer birdVitalOffsetFromImageCenterPx. */
 export function tiurVitalOffsetFromImageCenterPx(): { x: number; y: number } {
   return {
     x: TIUR_VITAL_CX_PX - TIUR_IMAGE_NATIVE_W / 2,
@@ -109,25 +174,30 @@ export function tiurVitalOffsetFromImageCenterPx(): { x: number; y: number } {
 }
 
 /**
- * CSS scale for the tiur sprite inside the rifle scope.
+ * CSS scale for the bird sprite inside the rifle scope.
  *
  * Matches spotting binos circular FOV: bird width as fraction of the
  * visible circle ≈ spriteWidthPct(distance) × mag / 100.
- * (Binos world % is of the landscape frame; vignette circle ≈ frame height
- * on a wide frame — we treat scope circle the same way as that FOV.)
- *
- * IMPORTANT: img element must be native 88×138 CSS px before this scale
- * (see `.scope-target.hunt-tiur-target`) — not the CBA 949px width.
  */
-export function tiurScopeImageScale(
+export function birdScopeImageScale(
   zoom: number,
   _scope: Pick<ScopeSpec, "minZoom" | "maxZoom"> | undefined,
   distanceM: number,
+  nativeW: number,
 ): number {
   const widthPct = spriteWidthPctForDistance(distanceM);
   const widthFracOfFov = (widthPct * Math.max(1, zoom)) / 100;
   const desiredWidthPx = SCOPE_VIEWPORT_REF_PX * widthFracOfFov;
-  return Math.max(0.01, desiredWidthPx / TIUR_IMAGE_NATIVE_W);
+  return Math.max(0.01, desiredWidthPx / Math.max(1, nativeW));
+}
+
+/** @deprecated Prefer birdScopeImageScale. */
+export function tiurScopeImageScale(
+  zoom: number,
+  scope: Pick<ScopeSpec, "minZoom" | "maxZoom"> | undefined,
+  distanceM: number,
+): number {
+  return birdScopeImageScale(zoom, scope, distanceM, TIUR_IMAGE_NATIVE_W);
 }
 
 function inCircleMm(
@@ -158,9 +228,15 @@ export function isVitalAreaHit(xMm: number, yMm: number): boolean {
  * Loose body ellipse in mm relative to vital (covers torso/neck of sprite).
  * Outside = clean miss (tree / air).
  */
-export function isBodyHit(xMm: number, yMm: number): boolean {
-  const rx = TIUR_SPRITE_WIDTH_MM * 0.42;
-  const ry = TIUR_SPRITE_HEIGHT_MM * 0.48;
+export function isBodyHit(
+  xMm: number,
+  yMm: number,
+  geom?: Pick<BirdShotGeom, "spriteWidthMm" | "spriteHeightMm">,
+): boolean {
+  const w = geom?.spriteWidthMm ?? TIUR_SPRITE_WIDTH_MM;
+  const h = geom?.spriteHeightMm ?? TIUR_SPRITE_HEIGHT_MM;
+  const rx = w * 0.42;
+  const ry = h * 0.48;
   const cy = 25;
   const nx = xMm / rx;
   const ny = (yMm - cy) / ry;
@@ -189,6 +265,7 @@ export function classifyHuntShot(
   yMm: number,
   damageFactor: number,
   random: () => number = Math.random,
+  geom?: Pick<BirdShotGeom, "spriteWidthMm" | "spriteHeightMm">,
 ): { kind: HuntShotResultKind; zone: HuntShotZone } {
   if (isInstantKillHit(xMm, yMm)) {
     return { kind: "instant_kill", zone: "instant" };
@@ -200,8 +277,13 @@ export function classifyHuntShot(
       zone: "vital",
     };
   }
-  if (isBodyHit(xMm, yMm)) {
+  if (isBodyHit(xMm, yMm, geom)) {
     return { kind: "ettersok", zone: "body" };
   }
   return { kind: "miss", zone: "none" };
+}
+
+/** Re-export for callers that only have a sprite def. */
+export function geomFromSprite(sprite: BirdSpriteDef): BirdShotGeom {
+  return birdShotGeom(sprite.id);
 }

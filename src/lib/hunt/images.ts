@@ -2,6 +2,7 @@
  * Atmosphere images under /public/images — sorted by **folder**, not filename.
  *
  *   /images/spot/     — spotting landscapes
+ *   /images/spot/placement/ — marker guides (shape/color → species/range)
  *   /images/walk/     — travel between cells
  *   /images/eat/      — eat / rest pauses
  *   /images/rest/     — forced rest

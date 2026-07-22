@@ -4,11 +4,21 @@
  */
 
 import {
+  getBirdSprite,
+  pickBirdSpriteId,
+  type BirdSpriteId,
+} from "@/lib/hunt/birdSprites";
+import {
   clampCell,
   type HuntGridCell,
   type HuntMapAsset,
 } from "@/lib/hunt/maps";
 import type { HuntPaceId } from "@/lib/hunt/pace";
+import {
+  perchesForSpotImage,
+  rollPerchDistanceM,
+  type SpotPerch,
+} from "@/lib/hunt/spotPerches";
 
 export type BirdSpecies = "tiur" | "orrhane";
 
@@ -31,8 +41,8 @@ export const MAX_SPOOKS_BEFORE_GONE = 2;
 /** Mental fatigue gain when a bird is spooked away for good (0–1 scale). */
 export const GONE_BIRD_MENTAL_HIT = 0.2;
 
-/** Eyes can resolve birds closer than this; farther needs binos. */
-export const EYES_MAX_DISTANCE_M = 250;
+/** Eyes resolve red-band birds (placement «rød» ≤170 m); farther needs binos/thermal. */
+export const EYES_MAX_DISTANCE_M = 170;
 
 export const BIRD_DISTANCE_MIN_M = 150;
 export const BIRD_DISTANCE_MAX_M = 450;
@@ -71,13 +81,38 @@ export const TIUR_SPAWN_COUNT = 20;
 
 export const FLUKT_IMAGES = ["/images/birds/flukt/flukt1.png"] as const;
 
-/** Treetop sprites for spotting overlays. */
-export const TIUR_TOPP_IMAGES = ["/images/birds/tiur/tiurtopp1.png"] as const;
+/**
+ * After a shot: chance each remaining bird in the cell stays perched
+ * (miss, or other birds when several shared the tree).
+ */
+export const POST_SHOT_STAY_CHANCE = 0.15;
+
+/** @deprecated Prefer pickBirdSpriteId + getBirdSprite. */
+export const TIUR_TOPP_IMAGES = [
+  "/images/birds/tiur/tiurtopp1.png",
+  "/images/birds/tiur/tiurtopp2.png",
+] as const;
+
+/** @deprecated Prefer pickBirdSpriteId + getBirdSprite. */
+export const ORRHANE_TOPP_IMAGES = [
+  "/images/birds/orre/orretopp1.png",
+  "/images/birds/orre/orretopp2.png",
+] as const;
+
+export function toppImageForSpecies(
+  species: BirdSpecies,
+  random: () => number = Math.random,
+): string {
+  return getBirdSprite(pickBirdSpriteId(species, random)).toppSrc;
+}
 
 /** Where a bird sits in the spot landscape (percent of frame). */
 export type BirdVisualPlacement = {
   birdId: string;
   species: BirdSpecies;
+  /** Paired topp/target variant. */
+  spriteId: BirdSpriteId;
+  /** Topp sprite shown while spotting. */
   imageSrc: string;
   distanceM: number;
   /** Horizontal position 0–100 (% of landscape). */
@@ -98,7 +133,7 @@ export function rollBirdDistance(random: () => number = Math.random): number {
 
 /** True if this distance is visible with eyes (and therefore also with binos). */
 export function visibleWithEyes(distanceM: number): boolean {
-  return distanceM < EYES_MAX_DISTANCE_M;
+  return distanceM <= EYES_MAX_DISTANCE_M;
 }
 
 export function visibleInSpotMode(
@@ -111,9 +146,9 @@ export function visibleInSpotMode(
 
 /**
  * Apparent size scales with 1/range.
- * Baseline: previous ~9% frame width → at 100 m we use 10% of that (0.9%).
+ * Sized so red-band birds (≤170 m) are findable with naked eye.
  */
-export const TIUR_TOPP_WIDTH_PCT_AT_100M = 9 * 0.1;
+export const TIUR_TOPP_WIDTH_PCT_AT_100M = 2.25;
 export const SPRITE_SIZE_REF_DISTANCE_M = 100;
 
 export function spriteWidthPctForDistance(distanceM: number): number {
@@ -268,43 +303,186 @@ export function spawnTiurOnMap(
   return birds;
 }
 
+function placementFromPerch(
+  bird: HuntBird,
+  perch: SpotPerch,
+  distanceM: number,
+  flip: boolean,
+  random: () => number,
+): BirdVisualPlacement {
+  const spriteId = pickBirdSpriteId(perch.species, random);
+  const sprite = getBirdSprite(spriteId);
+  return {
+    birdId: bird.id,
+    species: perch.species,
+    spriteId,
+    imageSrc: sprite.toppSrc,
+    distanceM,
+    x: perch.x,
+    y: perch.y,
+    widthPct: spriteWidthPctForDistance(distanceM),
+    flip,
+  };
+}
+
+function randomCrownPlacement(
+  bird: HuntBird,
+  index: number,
+  total: number,
+  random: () => number,
+): BirdVisualPlacement {
+  const widthPct = spriteWidthPctForDistance(bird.distanceM);
+  const spriteId = pickBirdSpriteId(bird.species, random);
+  const sprite = getBirdSprite(spriteId);
+  if (bird.id === "tiur-1") {
+    return {
+      birdId: bird.id,
+      species: bird.species,
+      spriteId,
+      imageSrc: sprite.toppSrc,
+      distanceM: bird.distanceM,
+      x: 58,
+      y: 40,
+      widthPct,
+      flip: random() < 0.5,
+    };
+  }
+  const spread = total > 1 ? (index - (total - 1) / 2) * 10 : 0;
+  return {
+    birdId: bird.id,
+    species: bird.species,
+    spriteId,
+    imageSrc: sprite.toppSrc,
+    distanceM: bird.distanceM,
+    x: Math.max(8, Math.min(88, 52 + spread + (random() - 0.5) * 18)),
+    y: Math.max(32, Math.min(50, 40 + (random() - 0.5) * 12)),
+    widthPct,
+    flip: random() < 0.5,
+  };
+}
+
+/**
+ * Bind birds in `cell` to hand-authored perches on `imageSrc` when available.
+ * Updates species + distance on assigned birds so LRF / shoot match the visual.
+ * Extra perches (e.g. spot9 test on start) spawn transient birds in that cell.
+ */
+export function bindBirdsToSpotImage(
+  birds: HuntBird[],
+  cell: HuntGridCell,
+  imageSrc: string,
+  opts: {
+    /** Place a bird on every perch (start-cell placement test). */
+    fillAllPerches?: boolean;
+    random?: () => number;
+  } = {},
+): { birds: HuntBird[]; placements: BirdVisualPlacement[] } {
+  const random = opts.random ?? Math.random;
+  const perches = perchesForSpotImage(imageSrc);
+  if (perches.length === 0) {
+    // No placement guide for this landscape → never invent random crowns.
+    return { birds, placements: [] };
+  }
+
+  const here = birdsInCell(birds, cell);
+  const unused = [...here];
+  const assignedIds = new Set<string>();
+  const placements: BirdVisualPlacement[] = [];
+  let next = birds.map((b) => ({ ...b, cell: { ...b.cell } }));
+  let transient = 0;
+
+  const takeBird = (species: BirdSpecies): HuntBird | null => {
+    const idx = unused.findIndex((b) => b.species === species);
+    const pick =
+      idx >= 0
+        ? unused.splice(idx, 1)[0]!
+        : unused.length > 0
+          ? unused.shift()!
+          : null;
+    return pick;
+  };
+
+  const perchCount = opts.fillAllPerches
+    ? perches.length
+    : Math.min(perches.length, Math.max(here.length, 0));
+
+  // Equal chance for every perch (rød/lilla/grønn/gul). Eyes-only only
+  // filters *visibility* later via distanceM ≤ EYES_MAX_DISTANCE_M.
+  let ordered = [...perches];
+  if (!opts.fillAllPerches && here.length < perches.length) {
+    ordered = ordered
+      .map((p) => ({ p, r: random() }))
+      .sort((a, b) => a.r - b.r)
+      .map((x) => x.p)
+      .slice(0, perchCount);
+  }
+
+  for (const perch of ordered) {
+    let bird = takeBird(perch.species);
+    const distanceM = rollPerchDistanceM(perch, random);
+    if (!bird) {
+      if (!opts.fillAllPerches) break;
+      transient += 1;
+      bird = {
+        id: `perch-${imageSrc}-${transient}`,
+        species: perch.species,
+        cell: { ...cell },
+        distanceM,
+        spookCount: 0,
+      };
+      next = [...next, bird];
+    } else {
+      next = next.map((b) =>
+        b.id === bird!.id
+          ? {
+              ...b,
+              species: perch.species,
+              distanceM,
+              cell: { ...cell },
+            }
+          : b,
+      );
+      bird = {
+        ...bird,
+        species: perch.species,
+        distanceM,
+        cell: { ...cell },
+      };
+    }
+    assignedIds.add(bird.id);
+    placements.push(
+      placementFromPerch(bird, perch, distanceM, random() < 0.5, random),
+    );
+  }
+
+  // Leftover birds in cell (more birds than perches): random crown fallback.
+  const leftovers = unused.filter((b) => !assignedIds.has(b.id));
+  leftovers.forEach((bird, i) => {
+    placements.push(
+      randomCrownPlacement(bird, i, leftovers.length, random),
+    );
+  });
+
+  return { birds: next, placements };
+}
+
 /**
  * Place birds that are in `cell` into the spot landscape.
- * Default band ≈ 40 % from top (~40 % sky/air above, bird near mid-frame).
- * Start-cell test bird (`tiur-1`) uses a fixed spot so placement is easy to tune.
+ * When `imageSrc` has a placement guide, uses those perches (x/y/species/range).
+ * Otherwise: default crown band; start-cell `tiur-1` stays on a fixed tune spot.
  */
 export function placementsForBirdsInCell(
   birds: HuntBird[],
   cell: HuntGridCell,
+  imageSrc?: string,
   random: () => number = Math.random,
 ): BirdVisualPlacement[] {
+  if (imageSrc && perchesForSpotImage(imageSrc).length > 0) {
+    return bindBirdsToSpotImage(birds, cell, imageSrc, { random }).placements;
+  }
   const here = birdsInCell(birds, cell);
-  return here.map((bird, i) => {
-    const widthPct = spriteWidthPctForDistance(bird.distanceM);
-    if (bird.id === "tiur-1") {
-      return {
-        birdId: bird.id,
-        species: bird.species,
-        imageSrc: TIUR_TOPP_IMAGES[0]!,
-        distanceM: bird.distanceM,
-        x: 58,
-        y: 40,
-        widthPct,
-        flip: false,
-      };
-    }
-    const spread = here.length > 1 ? (i - (here.length - 1) / 2) * 10 : 0;
-    return {
-      birdId: bird.id,
-      species: bird.species,
-      imageSrc: TIUR_TOPP_IMAGES[0]!,
-      distanceM: bird.distanceM,
-      x: Math.max(8, Math.min(88, 52 + spread + (random() - 0.5) * 18)),
-      y: Math.max(32, Math.min(50, 40 + (random() - 0.5) * 12)),
-      widthPct,
-      flip: random() < 0.5,
-    };
-  });
+  return here.map((bird, i) =>
+    randomCrownPlacement(bird, i, here.length, random),
+  );
 }
 
 export type FlushResolveResult = {
@@ -401,6 +579,84 @@ export function resolveFlushesOnPath(
   }
 
   return { birds: next, events };
+}
+
+/**
+ * Move a bird to another cell without spook-count (post-shot flush).
+ */
+export function relocateBirdQuietly(
+  birds: HuntBird[],
+  birdId: string,
+  map: HuntMapAsset,
+  random: () => number = Math.random,
+): HuntBird[] {
+  const idx = birds.findIndex((b) => b.id === birdId);
+  if (idx < 0) return birds;
+  const bird = birds[idx]!;
+  const to = relocateBirdCell(bird.cell, pickFlushDirection(random), map, random);
+  // Prefer a different cell when possible.
+  const alt =
+    cellKey(to) === cellKey(bird.cell)
+      ? relocateBirdCell(bird.cell, pickFlushDirection(random), map, random)
+      : to;
+  return birds.map((b, i) =>
+    i === idx
+      ? {
+          ...b,
+          cell: alt,
+          distanceM: rollBirdDistance(random),
+        }
+      : b,
+  );
+}
+
+export type PostShotFlushResult = {
+  birds: HuntBird[];
+  /** Birds that remained in the shot cell. */
+  stayedIds: string[];
+  /** Birds that left for other cells. */
+  flushedIds: string[];
+};
+
+/**
+ * After a shot: remaining birds in `cell` either stay (15%) or fly away.
+ * Ettersøk shot → every bird leaves (no stay).
+ */
+export function applyPostShotBirdFlush(input: {
+  birds: HuntBird[];
+  cell: HuntGridCell;
+  map: HuntMapAsset;
+  /** `ettersok` flushes everyone; otherwise each bird may stay. */
+  resultKind: string;
+  /** Already-removed kill / ettersøk bird — skip if still present. */
+  excludeBirdId?: string;
+  stayChance?: number;
+  random?: () => number;
+}): PostShotFlushResult {
+  const random = input.random ?? Math.random;
+  const stayChance = input.stayChance ?? POST_SHOT_STAY_CHANCE;
+  const forceFlushAll = input.resultKind === "ettersok";
+  let next = input.birds.map((b) => ({ ...b, cell: { ...b.cell } }));
+  const stayedIds: string[] = [];
+  const flushedIds: string[] = [];
+
+  const here = next.filter(
+    (b) =>
+      cellKey(b.cell) === cellKey(input.cell) &&
+      b.id !== input.excludeBirdId,
+  );
+
+  for (const bird of here) {
+    const stay = !forceFlushAll && random() < stayChance;
+    if (stay) {
+      stayedIds.push(bird.id);
+      continue;
+    }
+    next = relocateBirdQuietly(next, bird.id, input.map, random);
+    flushedIds.push(bird.id);
+  }
+
+  return { birds: next, stayedIds, flushedIds };
 }
 
 export function flushMessage(event: FlushEvent): string {

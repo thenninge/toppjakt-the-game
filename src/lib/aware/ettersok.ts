@@ -341,3 +341,86 @@ export function impactFromShot(opts: {
     y: Math.max(2, Math.min(98, y)),
   };
 }
+
+/** Manual «Lagre skuddpar» defaults — player must dial in real values. */
+export const SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG = 0;
+export const SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M = 250;
+
+/** Auto skuddpar distance noise when gear filmed the shot. */
+export const TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M = 30;
+export const CAMCORDER_SHOT_PAIR_UNCERTAINTY_M = 10;
+
+export type VisibleShotPairEstimate = {
+  /** Drawn aim point (stand → target). */
+  target: CellPoint;
+  distanceM: number;
+  bearingDeg: number;
+  source: "camcorder" | "triggercam";
+};
+
+/** Triggercam in kit, or camcorder deployed before the shot. */
+export function canAutoSaveShotPair(opts: {
+  hasTriggercam: boolean;
+  hasCamcorder: boolean;
+}): boolean {
+  return opts.hasTriggercam || opts.hasCamcorder;
+}
+
+/**
+ * Auto skuddpar from camera gear after a real shot.
+ * Camcorder ±10 m, triggercam ±30 m along the true shot bearing.
+ * Returns null without gear — player must have saved skuddpar manually.
+ */
+export function estimateVisibleShotPair(opts: {
+  stand: CellPoint;
+  /** True bird / aim at the moment of the shot. */
+  trueAim: CellPoint;
+  hasTriggercam: boolean;
+  /** Camcorder must have been deployed before the shot. */
+  hasCamcorder: boolean;
+  random?: () => number;
+}): VisibleShotPairEstimate | null {
+  const random = opts.random ?? Math.random;
+  const trueBearing = bearingDegFromTo(opts.stand, opts.trueAim);
+  const trueDist = distanceMBetween(opts.stand, opts.trueAim);
+
+  if (opts.hasCamcorder) {
+    const err = (random() * 2 - 1) * CAMCORDER_SHOT_PAIR_UNCERTAINTY_M;
+    const distanceM = Math.max(
+      50,
+      Math.min(450, Math.round(trueDist + err)),
+    );
+    const bearingDeg = Math.round(normalizeDeg(trueBearing));
+    return {
+      target: impactFromShot({
+        stand: opts.stand,
+        bearingDeg,
+        distanceM,
+      }),
+      distanceM,
+      bearingDeg,
+      source: "camcorder",
+    };
+  }
+
+  if (opts.hasTriggercam) {
+    const err = (random() * 2 - 1) * TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M;
+    const distanceM = Math.max(
+      50,
+      Math.min(450, Math.round(trueDist + err)),
+    );
+    const bearingDeg = Math.round(normalizeDeg(trueBearing));
+    return {
+      target: impactFromShot({
+        stand: opts.stand,
+        bearingDeg,
+        distanceM,
+      }),
+      distanceM,
+      bearingDeg,
+      source: "triggercam",
+    };
+  }
+
+  return null;
+}

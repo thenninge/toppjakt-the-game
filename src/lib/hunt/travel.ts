@@ -15,6 +15,9 @@ export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
 export const SPOT_ACTION_MINUTES = 5;
 export const EAT_ACTION_MINUTES = 5;
 export const REST_ACTION_MINUTES = 10;
+/** Minutes to walk out and pick up a dead bird at the tree (instant/vital). */
+export const TREE_RECOVERY_MINUTES = 10;
+
 /** Minutes of search time per søkespor point on the Aware map. */
 export const ETTERSOK_MINUTES_PER_TRACK_POINT = 5;
 

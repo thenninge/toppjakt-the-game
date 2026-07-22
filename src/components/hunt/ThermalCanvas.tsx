@@ -1,7 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useRef } from "react";
 import type { BirdVisualPlacement } from "@/lib/hunt/birds";
+import { getBirdSprite } from "@/lib/hunt/birdSprites";
 
 type ThermalCanvasProps = {
   imageSrc: string;
@@ -21,7 +20,8 @@ function luminanceToThermal(r: number, g: number, b: number): number {
 
 /**
  * Pixelated thermal background + sharp white-hot bird blobs.
- * Background resolution scales with {@link pixelFactor}; birds stay crisp.
+ * Landscape % and bird centres match binos (object-fit: fill).
+ * Blob size uses each sprite's topp aspect so it lines up with the photo.
  */
 export function ThermalCanvas({
   imageSrc,
@@ -128,7 +128,9 @@ export function ThermalCanvas({
       const cx = (lx / 100) * w;
       const cy = (ly / 100) * h;
       const birdW = Math.max(6 * dpr, (p.widthPct / 100) * w * zoom);
-      const birdH = birdW * 0.75;
+      const sprite = getBirdSprite(p.spriteId);
+      const aspect = sprite.toppH / Math.max(1, sprite.toppW);
+      const birdH = birdW * aspect;
 
       ctx.fillStyle = "#ffffff";
       ctx.shadowColor = "rgba(255,255,255,0.75)";
