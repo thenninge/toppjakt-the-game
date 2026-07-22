@@ -15,16 +15,45 @@ export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
 export const SPOT_ACTION_MINUTES = 5;
 export const EAT_ACTION_MINUTES = 5;
 export const REST_ACTION_MINUTES = 10;
-/** Minutes to walk out and pick up a dead bird at the tree (instant/vital). */
-export const TREE_RECOVERY_MINUTES = 10;
+
+/** Time cost: 10 game-minutes per 100 m walked / recovered. */
+export const MINUTES_PER_100M = 10;
 
 /** Minutes of search time per søkespor point on the Aware map. */
 export const ETTERSOK_MINUTES_PER_TRACK_POINT = 5;
 
-/** Total ettersøk duration from the current draft track. */
+/**
+ * @deprecated Prefer {@link treeRecoveryMinutes} — was a flat 10 min flat fee.
+ * Kept as alias of {@link MINUTES_PER_100M} for old copy.
+ */
+export const TREE_RECOVERY_MINUTES = MINUTES_PER_100M;
+
+/** Whole minutes for a distance at {@link MINUTES_PER_100M} (10 min / 100 m). */
+export function minutesForDistanceM(distanceM: number): number {
+  const d = Math.max(0, distanceM);
+  return Math.max(0, Math.round((d / 100) * MINUTES_PER_100M));
+}
+
+/** Walk out and pick up a dead bird at the tree — 10 min per 100 m. */
+export function treeRecoveryMinutes(distanceM: number): number {
+  return Math.max(1, minutesForDistanceM(distanceM));
+}
+
+/**
+ * Ettersøk duration: 5 min per track point + 10 min per 100 m
+ * (typically shot / land distance).
+ */
+export function ettersokMinutesForSearch(
+  trackPointCount: number,
+  distanceM: number,
+): number {
+  const n = Math.max(0, Math.floor(trackPointCount));
+  return n * ETTERSOK_MINUTES_PER_TRACK_POINT + minutesForDistanceM(distanceM);
+}
+
+/** @deprecated Use {@link ettersokMinutesForSearch} with distance. */
 export function ettersokMinutesForTrackPoints(pointCount: number): number {
-  const n = Math.max(0, Math.floor(pointCount));
-  return n * ETTERSOK_MINUTES_PER_TRACK_POINT;
+  return ettersokMinutesForSearch(pointCount, 0);
 }
 
 /**

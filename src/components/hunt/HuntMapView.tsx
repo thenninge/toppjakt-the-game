@@ -270,6 +270,8 @@ type AwareSession = {
   birdBearingDeg: number;
   hunterPos?: CellPoint;
   birdPos?: CellPoint;
+  /** LRF lock vs eyes estimate for this contact. */
+  rangeSource: "lrf" | "estimated";
   ettersokPairId?: string | null;
   /**
    * Kill already counted (instant/vital) — Track is only for finding the tree.
@@ -1194,6 +1196,7 @@ export function HuntMapView({
     placement: BirdVisualPlacement;
     measuredDistanceM: number;
     gameSeconds: number;
+    rangeSource: "lrf" | "estimated";
   }) {
     if (!canHuntAtTime(clockMinutes)) {
       setSpotSession(null);
@@ -1284,12 +1287,15 @@ export function HuntMapView({
       densityRatio: density,
       hunterPos: { x: 50, y: 50 },
       birdPos,
+      rangeSource: info.rangeSource,
     });
     setLog(
       (forfeitNote ? `${forfeitNote} ` : "") +
-        (hold
-          ? `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Kestrel fasit: ${formatHoldClicks(hold)}.`
-          : `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Sjekk bakgrunn og vind.`),
+        (info.rangeSource === "lrf"
+          ? hold
+            ? `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Kestrel fasit: ${formatHoldClicks(hold)}.`
+            : `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Sjekk bakgrunn og vind.`
+          : `Fugl merket i Aware (${Math.round(birdBearing)}° · ca. ${measured} m). Sjekk bakgrunn og vind.`),
     );
   }
 
@@ -1433,7 +1439,7 @@ export function HuntMapView({
       hunterPos: stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 },
       birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
       camcorderActive: !!stance?.camcorderActive,
-      rangeSource: hasBinos ? "lrf" : "estimated",
+      rangeSource: session.rangeSource,
       birdNerve: nerve,
     });
     setLog(
@@ -1521,6 +1527,7 @@ export function HuntMapView({
       birdBearingDeg: s.bearingDeg,
       hunterPos: s.hunterPos,
       birdPos: s.birdPos,
+      rangeSource: s.rangeSource,
       returnNerve: nextNerve,
       returnCamcorderActive: !!s.camcorderActive,
     });
@@ -1588,6 +1595,7 @@ export function HuntMapView({
       birdBearingDeg: pair.bearingDeg,
       hunterPos: { ...pair.stand },
       birdPos: { ...pair.impact },
+      rangeSource: "estimated",
       ettersokPairId: pair.id,
       recoveryOnly,
     });
@@ -1858,6 +1866,7 @@ export function HuntMapView({
             birdBearingDeg: shootSession.bearingDeg,
             hunterPos: stand,
             birdPos: impact,
+            rangeSource: shootSession.rangeSource,
             ettersokPairId: pair.id,
             recoveryOnly,
           }
@@ -2327,6 +2336,7 @@ export function HuntMapView({
         cell={pos}
         birdDistanceM={awareSession.measuredDistanceM}
         birdBearingDeg={awareSession.birdBearingDeg}
+        rangeSource={awareSession.rangeSource}
         initialHunter={awareSession.hunterPos ?? null}
         initialBird={awareSession.birdPos ?? null}
         weather={weather}

@@ -25,6 +25,8 @@ export type BirdObservedInfo = {
   placement: BirdVisualPlacement;
   measuredDistanceM: number;
   gameSeconds: number;
+  /** True when distance came from LRF lock (not eyes estimate). */
+  rangeSource: "lrf" | "estimated";
 };
 
 type SpotViewProps = {
@@ -478,6 +480,7 @@ export function SpotView({
       placement,
       measuredDistanceM: measured,
       gameSeconds: lookedRef.current,
+      rangeSource: ranging ? "lrf" : "estimated",
     });
   }
 

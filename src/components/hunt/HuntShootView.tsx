@@ -907,8 +907,17 @@ export function HuntShootView({
       <header className="shop-header">
         <p className="intro-line intro-gift">Fugl observert — skyt!</p>
         <p className="shop-row-note">
-          Kl {formatHuntClock(clockMinutes)} ·{" "}
-          {rangeSource === "lrf" ? "LRF" : "Estimat"} {measuredDistanceM} m
+          Kl {formatHuntClock(clockMinutes)}
+          {rangeSource === "lrf" ? (
+            <>
+              {" · "}
+              <span className="lrf-range-callout">
+                LRF: {measuredDistanceM} m
+              </span>
+            </>
+          ) : (
+            <> · Estimat {measuredDistanceM} m</>
+          )}
           {" · "}
           vital grønn Ø{TIUR_INSTANT_KILL_DIAMETER_MM} mm / rød Ø
           {TIUR_VITAL_DIAMETER_MM} mm

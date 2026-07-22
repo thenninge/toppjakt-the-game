@@ -53,9 +53,10 @@ import {
 } from "@/lib/hunt/maps";
 import {
   ETTERSOK_MINUTES_PER_TRACK_POINT,
-  TREE_RECOVERY_MINUTES,
-  ettersokMinutesForTrackPoints,
+  MINUTES_PER_100M,
+  ettersokMinutesForSearch,
   formatHuntClock,
+  treeRecoveryMinutes,
 } from "@/lib/hunt/travel";
 import {
   crosswindMs,
@@ -83,6 +84,8 @@ type AwareAppViewProps = {
   birdDistanceM: number;
   /** Initial firing bearing toward the bird (deg, 0 = north/up). */
   birdBearingDeg: number;
+  /** Locked LRF reading vs eyes estimate. */
+  rangeSource?: "lrf" | "estimated";
   weather: DayWeather;
   /** Resume hunter/bird markers (ettersøk) so map matches the shot. */
   initialHunter?: CellPoint | null;
@@ -287,6 +290,7 @@ export function AwareAppView({
   cell,
   birdDistanceM,
   birdBearingDeg,
+  rangeSource = "estimated",
   weather,
   initialHunter = null,
   initialBird = null,
@@ -340,10 +344,10 @@ export function AwareAppView({
       pair?.resultKind === "instant_kill" ||
       pair?.resultKind === "vital_kill"
     ) {
-      return `Hent/søk — drept fugl i treet. Trykk «Hent ved treet» (${TREE_RECOVERY_MINUTES} min).`;
+      return `Hent/søk — drept fugl i treet. Trykk «Hent ved treet» (${treeRecoveryMinutes(pair.distanceM)} min · 10 min/100 m).`;
     }
     if (pair?.resultKind === "ettersok" && pair.fleeObservation) {
-      return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt), deretter utfør ettersøk.`;
+      return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt + ${MINUTES_PER_100M} min/100 m), deretter utfør ettersøk.`;
     }
     if (pair?.fleeObservation?.text) return pair.fleeObservation.text;
     return "Hent/søk — lagret skuddpar: stand → stiplet linje → tre. Finn riktig tre eller følg flukt.";
@@ -713,8 +717,10 @@ export function AwareAppView({
         : p,
     );
     onShotPairsChange(next);
+    const nextN = activePair.trackPoints.length + 1;
+    const searchMin = ettersokMinutesForSearch(nextN, activePair.distanceM);
     setStatus(
-      `Søkespor #${activePair.trackPoints.length + 1} markert (${ettersokMinutesForTrackPoints(activePair.trackPoints.length + 1)} min) — trykk «Utfør ettersøk» når sporet er klart.`,
+      `Søkespor #${nextN} markert (${searchMin} min) — trykk «Utfør ettersøk» når sporet er klart.`,
     );
   }
 
@@ -740,11 +746,11 @@ export function AwareAppView({
     const trackN = activePair.trackPoints.length;
     if (trackN < 1) {
       setStatus(
-        `Legg minst ett søkespor først (${ETTERSOK_MINUTES_PER_TRACK_POINT} min per punkt).`,
+        `Legg minst ett søkespor først (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt + ${MINUTES_PER_100M} min/100 m).`,
       );
       return;
     }
-    const searchMin = ettersokMinutesForTrackPoints(trackN);
+    const searchMin = ettersokMinutesForSearch(trackN, activePair.distanceM);
     onGameSeconds(searchMin * 60);
     const attemptNo = (activePair.ettersokAttempts ?? 0) + 1;
     const est = estimateEttersokFind(activePair);
@@ -788,14 +794,15 @@ export function AwareAppView({
     ) {
       return;
     }
-    onGameSeconds(TREE_RECOVERY_MINUTES * 60);
+    const recoverMin = treeRecoveryMinutes(activePair.distanceM);
+    onGameSeconds(recoverMin * 60);
     const updated: ShotPair = { ...activePair, found: true };
     const next = shotPairs.map((p) =>
       p.id === activePair.id ? updated : p,
     );
     onShotPairsChange(next);
     setStatus(
-      `Hentet ved treet (+${TREE_RECOVERY_MINUTES} min) — fasit på treffpunkt.`,
+      `Hentet ved treet (+${recoverMin} min) — fasit på treffpunkt.`,
     );
     onPairFound?.(updated);
   }
@@ -861,6 +868,11 @@ export function AwareAppView({
       <div className="aware-phone">
         <header className="aware-phone-bar">
           <span className="aware-brand">AWARE</span>
+          {rangeSource === "lrf" ? (
+            <span className="lrf-range-callout" aria-label={`LRF ${Math.round(birdDistanceM)} meter`}>
+              LRF: {Math.round(birdDistanceM)} m
+            </span>
+          ) : null}
           <span className="aware-clock">{formatHuntClock(clockMinutes)}</span>
         </header>
 
@@ -1305,7 +1317,7 @@ export function AwareAppView({
                         <p className="aware-ettersok-hint">
                           Forrige søkespor ligger på kartet. Legg et nytt spor i
                           fluktretningen — {ETTERSOK_MINUTES_PER_TRACK_POINT}{" "}
-                          min per punkt.
+                          min/punkt + {MINUTES_PER_100M} min/100 m.
                         </p>
                       ) : null}
                     </div>
@@ -1317,7 +1329,9 @@ export function AwareAppView({
                     <>
                       <p className="shop-row-note">
                         Drept fugl i treet. Gå ut og hent den —{" "}
-                        {TREE_RECOVERY_MINUTES} min.
+                        {treeRecoveryMinutes(activePair.distanceM)} min (
+                        {MINUTES_PER_100M} min/100 m · {activePair.distanceM}{" "}
+                        m).
                       </p>
                       <button
                         type="button"
@@ -1325,7 +1339,8 @@ export function AwareAppView({
                         disabled={activePair.found === true}
                         onClick={markRecoveredAtTree}
                       >
-                        Hent ved treet ({TREE_RECOVERY_MINUTES} min)
+                        Hent ved treet (
+                        {treeRecoveryMinutes(activePair.distanceM)} min)
                       </button>
                     </>
                   ) : activePair?.resultKind === "ettersok" ? (
@@ -1334,17 +1349,18 @@ export function AwareAppView({
                         <li>
                           Trykk på kartet og legg et <strong>søkespor</strong>{" "}
                           ut fra lagret skuddpar (
-                          {ETTERSOK_MINUTES_PER_TRACK_POINT} min per punkt).
+                          {ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt +{" "}
+                          {MINUTES_PER_100M} min/100 m).
                         </li>
                         <li>
-                          Kjør <strong>Ettersøk</strong> — tiden summeres fra
-                          sporpunktene.
+                          Kjør <strong>Ettersøk</strong> — tid = punkter +
+                          avstand.
                         </li>
                       </ol>
                       <p className="shop-row-note">
                         Nytt spor: {activePair.trackPoints.length}
                         {activePair.trackPoints.length > 0
-                          ? ` · ${ettersokMinutesForTrackPoints(activePair.trackPoints.length)} min`
+                          ? ` · ${ettersokMinutesForSearch(activePair.trackPoints.length, activePair.distanceM)} min`
                           : ""}
                         {(activePair.searchedTracks?.length ?? 0) > 0
                           ? ` · lagret på kart: ${activePair.searchedTracks!.length}`
@@ -1376,8 +1392,9 @@ export function AwareAppView({
                           onClick={runEttersokSearch}
                         >
                           Utfør ettersøk (
-                          {ettersokMinutesForTrackPoints(
+                          {ettersokMinutesForSearch(
                             activePair.trackPoints.length,
+                            activePair.distanceM,
                           )}{" "}
                           min)
                         </button>
