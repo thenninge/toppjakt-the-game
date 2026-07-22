@@ -17,8 +17,7 @@ import {
   grantStarterGear,
   grantUncleRifle,
   isCheatPlayerName,
-  CHEAT_STARTING_BALANCE,
-  STARTING_BALANCE,
+  startingBalanceForName,
   resolvePlayerItem,
   saveZeroing,
   appendShotLogEntry,
@@ -202,9 +201,7 @@ export function IntroScreen() {
       ...prev,
       name: nice,
       nickname: generateNickname(trimmed),
-      balance: isCheatPlayerName(nice)
-        ? CHEAT_STARTING_BALANCE
-        : STARTING_BALANCE,
+      balance: startingBalanceForName(nice),
     }));
     setPhase("welcome");
   }
@@ -553,10 +550,13 @@ export function IntroScreen() {
       if (isCheatPlayerName(prev.name)) {
         return grantStarterGear({
           ...prev,
-          balance: CHEAT_STARTING_BALANCE,
+          balance: startingBalanceForName(prev.name),
         });
       }
-      return grantUncleRifle({ ...prev, balance: STARTING_BALANCE });
+      return grantUncleRifle({
+        ...prev,
+        balance: startingBalanceForName(prev.name),
+      });
     });
     setPhase("town");
   }

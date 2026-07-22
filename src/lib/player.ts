@@ -134,6 +134,12 @@ export const STARTING_BALANCE = 10_000;
 /** Cheat login name — full starter kit + cash (case-insensitive). */
 export const CHEAT_PLAYER_NAME = "Neppe";
 export const CHEAT_STARTING_BALANCE = 500_000;
+/**
+ * First-name tokens that unlock elevated starting cash (case-insensitive).
+ * e.g. "Jørn Nilsson" → matches "jørn" → {@link VIP_STARTING_BALANCE}.
+ */
+export const VIP_NAME_TOKENS = ["jørn", "ivar", "tomas"] as const;
+export const VIP_STARTING_BALANCE = 100_000;
 export const STARTER_RIFLE_ID = "rifle-cz452";
 export const STARTER_SCOPE_ID = "scope-biltema-3-9x40";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
@@ -215,6 +221,27 @@ export function formatPermitFee(nok: number): string {
 /** True when the display/login name is the cheat identity (Neppe). */
 export function isCheatPlayerName(name: string): boolean {
   return name.trim().toLowerCase() === CHEAT_PLAYER_NAME.toLowerCase();
+}
+
+/**
+ * True when any word in the name matches a VIP first-name token
+ * (Jørn / Ivar / Tomas — e.g. "Jørn Nilsson").
+ */
+export function isVipPlayerName(name: string): boolean {
+  const words = name
+    .trim()
+    .toLowerCase()
+    .normalize("NFC")
+    .split(/[\s\-_/.,]+/)
+    .filter(Boolean);
+  return VIP_NAME_TOKENS.some((token) => words.includes(token));
+}
+
+/** Starting cash for a newly registered display name. */
+export function startingBalanceForName(name: string): number {
+  if (isCheatPlayerName(name)) return CHEAT_STARTING_BALANCE;
+  if (isVipPlayerName(name)) return VIP_STARTING_BALANCE;
+  return STARTING_BALANCE;
 }
 
 /**
