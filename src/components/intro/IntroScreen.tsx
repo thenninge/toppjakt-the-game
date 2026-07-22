@@ -52,7 +52,7 @@ import {
   SheriffOffice,
   type SheriffFinishResult,
 } from "@/components/town/SheriffOffice";
-import { PikeProShop } from "@/components/town/PikeProShop";
+import { XxlShop } from "@/components/town/XxlShop";
 import { CbCustoms } from "@/components/town/CbCustoms";
 import { MeatMarket } from "@/components/town/MeatMarket";
 import { RullesBar } from "@/components/town/RullesBar";
@@ -789,8 +789,8 @@ export function IntroScreen() {
           />
         )}
 
-        {phase === "location" && location === "pike-pro-shop" && (
-          <PikeProShop
+        {phase === "location" && location === "xxl" && (
+          <XxlShop
             balance={stats.balance}
             inventory={stats.inventory}
             canBuyRifle={canBuyHuntingRifle(stats)}
@@ -852,6 +852,7 @@ export function IntroScreen() {
             shotLog={stats.shotLog}
             dopeCard={stats.dopeCard}
             customsMods={stats.customsMods}
+            carcasses={stats.carcasses}
             licenseCount={stats.weaponLicenses.length}
             rifleCount={countHuntingRifles(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
@@ -938,7 +939,7 @@ export function IntroScreen() {
                   Lisens for {lastPermit.application.brand}{" "}
                   {lastPermit.application.type} (
                   {lastPermit.application.caliber}) er i systemet. Den ligger
-                  ikke i inventory — den låser opp kjøp hos Pike Pro.
+                  ikke i inventory — den låser opp kjøp hos XXL.
                 </p>
               </>
             ) : (
@@ -961,7 +962,7 @@ export function IntroScreen() {
         {phase === "location" &&
           location &&
           location !== "sheriff" &&
-          location !== "pike-pro-shop" &&
+          location !== "xxl" &&
           location !== "cb-customs" &&
           location !== "home" &&
           location !== "meat-market" &&

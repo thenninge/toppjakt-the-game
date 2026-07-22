@@ -60,6 +60,7 @@ export const RIFLE_AVERAGE_BEST_MOA: Record<string, number> = {
   "rifle-tikka-t3x-lite": 0.6,
   "rifle-howa-1500-hs": 0.65,
   "rifle-ruger-american-predator": 0.75,
+  "rifle-ruger-american-ranch-300blk": 0.9,
   "rifle-cz455": 0.8,
   "rifle-rem-700-sps": 0.85,
   "rifle-cz452": 0.55, // uncle gift — solid .22 with matching ammo

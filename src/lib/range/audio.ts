@@ -8,7 +8,10 @@ export const RANGE_AUDIO = {
 
 const AMBIENT_VOLUME = 0.42;
 const SHOT_VOLUME = 0.75;
+/** Subsonic + suppressor: barely audible “thump”. */
+const SILENT_SHOT_VOLUME = 0.18;
 const AFTER_SHOT_VOLUME = 0.5;
+const SILENT_AFTER_SHOT_VOLUME = 0.12;
 
 function playOneShot(
   src: string,
@@ -36,13 +39,29 @@ export function startRangeAmbient(): () => void {
   };
 }
 
-/** Shot crack → after-shot tail (suppressor picks the shot clip). */
-export function playRangeShotSequence(hasSuppressor: boolean): void {
-  const shotSrc = hasSuppressor
-    ? RANGE_AUDIO.shotWithSilencer
-    : RANGE_AUDIO.shotNoSilencer;
+export type RangeShotAudioOptions = {
+  hasSuppressor: boolean;
+  /** Subsonic + suppressor — use silencer clip at very low volume. */
+  silent?: boolean;
+};
 
-  playOneShot(shotSrc, SHOT_VOLUME, () => {
-    playOneShot(RANGE_AUDIO.afterShot, AFTER_SHOT_VOLUME);
+/** Shot crack → after-shot tail (suppressor picks the shot clip). */
+export function playRangeShotSequence(
+  hasSuppressorOrOptions: boolean | RangeShotAudioOptions,
+): void {
+  const opts: RangeShotAudioOptions =
+    typeof hasSuppressorOrOptions === "boolean"
+      ? { hasSuppressor: hasSuppressorOrOptions }
+      : hasSuppressorOrOptions;
+  const silent = !!opts.silent && opts.hasSuppressor;
+  const shotSrc =
+    opts.hasSuppressor || silent
+      ? RANGE_AUDIO.shotWithSilencer
+      : RANGE_AUDIO.shotNoSilencer;
+  const shotVol = silent ? SILENT_SHOT_VOLUME : SHOT_VOLUME;
+  const afterVol = silent ? SILENT_AFTER_SHOT_VOLUME : AFTER_SHOT_VOLUME;
+
+  playOneShot(shotSrc, shotVol, () => {
+    playOneShot(RANGE_AUDIO.afterShot, afterVol);
   });
 }

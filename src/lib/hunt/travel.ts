@@ -300,10 +300,16 @@ export function effectiveSpottingProbability(
 export function fatigueFromStep(
   effort: EffortScore,
   pace: HuntPace,
+  /**
+   * Pack load vs kit-only baseline. 1 = no extra birds in the bag.
+   * Carcasses raise this (e.g. 1.3 = 30 % more physical fatigue per step).
+   */
+  fatigueLoadFactor = 1,
 ): { mental: number; physical: number } {
+  const load = Math.max(1, fatigueLoadFactor);
   return {
     mental: pace.mentalStrain * 0.035 * effort,
-    physical: pace.physicalStrain * 0.045 * effort,
+    physical: pace.physicalStrain * 0.045 * effort * load,
   };
 }
 

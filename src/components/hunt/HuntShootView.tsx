@@ -30,6 +30,8 @@ import {
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
+import { isSilentSuppressedShot } from "@/lib/ammo/spec";
+import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets, type ScopeHudTab } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -347,7 +349,9 @@ export function HuntShootView({
   }>({ held: false, startedAtMs: null });
   const triggerPullRef = useRef(0);
   const fireShotRef = useRef(() => {});
-  const playShotRef = useRef<(hasSuppressor: boolean) => void>(() => {});
+  const playShotRef = useRef<
+    (opts: boolean | RangeShotAudioOptions) => void
+  >(() => {});
   const consumeAmmoRef = useRef(onConsumeAmmo);
   const recoilClearRef = useRef<number | null>(null);
 
@@ -530,7 +534,14 @@ export function HuntShootView({
     firedRef.current = true;
     setFired(true);
     setLastImpact(impact);
-    playShotRef.current(!!suppressor);
+    const silentShot = isSilentSuppressedShot(
+      !!suppressor,
+      selectedAmmo.ammo,
+    );
+    playShotRef.current({
+      hasSuppressor: !!suppressor,
+      silent: silentShot,
+    });
     setRecoilActive(false);
     window.requestAnimationFrame(() => {
       setRecoilActive(true);
@@ -573,6 +584,8 @@ export function HuntShootView({
       caliber: selectedAmmo.ammo.caliber,
       projectileType: selectedAmmo.ammo.projectileType,
       v0: ammoLive.v0,
+      subsonic: !!selectedAmmo.ammo.subsonic,
+      silentShot,
     };
     const pullFactor = triggerPullRef.current;
     const pullLabel =

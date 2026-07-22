@@ -62,7 +62,7 @@ export function musicSceneFromGame({
     switch (location) {
       case "sheriff":
         return "sheriff";
-      case "pike-pro-shop":
+      case "xxl":
         return "shop";
       case "cb-customs":
         return "customs";

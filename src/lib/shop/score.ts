@@ -1,7 +1,7 @@
 /**
  * Player-facing shop scores — always 1–10, always higher = better.
  *
- * UX rule: every Pike Pro category should expose Score10 knobs so the
+ * UX rule: every XXL category should expose Score10 knobs so the
  * player can compare kit without learning inverted scales (low=good).
  * Engine may still use raw physics (MOA, %, grams); scores are the
  * shop/HUD language.

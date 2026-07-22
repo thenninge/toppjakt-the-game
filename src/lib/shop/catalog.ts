@@ -8,7 +8,7 @@ import { resolveWeightGrams } from "./weights";
 import { rifleAverageBestMoa } from "@/lib/rifle/spec";
 
 /**
- * Pike Pro Shop catalog.
+ * XXL catalog.
  * Prices ≈ Norwegian retail (NOK incl. VAT). Weights in grams via weights map
  * (or inline weightGrams). Ammo requires full ammo spec + internal MOA.
  */
@@ -1059,6 +1059,18 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     },
   },
   {
+    id: "rifle-ruger-american-ranch-300blk",
+    category: "rifle",
+    brand: "Ruger",
+    name: "American Ranch .300 BLK",
+    priceNok: 11990,
+    caliber: ".300 BLK",
+    note: "Kort pipe — laget for subsonisk .300 BLK med lyddemper.",
+    rifle: {
+      averageBestAccuracyMoa: 0.9,
+    },
+  },
+  {
     id: "rifle-browning-xbolt-pro",
     category: "rifle",
     brand: "Browning",
@@ -1398,6 +1410,25 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     },
   },
   {
+    id: "ammo-hornady-300blk-subsonic",
+    category: "ammo",
+    brand: "Hornady",
+    name: "Sub-X 190gr .300 BLK",
+    priceNok: 549,
+    unitLabel: "eske 20",
+    note: "Subsonisk — markant mer fall. Med lyddemper: nesten lydløs (fugler flusher ikke).",
+    ammo: {
+      caliber: ".300 BLK",
+      projectileType: "SP",
+      v0: 305,
+      bc: 0.55,
+      bcModel: "G1",
+      damageFactor: 0.62,
+      maxAchievableMoa: 0.75,
+      subsonic: true,
+    },
+  },
+  {
     id: "ammo-cci-22lr-standard",
     category: "ammo",
     brand: "CCI",
@@ -1464,6 +1495,25 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       bcModel: "G1",
       damageFactor: 0.55,
       maxAchievableMoa: 1.2,
+    },
+  },
+  {
+    id: "ammo-cci-22lr-subsonic",
+    category: "ammo",
+    brand: "CCI",
+    name: "Subsonic HP .22 LR",
+    priceNok: 229,
+    unitLabel: "eske 50",
+    note: "Lav utgangshastighet — dårligere kulebane. Med lyddemper: nesten lydløs (fugler flusher ikke).",
+    ammo: {
+      caliber: ".22 LR",
+      projectileType: "SP",
+      v0: 305,
+      bc: 0.14,
+      bcModel: "G1",
+      damageFactor: 0.45,
+      maxAchievableMoa: 0.95,
+      subsonic: true,
     },
   },
   {
@@ -1672,7 +1722,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     },
   },
 
-  // --- CB Customs home loads (Pike Pro: not for sale — order at CB Customs) ---
+  // --- CB Customs home loads (XXL: not for sale — order at CB Customs) ---
   {
     id: "ammo-cb-homeload-65x55",
     category: "ammo",
@@ -2584,7 +2634,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Forsvaret / NO",
     name: "Norwegian Snow Camo (ny)",
     priceNok: 0,
-    note: "Unobtainable — moderne norsk snøkamo. Finnes i spillet, aldri til salgs i Pike Pro.",
+    note: "Unobtainable — moderne norsk snøkamo. Finnes i spillet, aldri til salgs i XXL.",
     camo: {
       birdSpotSnow: 0.08,
       birdSpotNoSnow: 0.85,
@@ -2998,7 +3048,7 @@ export function isPurchasableInShop(item: ShopItem): boolean {
   if (item.priceNok <= 0) return false;
   if (item.soldOut) return false;
   if (isCamoItem(item) && item.camo.availableInShop === false) return false;
-  // CB Customs home loads — order at the workshop, not Pike Pro.
+  // CB Customs home loads — order at the workshop, not XXL.
   if (item.brand === "CB Customs") return false;
   return true;
 }

@@ -6,7 +6,7 @@
  * where moaDelta is negative for an improvement (e.g. -0.05).
  *
  * Soft / ill-fitting budget stocks can be positive (worse group).
- * **Never 0** — every stock in Pike Pro must move the needle.
+ * **Never 0** — every stock in XXL must move the needle.
  *
  * Example: rifle+ammo 0.40 MOA + stock -0.05 → 0.35 MOA.
  */

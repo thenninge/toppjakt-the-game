@@ -749,6 +749,12 @@ body {
   white-space: nowrap;
 }
 
+.kit-summary-sub {
+  font-size: 0.85rem;
+  color: var(--canyon-dust);
+  line-height: 1.25;
+}
+
 .kit-equipped {
   border-color: var(--accent-gold) !important;
   color: var(--accent-gold) !important;
@@ -861,6 +867,86 @@ body {
 
 .current-rig-ammo-row .current-rig-value {
   flex: 1;
+}
+
+.kit-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 2px solid #6b5238;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.kit-overview-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(107, 82, 56, 0.55);
+}
+
+.kit-overview-block:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.kit-overview-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.kit-overview-stat {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--canyon-dust);
+  line-height: 1.35;
+}
+
+.kit-overview-stat strong {
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+.kit-overview-stat-note {
+  color: var(--canyon-dust);
+  opacity: 0.85;
+  font-size: 0.92rem;
+}
+
+.kit-overview-ammo,
+.kit-overview-tips {
+  list-style: disc;
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.kit-overview-ammo {
+  color: var(--accent-gold);
+  font-size: 0.98rem;
+}
+
+.kit-overview-tips {
+  color: var(--canyon-dust);
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.kit-overview-tips li::marker {
+  color: #8a6a45;
+}
+
+.home-expandable-panel .kit-overview {
+  border: none;
+  background: transparent;
+  padding: 0.15rem 0 0;
 }
 
 .home-kit-list {
@@ -2546,7 +2632,7 @@ body {
   }
 }
 
-/* --- Pike Pro Shop --- */
+/* --- XXL Shop --- */
 
 .shop {
   display: flex;

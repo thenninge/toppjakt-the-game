@@ -24,7 +24,7 @@ export const TIUR_TARGET_SRC = "/images/birds/tiur/tiurtopp1.png";
 export const TIUR_IMAGE_NATIVE_W = 88;
 export const TIUR_IMAGE_NATIVE_H = 138;
 
-/** Pike Pro misc — after-action impact replay on hunt shots. */
+/** XXL misc — after-action impact replay on hunt shots. */
 export const TRIGGERCAM_ITEM_ID = "misc-triggercam";
 
 /** Tripod camcorder — better ettersøk overview; deploy costs nerve. */
@@ -92,6 +92,10 @@ export type HuntShotResult = {
   projectileType?: string;
   /** Muzzle velocity of the load (m/s). */
   v0?: number;
+  /** Catalog subsonic load (low v0 by design). */
+  subsonic?: boolean;
+  /** Quiet enough that birds do not flush (subsonic + suppressor). */
+  silentShot?: boolean;
 };
 
 export type BirdShotGeom = {

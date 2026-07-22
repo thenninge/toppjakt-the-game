@@ -274,6 +274,20 @@ export function formatWeightKg(kg: number): string {
   return `${kg.toFixed(2).replace(".", ",")} kg`;
 }
 
+/** Sum carcass mass for pack / fatigue (kg). */
+export function carcassesWeightKg(
+  carcasses: Pick<GameCarcass, "weightKg">[],
+): number {
+  return carcasses.reduce((sum, c) => sum + Math.max(0, c.weightKg), 0);
+}
+
+/** Sum carcass mass in grams (for kit/pack totals). */
+export function carcassesWeightGrams(
+  carcasses: Pick<GameCarcass, "weightKg">[],
+): number {
+  return Math.round(carcassesWeightKg(carcasses) * 1000);
+}
+
 export function formatMarketKr(nok: number): string {
   return `${nok.toLocaleString("nb-NO")} kr`;
 }

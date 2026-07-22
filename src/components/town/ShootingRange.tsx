@@ -69,6 +69,8 @@ import {
 } from "@/lib/player";
 import { applyScopeClickError } from "@/lib/optics/spec";
 import { densityRatioFromTempC } from "@/lib/ballistics/solver";
+import { isSilentSuppressedShot } from "@/lib/ammo/spec";
+import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import type { DayWeather } from "@/lib/weather/spec";
 
 type ShootingRangeProps = {
@@ -236,7 +238,9 @@ export function ShootingRange({
   }>({ held: false, startedAtMs: null });
   const triggerPullRef = useRef(0);
   const fireShotRef = useRef(() => {});
-  const playShotRef = useRef<(hasSuppressor: boolean) => void>(() => {});
+  const playShotRef = useRef<
+    (opts: boolean | RangeShotAudioOptions) => void
+  >(() => {});
   const consumeAmmoRef = useRef(onConsumeAmmo);
 
   const { playShot } = useRangeAudio({ enabled: musicEnabled });
@@ -319,7 +323,7 @@ export function ShootingRange({
   fireShotRef.current = () => {
     if (!ready || !rifle || !selectedAmmo || !scope) return;
     if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
-      setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
+      setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
     if (
@@ -334,7 +338,7 @@ export function ShootingRange({
       return;
     }
     if (!consumeAmmoRef.current(selectedAmmo.id)) {
-      setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
+      setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
 
@@ -417,7 +421,10 @@ export function ShootingRange({
       setStatus(
         `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${pullNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
       );
-      playShotRef.current(!!suppressor);
+      playShotRef.current({
+        hasSuppressor: !!suppressor,
+        silent: isSilentSuppressedShot(!!suppressor, selectedAmmo.ammo),
+      });
       // Recoil shake
       if (recoilClearRef.current != null) {
         window.clearTimeout(recoilClearRef.current);
@@ -519,7 +526,7 @@ export function ShootingRange({
       return;
     }
     if (ammoRemaining <= 0) {
-      setStatus("Tom for ammo — kjøp mer hos Pike Pro.");
+      setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
     triggerRef.current = {

@@ -85,6 +85,7 @@ export const FLUKT_IMAGES = ["/images/birds/flukt/flukt1.png"] as const;
 /**
  * After a shot: chance each bird in the cell stays perched.
  * Without suppressor most fly (95%); with suppressor more stay (85% fly).
+ * Subsonic + suppressor: silent — birds do not flush (stay = 100%).
  */
 export const POST_SHOT_FLUSH_CHANCE_OPEN = 0.95;
 export const POST_SHOT_FLUSH_CHANCE_SUPPRESSED = 0.85;
@@ -96,7 +97,11 @@ export const POST_SHOT_STAY_CHANCE = 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED;
 export const TIUR_COMPANION_CHANCE = 0.2;
 export const ORRHANE_COMPANION_CHANCE = 0.4;
 
-export function postShotStayChance(hasSuppressor: boolean): number {
+export function postShotStayChance(
+  hasSuppressor: boolean,
+  silentShot = false,
+): number {
+  if (silentShot) return 1;
   return hasSuppressor
     ? 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED
     : 1 - POST_SHOT_FLUSH_CHANCE_OPEN;
@@ -700,6 +705,7 @@ export type PostShotFlushResult = {
 /**
  * After a shot: every bird still in `cell` rolls stay vs flush.
  * Without suppressor: 95 % fly. With suppressor: 85 % fly.
+ * Silent (subsonic + suppressor): no flush.
  * Applies to the shot-at bird (on miss) and any companions in the cell.
  */
 export function applyPostShotBirdFlush(input: {
@@ -710,13 +716,15 @@ export function applyPostShotBirdFlush(input: {
   excludeBirdId?: string;
   /** Kit has a suppressor on the rifle. */
   hasSuppressor?: boolean;
+  /** Subsonic ammo + suppressor — birds do not flush. */
+  silentShot?: boolean;
   stayChance?: number;
   random?: () => number;
 }): PostShotFlushResult {
   const random = input.random ?? Math.random;
   const stayChance =
     input.stayChance ??
-    postShotStayChance(!!input.hasSuppressor);
+    postShotStayChance(!!input.hasSuppressor, !!input.silentShot);
   let next = input.birds.map((b) => ({ ...b, cell: { ...b.cell } }));
   const stayedIds: string[] = [];
   const flushedIds: string[] = [];

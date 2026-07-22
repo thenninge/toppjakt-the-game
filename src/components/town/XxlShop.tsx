@@ -46,7 +46,7 @@ import { averageBestMoaToScore10 } from "@/lib/rifle/spec";
 import { bipodWeaponCalmGrams } from "@/lib/bipod/spec";
 import { LocationNav } from "@/components/town/LocationNav";
 
-type PikeProShopProps = {
+type XxlShopProps = {
   balance: number;
   inventory: InventoryEntry[];
   /** Unused weapon licenses — required to buy hunting rifles. */
@@ -86,14 +86,14 @@ function sortByGlobal(list: ShopItem[], mode: GlobalSort): ShopItem[] {
   return sorted;
 }
 
-export function PikeProShop({
+export function XxlShop({
   balance,
   inventory,
   canBuyRifle,
   unusedLicenses,
   onBuy,
   onLeave,
-}: PikeProShopProps) {
+}: XxlShopProps) {
   const [category, setCategory] = useState<ShopCategory>("ammo");
   const [message, setMessage] = useState("");
   const [globalSort, setGlobalSort] = useState<GlobalSort>("price-asc");
@@ -192,7 +192,7 @@ export function PikeProShop({
 
   function tryBuy(item: ShopItem) {
     if (!isPurchasableInShop(item)) {
-      setMessage("Unobtainable — ikke til salgs i Pike Pro.");
+      setMessage("Unobtainable — ikke til salgs i XXL.");
       return;
     }
     if (isRifleItem(item) && !canBuyRifle) {
@@ -247,7 +247,7 @@ export function PikeProShop({
       />
 
       <div className="shop-header">
-        <p className="intro-line intro-gift">Pike Pro Shop</p>
+        <p className="intro-line intro-gift">XXL</p>
         <p className="intro-line">
           Weapons, glass, cans and brass. Prices are Norwegian street
           estimates — we&apos;ll tweak as we go.

@@ -12,7 +12,7 @@
  *
  * Future (Shooting Range — not built yet): loaner “generisk tofot” /
  * “sandsekk” only if the player does not already own them or have them
- * in kit — try → get hooked → buy more at Pike Pro.
+ * in kit — try → get hooked → buy more at XXL.
  */
 
 import type { Score10 } from "@/lib/shop/score";

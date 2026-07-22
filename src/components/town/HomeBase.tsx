@@ -14,9 +14,7 @@ import {
   isCarryItem,
   isCamoItem,
   isFoodItem,
-  isRifleItem,
   isSkiItem,
-  isStockItem,
   type ShopCategory,
   type ShopItem,
 } from "@/lib/shop/types";
@@ -26,11 +24,16 @@ import {
   computeKitTopSpeedKmh,
   formatTopSpeed,
 } from "@/lib/kit/speed";
+import { computeKitOverview } from "@/lib/kit/overview";
+import { computePackLoad } from "@/lib/kit/pack";
+import {
+  formatWeightKg as formatCarcassWeightKg,
+  type GameCarcass,
+} from "@/lib/hunt/carcass";
 import { kitCanBoil } from "@/lib/food/spec";
 import { camoSlot } from "@/lib/camo/spec";
 import {
   EMPTY_CUSTOMS_MODS,
-  customsWeightReductionGrams,
   type CustomsMods,
 } from "@/lib/customs/spec";
 import { LocationNav } from "@/components/town/LocationNav";
@@ -84,6 +87,8 @@ type HomeBaseProps = {
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
   customsMods?: CustomsMods;
+  /** Unsold harvested birds — still in the bag until Meat Market. */
+  carcasses?: GameCarcass[];
   licenseCount: number;
   rifleCount: number;
   unusedLicenses: number;
@@ -115,6 +120,7 @@ export function HomeBase({
   shotLog,
   dopeCard,
   customsMods = EMPTY_CUSTOMS_MODS,
+  carcasses = [],
   licenseCount,
   rifleCount,
   unusedLicenses,
@@ -152,16 +158,18 @@ export function HomeBase({
       .filter((x): x is ShopItem => x != null);
   }, [kit]);
 
-  const totalWeightGrams = useMemo(() => {
-    const raw = kitItems.reduce((sum, item) => sum + item.weightGrams, 0);
-    const rifle = kitItems.find(isRifleItem);
-    const stock = kitItems.find(isStockItem);
-    const cut = customsWeightReductionGrams(customsMods, {
-      rifleWeightGrams: rifle?.weightGrams ?? 3500,
-      stockWeightGrams: stock?.weightGrams ?? null,
-    });
-    return Math.max(0, raw - cut);
-  }, [kitItems, customsMods]);
+  const packLoad = useMemo(
+    () =>
+      computePackLoad({
+        kitItems,
+        customsMods,
+        carcasses,
+      }),
+    [kitItems, customsMods, carcasses],
+  );
+
+  const totalWeightGrams = packLoad.totalGrams;
+  const kitOnlyGrams = packLoad.kitGrams;
 
   const carryPieces = useMemo(
     () => kitItems.filter(isCarryItem).map((i) => i.carry),
@@ -195,6 +203,16 @@ export function HomeBase({
         ski,
       }),
     [totalWeightGrams, carryPieces, ski],
+  );
+
+  const kitOverview = useMemo(
+    () =>
+      computeKitOverview({
+        kitItems,
+        customsMods,
+        carcasses,
+      }),
+    [kitItems, customsMods, carcasses],
   );
 
   const inventoryValueNok = useMemo(
@@ -319,7 +337,7 @@ export function HomeBase({
         <p className="shop-row-note">
           Våpenlisenser: {licenseCount} · Rifler: {rifleCount}
           {unusedLicenses > 0
-            ? ` · ${unusedLicenses} ubrukt lisens (Pike Pro)`
+            ? ` · ${unusedLicenses} ubrukt lisens (XXL)`
             : " · ingen ubrukt lisens — søk hos Lensmannen for å kjøpe rifle"}
         </p>
         {selectedTerrain && jaktkort ? (
@@ -450,6 +468,107 @@ export function HomeBase({
         </section>
       </ExpandableSection>
 
+      <ExpandableSection
+        title="Active kit overview"
+        summary={kitOverview.summary}
+      >
+        <section className="kit-overview" aria-label="Active kit overview">
+          <p className="shop-row-note current-rig-inline-note">
+            Live analyse av det du har i kit — hva som holder deg tilbake, og
+            hva som lønner seg å oppgradere.
+          </p>
+
+          <div className="kit-overview-block">
+            <h3 className="kit-overview-heading">Presisjon</h3>
+            {kitOverview.precision.bestMoa != null ? (
+              <p className="kit-overview-stat">
+                Beste envelope:{" "}
+                <strong>
+                  {kitOverview.precision.bestMoa.toFixed(2)} MOA
+                </strong>
+                {kitOverview.precision.worstMoa != null &&
+                kitOverview.precision.worstMoa !==
+                  kitOverview.precision.bestMoa
+                  ? ` · svakeste load ${kitOverview.precision.worstMoa.toFixed(2)} MOA`
+                  : ""}
+                <span className="kit-overview-stat-note">
+                  {" "}
+                  (rifle + ammo + stock + bedding · affinity 1.0)
+                </span>
+              </p>
+            ) : (
+              <p className="kit-overview-stat">
+                {kitOverview.precision.missing.join(" · ") ||
+                  "Kan ikke beregne MOA ennå."}
+              </p>
+            )}
+            {kitOverview.precision.rows.length > 1 ? (
+              <ul className="kit-overview-ammo">
+                {kitOverview.precision.rows.map((row) => (
+                  <li key={row.ammoId}>
+                    {row.label}: {row.envelopeMoa.toFixed(2)} MOA
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <ul className="kit-overview-tips">
+              {kitOverview.precision.tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="kit-overview-block">
+            <h3 className="kit-overview-heading">Speed</h3>
+            <p className="kit-overview-stat">
+              Top speed: <strong>{kitOverview.speed.topSpeedLabel}</strong>
+              {" · "}
+              {kitOverview.speed.weightKg.toFixed(1)} kg
+              {" · "}
+              carry comfort {formatScore10(kitOverview.speed.carryComfort)}
+              {kitOverview.speed.hasSkis ? " · ski" : " · støvler"}
+            </p>
+            <ul className="kit-overview-tips">
+              {kitOverview.speed.tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="kit-overview-block">
+            <h3 className="kit-overview-heading">Sneak</h3>
+            <p className="kit-overview-stat">
+              Sneak:{" "}
+              <strong>
+                {formatScore10(kitOverview.sneak.sneakScore)}
+              </strong>
+              {" · "}
+              bird-spot snitt {kitOverview.sneak.birdSpotAvg.toFixed(2)}
+              <span className="kit-overview-stat-note">
+                {" "}
+                (lavere spot = bedre · snø{" "}
+                {kitOverview.sneak.birdSpotSnow.toFixed(2)} / barmark{" "}
+                {kitOverview.sneak.birdSpotNoSnow.toFixed(2)})
+              </span>
+            </p>
+            <ul className="kit-overview-tips">
+              {kitOverview.sneak.tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="kit-overview-block">
+            <h3 className="kit-overview-heading">Totalt — hva kan forbedres</h3>
+            <ul className="kit-overview-tips">
+              {kitOverview.overall.tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      </ExpandableSection>
+
       <div className="kit-summary" aria-live="polite">
         <div className="kit-summary-item">
           <span className="kit-summary-label">Inventory verdi</span>
@@ -468,6 +587,15 @@ export function HomeBase({
           <span className="kit-summary-value">
             {formatWeightKg(totalWeightGrams)}
           </span>
+          {packLoad.carcassGrams > 0 ? (
+            <span className="kit-summary-sub">
+              kit {formatWeightKg(kitOnlyGrams)} + vilt{" "}
+              {formatCarcassWeightKg(packLoad.carcassGrams / 1000)}
+              {packLoad.fatigueLoadFactor > 1.02
+                ? ` · +${Math.round((packLoad.fatigueLoadFactor - 1) * 100)}% fatigue`
+                : ""}
+            </span>
+          ) : null}
         </div>
         <div className="kit-summary-item">
           <span className="kit-summary-label">Top speed</span>
@@ -511,7 +639,7 @@ export function HomeBase({
       ) : null}
 
       {ownedItems.length === 0 ? (
-        <p className="intro-line">Tomt skap. Pike Pro venter.</p>
+        <p className="intro-line">Tomt skap. XXL venter.</p>
       ) : (
         <ExpandableSection title="Inventory" summary={inventorySummary}>
           <ul className="shop-list home-kit-list">

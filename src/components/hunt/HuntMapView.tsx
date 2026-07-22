@@ -79,10 +79,13 @@ import {
 import { isCamcorderMisc, isHeadlampMisc } from "@/lib/misc/spec";
 import {
   createCarcassFromHarvest,
+  formatWeightKg as formatCarcassWeightKg,
   speciesLabelNb,
   type BirdHarvestInput,
   type GameCarcass,
 } from "@/lib/hunt/carcass";
+import { computePackLoad } from "@/lib/kit/pack";
+import { formatWeightKg } from "@/lib/shop/weights";
 import { SpotView, type SpotMode } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
 import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
@@ -578,6 +581,16 @@ export function HuntMapView({
     [kitItems],
   );
 
+  const packLoad = useMemo(
+    () =>
+      computePackLoad({
+        kitItems,
+        customsMods,
+        carcasses,
+      }),
+    [kitItems, customsMods, carcasses],
+  );
+
   function syncClockFromRef() {
     const sec = clockSecondsRef.current;
     if (!Number.isFinite(sec)) {
@@ -971,9 +984,10 @@ export function HuntMapView({
   ): { mental: number; physical: number } {
     let mental = mentalFatigue;
     let physical = physicalFatigue;
+    const loadFactor = packLoad.fatigueLoadFactor;
     for (const cell of path) {
       const effort = getCellEffort(activeMap.id, cell);
-      const gain = fatigueFromStep(effort, usedPace);
+      const gain = fatigueFromStep(effort, usedPace, loadFactor);
       mental = clampFatigue(mental + gain.mental);
       physical = clampFatigue(physical + gain.physical);
     }
@@ -2036,12 +2050,14 @@ export function HuntMapView({
     let nextBirds = isContact
       ? birds.filter((b) => b.id !== id)
       : birds;
+    const silentShot = !!result.silentShot;
     const flush = applyPostShotBirdFlush({
       birds: nextBirds,
       cell: pos,
       map,
       excludeBirdId: isContact ? id : undefined,
       hasSuppressor,
+      silentShot,
     });
     nextBirds = flush.birds;
     setBirds(nextBirds);
@@ -2078,12 +2094,20 @@ export function HuntMapView({
 
     const stayNote =
       flush.stayedIds.length > 0
-        ? ` ${flush.stayedIds.length === 1 ? "Én fugl" : `${flush.stayedIds.length} fugler`} ble sittende${hasSuppressor ? " (lyddemper)" : ""}.`
+        ? ` ${flush.stayedIds.length === 1 ? "Én fugl" : `${flush.stayedIds.length} fugler`} ble sittende${
+            silentShot
+              ? " (subsonisk + lyddemper — stille)"
+              : hasSuppressor
+                ? " (lyddemper)"
+                : ""
+          }.`
         : flush.flushedIds.length > 0
           ? hasSuppressor
             ? " Fuglene i ruta letter (lyddemper demper litt — ikke nok)."
             : " Fuglene i ruta letter av skuddlyden."
-          : "";
+          : silentShot
+            ? " Stille skudd (subsonisk + lyddemper) — fuglene merker det ikke."
+            : "";
 
     if (isContact) {
       const recoveryOnly =
@@ -2457,7 +2481,8 @@ export function HuntMapView({
               <ul className="hunt-eat-list">
                 {carcasses.map((c) => (
                   <li key={c.id} className="shop-row-note">
-                    {speciesLabelNb(c.species)} · {formatHuntClock(clockMinutes)}
+                    {speciesLabelNb(c.species)} ·{" "}
+                    {formatCarcassWeightKg(c.weightKg)}
                   </li>
                 ))}
               </ul>
@@ -2757,6 +2782,15 @@ export function HuntMapView({
             Mental {pct(staminaLeft(mentalFatigue))} · Fysisk{" "}
             {pct(staminaLeft(physicalFatigue))}
             {physicalFatigue >= 1 ? " (på null!)" : ""}
+            {" · "}
+            Sekk {formatWeightKg(packLoad.totalGrams)}
+            {packLoad.carcassGrams > 0
+              ? ` (${formatCarcassWeightKg(packLoad.carcassGrams / 1000)} vilt${
+                  packLoad.fatigueLoadFactor > 1.02
+                    ? ` · +${Math.round((packLoad.fatigueLoadFactor - 1) * 100)}% fatigue`
+                    : ""
+                })`
+              : ""}
           </p>
           <p className="shop-row-note">{log}</p>
         </div>

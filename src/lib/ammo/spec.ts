@@ -47,6 +47,11 @@ export type AmmoSpec = {
    * Optional 1σ muzzle-velocity SD (m/s). If omitted, type default is used.
    */
   v0SigmaMps?: number;
+  /**
+   * True subsonic load (v0 under ~340 m/s by design).
+   * With a suppressor the shot is quiet enough that birds do not flush.
+   */
+  subsonic?: boolean;
 };
 
 /** Sort order for shop listing: caliber groups, then projectile type. */
@@ -54,6 +59,7 @@ export const CALIBER_SORT_ORDER: string[] = [
   "6,5×55",
   "6,5 Creedmoor",
   ".223 Rem",
+  ".300 BLK",
   ".22 LR",
   ".17 HMR",
   ".308 Win",
@@ -73,6 +79,26 @@ export function caliberSortIndex(caliber: string): number {
 
 export function projectileTypeSortIndex(type: ProjectileType): number {
   return PROJECTILE_TYPE_SORT_ORDER.indexOf(type);
+}
+
+/** Subsonic hunting load (catalog flag, or v0 clearly under sound barrier). */
+export function isSubsonicAmmo(
+  ammo: Pick<AmmoSpec, "subsonic" | "v0"> | null | undefined,
+): boolean {
+  if (!ammo) return false;
+  if (ammo.subsonic === true) return true;
+  return false;
+}
+
+/**
+ * Shot is quiet enough that perched birds do not flush:
+ * subsonic ammo + suppressor on the rifle.
+ */
+export function isSilentSuppressedShot(
+  hasSuppressor: boolean,
+  ammo: Pick<AmmoSpec, "subsonic" | "v0"> | null | undefined,
+): boolean {
+  return !!hasSuppressor && isSubsonicAmmo(ammo);
 }
 
 /** Convert MOA to group diameter in mm at a given distance (meters). */

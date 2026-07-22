@@ -1,7 +1,7 @@
 "use client";
 
 export type TownLocationId =
-  | "pike-pro-shop"
+  | "xxl"
   | "sheriff"
   | "home"
   | "shooting-range"
@@ -22,8 +22,8 @@ const LOCATIONS: TownLocation[] = [
     blurb: "Inventory, kit, kart — og ut på jakt.",
   },
   {
-    id: "pike-pro-shop",
-    name: "Pike Pro Shop",
+    id: "xxl",
+    name: "XXL",
     blurb: "Buy weapons and ammo.",
   },
   {

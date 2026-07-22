@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { playRangeShotSequence, startRangeAmbient } from "@/lib/range/audio";
+import {
+  playRangeShotSequence,
+  startRangeAmbient,
+  type RangeShotAudioOptions,
+} from "@/lib/range/audio";
 
 type UseRangeAudioOptions = {
   enabled: boolean;
@@ -25,9 +29,9 @@ export function useRangeAudio({ enabled }: UseRangeAudioOptions) {
   }, [enabled]);
 
   const playShot = useCallback(
-    (hasSuppressor: boolean) => {
+    (hasSuppressorOrOptions: boolean | RangeShotAudioOptions) => {
       if (!enabled) return;
-      playRangeShotSequence(hasSuppressor);
+      playRangeShotSequence(hasSuppressorOrOptions);
     },
     [enabled],
   );

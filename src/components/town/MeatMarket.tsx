@@ -35,7 +35,7 @@ type Step =
   | "haggle";
 
 /**
- * Meat Market — sell harvested birds for Pike Pro money.
+ * Meat Market — sell harvested birds for XXL money.
  * Dialogue tone matches Lensmannen (dry municipal satire).
  */
 export function MeatMarket({
@@ -213,7 +213,7 @@ export function MeatMarket({
               >
                 <span className="town-location-name">Gå</span>
                 <span className="town-location-blurb">
-                  Pike Pro venter. Viltet også — i bilen.
+                  XXL venter. Viltet også — i bilen.
                 </span>
               </button>
             </li>
@@ -425,7 +425,7 @@ export function MeatMarket({
           <h2 className="intro-title">Handel</h2>
           <p className="intro-line">
             Stempel i boka. Pengene på konto. «{lastSaleLabel} —{" "}
-            {formatMarketKr(lastSaleNok)}. Bruk dem fornuftig. Eller i Pike Pro.
+            {formatMarketKr(lastSaleNok)}. Bruk dem fornuftig. Eller i XXL.
             Samme sak.»
           </p>
           <p className="intro-hint-balance">

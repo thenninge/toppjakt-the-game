@@ -589,7 +589,7 @@ export function SheriffOffice({
                 Statusfeltet blinker grønt. Lisens for {form.brand} {form.type}{" "}
                 ({form.caliber}) — klar. Du har {licenseCount} av{" "}
                 {MAX_HUNTING_RIFLES} lisenser fra før, og {rifleCount} fysiske
-                jaktrifler. Våpenet kjøper du hos Pike Pro — lisensen er ikke en
+                jaktrifler. Våpenet kjøper du hos XXL — lisensen er ikke en
                 rifle.
               </p>
             )}

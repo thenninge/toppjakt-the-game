@@ -41,7 +41,7 @@ export type CamoSpec = {
   /** Terrains where this pattern is intended to shine. */
   bestTerrains: CamoTerrain[];
   /**
-   * If false, item exists in game data but cannot be bought in Pike Pro Shop.
+   * If false, item exists in game data but cannot be bought in XXL.
    * @default true
    */
   availableInShop?: boolean;

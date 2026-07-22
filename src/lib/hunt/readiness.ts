@@ -56,7 +56,7 @@ export function huntReadyCheck(input: {
       (a) => getInventoryQty(input.inventory, a.id) > 0,
     );
     if (!hasRounds) {
-      blockers.push("Du er tom for ammo — kjøp mer hos Pike Pro");
+      blockers.push("Du er tom for ammo — kjøp mer hos XXL");
     }
   }
 
