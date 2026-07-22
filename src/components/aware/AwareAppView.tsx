@@ -25,8 +25,6 @@ import {
 import {
   estimateEttersokFind,
   impactFromShot,
-  SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
-  SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
 } from "@/lib/aware/ettersok";
 import {
   type AwareAppMode,
@@ -408,18 +406,33 @@ export function AwareAppView({
     [map.id, cell],
   );
 
+  const shootWizardActive = shootWizard.phase !== "idle";
+  /** Stand→bird while defining skuddpar (wizard stand is frozen). */
+  const wizardBirdDistanceM = shootWizardActive
+    ? distanceMBetween(shootWizard.stand, birdWorld)
+    : null;
+  const wizardBirdBearingDeg = shootWizardActive
+    ? bearingDegFromTo(shootWizard.stand, birdWorld)
+    : null;
+
   const shootPreviewImpact =
     shootWizard.phase === "range" || shootWizard.phase === "direction"
-      ? impactFromShot({
-          stand: shootWizard.stand,
-          bearingDeg: shootWizard.bearingDeg,
-          distanceM: shootWizard.rangeM,
-        })
+      ? (() => {
+          const dialed = impactFromShot({
+            stand: shootWizard.stand,
+            bearingDeg: shootWizard.bearingDeg,
+            distanceM: shootWizard.rangeM,
+          });
+          // Keep preview on the bird when dial matches (slider step rounding).
+          return distanceMBetween(dialed, birdWorld) <= 12
+            ? birdWorld
+            : dialed;
+        })()
       : null;
 
-  // Keyboard: arrow movement while stalking
+  // Keyboard: arrow movement while stalking (not during skuddpar wizard)
   useEffect(() => {
-    if (!stalking) return;
+    if (!stalking || shootWizardActive) return;
 
     function setKey(code: string, down: boolean) {
       const k = keysRef.current;
@@ -452,7 +465,7 @@ export function AwareAppView({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [stalking]);
+  }, [stalking, shootWizardActive]);
 
   // rAF: move + nerve + clock
   useEffect(() => {
@@ -464,7 +477,7 @@ export function AwareAppView({
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
 
-      if (stalking && !flushedRef.current) {
+      if (stalking && !flushedRef.current && !shootWizardActive) {
         const keys = keysRef.current;
         const moving =
           keys.up || keys.down || keys.left || keys.right;
@@ -533,7 +546,7 @@ export function AwareAppView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [stalking, birdWorld, coverFactor]);
+  }, [stalking, birdWorld, coverFactor, shootWizardActive]);
 
   const activePair =
     shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
@@ -567,14 +580,22 @@ export function AwareAppView({
 
   function startShootPair() {
     const stand = { ...hunter };
+    // Prefill with geometry to the bird marker so dialed m/° land on the green dot.
+    const exactDist = distanceMBetween(stand, birdWorld);
+    const exactBearing = bearingDegFromTo(stand, birdWorld);
+    const rangeM = Math.max(
+      50,
+      Math.min(450, Math.round(exactDist / 5) * 5),
+    );
+    const bearingDeg = Math.round(exactBearing) % 360;
     setShootWizard({
       phase: "direction",
       stand,
-      rangeM: SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
-      bearingDeg: SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
+      rangeM,
+      bearingDeg,
     });
     setStatus(
-      "Skuddpar: retning starter på 0° / 250 m — juster til faktisk vinkel og avstand, deretter lagre.",
+      `Skuddpar: stand låst. Fugl ligger på ${Math.round(exactDist)} m / ${Math.round(exactBearing)}° — juster om du vil simulere usikkerhet, deretter lagre.`,
     );
   }
 
@@ -586,21 +607,25 @@ export function AwareAppView({
   function saveShootPair() {
     if (shootWizard.phase === "idle") return;
     const { stand, rangeM, bearingDeg } = shootWizard;
-    const impact = impactFromShot({
+    const dialed = impactFromShot({
       stand,
       bearingDeg,
       distanceM: rangeM,
     });
+    // Snap to the true bird marker when the dial is within one slider step —
+    // avoids clamp/round drift so skuddpar-prikk = fugleprikk.
+    const snapM = distanceMBetween(dialed, birdWorld);
+    const target = snapM <= 12 ? { ...birdWorld } : dialed;
     const pair: ShotPair = {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
       cell: { ...cell },
       cellLabel: cellLabel(cell),
       stand,
-      target: impact,
-      impact,
-      distanceM: Math.round(rangeM),
-      bearingDeg: ((bearingDeg % 360) + 360) % 360,
+      target,
+      impact: target,
+      distanceM: Math.round(distanceMBetween(stand, target)),
+      bearingDeg: Math.round(bearingDegFromTo(stand, target)),
       resultKind: "ettersok",
       trackPoints: [],
       found: null,
@@ -610,7 +635,7 @@ export function AwareAppView({
     setActivePairId(pair.id);
     setShootWizard({ phase: "idle" });
     setStatus(
-      `Skuddpar lagret: ${Math.round(rangeM)} m / ${compassLabel(bearingDeg)} — synlig på kartet (stand → tre + 20 m).`,
+      `Skuddpar lagret: ${pair.distanceM} m / ${compassLabel(pair.bearingDeg)} — synlig på kartet (stand → tre + 20 m).`,
     );
     setMode("track");
   }
@@ -919,8 +944,8 @@ export function AwareAppView({
               <div
                 className="aware-flee-needle"
                 style={{
-                  left: `${activePair.stand.x}%`,
-                  top: `${activePair.stand.y}%`,
+                  left: `${activePair.target.x}%`,
+                  top: `${activePair.target.y}%`,
                   transform: `translate(-50%, -100%) rotate(${activePair.fleeObservation.observedBearingDeg}deg)`,
                 }}
                 title={`Observert flukt ${activePair.fleeObservation.compassLabel}`}
@@ -1035,8 +1060,8 @@ export function AwareAppView({
             <div className="aware-actions">
               <p className="shop-row-note">
                 {hasLrf
-                  ? "Shoot: lås stand → juster retning (fra 0°) → juster avstand (fra 250 m) → lagre."
-                  : "Uten LRF er Shoot nødvendig: juster retning (fra 0°) og avstand (fra 250 m) til treffpunkt."}
+                  ? "Shoot: lås stand → retning/avstand fylles fra fugleprikken. Justér bare hvis du vil simulere usikkerhet."
+                  : "Uten LRF: retning/avstand fylles fra fugleprikken på kartet. Justér for å øve på å treffe treet."}
               </p>
 
               {shootWizard.phase === "idle" ? (
@@ -1052,7 +1077,11 @@ export function AwareAppView({
               {shootWizard.phase === "direction" ? (
                 <>
                   <p className="shop-row-note aware-shoot-step">
-                    1/2 — Sett skuddretning ({compassLabel(shootWizard.bearingDeg)})
+                    1/2 — Sett skuddretning ({compassLabel(shootWizard.bearingDeg)}
+                    )
+                    {wizardBirdBearingDeg != null
+                      ? ` · fugl ${Math.round(wizardBirdBearingDeg)}°`
+                      : ""}
                   </p>
                   <label className="shop-filter aware-shoot-slider">
                     Retning {Math.round(shootWizard.bearingDeg)}°
@@ -1095,6 +1124,9 @@ export function AwareAppView({
                 <>
                   <p className="shop-row-note aware-shoot-step">
                     2/2 — Sett skuddavstand
+                    {wizardBirdDistanceM != null
+                      ? ` · fugl ${Math.round(wizardBirdDistanceM)} m`
+                      : ""}
                   </p>
                   <label className="shop-filter aware-shoot-slider">
                     Avstand {shootWizard.rangeM} m

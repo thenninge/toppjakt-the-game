@@ -609,6 +609,7 @@ export function IntroScreen() {
             <HuntStaminaBars
               physical={huntHud.physicalStamina}
               mental={huntHud.mentalStamina}
+              thermalBattery={huntHud.thermalBattery}
             />
           ) : phase === "hunt" ? (
             <span className="intro-header-side" aria-hidden />

@@ -43,12 +43,15 @@ export function birdMarkerOnAwareMap(
   distanceM: number,
   bearingDeg: number,
 ): { x: number; y: number } {
+  // Same geometry as impactFromShot / skuddpar dial (450 m → 42 % radius).
   const maxM = 450;
-  const r = Math.min(42, (Math.max(0, distanceM) / maxM) * 42);
+  const radiusPct = 42;
+  const pct =
+    Math.min(radiusPct, (Math.max(0, distanceM) / maxM) * radiusPct);
   const rad = ((bearingDeg - 90) * Math.PI) / 180;
   return {
-    x: 50 + Math.cos(rad) * r,
-    y: 50 + Math.sin(rad) * r,
+    x: 50 + Math.cos(rad) * pct,
+    y: 50 + Math.sin(rad) * pct,
   };
 }
 

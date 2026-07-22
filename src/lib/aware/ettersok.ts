@@ -19,11 +19,13 @@ export type EttersokEstimate = {
 export type FleeObservation = {
   /** Player-facing narrative (direction ± distance). */
   text: string;
-  /** Observed flee / land bearing (0 = N), with gear error baked in. */
+  /** Observed flee / land bearing from bird perch (0 = N), with gear error. */
   observedBearingDeg: number;
   /** Compass label for the observed bearing (N, NØ, …). */
   compassLabel: string;
-  /** Camcorder only: apparent land distance from stand (m). */
+  /**
+   * Camcorder only: apparent land distance from where the bird sat (m).
+   */
   observedLandDistanceM?: number;
   hasTriggercam: boolean;
   hasCamcorder: boolean;
@@ -68,10 +70,21 @@ function distanceErrorFrac(hasCamcorder: boolean): number {
   return hasCamcorder ? 0.12 : 0.35;
 }
 
+/** True fly-out range from the perched bird, by hit zone. */
+function flyDistanceRangeM(zone: "vital" | "body"): {
+  min: number;
+  max: number;
+} {
+  // Red ring (vital, not clean): shorter run. Body hit: can go farther.
+  if (zone === "vital") return { min: 15, max: 100 };
+  return { min: 40, max: 250 };
+}
+
 export type GenerateFleeObservationOpts = {
-  stand: CellPoint;
   /** Bird position at the moment of the shot. */
   birdAtShot: CellPoint;
+  /** Hit zone that produced ettersøk (red = vital, else body). */
+  hitZone: "vital" | "body";
   hasTriggercam: boolean;
   /** True only if camcorder was deployed before the shot. */
   hasCamcorder: boolean;
@@ -86,14 +99,16 @@ export type GeneratedFlee = {
 
 /**
  * Wounded bird flies off and lands somewhere — player gets a noisy cue.
- * Triggercam tightens direction; Camcorder also estimates land distance from stand.
+ * Direction + distance are always relative to where the bird sat.
+ * Triggercam tightens direction; Camcorder also estimates land distance.
  */
 export function generateFleeObservation(
   opts: GenerateFleeObservationOpts,
 ): GeneratedFlee {
   const random = opts.random ?? Math.random;
+  const range = flyDistanceRangeM(opts.hitZone);
   const trueFleeBearing = random() * 360;
-  const trueFlyDistM = 45 + random() * 140; // 45–185 m from shot bird
+  const trueFlyDistM = range.min + random() * (range.max - range.min);
   const pct = trueFlyDistM / AWARE_METERS_PER_PCT;
   const rad = ((trueFleeBearing - 90) * Math.PI) / 180;
   const landPos: CellPoint = {
@@ -101,8 +116,9 @@ export function generateFleeObservation(
     y: clampPct(opts.birdAtShot.y + Math.sin(rad) * pct),
   };
 
-  const trueLandBearing = bearingDegFromTo(opts.stand, landPos);
-  const trueLandDistM = distanceMBetween(opts.stand, landPos);
+  // Cue frame: from perched bird → land (not from hunter stand).
+  const trueLandBearing = bearingDegFromTo(opts.birdAtShot, landPos);
+  const trueLandDistM = distanceMBetween(opts.birdAtShot, landPos);
 
   const sigma = directionErrorSigmaDeg({
     hasTriggercam: opts.hasTriggercam,
@@ -118,24 +134,24 @@ export function generateFleeObservation(
 
   if (opts.hasCamcorder) {
     const fracErr = distanceErrorFrac(true);
-    const noisy =
-      trueLandDistM * (1 + randn(random) * fracErr);
+    const noisy = trueLandDistM * (1 + randn(random) * fracErr);
+    const cap = range.max + 20;
     observedLandDistanceM = Math.max(
-      20,
-      Math.min(450, Math.round(noisy / 5) * 5),
+      10,
+      Math.min(cap, Math.round(noisy / 5) * 5),
     );
     text =
       `Fuglen er truffet men kommer seg på vingene. Camcorder viser at den ` +
       `dro omtrent mot ${compass} og så ut til å lande ca. ${observedLandDistanceM} m ` +
-      `fra skuddplassen.`;
+      `fra der den satt.`;
   } else if (opts.hasTriggercam) {
     text =
       `Fuglen er truffet men kommer seg på vingene. Triggercam tyder på at den ` +
-      `dro i retning ${compass} — usikkerheten er liten, men ikke null.`;
+      `dro i retning ${compass} fra der den satt — usikkerheten er liten, men ikke null.`;
   } else {
     text =
       `Fuglen er truffet men kommer seg på vingene. Det så ut som den dro i ` +
-      `retning ${compass} — vanskelig å se skikkelig, så ta høyde for feil.`;
+      `retning ${compass} fra der den satt — vanskelig å se skikkelig, så ta høyde for feil.`;
   }
 
   return {
@@ -230,15 +246,17 @@ export function estimateEttersokFind(
   let cueAlign: { distM: number; bearingErrorDeg: number } | null = null;
   if (cue && n > 0) {
     const last = pair.trackPoints[n - 1]!;
+    // Cue is from perched bird (target), not hunter stand.
+    const origin = pair.target;
     const cueDistM = cue.observedLandDistanceM;
-    const trackBearing = bearingDegFromTo(pair.stand, last);
+    const trackBearing = bearingDegFromTo(origin, last);
     const bearingErrorDeg = absAngleDiffDeg(
       cue.observedBearingDeg,
       trackBearing,
     );
     let distM = 0;
     if (cueDistM != null) {
-      const along = distanceMBetween(pair.stand, last);
+      const along = distanceMBetween(origin, last);
       distM = Math.abs(along - cueDistM);
     }
     cueAlign = { distM, bearingErrorDeg };
@@ -295,7 +313,7 @@ export function estimateEttersokFind(
 
     if (cover.minDistM > 100 || (cover.bearingErrorDeg ?? 0) > 70) {
       missHint =
-        "Sporene ligger feil vei i forhold til der fuglen dro — følg fluktretningen fra skuddplassen og legg et nytt spor der.";
+        "Sporene ligger feil vei i forhold til der fuglen dro — følg fluktretningen fra der den satt og legg et nytt spor der.";
     } else if (n < 2) {
       missHint =
         "For få søkespor i området — legg flere punkter langs fluktretningen og prøv igjen.";

@@ -96,6 +96,7 @@ import {
 import {
   applyPostShotBirdFlush,
   bindBirdsToSpotImage,
+  flushAllBirdsFromCell,
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
   pickFluktImage,
@@ -115,7 +116,10 @@ import {
 } from "@/lib/hunt/shoot";
 import { pickShotVideoForResult } from "@/lib/hunt/vids";
 import { lrfOpticalMagnification } from "@/lib/optics/spec";
-import { DEFAULT_BINOS_MAGNIFICATION } from "@/lib/hunt/images";
+import {
+  DEFAULT_BINOS_MAGNIFICATION,
+  THERMAL_BATTERY_GAME_MINUTES,
+} from "@/lib/hunt/images";
 import {
   densityRatioFromTempC,
   exactBallisticHold,
@@ -147,6 +151,11 @@ export type HuntHudStatus = {
   mentalStamina: number;
   /** Remaining physical stamina 0–1 (1 = fresh). */
   physicalStamina: number;
+  /**
+   * Remaining thermal battery 0–1 (1 = full).
+   * Null when kit has no thermal.
+   */
+  thermalBattery: number | null;
 };
 
 type HuntMapViewProps = {
@@ -358,6 +367,13 @@ export function HuntMapView({
   const [flushQueue, setFlushQueue] = useState<FlushEvent[]>([]);
   const flushCurrent = flushQueue[0] ?? null;
   const pendingForcedRestRef = useRef(false);
+  /** Thermal battery remaining as game-seconds (full = THERMAL_BATTERY_GAME_MINUTES). */
+  const thermalBatteryMaxGameSec = THERMAL_BATTERY_GAME_MINUTES * 60;
+  const [thermalBatteryGameSec, setThermalBatteryGameSec] = useState(
+    thermalBatteryMaxGameSec,
+  );
+  const thermalBatteryGameSecRef = useRef(thermalBatteryGameSec);
+  thermalBatteryGameSecRef.current = thermalBatteryGameSec;
 
   const binoItem = useMemo(() => kitItems.find(isLrfItem) ?? null, [kitItems]);
   const hasBinos = !!binoItem;
@@ -613,11 +629,19 @@ export function HuntMapView({
       isDark: isHuntDark(clockMinutes),
       mentalStamina: staminaLeft(mentalFatigue),
       physicalStamina: staminaLeft(physicalFatigue),
+      thermalBattery: hasThermal
+        ? thermalBatteryMaxGameSec > 0
+          ? thermalBatteryGameSec / thermalBatteryMaxGameSec
+          : 0
+        : null,
     });
   }, [
     clockMinutes,
     mentalFatigue,
     physicalFatigue,
+    thermalBatteryGameSec,
+    thermalBatteryMaxGameSec,
+    hasThermal,
     onHudChange,
   ]);
 
@@ -1237,8 +1261,8 @@ export function HuntMapView({
     let fleeObservation: ShotPair["fleeObservation"];
     if (result.kind === "ettersok") {
       const flee = generateFleeObservation({
-        stand,
         birdAtShot: birdPos,
+        hitZone: result.zone === "vital" ? "vital" : "body",
         hasTriggercam,
         hasCamcorder: camcorderOn,
       });
@@ -1485,6 +1509,12 @@ export function HuntMapView({
   }
 
   function lightTyribal() {
+    if (map) {
+      const flushed = flushAllBirdsFromCell(birds, pos, map);
+      if (flushed.flushedCount > 0) {
+        setBirds(flushed.birds);
+      }
+    }
     setEatSession({
       imageSrc: pickFireImage(),
       itemId: null,
@@ -1517,8 +1547,12 @@ export function HuntMapView({
     const mindTxt = eatSession.mindToFull
       ? "Mind 100%"
       : `Mind +${formatStaminaPct(eatSession.mindGain)}`;
+    const fireNote =
+      eatSession.label === TYRIBAL_RECOVERY.label
+        ? ` ${TYRIBAL_RECOVERY.note}`
+        : "";
     setLog(
-      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.`,
+      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.${fireNote}`,
     );
     setEatSession(null);
     setPanel("arrived");
@@ -1841,6 +1875,17 @@ export function HuntMapView({
         hasLrf={hasBinos}
         binosLabel={binosLabel}
         thermalLabel={thermalLabel}
+        thermalBatteryGameSec={thermalBatteryGameSec}
+        thermalBatteryMaxGameSec={thermalBatteryMaxGameSec}
+        onThermalBatteryDrain={(wantGameSec) => {
+          const next = Math.max(
+            0,
+            thermalBatteryGameSecRef.current - wantGameSec,
+          );
+          thermalBatteryGameSecRef.current = next;
+          setThermalBatteryGameSec(next);
+          return next;
+        }}
         onGameSeconds={addGameSeconds}
         onBirdObserved={onBirdObserved}
         onDone={finishSpot}
@@ -2358,7 +2403,8 @@ export function HuntMapView({
                     <span className="hunt-eat-option-meta">
                       Mind → 100% · Body +
                       {formatStaminaPct(TYRIBAL_RECOVERY.bodyGain)} ·{" "}
-                      {TYRIBAL_RECOVERY.minutes} min
+                      {TYRIBAL_RECOVERY.minutes} min ·{" "}
+                      {TYRIBAL_RECOVERY.note}
                     </span>
                   </button>
                 </li>

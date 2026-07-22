@@ -2427,7 +2427,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Sony",
     name: "FDR-AX43 (jakt-oppsett)",
     priceNok: 12490,
-    note: "Stativ-camcorder mot standplass. Gir retning + landingsavstand etter skudd — men tar tid å sette opp (fuglen blir nervøs).",
+    note: "Stativ-camcorder mot standplass. Gir retning + landingsavstand fra der fuglen satt — men tar tid å sette opp (fuglen blir nervøs).",
     misc: { enduranceGrams: 0, isCamcorder: true },
   },
   {

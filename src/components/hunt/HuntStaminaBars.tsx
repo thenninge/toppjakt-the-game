@@ -5,9 +5,11 @@ import { clampFatigue } from "@/lib/hunt/travel";
 type StaminaBarProps = {
   label: string;
   value: number;
+  /** Optional fill color override (e.g. battery). */
+  fillClassName?: string;
 };
 
-function StaminaBar({ label, value }: StaminaBarProps) {
+function StaminaBar({ label, value, fillClassName }: StaminaBarProps) {
   const pct = Math.round(clampFatigue(value) * 100);
 
   return (
@@ -23,7 +25,11 @@ function StaminaBar({ label, value }: StaminaBarProps) {
     >
       <div className="hunt-stamina-bar-track">
         <div
-          className="hunt-stamina-bar-fill"
+          className={
+            fillClassName
+              ? `hunt-stamina-bar-fill ${fillClassName}`
+              : "hunt-stamina-bar-fill"
+          }
           style={{ height: `${pct}%` }}
         />
       </div>
@@ -41,11 +47,27 @@ type HuntStaminaBarsProps = {
   physical: number;
   /** Remaining mental stamina 0–1 (1 = fresh). */
   mental: number;
+  /**
+   * Remaining thermal battery 0–1 (1 = full).
+   * Shown left of BODY when provided (kit has thermal).
+   */
+  thermalBattery?: number | null;
 };
 
-export function HuntStaminaBars({ physical, mental }: HuntStaminaBarsProps) {
+export function HuntStaminaBars({
+  physical,
+  mental,
+  thermalBattery = null,
+}: HuntStaminaBarsProps) {
   return (
     <div className="hunt-stamina-bars" aria-label="Stamina">
+      {thermalBattery != null ? (
+        <StaminaBar
+          label="BATT"
+          value={thermalBattery}
+          fillClassName="hunt-stamina-bar-fill-batt"
+        />
+      ) : null}
       <StaminaBar label="BODY" value={physical} />
       <StaminaBar label="MIND" value={mental} />
     </div>

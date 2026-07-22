@@ -90,6 +90,8 @@ export const COFFEE_RECOVERY: FoodRecovery & { label: string } = {
 
 export const TYRIBAL_RECOVERY = {
   label: "Tyribål!",
+  /** Shown on the eat/rest option — fire clears the cell. */
+  note: "Skremmer all fugl fra cellen du står i.",
   bodyGain: 0.3,
   mindToFull: true as const,
   minutes: 45,

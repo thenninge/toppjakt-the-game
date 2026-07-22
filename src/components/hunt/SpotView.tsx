@@ -53,6 +53,12 @@ type SpotViewProps = {
   /** Label for HUD, e.g. brand + name. */
   binosLabel?: string | null;
   thermalLabel?: string | null;
+  /** Remaining thermal battery in game-seconds. */
+  thermalBatteryGameSec?: number;
+  /** Full thermal battery capacity (game-seconds). */
+  thermalBatteryMaxGameSec?: number;
+  /** Drain battery by thermal game-seconds; return remaining. */
+  onThermalBatteryDrain?: (gameSeconds: number) => number;
   /** Called with game-seconds elapsed while looking. */
   onGameSeconds: (seconds: number) => void;
   /** LRF locked a bird — parent enters shoot mode. */
@@ -61,7 +67,7 @@ type SpotViewProps = {
 };
 
 /** Single arrow tap — landscape % step. */
-const OPTIC_PAN_TAP_PCT = 1.35;
+const OPTIC_PAN_TAP_PCT = 0.675;
 /** Hold longer than this before continuous pan. */
 const OPTIC_PAN_HOLD_MS = 160;
 /** Continuous pan speed after hold starts (% / s). */
@@ -129,6 +135,9 @@ export function SpotView({
   hasLrf = false,
   binosLabel,
   thermalLabel,
+  thermalBatteryGameSec = 0,
+  thermalBatteryMaxGameSec = 60 * 60,
+  onThermalBatteryDrain,
   onGameSeconds,
   onBirdObserved,
   onDone,
@@ -144,6 +153,10 @@ export function SpotView({
   modeRef.current = mode;
   const onGameSecondsRef = useRef(onGameSeconds);
   onGameSecondsRef.current = onGameSeconds;
+  const onThermalBatteryDrainRef = useRef(onThermalBatteryDrain);
+  onThermalBatteryDrainRef.current = onThermalBatteryDrain;
+  const thermalBatteryRef = useRef(thermalBatteryGameSec);
+  thermalBatteryRef.current = thermalBatteryGameSec;
 
   const [pan, setPan] = useState({ x: 50, y: 40 });
   const panRef = useRef(pan);
@@ -163,6 +176,10 @@ export function SpotView({
   } | null>(null);
 
   const [lrfReading, setLrfReading] = useState<string | null>(null);
+  const fireLrfRef = useRef<(
+    activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null,
+  ) => void>(() => {});
+  const activeLrfRef = useRef<Pick<LrfSpec, "rangeErrorPercent"> | null>(null);
 
   useEffect(() => {
     let last = performance.now();
@@ -171,13 +188,26 @@ export function SpotView({
       const realSec = (now - last) / 1000;
       last = now;
       if (realSec <= 0 || realSec > 2) return;
-      const gameSec = realSec * spotTimeFactor(modeRef.current);
+      const factor = spotTimeFactor(modeRef.current);
+      let gameSec = realSec * factor;
+      if (modeRef.current === "thermal" && onThermalBatteryDrainRef.current) {
+        const before = thermalBatteryRef.current;
+        const left = onThermalBatteryDrainRef.current(gameSec);
+        thermalBatteryRef.current = left;
+        gameSec = Math.max(0, before - left);
+        if (left <= 0) {
+          modeRef.current = hasBinos ? "binos" : "eyes";
+          setMode(modeRef.current);
+          setLrfReading(null);
+        }
+      }
+      if (gameSec <= 0) return;
       lookedRef.current += gameSec;
       setLookedGameSec(lookedRef.current);
       onGameSecondsRef.current(gameSec);
     }, 200);
     return () => window.clearInterval(id);
-  }, []);
+  }, [hasBinos]);
 
   useEffect(() => {
     function nudge(dx: number, dy: number) {
@@ -198,6 +228,18 @@ export function SpotView({
       const optic =
         modeRef.current === "binos" || modeRef.current === "thermal";
       if (!optic) return;
+
+      const lrfKey =
+        e.key === "f" ||
+        e.key === "F" ||
+        e.key === " " ||
+        e.code === "Space";
+      if (lrfKey && activeLrfRef.current) {
+        e.preventDefault();
+        if (e.repeat) return;
+        fireLrfRef.current(activeLrfRef.current);
+        return;
+      }
 
       const dir =
         e.key === "ArrowUp"
@@ -298,6 +340,7 @@ export function SpotView({
   }
 
   function enterThermal() {
+    if (thermalBatteryGameSec <= 0) return;
     focusOnBird("thermal");
   }
 
@@ -369,6 +412,8 @@ export function SpotView({
         ? lrfSpec
         : null;
   const showLrf = !!activeLrf;
+  fireLrfRef.current = fireLrf;
+  activeLrfRef.current = activeLrf;
 
   const modeTitle =
     mode === "binos"
@@ -395,6 +440,15 @@ export function SpotView({
     top: "0%",
   } as const;
 
+  const battMin = Math.max(
+    0,
+    Math.ceil(thermalBatteryGameSec / 60),
+  );
+  const battPct =
+    thermalBatteryMaxGameSec > 0
+      ? Math.round((thermalBatteryGameSec / thermalBatteryMaxGameSec) * 100)
+      : 0;
+
   return (
     <div className="spot-view" role="dialog" aria-modal="true" aria-label="Spotting">
       <header className="spot-view-hud">
@@ -405,6 +459,9 @@ export function SpotView({
             {lookedMin > 0 ? `${lookedMin} min ` : ""}
             {lookedSec} s spilltid · tid ×{timeFactor}
             {isOpticMode ? " · piltaster / dra for å speide" : ""}
+            {hasThermal
+              ? ` · batteri ${battMin} min (${battPct}%)`
+              : ""}
             {lrfReading ? ` · LRF ${lrfReading}` : ""}
           </p>
         </div>
@@ -415,12 +472,32 @@ export function SpotView({
             </button>
           ) : null}
           {mode === "eyes" && hasThermal ? (
-            <button type="button" className="intro-button" onClick={enterThermal}>
+            <button
+              type="button"
+              className="intro-button"
+              onClick={enterThermal}
+              disabled={thermalBatteryGameSec <= 0}
+              title={
+                thermalBatteryGameSec <= 0
+                  ? "Batteri tomt"
+                  : `Batteri ${battMin} min igjen`
+              }
+            >
               Use thermal
             </button>
           ) : null}
           {mode === "binos" && hasThermal ? (
-            <button type="button" className="intro-button" onClick={enterThermal}>
+            <button
+              type="button"
+              className="intro-button"
+              onClick={enterThermal}
+              disabled={thermalBatteryGameSec <= 0}
+              title={
+                thermalBatteryGameSec <= 0
+                  ? "Batteri tomt"
+                  : `Batteri ${battMin} min igjen`
+              }
+            >
               Use thermal
             </button>
           ) : null}
@@ -446,6 +523,7 @@ export function SpotView({
               type="button"
               className="intro-button spot-lrf-btn"
               onClick={() => fireLrf(activeLrf)}
+              title="F eller Space"
             >
               LRF
             </button>
@@ -533,7 +611,7 @@ export function SpotView({
       {mode === "binos" ? (
         <p className="spot-binos-hint">
           Piltaster (tap = lite steg, hold = raskere) eller dra · sikt LRF og
-          trykk LRF
+          trykk F / Space / LRF
         </p>
       ) : null}
       {mode === "thermal" ? (

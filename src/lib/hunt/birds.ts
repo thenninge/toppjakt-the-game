@@ -659,6 +659,24 @@ export function applyPostShotBirdFlush(input: {
   return { birds: next, stayedIds, flushedIds };
 }
 
+/**
+ * Tyribål / fire: every bird in the hunter's cell leaves for another cell.
+ * Does not increment spook count (rest mechanic, not a stalk flush).
+ */
+export function flushAllBirdsFromCell(
+  birds: HuntBird[],
+  cell: HuntGridCell,
+  map: HuntMapAsset,
+  random: () => number = Math.random,
+): { birds: HuntBird[]; flushedCount: number } {
+  let next = birds.map((b) => ({ ...b, cell: { ...b.cell } }));
+  const here = birdsInCell(next, cell);
+  for (const bird of here) {
+    next = relocateBirdQuietly(next, bird.id, map, random);
+  }
+  return { birds: next, flushedCount: here.length };
+}
+
 export function flushMessage(event: FlushEvent): string {
   const species = event.species === "tiur" ? "Tiuren" : "Orrhanen";
   if (event.gone) {

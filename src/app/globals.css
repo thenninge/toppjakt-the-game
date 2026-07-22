@@ -301,6 +301,10 @@ body {
   transition: height 220ms ease;
 }
 
+.hunt-stamina-bar-fill-batt {
+  background: linear-gradient(180deg, #8ec8a8 0%, #3d7a58 100%);
+}
+
 .hunt-stamina-bar-label {
   display: flex;
   flex-direction: column;

@@ -181,10 +181,13 @@ export function pickFireImage(): string {
   return pickRandomImage(FIRE_IMAGES);
 }
 
-/** Eyes: 1 real second = 1 game second. Binos/thermal: 1 real = 5 game. */
+/** Eyes: 1 real second = 1 game second. Binos: 1 real = 5 game. Thermal: 1 real = 20 game. */
 export const SPOT_TIME_FACTOR_EYES = 1;
 export const SPOT_TIME_FACTOR_BINOS = 5;
-export const SPOT_TIME_FACTOR_THERMAL = 5;
+/** Thermal burns clock + battery fast — observe efficiently. */
+export const SPOT_TIME_FACTOR_THERMAL = 20;
+/** Full thermal charge as game-minutes (drains 1:1 with thermal game time). */
+export const THERMAL_BATTERY_GAME_MINUTES = 60;
 
 /** Fallback bino zoom when kit magnification is unknown (10× class). */
 export const DEFAULT_BINOS_MAGNIFICATION = 10;
