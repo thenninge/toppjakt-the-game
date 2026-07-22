@@ -4,6 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { getHuntMap } from "@/lib/hunt/maps";
 import {
+  createJaktkort,
+  formatJaktkortStatusNb,
+  jaktkortBlurbNb,
+  jaktkortLabelNb,
+  jaktkortPriceNok,
+  JAKTKORT_KINDS,
+  type ActiveJaktkort,
+  type JaktkortKind,
+} from "@/lib/hunt/jaktkort";
+import {
   formatBirdRating,
   getHuntingTerrain,
   terrainsAvailableForPlayer,
@@ -14,12 +24,17 @@ import {
 type InaturNoProps = {
   balance: number;
   selectedTerrainId: string | null;
+  jaktkort: ActiveJaktkort | null;
   unlockedTerrainIds: string[];
-  onSelectTerrain: (terrainId: string) => void;
+  onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
   onBack: () => void;
 };
 
-function formatPrice(nok: number): string {
+function formatNok(nok: number): string {
+  return `${nok.toLocaleString("nb-NO")} kr`;
+}
+
+function formatDayRate(nok: number): string {
   return `${nok.toLocaleString("nb-NO")} kr/dag`;
 }
 
@@ -33,8 +48,9 @@ function terrainTierLabel(pricePerDayNok: number): string {
 export function InaturNo({
   balance,
   selectedTerrainId,
+  jaktkort,
   unlockedTerrainIds,
-  onSelectTerrain,
+  onPurchaseJaktkort,
   onBack,
 }: InaturNoProps) {
   const [message, setMessage] = useState("");
@@ -45,8 +61,10 @@ export function InaturNo({
     () => terrainsAvailableForPlayer(unlockedTerrainIds),
     [unlockedTerrainIds],
   );
-  const [pendingPurchase, setPendingPurchase] =
-    useState<HuntingTerrain | null>(null);
+  const [pendingPurchase, setPendingPurchase] = useState<{
+    terrain: HuntingTerrain;
+    kind: JaktkortKind;
+  } | null>(null);
   const selected = useMemo(
     () => getHuntingTerrain(selectedTerrainId) ?? null,
     [selectedTerrainId],
@@ -61,33 +79,44 @@ export function InaturNo({
     return () => window.removeEventListener("keydown", onKey);
   }, [previewTerrain]);
 
-  function handleBuyPermit(terrain: HuntingTerrain) {
-    if (terrain.id === selectedTerrainId) {
-      setMessage(`${terrain.name} er allerede kjøpt for denne turen.`);
-      return;
-    }
-    if (balance < terrain.pricePerDayNok) {
+  function handleBuyPermit(terrain: HuntingTerrain, kind: JaktkortKind) {
+    const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
+    const sameActive =
+      jaktkort &&
+      jaktkort.terrainId === terrain.id &&
+      jaktkort.kind === kind &&
+      jaktkort.daysRemaining > 0;
+    if (sameActive) {
       setMessage(
-        `Ikke nok på konto — jaktkort koster ${formatPrice(terrain.pricePerDayNok)}.`,
+        `${jaktkortLabelNb(kind)} for ${terrain.name} er allerede aktivt (${jaktkort.daysRemaining} dager igjen).`,
       );
       return;
     }
-    setPendingPurchase(terrain);
+    if (balance < price) {
+      setMessage(
+        `Ikke nok på konto — ${jaktkortLabelNb(kind).toLowerCase()} koster ${formatNok(price)}.`,
+      );
+      return;
+    }
+    setPendingPurchase({ terrain, kind });
     setMessage("");
   }
 
   function confirmPurchase() {
     if (!pendingPurchase) return;
-    if (balance < pendingPurchase.pricePerDayNok) {
+    const { terrain, kind } = pendingPurchase;
+    const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
+    if (balance < price) {
       setMessage(
-        `Ikke nok på konto — jaktkort koster ${formatPrice(pendingPurchase.pricePerDayNok)}.`,
+        `Ikke nok på konto — ${jaktkortLabelNb(kind).toLowerCase()} koster ${formatNok(price)}.`,
       );
       setPendingPurchase(null);
       return;
     }
-    onSelectTerrain(pendingPurchase.id);
+    onPurchaseJaktkort(terrain.id, kind);
+    const kort = createJaktkort(terrain.id, kind, terrain.pricePerDayNok);
     setMessage(
-      `Jaktkort kjøpt: ${pendingPurchase.name} (${formatPrice(pendingPurchase.pricePerDayNok)}).`,
+      `Kjøpt ${jaktkortLabelNb(kind)}: ${terrain.name} (${formatNok(price)} · ${kort.daysRemaining} jaktdag${kort.daysRemaining === 1 ? "" : "er"}).`,
     );
     setPendingPurchase(null);
   }
@@ -97,8 +126,14 @@ export function InaturNo({
   }
 
   if (pendingPurchase) {
-    const amount = pendingPurchase.pricePerDayNok.toLocaleString("nb-NO");
-    const canPay = balance >= pendingPurchase.pricePerDayNok;
+    const { terrain, kind } = pendingPurchase;
+    const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
+    const amount = price.toLocaleString("nb-NO");
+    const canPay = balance >= price;
+    const replaces =
+      jaktkort && jaktkort.terrainId
+        ? `Erstatter aktivt kort (${formatJaktkortStatusNb(jaktkort)}).`
+        : null;
     return (
       <div className="inatur-no">
         <LocationNav
@@ -109,16 +144,18 @@ export function InaturNo({
         <div className="intro-dialogue">
           <p className="intro-line intro-gift">inatur.no — betaling</p>
           <p className="intro-line">
-            Jaktkort: {pendingPurchase.name} ({pendingPurchase.region})
+            {jaktkortLabelNb(kind)}: {terrain.name} ({terrain.region})
           </p>
           <p className="intro-line">
             Kontoen din blir trukket med {amount},-.
           </p>
           <p className="shop-row-note">
-            Tiur {formatBirdRating(pendingPurchase.tiurRating)} · Orrhane{" "}
-            {formatBirdRating(pendingPurchase.orrhaneRating)} ·{" "}
-            {formatPrice(pendingPurchase.pricePerDayNok)}
+            {jaktkortBlurbNb(kind)} · basis{" "}
+            {formatDayRate(terrain.pricePerDayNok)} · Tiur{" "}
+            {formatBirdRating(terrain.tiurRating)} · Orrhane{" "}
+            {formatBirdRating(terrain.orrhaneRating)}
           </p>
+          {replaces ? <p className="shop-row-note">{replaces}</p> : null}
           {!canPay ? (
             <p className="intro-error">
               Du har ikke nok på konto. Vipps nekter. Kortet nekter.
@@ -149,22 +186,21 @@ export function InaturNo({
       <LocationNav
         onBackToTown={onBack}
         backLabel="← Tilbake til Home"
-        hint="Kjøp jaktkort for terreng. Pris er per dag — bekreft før kontoen trekkes."
+        hint="Dagskort (1 dag), ukeskort (7 dager · 4×) eller sesongkort (30 dager · 30×)."
       />
 
       <header className="shop-header">
         <p className="intro-line intro-gift">inatur.no</p>
         <p className="shop-row-note">
-          Lei jaktterreng digitalt. Tiur- og orrhane-rating (1–5) styrer senere
-          hvor mye fugl som spawner i kartet. Klikk kartet for stort format.
+          Lei jaktterreng digitalt. Dagskort gjelder én tur (avslutt jakt eller
+          overnatting ute). Uke- og sesongkort tærer én jaktdag per overnatting.
         </p>
-        {selected ? (
+        {selected && jaktkort ? (
           <p className="shop-row-note">
-            Jaktkort: <strong>{selected.name}</strong> ({selected.region}) ·{" "}
-            {formatPrice(selected.pricePerDayNok)} · Tiur{" "}
+            Aktivt: <strong>{selected.name}</strong> ({selected.region}) ·{" "}
+            {formatJaktkortStatusNb(jaktkort)} · Tiur{" "}
             {formatBirdRating(selected.tiurRating)} · Orrhane{" "}
-            {formatBirdRating(selected.orrhaneRating)} · kart{" "}
-            {getHuntMap(selected.mapId).label}
+            {formatBirdRating(selected.orrhaneRating)}
           </p>
         ) : (
           <p className="shop-row-note">Ingen jaktkort kjøpt ennå.</p>
@@ -176,7 +212,6 @@ export function InaturNo({
       <ul className="shop-list inatur-terrain-list">
         {listings.map((terrain) => {
           const isSelected = terrain.id === selectedTerrainId;
-          const canAfford = balance >= terrain.pricePerDayNok;
           const map = getHuntMap(terrain.mapId);
           return (
             <li
@@ -204,8 +239,8 @@ export function InaturNo({
                   {terrain.name} · {terrain.region}
                 </span>
                 <span className="shop-row-meta">
-                  {terrainTierLabel(terrain.pricePerDayNok)} ·{" "}
-                  {formatPrice(terrain.pricePerDayNok)} · {map.label}
+                  {terrainTierLabel(terrain.pricePerDayNok)} · basis{" "}
+                  {formatDayRate(terrain.pricePerDayNok)} · {map.label}
                 </span>
                 <span className="shop-row-ballistics">
                   Tiur-rating: {formatBirdRating(terrain.tiurRating)} · Orrhane:{" "}
@@ -217,19 +252,35 @@ export function InaturNo({
                     Via Rulles — {terrain.landownerName}
                   </span>
                 ) : null}
+                <div className="inatur-kort-options">
+                  {JAKTKORT_KINDS.map((kind) => {
+                    const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
+                    const canAfford = balance >= price;
+                    const activeHere =
+                      isSelected && jaktkort?.kind === kind;
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={
+                          activeHere
+                            ? "intro-button shop-buy kit-equipped"
+                            : "intro-button shop-buy"
+                        }
+                        disabled={!canAfford && !activeHere}
+                        title={jaktkortBlurbNb(kind)}
+                        onClick={() => handleBuyPermit(terrain, kind)}
+                      >
+                        {activeHere
+                          ? `${jaktkortLabelNb(kind)} · aktiv`
+                          : canAfford
+                            ? `${jaktkortLabelNb(kind)} · ${formatNok(price)}`
+                            : `${jaktkortLabelNb(kind)} · for dyrt`}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <button
-                type="button"
-                className={
-                  isSelected
-                    ? "intro-button shop-buy kit-equipped"
-                    : "intro-button shop-buy"
-                }
-                disabled={!canAfford && !isSelected}
-                onClick={() => handleBuyPermit(terrain)}
-              >
-                {isSelected ? "Kjøpt" : canAfford ? "Kjøp jaktkort" : "For dyrt"}
-              </button>
             </li>
           );
         })}
@@ -257,8 +308,8 @@ export function InaturNo({
                 <p className="shop-row-note">
                   {getHuntMap(previewTerrain.mapId).label} · Tiur{" "}
                   {formatBirdRating(previewTerrain.tiurRating)} · Orrhane{" "}
-                  {formatBirdRating(previewTerrain.orrhaneRating)} ·{" "}
-                  {formatPrice(previewTerrain.pricePerDayNok)}
+                  {formatBirdRating(previewTerrain.orrhaneRating)} · basis{" "}
+                  {formatDayRate(previewTerrain.pricePerDayNok)}
                 </p>
               </div>
               <button

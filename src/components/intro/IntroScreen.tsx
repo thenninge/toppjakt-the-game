@@ -80,9 +80,17 @@ import {
   type HuntingTerrainId,
 } from "@/lib/hunt/terrain";
 import {
+  consumeJaktkortOnEndHunt,
+  consumeJaktkortOnOvernight,
+  createJaktkort,
+  type JaktkortKind,
+} from "@/lib/hunt/jaktkort";
+import {
+  clearPlayerSave,
   loadPlayerSave,
   savePlayerStats,
 } from "@/lib/playerSave";
+import { clearShotPairsStorage } from "@/lib/aware/shotPairStorage";
 
 type Phase =
   | "loading"
@@ -171,6 +179,42 @@ export function IntroScreen() {
 
   function toggleHunterStatus() {
     setHunterStatusEnabled((prev) => !prev);
+  }
+
+  /** Wipe local save — log out and create a new hunter. */
+  function deleteUserAndRestart() {
+    const label = stats.name || "jegeren";
+    const ok = window.confirm(
+      `Slette ${label} for godt?\n\n` +
+        "Alt lagret (penger, kit, jakt, skuddpar) forsvinner i denne nettleseren. " +
+        "Du kan logge inn på nytt med et nytt navn.",
+    );
+    if (!ok) return;
+    clearPlayerSave();
+    clearShotPairsStorage();
+    setStats(createInitialStats());
+    setName("");
+    setError("");
+    setLocation(null);
+    setLastPermit(null);
+    setHuntHud(null);
+    setWeather(createDayWeather());
+    setPhase("name");
+  }
+
+  /** Rename hunter in place — returns error string or null on success. */
+  function renameHunter(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (trimmed.length < 2) return "Navn må være minst 2 tegn.";
+    if (trimmed.length > 24) return "Maks 24 tegn.";
+    const nice = displayName(trimmed);
+    setName(nice);
+    setStats((prev) => ({
+      ...prev,
+      name: nice,
+      nickname: generateNickname(trimmed),
+    }));
+    return null;
   }
 
   // Weather HUD only during mission — not town / shop / sheriff / home.
@@ -509,30 +553,68 @@ export function IntroScreen() {
     }));
   }
 
-  function selectHuntingTerrain(terrainId: string) {
+  function selectHuntingTerrain(terrainId: string, kind: JaktkortKind) {
     setStats((prev) => {
       const terrain = getHuntingTerrain(terrainId);
-      if (!terrain || prev.balance < terrain.pricePerDayNok) return prev;
-      if (prev.selectedHuntingTerrainId === terrainId) return prev;
+      if (!terrain) return prev;
+      const kort = createJaktkort(terrainId, kind, terrain.pricePerDayNok);
+      if (prev.balance < kort.paidNok) return prev;
+      const sameActive =
+        prev.jaktkort &&
+        prev.jaktkort.terrainId === terrainId &&
+        prev.jaktkort.kind === kind &&
+        prev.jaktkort.daysRemaining > 0;
+      if (sameActive) return prev;
       return {
         ...prev,
-        balance: prev.balance - terrain.pricePerDayNok,
+        balance: prev.balance - kort.paidNok,
         selectedHuntingTerrainId: terrainId,
+        jaktkort: kort,
       };
     });
   }
 
   function startHunt() {
-    if (!stats.selectedHuntingTerrainId) return;
+    if (!stats.selectedHuntingTerrainId || !stats.jaktkort) return;
+    if (stats.jaktkort.daysRemaining <= 0) return;
     setLocation(null);
     setHuntHud(null);
     setPhase("hunt");
   }
 
-  function endHunt() {
+  function endHunt(opts?: { skipJaktkortConsume?: boolean }) {
+    if (!opts?.skipJaktkortConsume) {
+      setStats((prev) => {
+        const next = consumeJaktkortOnEndHunt(prev.jaktkort);
+        return {
+          ...prev,
+          jaktkort: next,
+          selectedHuntingTerrainId: next?.terrainId ?? null,
+        };
+      });
+    } else {
+      setStats((prev) => ({
+        ...prev,
+        selectedHuntingTerrainId: prev.jaktkort?.terrainId ?? null,
+      }));
+    }
     setHuntHud(null);
     setLocation("home");
     setPhase("location");
+  }
+
+  /** Overnatting ute bruker én jaktdag. Returnerer om jakten kan fortsette. */
+  function consumeJaktkortOvernight(): boolean {
+    const prev = statsRef.current;
+    const next = consumeJaktkortOnOvernight(prev.jaktkort);
+    const updated = {
+      ...prev,
+      jaktkort: next,
+      selectedHuntingTerrainId: next?.terrainId ?? null,
+    };
+    statsRef.current = updated;
+    setStats(updated);
+    return next != null && next.daysRemaining > 0;
   }
 
   function consumeHuntFood(itemId: string): boolean {
@@ -574,7 +656,13 @@ export function IntroScreen() {
             hunterStatusEnabled={hunterStatusEnabled}
             onHunterStatusToggle={toggleHunterStatus}
           />
-          {hunterStatusEnabled ? <StatsFrame stats={stats} /> : null}
+          {hunterStatusEnabled ? (
+            <StatsFrame
+              stats={stats}
+              onRename={renameHunter}
+              onDeleteUser={deleteUserAndRestart}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -768,10 +856,11 @@ export function IntroScreen() {
             rifleCount={countHuntingRifles(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
+            jaktkort={stats.jaktkort}
             unlockedTerrainIds={stats.unlockedTerrainIds}
             onToggleKit={toggleKit}
             onSellOnFinn={sellOnFinn}
-            onSelectHuntingTerrain={selectHuntingTerrain}
+            onPurchaseJaktkort={selectHuntingTerrain}
             onUpdateDope={updateDopeEntry}
             onRemoveDope={removeDopeEntry}
             onStartHunt={startHunt}
@@ -802,6 +891,7 @@ export function IntroScreen() {
             carcasses={stats.carcasses}
             onConsumeCarcasses={consumeHuntCarcasses}
             onHudChange={onHuntHudChange}
+            onCampOvernight={consumeJaktkortOvernight}
             onLeave={endHunt}
           />
         ) : null}

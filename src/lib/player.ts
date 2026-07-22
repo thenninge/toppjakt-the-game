@@ -1,4 +1,5 @@
 import type { GameCarcass } from "@/lib/hunt/carcass";
+import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
 import {
   EMPTY_CUSTOMS_MODS,
   type CustomsMods,
@@ -126,6 +127,8 @@ export type PlayerStats = {
   customsMods: CustomsMods;
   /** Booked hunting terrain from inatur.no (null = none chosen yet). */
   selectedHuntingTerrainId: string | null;
+  /** Active inatur jaktkort (dag / uke / sesong). */
+  jaktkort: ActiveJaktkort | null;
   /** Handshake grounds unlocked at Rulles (terrain ids). */
   unlockedTerrainIds: string[];
 };
@@ -366,6 +369,7 @@ export function createInitialStats(): PlayerStats {
     dopeCard: [],
     customsMods: { ...EMPTY_CUSTOMS_MODS },
     selectedHuntingTerrainId: null,
+    jaktkort: null,
     unlockedTerrainIds: [],
   };
 }

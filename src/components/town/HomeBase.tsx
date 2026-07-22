@@ -38,6 +38,11 @@ import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { InaturNo } from "@/components/town/InaturNo";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
+import {
+  formatJaktkortStatusNb,
+  type ActiveJaktkort,
+  type JaktkortKind,
+} from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { huntReadyCheck } from "@/lib/hunt/readiness";
 
@@ -83,11 +88,12 @@ type HomeBaseProps = {
   rifleCount: number;
   unusedLicenses: number;
   selectedHuntingTerrainId: string | null;
+  jaktkort: ActiveJaktkort | null;
   unlockedTerrainIds: string[];
   onToggleKit: (itemId: string) => void;
   /** Sell one unit (or ammo eske) on Finn at ~50% catalog price. */
   onSellOnFinn: (itemId: string) => void;
-  onSelectHuntingTerrain: (terrainId: string) => void;
+  onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
   onUpdateDope: (
     id: string,
     patch: Partial<
@@ -113,10 +119,11 @@ export function HomeBase({
   rifleCount,
   unusedLicenses,
   selectedHuntingTerrainId,
+  jaktkort,
   unlockedTerrainIds,
   onToggleKit,
   onSellOnFinn,
-  onSelectHuntingTerrain,
+  onPurchaseJaktkort,
   onUpdateDope,
   onRemoveDope,
   onStartHunt,
@@ -238,8 +245,9 @@ export function HomeBase({
         kitItems,
         inventory,
         selectedHuntingTerrainId,
+        jaktkort,
       }),
-    [kitItems, inventory, selectedHuntingTerrainId],
+    [kitItems, inventory, selectedHuntingTerrainId, jaktkort],
   );
 
   /**
@@ -291,8 +299,9 @@ export function HomeBase({
       <InaturNo
         balance={balance}
         selectedTerrainId={selectedHuntingTerrainId}
+        jaktkort={jaktkort}
         unlockedTerrainIds={unlockedTerrainIds}
-        onSelectTerrain={onSelectHuntingTerrain}
+        onPurchaseJaktkort={onPurchaseJaktkort}
         onBack={() => setView("main")}
       />
     );
@@ -313,14 +322,14 @@ export function HomeBase({
             ? ` · ${unusedLicenses} ubrukt lisens (Pike Pro)`
             : " · ingen ubrukt lisens — søk hos Lensmannen for å kjøpe rifle"}
         </p>
-        {selectedTerrain ? (
+        {selectedTerrain && jaktkort ? (
           <p className="shop-row-note">
-            Jaktterreng: {selectedTerrain.name} ({selectedTerrain.region}) ·{" "}
-            {selectedTerrain.pricePerDayNok.toLocaleString("nb-NO")} kr/dag
+            Jaktkort: {selectedTerrain.name} ({selectedTerrain.region}) ·{" "}
+            {formatJaktkortStatusNb(jaktkort)}
           </p>
         ) : (
           <p className="shop-row-note">
-            Ingen jaktterreng valgt — book via inatur.no.
+            Ingen jaktkort — kjøp via inatur.no.
           </p>
         )}
       </header>

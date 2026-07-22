@@ -7,6 +7,7 @@
  *   /images/eat/      — eat / rest pauses
  *   /images/rest/     — forced rest
  *   /images/funn/     — ettersøk find reveal
+ *   /images/endex/    — skuddlys over / end of day
  *   /images/fire/     — tyribål / camp overnight
  *   /images/birds/    — sprites (tiur/, flukt/, …)
  *   /images/gear/     — kit UI (Kestrel, …)
@@ -80,6 +81,10 @@ const WALK_IMAGES: string[] = [
   "/images/walk/walk11.png",
   "/images/walk/walk12.png",
   "/images/walk/walk13.png",
+  "/images/walk/walk19.png",
+  "/images/walk/walk20.png",
+  "/images/walk/walk21.png",
+  "/images/walk/walk22.png",
 ];
 
 /** Eat / Rest pauses — /public/images/eat/ */
@@ -112,6 +117,9 @@ const FIRE_IMAGES: string[] = [
 ];
 
 export const REST_TIRED_IMAGE = "/images/rest/rest_tired.png";
+
+/** Skuddlys over — get to the car. */
+export const ENDEX_SUNSET_IMAGE = "/images/endex/endex_sunset.png";
 
 /** Forced rest when physical stamina is empty (fatigue = 1). */
 export const FORCED_REST_MINUTES = 60;

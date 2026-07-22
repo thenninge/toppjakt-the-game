@@ -7,6 +7,7 @@ import {
 } from "@/lib/shop/types";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
+import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
 
 export type HuntReadyResult = {
   ok: boolean;
@@ -15,18 +16,22 @@ export type HuntReadyResult = {
 };
 
 /**
- * Minimum kit to leave Home for a hunt: rifle, scope, and ammo with rounds.
+ * Minimum kit to leave Home for a hunt: rifle, scope, ammo, and a valid jaktkort.
  */
 export function huntReadyCheck(input: {
   kitItems: ShopItem[];
   inventory: InventoryEntry[];
   selectedHuntingTerrainId: string | null;
+  jaktkort: ActiveJaktkort | null;
 }): HuntReadyResult {
   const blockers: string[] = [];
   const terrain = getHuntingTerrain(input.selectedHuntingTerrainId);
+  const kort = input.jaktkort;
 
-  if (!terrain) {
-    blockers.push("Velg jaktterreng på inatur.no");
+  if (!terrain || !kort || kort.daysRemaining <= 0) {
+    blockers.push("Kjøp jaktkort på inatur.no");
+  } else if (kort.terrainId !== terrain.id) {
+    blockers.push("Jaktkortet matcher ikke valgt terreng — kjøp på nytt via inatur.no");
   } else {
     const map = getHuntMap(terrain.mapId);
     if (!map.playable) {

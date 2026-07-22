@@ -1,9 +1,15 @@
 /**
  * Hunting map image assets under /public/maps.
- * Three test cutouts for now — extend later when needed.
+ * Placement seats live in mapPlacements.ts (from maps_placement overlays).
  */
 
-export type HuntMapId = "ostlandet1" | "ostlandet2" | "midtnorge1";
+export type HuntMapId =
+  | "ostlandet1"
+  | "ostlandet2"
+  | "midtnorge1"
+  | "inatur1"
+  | "inatur2"
+  | "svenskegrensa";
 
 /** Grid cell: row letter A.. from bottom, column number 1.. from left. */
 export type HuntGridCell = {
@@ -25,7 +31,7 @@ export type HuntMapAsset = {
   rows: number;
   /** Hunter spawn cell (parking / trailhead). */
   start: HuntGridCell;
-  /** Hunt maps — all three cutouts are playable (same grid for now). */
+  /** Hunt maps — all cutouts are playable (same 7×6 grid for now). */
   playable: boolean;
 };
 
@@ -33,33 +39,67 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
   ostlandet1: {
     id: "ostlandet1",
     src: "/maps/ostlandet1.png",
-    label: "Østlandet 1",
+    label: "Gammel hogst",
     regionHint: "Østlandet",
     cols: 7,
     rows: 6,
-    /** Same trailhead layout as Trøndelag until dedicated maps exist. */
-    start: { row: 0, col: 6 },
+    /** Cyan marker in startingpoint/gammelhogst_start.png */
+    start: { row: 2, col: 1 }, // C2
     playable: true,
   },
   ostlandet2: {
     id: "ostlandet2",
     src: "/maps/ostlandet2.png",
-    label: "Østlandet 2",
+    label: "Bjørkeskog",
     regionHint: "Østlandet",
     cols: 7,
     rows: 6,
-    start: { row: 0, col: 6 },
+    /** Cyan marker in startingpoint/bjørkeskog_øst_start.png */
+    start: { row: 3, col: 6 }, // D7
     playable: true,
   },
   midtnorge1: {
     id: "midtnorge1",
     src: "/maps/midtnorge1.png",
-    label: "Trøndelag",
+    label: "Myrkanter",
     regionHint: "Trøndelag",
     cols: 7,
     rows: 6,
-    /** Bottom-right: road + parking into the terrain. */
-    start: { row: 0, col: 6 },
+    /** No startingpoint overlay yet — road parking bottom-right. */
+    start: { row: 0, col: 6 }, // A7
+    playable: true,
+  },
+  inatur1: {
+    id: "inatur1",
+    src: "/maps/inatur1.png",
+    label: "Hogstflate nord",
+    regionHint: "Østlandet",
+    cols: 7,
+    rows: 6,
+    /** Cyan marker in startingpoint/hogstflate_nord_start.png */
+    start: { row: 1, col: 4 }, // B5
+    playable: true,
+  },
+  inatur2: {
+    id: "inatur2",
+    src: "/maps/inatur2.png",
+    label: "Granskog sør",
+    regionHint: "Østlandet",
+    cols: 7,
+    rows: 6,
+    /** Cyan marker in startingpoint/granskog_sør_start.png */
+    start: { row: 2, col: 2 }, // C3
+    playable: true,
+  },
+  svenskegrensa: {
+    id: "svenskegrensa",
+    src: "/maps/svenskegrensa.png",
+    label: "Svenskegrensa",
+    regionHint: "Østlandet",
+    cols: 7,
+    rows: 6,
+    /** Cyan marker in startingpoint/svenskegrensa_start.png */
+    start: { row: 3, col: 2 }, // D3
     playable: true,
   },
 };

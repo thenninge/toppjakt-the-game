@@ -31,13 +31,14 @@ import {
   HUNT_DARK_MINUTES,
   isAtParking,
   isHuntDark,
-  isStrandedAtNight,
+  missedCarByMidnight,
   minutesUntilDawn,
   pathTravelMinutes,
   travelMinutesForCell,
   type EffortScore,
 } from "@/lib/hunt/travel";
 import {
+  ENDEX_SUNSET_IMAGE,
   FORCED_REST_MINUTES,
   isBakedSpotImage,
   pickEatImage,
@@ -47,6 +48,7 @@ import {
   pickWalkImage,
   REST_TIRED_IMAGE,
 } from "@/lib/hunt/images";
+import { getCellSeatCounts } from "@/lib/hunt/mapPlacements";
 import { spotImagesWithPerches } from "@/lib/hunt/spotPerches";
 import {
   getInventoryQty,
@@ -195,7 +197,12 @@ type HuntMapViewProps = {
   carcasses: GameCarcass[];
   onConsumeCarcasses: (carcassIds: string[]) => void;
   onHudChange?: (hud: HuntHudStatus) => void;
-  onLeave: () => void;
+  /**
+   * Called when the hunter camps overnight. Consumes one jaktkort day.
+   * Return false if the permit is used up (hunt should end).
+   */
+  onCampOvernight?: () => boolean;
+  onLeave: (opts?: { skipJaktkortConsume?: boolean }) => void;
 };
 
 type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
@@ -366,6 +373,7 @@ export function HuntMapView({
   carcasses,
   onConsumeCarcasses,
   onHudChange,
+  onCampOvernight,
   onLeave,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
@@ -433,6 +441,12 @@ export function HuntMapView({
   const [campOvernight, setCampOvernight] = useState<CampOvernightSession | null>(
     null,
   );
+  /** Skuddlys over — splash once, then race to the car. */
+  const [endexReveal, setEndexReveal] = useState(false);
+  const endexShownRef = useRef(false);
+  /** Missed midnight at the car — lose catch, overnight. */
+  const [lostCatchReveal, setLostCatchReveal] = useState(false);
+  const midnightHandledRef = useRef(false);
   const [birds, setBirds] = useState<HuntBird[]>(() =>
     map
       ? spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
@@ -598,6 +612,10 @@ export function HuntMapView({
     setForcedRest(null);
     setForcedCamp(null);
     setCampOvernight(null);
+    setEndexReveal(false);
+    endexShownRef.current = false;
+    setLostCatchReveal(false);
+    midnightHandledRef.current = false;
     setBirds(
       spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
         tiurRating: terrain?.tiurRating,
@@ -613,9 +631,25 @@ export function HuntMapView({
     saveShotPairsForTerrain(terrainId, shotPairs);
   }, [terrainId, shotPairs]);
 
-  function leaveHunt() {
+  function leaveHunt(opts?: {
+    skipJaktkortConsume?: boolean;
+    /** Forced exit (e.g. jaktkort brukt opp etter overnatting) — skip parking gate. */
+    force?: boolean;
+  }) {
+    if (!opts?.force && map && !isAtParking(pos, map)) {
+      setLog(
+        `Du må tilbake til bilen (${cellLabel(map.start)}) for å avslutte jakten.`,
+      );
+      return;
+    }
+    // Don't leave found birds in limbo — bag them before clearing skuddpar.
+    for (const pair of shotPairs) {
+      if (pair.found === true && pair.harvestDraft) {
+        onBirdHarvested(createCarcassFromHarvest(pair.harvestDraft));
+      }
+    }
     clearShotPairsStorage();
-    onLeave();
+    onLeave(opts);
   }
 
   useEffect(() => {
@@ -630,15 +664,21 @@ export function HuntMapView({
         !forcedRest &&
         !forcedCamp &&
         !campOvernight &&
-        !flushCurrent
+        !flushCurrent &&
+        !endexReveal &&
+        !lostCatchReveal
       ) {
-        leaveHunt();
+        if (map && isAtParking(pos, map)) {
+          leaveHunt();
+        }
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
     onLeave,
+    map,
+    pos,
     spotSession,
     shootSession,
     awareSession,
@@ -648,35 +688,84 @@ export function HuntMapView({
     forcedCamp,
     campOvernight,
     flushCurrent,
+    endexReveal,
+    lostCatchReveal,
   ]);
 
-  function triggerStrandedCamp(reason: string) {
+  function triggerLostCatchOvernight() {
+    if (lostCatchReveal || campOvernight) return;
+    midnightHandledRef.current = true;
     setSpotSession(null);
-    setAwareSession(null);
     setShootSession(null);
+    setAwareSession(null);
+    setBirdEncounter(null);
+    birdEncounterRef.current = null;
+    latentSpotNerveRef.current = {};
+    setFlushQueue([]);
     setPendingPostShot(null);
+    setEndexReveal(false);
+    setForcedCamp(null);
     setSelected(null);
     setPanel("arrived");
-    setForcedCamp({ imageSrc: pickFireImage() });
-    setLog(reason);
+    setShotPairs((prev) =>
+      prev.map((p) =>
+        p.found == null && p.harvestDraft
+          ? { ...p, found: false, harvestDraft: undefined }
+          : p,
+      ),
+    );
+    setLostCatchReveal(true);
+    setLog("Midnatt — du nådde ikke bilen. Fangsten går tapt.");
   }
 
+  /**
+   * Skuddlys → mørke: one Endex splash, close spotting/shoot.
+   * Without headlamp you may still walk to parking (not elsewhere).
+   * No bird-flush theatre after dark.
+   */
   useEffect(() => {
-    if (!map || walkSession || forcedCamp || campOvernight || flushCurrent) return;
-    const atParking = isAtParking(pos, map);
-    if (!isStrandedAtNight(clockMinutes, hasHeadlamp, atParking)) return;
-    triggerStrandedCamp(
-      "Mørket — uten hodelykt må du campe. Spis fuglene dine og legg deg.",
-    );
+    if (!map) return;
+    if (!isHuntDark(clockMinutes)) {
+      if (canHuntAtTime(clockMinutes)) {
+        endexShownRef.current = false;
+        midnightHandledRef.current = false;
+      }
+      return;
+    }
+    // Close hunt UIs — spotting / shooting ends with skuddlys.
+    setSpotSession(null);
+    setShootSession(null);
+    setBirdEncounter(null);
+    birdEncounterRef.current = null;
+    setFlushQueue([]);
+    setAwareSession((prev) => (prev?.ettersokPairId ? prev : null));
+
+    if (!endexShownRef.current && !forcedCamp && !campOvernight && !walkSession) {
+      endexShownRef.current = true;
+      setPendingPostShot(null);
+      setEndexReveal(true);
+      setLog("Skuddlys over — kom deg til bilen før midnatt.");
+    }
+
+    if (
+      !midnightHandledRef.current &&
+      !walkSession &&
+      !campOvernight &&
+      !lostCatchReveal &&
+      !endexReveal &&
+      missedCarByMidnight(clockMinutes, isAtParking(pos, map))
+    ) {
+      triggerLostCatchOvernight();
+    }
   }, [
     clockMinutes,
-    hasHeadlamp,
-    pos,
     map,
-    walkSession,
+    pos,
     forcedCamp,
     campOvernight,
-    flushCurrent,
+    walkSession,
+    lostCatchReveal,
+    endexReveal,
   ]);
 
   const cells = useMemo(() => {
@@ -759,12 +848,13 @@ export function HuntMapView({
     onHudChange,
   ]);
 
-  // Spot: tick all latent birds. Map: tick discovered encounter only.
+  // Spot/map nerve — only during skuddlys (no flush theatre after dark).
   const inAwareOrShoot = !!(awareSession || shootSession);
   const spotOpen = !!spotSession;
   const discoveredActive = !!(birdEncounter?.discovered);
+  const skuddlysOpen = canHuntAtTime(clockMinutes);
   useEffect(() => {
-    if (inAwareOrShoot || !map) return;
+    if (!skuddlysOpen || inAwareOrShoot || !map) return;
     if (!spotOpen && !discoveredActive) return;
     let last = performance.now();
     const id = window.setInterval(() => {
@@ -842,13 +932,13 @@ export function HuntMapView({
       setBirdEncounter(next);
     }, 200);
     return () => window.clearInterval(id);
-  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoBirdSpot]);
+  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoBirdSpot, skuddlysOpen]);
 
   if (!terrain || !map) {
     return (
       <div className="hunt-map">
         <p className="intro-line">Ugyldig jaktterreng.</p>
-        <button type="button" className="intro-button" onClick={leaveHunt}>
+        <button type="button" className="intro-button" onClick={() => leaveHunt()}>
           Tilbake til Home
         </button>
       </div>
@@ -936,8 +1026,14 @@ export function HuntMapView({
 
     const destAtParking = isAtParking(selected, activeMap);
     const arrivalMin = clockMinutes + trip.minutes;
-    if (!canWalkAtNight(hasHeadlamp, clockMinutes)) {
-      setLog("For mørkt å gå uten hodelykt. Camp her eller kom deg til bilen.");
+    if (
+      !canWalkAtNight(hasHeadlamp, clockMinutes, {
+        destinationIsParking: destAtParking,
+      })
+    ) {
+      setLog(
+        "For mørkt uten hodelykt — bare bilen er trygg. Gå til parkeringen, eller camp ute.",
+      );
       return;
     }
     if (
@@ -946,7 +1042,7 @@ export function HuntMapView({
       !destAtParking
     ) {
       setLog(
-        "Turen tar for lang tid — uten hodelykt må du være ved bilen før 17:00.",
+        "Turen tar for lang tid — uten hodelykt må du være ved bilen før 17:00 (eller gå direkte dit nå).",
       );
       return;
     }
@@ -971,14 +1067,19 @@ export function HuntMapView({
     setMentalFatigue(nextFatigue.mental);
     setPhysicalFatigue(nextFatigue.physical);
     setPos({ ...walkSession.to });
-    const nowDark = isHuntDark(Math.floor(clockSecondsRef.current / 60));
+    const nowMins = Math.floor(clockSecondsRef.current / 60);
+    const nowDark = isHuntDark(nowMins);
+    const arrivedParking = isAtParking(walkSession.to, activeMap);
 
-    const flush = resolveFlushesOnPath(
-      birds,
-      walkSession.path,
-      walkSession.paceId,
-      activeMap,
-    );
+    // After skuddlys: no flush events / «fuglen flyr» while racing to the car.
+    const flush = nowDark
+      ? { birds, events: [] as FlushEvent[] }
+      : resolveFlushesOnPath(
+          birds,
+          walkSession.path,
+          walkSession.paceId,
+          activeMap,
+        );
     setBirds(flush.birds);
     if (flush.events.length > 0) {
       const gone = new Set(flush.events.map((e) => e.birdId));
@@ -1007,20 +1108,16 @@ export function HuntMapView({
 
     const walkLog =
       `Gikk til ${cellLabel(walkSession.to)} på ${walkSession.minutes} min (${usedPace.label}, ${walkSession.path.length} ruter).` +
-      (nowDark ? " Det er mørkt — skuddlys er over." : "");
+      (nowDark
+        ? arrivedParking
+          ? " Mørkt — du nådde bilen. Endex for i dag."
+          : " Det er mørkt — skuddlys er over. Rekker du bilen før midnatt?"
+        : "");
 
     setWalkSession(null);
 
-    if (
-      isStrandedAtNight(
-        Math.floor(clockSecondsRef.current / 60),
-        hasHeadlamp,
-        isAtParking(walkSession.to, activeMap),
-      )
-    ) {
-      triggerStrandedCamp(
-        "Du kom ikke til bilen før mørket. Uten hodelykt må du campe her.",
-      );
+    if (missedCarByMidnight(nowMins, arrivedParking)) {
+      triggerLostCatchOvernight();
       return;
     }
 
@@ -1341,10 +1438,42 @@ export function HuntMapView({
     );
   }
 
+  /**
+   * Put a found bird in the meat bag. Idempotent — clears harvestDraft so
+   * Track / Avbryt / leaveHunt cannot double-harvest or drop the carcass.
+   */
+  function harvestFoundPair(pair: ShotPair | null | undefined): boolean {
+    if (!pair || pair.found !== true) return false;
+    const live = shotPairs.find((p) => p.id === pair.id);
+    const draft = live?.harvestDraft ?? (!live ? pair.harvestDraft : undefined);
+    if (!draft) return false;
+    onBirdHarvested(createCarcassFromHarvest(draft));
+    setShotPairs((prev) =>
+      prev.map((p) =>
+        p.id === pair.id ? { ...p, harvestDraft: undefined } : p,
+      ),
+    );
+    return true;
+  }
+
   function abortAware() {
-    if (awareSession?.ettersokPairId && !awareSession.recoveryOnly) {
-      abandonEttersok(awareSession.ettersokPairId);
-      return;
+    if (awareSession?.ettersokPairId) {
+      const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
+      if (pair?.found === true) {
+        harvestFoundPair(pair);
+        setAwareSession(null);
+        setPanel("arrived");
+        setLog(
+          awareSession.recoveryOnly
+            ? "Fugl hentet — i sekken."
+            : "Ettersøk lyktes — fuglen er i sekken.",
+        );
+        return;
+      }
+      if (!awareSession.recoveryOnly) {
+        abandonEttersok(awareSession.ettersokPairId);
+        return;
+      }
     }
     setAwareSession(null);
     setBirdEncounter(null);
@@ -1392,28 +1521,15 @@ export function HuntMapView({
 
   function proceedFromAware(stance?: AwareShootStance) {
     if (!awareSession) return;
-    if (!canHuntAtTime(clockMinutes)) {
-      setAwareSession(null);
-      setLog("Skuddlys over (17:00) — ingen skudd i mørket.");
-      setPanel("arrived");
-      return;
-    }
+    // Found birds must bag even after skuddlys — ettersøk often runs past 17:00.
     if (awareSession.ettersokPairId) {
       const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
       if (pair?.found === true) {
-        if (pair.harvestDraft) {
-          onBirdHarvested(createCarcassFromHarvest(pair.harvestDraft));
-          // Prevent double harvest if Track is reopened.
-          setShotPairs((prev) =>
-            prev.map((p) =>
-              p.id === pair.id ? { ...p, harvestDraft: undefined } : p,
-            ),
-          );
-        }
+        harvestFoundPair(pair);
         setLog(
           awareSession.recoveryOnly
-            ? "Fugl hentet ved treet."
-            : "Ettersøk lyktes — fuglen er din.",
+            ? "Fugl hentet ved treet — i sekken."
+            : "Ettersøk lyktes — fuglen er i sekken.",
         );
         setAwareSession(null);
         setPanel("arrived");
@@ -1431,6 +1547,12 @@ export function HuntMapView({
       }
       // Wounded bird still missing — abandoning ettersøk.
       abandonEttersok(awareSession.ettersokPairId);
+      return;
+    }
+    if (!canHuntAtTime(clockMinutes)) {
+      setAwareSession(null);
+      setLog("Skuddlys over (17:00) — ingen skudd i mørket.");
+      setPanel("arrived");
       return;
     }
     const session = awareSession;
@@ -2062,10 +2184,11 @@ export function HuntMapView({
     }
     const subtitle =
       ateCount > 0
-        ? `Du spiste ${ateCount} ${ateCount === 1 ? "fugl" : "fugler"} fra sekken — ikke noe å selge på Vebjørn i morgen.`
-        : "Tom sekk — sulten natt under stjernene.";
+        ? `Du overlevde på ${ateCount} ${ateCount === 1 ? "fugl" : "fugler"} fra sekken — fangsten er tapt for Vebjørn.`
+        : "Tom sekk — kald og sulten natt under stjernene.";
     const duration = Math.max(1, minutesUntilDawn(clockMinutes));
     setForcedCamp(null);
+    setLostCatchReveal(false);
     setCampOvernight({
       imageSrc: pickFireImage(),
       durationMinutes: duration,
@@ -2080,11 +2203,21 @@ export function HuntMapView({
     setPhysicalFatigue((p) => clampFatigue(p - 0.35));
     setMentalFatigue((m) => clampFatigue(m - 0.2));
     const mins = Math.floor(clockSecondsRef.current / 60);
+    setCampOvernight(null);
+    setForcedCamp(null);
+
+    const canContinue = onCampOvernight ? onCampOvernight() : true;
+    if (!canContinue) {
+      setLog(
+        "Jaktkortet er brukt opp etter natta — tilbake til bilen. Kjøp nytt kort på inatur.no.",
+      );
+      leaveHunt({ skipJaktkortConsume: true, force: true });
+      return;
+    }
+
     setLog(
       `Morgen — kl ${formatHuntClock(mins)}. Skuddlys igjen til 17:00. Kom deg til bilen før mørket.`,
     );
-    setCampOvernight(null);
-    setForcedCamp(null);
     setPanel("arrived");
   }
 
@@ -2100,10 +2233,12 @@ export function HuntMapView({
       ? estimatedBirdChancePct(
           map.id,
           selected,
-          terrain.tiurRating,
+          (terrain.tiurRating + terrain.orrhaneRating) / 2,
           isAtParking(selected, map),
         )
       : null;
+  const selectedSeatCounts =
+    selected && map ? getCellSeatCounts(map.id, selected) : null;
 
   if (shotVideo) {
     return (
@@ -2133,6 +2268,52 @@ export function HuntMapView({
         }}
         skipLabel="Fortsett"
         ariaLabel="Ettersøk avsluttet"
+      />
+    );
+  }
+
+  if (endexReveal) {
+    return (
+      <AtmospherePauseView
+        imageSrc={ENDEX_SUNSET_IMAGE}
+        title="Endex for i dag"
+        subtitle="Solen er nede og skuddlyset borte — du må komme deg til bilen før midnatt."
+        durationMinutes={0}
+        holdMs={6500}
+        clockMinutes={clockMinutes}
+        onContinue={() => {
+          setEndexReveal(false);
+          setPanel("arrived");
+          setLog(
+            hasHeadlamp
+              ? "Mørkt ute — hodelykt i kit. Rekker du bilen før midnatt?"
+              : "Mørkt uten hodelykt — bare parkeringen er trygg. Rekker du bilen før midnatt, eller camp ute?",
+          );
+        }}
+        skipLabel="Videre"
+        ariaLabel="Skuddlys over"
+      />
+    );
+  }
+
+  if (lostCatchReveal) {
+    return (
+      <AtmospherePauseView
+        imageSrc={pickFireImage()}
+        title="Fangsten går tapt"
+        subtitle={
+          "Du må overnatte ute og overleve på fuglene i sekken — fangsten går tapt. " +
+          "Håper du har med bra dunjakke og stilongs."
+        }
+        durationMinutes={0}
+        holdMs={7000}
+        clockMinutes={clockMinutes}
+        onContinue={() => {
+          setLostCatchReveal(false);
+          beginCampOvernight();
+        }}
+        skipLabel="Overnatt"
+        ariaLabel="Fangsten går tapt"
       />
     );
   }
@@ -2251,13 +2432,14 @@ export function HuntMapView({
       <AtmospherePauseView
         imageSrc={findReveal.imageSrc}
         title="Du fant fuglen! Godt utført ettersøk."
-        subtitle="Skuddpar og spor er lagret i Aware Track."
+        subtitle="Fuglen er i sekken — klar for Vebjørn på kjøttmarkedet."
         durationMinutes={0}
         holdMs={4500}
         clockMinutes={clockMinutes}
         onContinue={() => {
           const pair = findReveal.pair;
           setFindReveal(null);
+          harvestFoundPair(pair);
           if (pair.hitFasit) setFindHitAar(pair);
         }}
         skipLabel="Fortsett"
@@ -2476,7 +2658,17 @@ export function HuntMapView({
           </p>
           <p className="shop-row-note">{log}</p>
         </div>
-        <button type="button" className="intro-button" onClick={leaveHunt}>
+        <button
+          type="button"
+          className="intro-button"
+          disabled={!atParking}
+          title={
+            atParking
+              ? "Avslutt jakt og kjør hjem"
+              : `Gå tilbake til bilen (${cellLabel(map.start)}) for å avslutte`
+          }
+          onClick={() => leaveHunt()}
+        >
           Avslutt jakt
         </button>
       </header>
@@ -2562,22 +2754,23 @@ export function HuntMapView({
           </div>
 
           {selected && panel === "study" ? (
-            <div
-              className="hunt-map-cell-blowup"
-              style={
-                {
-                  "--hunt-cols": map.cols,
-                  "--hunt-rows": map.rows,
-                  "--blowup-col": selected.col,
-                  "--blowup-row-from-top": map.rows - 1 - selected.row,
-                } as CSSProperties
-              }
-            >
+            <div className="hunt-map-cell-blowup">
               <p className="hunt-map-cell-blowup-label">
                 Rute {cellLabel(selected)} — nærbilde
               </p>
-              <div className="hunt-map-cell-blowup-frame">
+              <div
+                className="hunt-map-cell-blowup-frame"
+                style={
+                  {
+                    "--hunt-cols": map.cols,
+                    "--hunt-rows": map.rows,
+                    "--blowup-col": selected.col,
+                    "--blowup-row-from-top": map.rows - 1 - selected.row,
+                  } as CSSProperties
+                }
+              >
                 <img
+                  key={`${map.id}-${selected.row}-${selected.col}`}
                   src={terrainMapSrc(terrain)}
                   alt={`Forstørret rute ${cellLabel(selected)}`}
                   className="hunt-map-cell-blowup-img"
@@ -2626,9 +2819,9 @@ export function HuntMapView({
 
               {!hasHeadlamp && inspectTrip ? (
                 <p className="shop-row-note">
-                  Uten hodelykt: vær ved bilen før{" "}
-                  {formatHuntClock(HUNT_DARK_MINUTES)} — ellers camp ute og spis
-                  fuglene dine.
+                  {dark
+                    ? "Uten hodelykt: bare bilen er trygg nå — gå dit, eller camp ute."
+                    : `Uten hodelykt: vær ved bilen før ${formatHuntClock(HUNT_DARK_MINUTES)} — ellers camp ute og spis fuglene dine.`}
                 </p>
               ) : null}
 
@@ -2638,11 +2831,13 @@ export function HuntMapView({
                   className="intro-button"
                   onClick={goHere}
                   disabled={
-                    !canWalkAtNight(hasHeadlamp, clockMinutes) ||
+                    selected == null ||
+                    !canWalkAtNight(hasHeadlamp, clockMinutes, {
+                      destinationIsParking: isAtParking(selected, map),
+                    }) ||
                     (!hasHeadlamp &&
                       inspectTrip != null &&
                       isHuntDark(clockMinutes + inspectTrip.minutes) &&
-                      selected != null &&
                       !isAtParking(selected, map))
                   }
                 >
@@ -2757,6 +2952,23 @@ export function HuntMapView({
                     {!huntingAllowed ? " · skuddlys over" : ""}
                     {hasHeadlamp ? " · hodelykt i kit" : " · ingen hodelykt"}
                   </p>
+                  {dark && !atParking ? (
+                    <div className="hunt-side-actions hunt-side-actions-stack">
+                      <button
+                        type="button"
+                        className="intro-button"
+                        onClick={() => triggerLostCatchOvernight()}
+                      >
+                        Camp ute (fangst tapt)
+                      </button>
+                    </div>
+                  ) : null}
+                  {dark && atParking ? (
+                    <p className="shop-row-note">
+                      Du er ved bilen etter skuddlys — trygt. Avslutt jakt når du
+                      er klar.
+                    </p>
+                  ) : null}
                 </>
               )}
             </>
@@ -2776,8 +2988,12 @@ export function HuntMapView({
                   {selectedBirdChance != null ? (
                     <p className="shop-row-note">
                       Fuglesannsynlighet ~{selectedBirdChance}% (
-                      {describeBirdChance(selectedBirdChance)}) · tiur{" "}
-                      {formatBirdRating(terrain.tiurRating)} i terrenget
+                      {describeBirdChance(selectedBirdChance)})
+                      {selectedSeatCounts && selectedSeatCounts.total > 0
+                        ? ` · ${selectedSeatCounts.total} sitteplass${selectedSeatCounts.total === 1 ? "" : "er"} (tiur ${selectedSeatCounts.tiur} · orre ${selectedSeatCounts.orrhane})`
+                        : selectedSeatCounts
+                          ? " · ingen markerte sitteplasser"
+                          : ""}
                     </p>
                   ) : null}
                   <p className="shop-row-note">
@@ -2817,9 +3033,9 @@ export function HuntMapView({
 
                   {!hasHeadlamp ? (
                     <p className="shop-row-note">
-                      Uten hodelykt: vær ved bilen før{" "}
-                      {formatHuntClock(HUNT_DARK_MINUTES)} — ellers camp ute og
-                      spis fuglene dine.
+                      {dark
+                        ? "Uten hodelykt: bare bilen er trygg nå — gå dit, eller camp ute."
+                        : `Uten hodelykt: vær ved bilen før ${formatHuntClock(HUNT_DARK_MINUTES)} — ellers camp ute og spis fuglene dine.`}
                     </p>
                   ) : null}
 
@@ -2829,7 +3045,9 @@ export function HuntMapView({
                       className="intro-button"
                       onClick={goHere}
                       disabled={
-                        !canWalkAtNight(hasHeadlamp, clockMinutes) ||
+                        !canWalkAtNight(hasHeadlamp, clockMinutes, {
+                          destinationIsParking: isAtParking(selected, map),
+                        }) ||
                         (!hasHeadlamp &&
                           isHuntDark(clockMinutes + inspectTrip.minutes) &&
                           !isAtParking(selected, map))

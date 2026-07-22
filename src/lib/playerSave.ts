@@ -4,6 +4,10 @@
 
 import { createInitialStats, type PlayerStats } from "@/lib/player";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
+import {
+  createJaktkort,
+  normalizeJaktkort,
+} from "@/lib/hunt/jaktkort";
 
 const STORAGE_KEY = "toppjakt-player-save-v1";
 const SAVE_VERSION = 1 as const;
@@ -40,7 +44,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
   const shotLog = Array.isArray(raw.shotLog) ? raw.shotLog : base.shotLog;
   const dopeCard = Array.isArray(raw.dopeCard) ? raw.dopeCard : base.dopeCard;
 
-  return {
+  return syncTerrainWithJaktkort({
     ...base,
     name: typeof raw.name === "string" ? raw.name : base.name,
     nickname: typeof raw.nickname === "string" ? raw.nickname : base.nickname,
@@ -92,8 +96,32 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
         : raw.selectedHuntingTerrainId === null
           ? null
           : base.selectedHuntingTerrainId,
+    jaktkort: (() => {
+      const parsed = normalizeJaktkort(raw.jaktkort);
+      if (parsed) return parsed;
+      // Migrate old saves: selected terrain without kort → 1-day dagskort.
+      if (typeof raw.selectedHuntingTerrainId === "string") {
+        return createJaktkort(raw.selectedHuntingTerrainId, "day", 0);
+      }
+      return null;
+    })(),
     unlockedTerrainIds,
-  };
+  });
+}
+
+/** Keep selected terrain in sync with an active jaktkort after normalize. */
+function syncTerrainWithJaktkort(stats: PlayerStats): PlayerStats {
+  if (stats.jaktkort && stats.jaktkort.daysRemaining > 0) {
+    if (stats.selectedHuntingTerrainId === stats.jaktkort.terrainId) {
+      return stats;
+    }
+    return {
+      ...stats,
+      selectedHuntingTerrainId: stats.jaktkort.terrainId,
+    };
+  }
+  if (stats.selectedHuntingTerrainId == null) return stats;
+  return { ...stats, selectedHuntingTerrainId: null };
 }
 
 export function loadPlayerSave(): PlayerSaveV1 | null {

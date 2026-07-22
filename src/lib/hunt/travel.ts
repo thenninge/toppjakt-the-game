@@ -1,4 +1,5 @@
 import type { HuntGridCell, HuntMapAsset, HuntMapId } from "@/lib/hunt/maps";
+import { placementBirdChancePct } from "@/lib/hunt/mapPlacements";
 import { cellLabel } from "@/lib/hunt/maps";
 import type { HuntPace } from "@/lib/hunt/pace";
 
@@ -12,6 +13,8 @@ export const EFFORT_MAX_MINUTES = 30;
 
 export const HUNT_DAY_START_MINUTES = 8 * 60; // 08:00
 export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
+/** After this (00:00), still out in the field → lose catch & overnight. */
+export const HUNT_MIDNIGHT_MINUTES = 0;
 export const SPOT_ACTION_MINUTES = 5;
 export const EAT_ACTION_MINUTES = 5;
 export const REST_ACTION_MINUTES = 10;
@@ -83,6 +86,9 @@ const EFFORT_BY_MAP: Partial<Record<HuntMapId, EffortScore[][]>> = {
   midtnorge1: SHARED_HUNT_EFFORT,
   ostlandet1: SHARED_HUNT_EFFORT,
   ostlandet2: SHARED_HUNT_EFFORT,
+  inatur1: SHARED_HUNT_EFFORT,
+  inatur2: SHARED_HUNT_EFFORT,
+  svenskegrensa: SHARED_HUNT_EFFORT,
 };
 
 export function getCellEffort(
@@ -98,7 +104,7 @@ export function getCellEffort(
 
 /**
  * Map-study estimate of bird likelihood for a cell (not the true spawn).
- * Combines terrain rating, effort band, and a stable cell hash.
+ * Prefer hand-marked seat density when the map has placement data.
  */
 export function estimatedBirdChancePct(
   mapId: HuntMapId,
@@ -106,6 +112,14 @@ export function estimatedBirdChancePct(
   terrainBirdRating: number,
   isParking: boolean,
 ): number {
+  const fromPlacement = placementBirdChancePct(
+    mapId,
+    cell,
+    terrainBirdRating,
+    isParking,
+  );
+  if (fromPlacement != null) return fromPlacement;
+
   if (isParking) return Math.max(2, Math.round(terrainBirdRating * 2));
   const effort = getCellEffort(mapId, cell);
   const base = terrainBirdRating * 9; // 9–45 for rating 1–5
@@ -201,13 +215,32 @@ export function canHuntAtTime(absoluteMinutes: number): boolean {
   return tod >= HUNT_DAY_START_MINUTES && tod < HUNT_DARK_MINUTES;
 }
 
-/** Walking after 17:00 requires a headlamp in kit. */
+/** True from 00:00 until 08:00 — missed the midnight race to the car. */
+export function isPastHuntMidnight(absoluteMinutes: number): boolean {
+  const tod = huntTimeOfDayMinutes(absoluteMinutes);
+  return tod < HUNT_DAY_START_MINUTES;
+}
+
+/**
+ * Still in the field after midnight → catch is lost, must overnight.
+ * At parking before/at midnight is safe.
+ */
+export function missedCarByMidnight(
+  absoluteMinutes: number,
+  atParking: boolean,
+): boolean {
+  return !atParking && isPastHuntMidnight(absoluteMinutes);
+}
+
+/** Walking after 17:00 requires a headlamp — except the race to parking (endex). */
 export function canWalkAtNight(
   hasHeadlamp: boolean,
   absoluteMinutes: number,
+  opts?: { destinationIsParking?: boolean },
 ): boolean {
   if (!isHuntDark(absoluteMinutes)) return true;
-  return hasHeadlamp;
+  if (hasHeadlamp) return true;
+  return !!opts?.destinationIsParking;
 }
 
 export function isAtParking(

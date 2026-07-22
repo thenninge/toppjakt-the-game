@@ -1018,6 +1018,18 @@ body {
   margin-top: 0.15rem;
 }
 
+.inatur-kort-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.inatur-kort-options .shop-buy {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.55rem;
+}
+
 .inatur-message {
   color: var(--accent-gold);
 }
@@ -1143,10 +1155,6 @@ body {
 }
 
 .hunt-map-cell-blowup-frame {
-  --hunt-cols: 7;
-  --hunt-rows: 6;
-  --blowup-col: 0;
-  --blowup-row-from-top: 0;
   position: relative;
   width: 100%;
   overflow: hidden;
@@ -1161,13 +1169,16 @@ body {
   position: absolute;
   left: 0;
   top: 0;
-  width: calc(var(--hunt-cols) * 100%);
-  height: calc(var(--hunt-rows) * 100%);
+  /* Scale full map so one grid cell fills the frame. */
+  width: calc(var(--hunt-cols, 7) * 100%);
+  height: calc(var(--hunt-rows, 6) * 100%);
   max-width: none;
   object-fit: fill;
+  /* Percentages in translate are relative to the image itself —
+     so -100%/cols shifts exactly one cell width. */
   transform: translate(
-    calc(var(--blowup-col) * -100% / var(--hunt-cols)),
-    calc(var(--blowup-row-from-top) * -100% / var(--hunt-rows))
+    calc(var(--blowup-col, 0) * -100% / var(--hunt-cols, 7)),
+    calc(var(--blowup-row-from-top, 0) * -100% / var(--hunt-rows, 6))
   );
   user-select: none;
   pointer-events: none;
@@ -2672,13 +2683,150 @@ body {
     0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
+.stats-frame-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 .stats-frame-title {
-  margin: 0 0 0.25rem;
+  margin: 0;
   font-family: var(--font-display), monospace;
   font-size: 0.62rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--accent-gold);
+}
+
+.stats-frame-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.stats-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #5a4030;
+  background: #1a1410;
+  cursor: pointer;
+}
+
+.stats-menu-btn:hover,
+.stats-menu-btn.is-open {
+  border-color: var(--accent-gold);
+  background: rgba(196, 165, 116, 0.12);
+}
+
+.stats-menu-burger {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  width: 0.85rem;
+}
+
+.stats-menu-burger span {
+  display: block;
+  height: 1.5px;
+  width: 100%;
+  background: var(--canyon-sand);
+}
+
+.stats-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 20;
+  min-width: 10.5rem;
+  padding: 0.3rem;
+  border: 1px solid #5a4030;
+  background: #1a1410;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.stats-menu-heading {
+  margin: 0.15rem 0.4rem 0.35rem;
+  font-family: var(--font-display), monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+.stats-menu-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--canyon-sand);
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stats-menu-item:hover {
+  background: rgba(196, 165, 116, 0.12);
+  color: var(--prompt-green);
+}
+
+.stats-menu-item.is-danger {
+  color: #e8b4a0;
+}
+
+.stats-menu-item.is-danger:hover {
+  color: #ffd0c0;
+  background: rgba(180, 60, 40, 0.14);
+}
+
+.stats-menu-item.is-muted {
+  color: rgba(196, 165, 116, 0.7);
+  font-size: 0.78rem;
+}
+
+.stats-menu-rename {
+  min-width: 12.5rem;
+}
+
+.stats-rename-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 0.35rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid #5a4030;
+  background: #0e0a08;
+  color: var(--canyon-sand);
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
+.stats-rename-input:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+.stats-rename-error {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  color: #e8b4a0;
+}
+
+.stats-rename-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.stats-rename-actions .stats-menu-item {
+  flex: 1;
+  text-align: center;
 }
 
 .stats-grid {

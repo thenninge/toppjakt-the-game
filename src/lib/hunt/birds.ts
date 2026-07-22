@@ -19,6 +19,7 @@ import {
   rollPerchDistanceM,
   type SpotPerch,
 } from "@/lib/hunt/spotPerches";
+import { weightedSpawnCells } from "@/lib/hunt/mapPlacements";
 
 export type BirdSpecies = "tiur" | "orrhane";
 
@@ -282,8 +283,8 @@ export function relocateBirdCell(
 
 /**
  * Spawn birds across the map (tiur / orrhane mix from terrain ratings).
- * Several birds may share a cell. Same-species companions:
- * tiur +20 %, orrhane +40 %. Always places one on the start cell for testing.
+ * Cells are weighted by hand-marked seats (green = tiur, red = orrhane).
+ * Same-species companions: tiur +20 %, orrhane +40 %.
  */
 export function spawnTiurOnMap(
   map: HuntMapAsset,
@@ -295,15 +296,6 @@ export function spawnTiurOnMap(
   },
 ): HuntBird[] {
   const birds: HuntBird[] = [];
-  const startKey = cellKey(map.start);
-  const cells: HuntGridCell[] = [];
-  for (let r = 0; r < map.rows; r++) {
-    for (let c = 0; c < map.cols; c++) {
-      if (`${r},${c}` === startKey) continue;
-      cells.push({ row: r, col: c });
-    }
-  }
-
   const tiurRating = Math.max(0, opts?.tiurRating ?? 3);
   const orrhaneRating = Math.max(0, opts?.orrhaneRating ?? 2);
   const speciesWeight = tiurRating + orrhaneRating;
@@ -312,6 +304,32 @@ export function spawnTiurOnMap(
     if (speciesWeight <= 0) return "tiur";
     return random() < orrhaneRating / speciesWeight ? "orrhane" : "tiur";
   };
+
+  const pickWeightedCell = (
+    species: BirdSpecies,
+  ): HuntGridCell | null => {
+    const weighted = weightedSpawnCells(map.id, species, map.start);
+    if (weighted.length === 0) return null;
+    let total = 0;
+    for (const w of weighted) total += w.weight;
+    if (total <= 0) return null;
+    let roll = random() * total;
+    for (const w of weighted) {
+      roll -= w.weight;
+      if (roll <= 0) return { ...w.cell };
+    }
+    return { ...weighted[weighted.length - 1]!.cell };
+  };
+
+  /** Fallback: any non-parking cell (maps without placement data). */
+  const fallbackCells: HuntGridCell[] = [];
+  const startKey = `${map.start.row},${map.start.col}`;
+  for (let r = 0; r < map.rows; r++) {
+    for (let c = 0; c < map.cols; c++) {
+      if (`${r},${c}` === startKey) continue;
+      fallbackCells.push({ row: r, col: c });
+    }
+  }
 
   let nextId = 1;
   const pushBird = (species: BirdSpecies, cell: HuntGridCell) => {
@@ -324,20 +342,23 @@ export function spawnTiurOnMap(
     });
   };
 
-  // Guaranteed test bird on start (A7 on Trøndelag map).
-  pushBird("tiur", { ...map.start });
-
-  if (cells.length === 0) return birds;
-
-  const primaryCount = Math.max(0, count - 1);
-  for (let i = 0; i < primaryCount; i++) {
-    const pick = cells[Math.floor(random() * cells.length)]!;
+  const spawnOne = () => {
     const species = pickSpecies();
-    pushBird(species, pick);
-    // Flocking: one optional companion of the same species (no chain).
-    if (random() < companionChanceForSpecies(species)) {
-      pushBird(species, pick);
+    let cell = pickWeightedCell(species);
+    if (!cell && species === "tiur") cell = pickWeightedCell("orrhane");
+    if (!cell && species === "orrhane") cell = pickWeightedCell("tiur");
+    if (!cell && fallbackCells.length > 0) {
+      cell = fallbackCells[Math.floor(random() * fallbackCells.length)]!;
     }
+    if (!cell) return;
+    pushBird(species, cell);
+    if (random() < companionChanceForSpecies(species)) {
+      pushBird(species, cell);
+    }
+  };
+
+  for (let i = 0; i < Math.max(0, count); i++) {
+    spawnOne();
   }
   return birds;
 }

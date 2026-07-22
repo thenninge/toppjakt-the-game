@@ -8,6 +8,9 @@ export type HuntingTerrainId =
   | "ostlandet-budsjett"
   | "ostlandet-standard"
   | "trondelag"
+  | "inatur-hogstflate"
+  | "inatur-granskog"
+  | "svenskegrensa"
   | "rulles-stubb-teig"
   | "rulles-kristian-li"
   | "rulles-lovenskiold";
@@ -61,11 +64,44 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "trondelag",
     name: "Myrkanter",
     region: "Trøndelag",
-    blurb: "Dyreste inatur-teig — fullt med fugl (20 tiur). Parker nede til høyre.",
+    blurb: "Dyreste inatur-teig — fullt med fugl (20 tiur). Parker i A7.",
     pricePerDayNok: 2000,
     tiurRating: 4,
     orrhaneRating: 5,
     mapId: "midtnorge1",
+    access: "inatur",
+  },
+  {
+    id: "inatur-hogstflate",
+    name: "Hogstflate nord",
+    region: "Østlandet",
+    blurb: "Nytt inatur-felt med tydelige orrekanter og tiurtopper i tett skog.",
+    pricePerDayNok: 1500,
+    tiurRating: 3,
+    orrhaneRating: 4,
+    mapId: "inatur1",
+    access: "inatur",
+  },
+  {
+    id: "inatur-granskog",
+    name: "Granskog sør",
+    region: "Østlandet",
+    blurb: "Klassisk granskog — bra med tiur i mørke bestånd, orre i åpningene.",
+    pricePerDayNok: 1800,
+    tiurRating: 4,
+    orrhaneRating: 3,
+    mapId: "inatur2",
+    access: "inatur",
+  },
+  {
+    id: "svenskegrensa",
+    name: "Svenskegrensa",
+    region: "Østlandet",
+    blurb: "Langs grensa — variert terreng med mange markerte sitteplasser.",
+    pricePerDayNok: 2200,
+    tiurRating: 4,
+    orrhaneRating: 4,
+    mapId: "svenskegrensa",
     access: "inatur",
   },
   {
