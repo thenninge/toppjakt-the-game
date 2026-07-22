@@ -6,10 +6,10 @@
  * - **Position** — center of each marker (% of frame)
  * - **Shape** — square = tiur, circle = orrhane
  * - **Color** — distance band (and thus sprite size):
- *     Rød    110–170 m
- *     Lilla  180–230 m
- *     Grønn  240–300 m
- *     Gul    300–500 m
+ *     Rød    110–170 m  — synlig med bare øyne
+ *     Lilla  180–230 m  — synlig med bare øyne
+ *     Grønn  240–300 m  — krever kikkert/termisk
+ *     Gul    300–500 m  — krever kikkert/termisk
  *
  * Coordinates are **percent of the image frame** (same as BirdVisualPlacement):
  * - x: 0 = left edge, 100 = right

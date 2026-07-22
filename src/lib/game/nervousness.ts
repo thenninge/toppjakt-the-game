@@ -56,6 +56,27 @@ export const ENCOUNTER_NERVE = {
 } as const;
 
 /**
+ * Extra nerve per *game* second while the player knotes Lapua/Enviro
+ * (on top of distance / camo / movement already in {@link tickEncounterNerve}).
+ * Tunable — not a standalone flush timer.
+ */
+export const ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC = 0.004;
+
+/** Game-time multiplier while the Enviro tab is open on the shoot HUD. */
+export const ENVIRO_TIME_FACTOR = 5;
+
+/**
+ * A bird that has already flushed once this hunt starts the next encounter
+ * already wound up — player choices stack on top of this baseline.
+ */
+export const RESPOOKED_BIRD_START_NERVE = 0.4;
+
+/** Starting nerve for an Aware encounter (0 unless previously spooked). */
+export function initialEncounterNerve(spookCount: number): number {
+  return spookCount > 0 ? RESPOOKED_BIRD_START_NERVE : 0;
+}
+
+/**
  * Inputs for the per-frame encounter nerve tick.
  * Expand this as the advanced model lands (terrain, species, pack noise…).
  */

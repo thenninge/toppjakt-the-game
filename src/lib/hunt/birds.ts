@@ -41,8 +41,8 @@ export const MAX_SPOOKS_BEFORE_GONE = 2;
 /** Mental fatigue gain when a bird is spooked away for good (0–1 scale). */
 export const GONE_BIRD_MENTAL_HIT = 0.2;
 
-/** Eyes resolve red-band birds (placement «rød» ≤170 m); farther needs binos/thermal. */
-export const EYES_MAX_DISTANCE_M = 170;
+/** Eyes resolve rød + lilla bands (placement ≤230 m); grønn/gul needs binos/thermal. */
+export const EYES_MAX_DISTANCE_M = 230;
 
 export const BIRD_DISTANCE_MIN_M = 150;
 export const BIRD_DISTANCE_MAX_M = 450;
@@ -146,7 +146,7 @@ export function visibleInSpotMode(
 
 /**
  * Apparent size scales with 1/range.
- * Sized so red-band birds (≤170 m) are findable with naked eye.
+ * Sized so rød/lilla birds (≤230 m) are findable with naked eye.
  */
 export const TIUR_TOPP_WIDTH_PCT_AT_100M = 2.25;
 export const SPRITE_SIZE_REF_DISTANCE_M = 100;

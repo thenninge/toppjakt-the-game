@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import {
   DEFAULT_BINOS_MAGNIFICATION,
   SPOT_TIME_FACTOR_BINOS,
@@ -95,27 +95,92 @@ function spotTimeFactor(mode: SpotMode, thermalTimeFactor: number): number {
   return SPOT_TIME_FACTOR_EYES;
 }
 
+/** Minimum click/tap target as % of spot frame (sprites can be ~1% wide). */
+const BIRD_HIT_MIN_PCT = 4.5;
+
 function BirdOverlay({
   placement,
+  onSelect,
 }: {
   placement: BirdVisualPlacement;
+  /** Click / activate → same path as a successful LRF lock. */
+  onSelect?: (placement: BirdVisualPlacement) => void;
 }) {
+  const selectable = !!onSelect;
+  const hitPct = Math.max(placement.widthPct, BIRD_HIT_MIN_PCT);
+  const spriteScale = (placement.widthPct / hitPct) * 100;
+  const flip = placement.flip ? " scaleX(-1)" : "";
+
+  if (!selectable) {
+    return (
+      <img
+        src={placement.imageSrc}
+        alt=""
+        className="spot-bird"
+        draggable={false}
+        style={{
+          left: `${placement.x}%`,
+          top: `${placement.y}%`,
+          width: `${placement.widthPct}%`,
+          transform: `translate(-50%, -50%)${flip}`,
+        }}
+      />
+    );
+  }
+
   return (
-    <img
-      src={placement.imageSrc}
-      alt=""
-      className="spot-bird"
-      draggable={false}
+    <button
+      type="button"
+      className="spot-bird-hit"
+      aria-label={`Fugl ca. ${placement.distanceM} m — klikk for å låse`}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(placement);
+      }}
       style={{
         left: `${placement.x}%`,
         top: `${placement.y}%`,
-        width: `${placement.widthPct}%`,
-        transform: placement.flip
-          ? "translate(-50%, -50%) scaleX(-1)"
-          : "translate(-50%, -50%)",
+        width: `${hitPct}%`,
+        height: `${hitPct}%`,
+        transform: "translate(-50%, -50%)",
       }}
-    />
+    >
+      <img
+        src={placement.imageSrc}
+        alt=""
+        className="spot-bird spot-bird-in-hit"
+        draggable={false}
+        style={{
+          width: `${spriteScale}%`,
+          transform: `translate(-50%, -50%)${flip}`,
+        }}
+      />
+    </button>
   );
+}
+
+/** Nearest visible bird within a forgiving radius of a frame click (% coords). */
+function findBirdNearPoint(
+  placements: BirdVisualPlacement[],
+  xPct: number,
+  yPct: number,
+): BirdVisualPlacement | null {
+  let best: BirdVisualPlacement | null = null;
+  let bestD2 = Infinity;
+  for (const p of placements) {
+    const radius = Math.max(p.widthPct / 2, BIRD_HIT_MIN_PCT / 2) * 1.15;
+    const dx = p.x - xPct;
+    const dy = p.y - yPct;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= radius * radius && d2 < bestD2) {
+      best = p;
+      bestD2 = d2;
+    }
+  }
+  return best;
 }
 
 function clampPan(n: number): number {
@@ -171,7 +236,7 @@ export function SpotView({
   const thermalBatteryRef = useRef(thermalBatteryGameSec);
   thermalBatteryRef.current = thermalBatteryGameSec;
 
-  const [pan, setPan] = useState({ x: 50, y: 40 });
+  const [pan, setPan] = useState({ x: 50, y: 50 });
   const panRef = useRef(pan);
   panRef.current = pan;
   const keysRef = useRef<PanKeys>({
@@ -337,26 +402,21 @@ export function SpotView({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  function focusOnBird(targetMode: "binos" | "thermal") {
-    const focus =
-      birdPlacements.find((p) => visibleInSpotMode(p.distanceM, targetMode)) ??
-      null;
-    if (focus) {
-      const next = { x: focus.x, y: focus.y };
-      panRef.current = next;
-      setPan(next);
-    }
+  function enterOpticMode(targetMode: "binos" | "thermal") {
+    const center = { x: 50, y: 50 };
+    panRef.current = center;
+    setPan(center);
     setMode(targetMode);
     setLrfReading(null);
   }
 
   function enterBinos() {
-    focusOnBird("binos");
+    enterOpticMode("binos");
   }
 
   function enterThermal() {
     if (thermalBatteryGameSec <= 0) return;
-    focusOnBird("thermal");
+    enterOpticMode("thermal");
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -398,19 +458,27 @@ export function SpotView({
     );
     const hit = findBirdUnderLrfReticle(visible, pan, zoom);
     if (hit && activeLrf) {
-      const measured = Math.round(
-        measureDistanceWithLrf(hit.distanceM, activeLrf),
-      );
-      setLrfReading(`${measured} m`);
-      onBirdObserved({
-        placement: hit,
-        measuredDistanceM: measured,
-        gameSeconds: lookedRef.current,
-      });
+      observeBird(hit, activeLrf);
       return;
     }
     const terrain = 80 + Math.floor(Math.random() * 420);
     setLrfReading(`${terrain} m`);
+  }
+
+  /** Lock a spotted bird → Aware / shoot (same entry as LRF hit). */
+  function observeBird(
+    placement: BirdVisualPlacement,
+    ranging: Pick<LrfSpec, "rangeErrorPercent"> | null,
+  ) {
+    const measured = ranging
+      ? Math.round(measureDistanceWithLrf(placement.distanceM, ranging))
+      : Math.round(placement.distanceM);
+    setLrfReading(`${measured} m`);
+    onBirdObserved({
+      placement,
+      measuredDistanceM: measured,
+      gameSeconds: lookedRef.current,
+    });
   }
 
   const lookedMin = Math.floor(lookedGameSec / 60);
@@ -429,6 +497,25 @@ export function SpotView({
   const showLrf = !!activeLrf;
   fireLrfRef.current = fireLrf;
   activeLrfRef.current = activeLrf;
+
+  /** Eyes always; binos only without LRF reticle. Never with LRF / thermal. */
+  const birdClickEnabled =
+    mode === "eyes" || (mode === "binos" && !showLrf);
+
+  function onBirdClick(placement: BirdVisualPlacement) {
+    if (!birdClickEnabled) return;
+    observeBird(placement, activeLrf);
+  }
+
+  function onFrameClick(e: MouseEvent<HTMLDivElement>) {
+    if (!birdClickEnabled || mode !== "eyes") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+    const hit = findBirdNearPoint(visibleBirds, xPct, yPct);
+    if (hit) onBirdClick(hit);
+  }
 
   const modeTitle =
     mode === "binos"
@@ -561,12 +648,13 @@ export function SpotView({
             ? "spot-eyes-frame spot-binos-frame"
             : mode === "thermal"
               ? "spot-eyes-frame spot-thermal-frame"
-              : "spot-eyes-frame"
+              : "spot-eyes-frame spot-eyes-frame-clickable"
         }
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onClick={onFrameClick}
       >
         {mode === "eyes" ? (
           <>
@@ -578,7 +666,11 @@ export function SpotView({
                 draggable={false}
               />
               {visibleBirds.map((p) => (
-                <BirdOverlay key={p.birdId} placement={p} />
+                <BirdOverlay
+                  key={p.birdId}
+                  placement={p}
+                  onSelect={birdClickEnabled ? onBirdClick : undefined}
+                />
               ))}
             </div>
           </>
@@ -592,14 +684,18 @@ export function SpotView({
                 draggable={false}
               />
               {visibleBirds.map((p) => (
-                <BirdOverlay key={p.birdId} placement={p} />
+                <BirdOverlay
+                  key={p.birdId}
+                  placement={p}
+                  onSelect={birdClickEnabled ? onBirdClick : undefined}
+                />
               ))}
             </div>
             <div className="spot-binos-vignette" aria-hidden />
-            {hasLrf ? (
+            {showLrf ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
-            {hasLrf && lrfReading ? (
+            {showLrf && lrfReading ? (
               <span className="spot-lrf-readout">{lrfReading}</span>
             ) : null}
           </>
@@ -623,10 +719,16 @@ export function SpotView({
           </>
         )}
       </div>
+      {mode === "eyes" ? (
+        <p className="spot-binos-hint">
+          Rød og lilla fugler er synlige med øynene — klikk på fuglen for å låse
+        </p>
+      ) : null}
       {mode === "binos" ? (
         <p className="spot-binos-hint">
-          Piltaster (tap = lite steg, hold = raskere) eller dra · sikt LRF og
-          trykk F / Space / LRF
+          {showLrf
+            ? "Piltaster (tap = lite steg, hold = raskere) eller dra · sikt med rød sirkel og trykk F / Space / LRF"
+            : "Piltaster (tap = lite steg, hold = raskere) eller dra · klikk på fuglen for å låse (ingen LRF)"}
         </p>
       ) : null}
       {mode === "thermal" ? (

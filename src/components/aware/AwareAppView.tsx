@@ -72,6 +72,8 @@ export type AwareShootStance = {
   bird: CellPoint;
   /** Camcorder was set up before leaving Aware (nerve cost already paid). */
   camcorderActive?: boolean;
+  /** Bird nervousness carried into the shoot scene (0–cap). */
+  birdNerve?: number;
 };
 
 type AwareAppViewProps = {
@@ -87,6 +89,11 @@ type AwareAppViewProps = {
   initialBird?: CellPoint | null;
   /** Kit camo bird-spot factor (lower = better). Used by nerve model. */
   camoBirdSpot?: number;
+  /**
+   * Starting nerve for this encounter (e.g. already-spooked bird at 40%).
+   * All player choices add on top of this baseline until flush.
+   */
+  initialBirdNerve?: number;
   /** Has LRF — Shoot-tab still useful, but less critical. */
   hasLrf?: boolean;
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
@@ -94,6 +101,8 @@ type AwareAppViewProps = {
   hasBdx?: boolean;
   /** Kit includes a deployable hunt camcorder. */
   hasCamcorder?: boolean;
+  /** Triggercam in kit — allows autofill on skuddpar wizard. */
+  hasTriggercam?: boolean;
   clockMinutes: number;
   shotPairs: ShotPair[];
   focusPairId?: string | null;
@@ -276,11 +285,13 @@ export function AwareAppView({
   initialHunter = null,
   initialBird = null,
   camoBirdSpot = 0.55,
+  initialBirdNerve = 0,
   hasLrf = false,
   ammo = null,
   hasKestrel = false,
   hasBdx = false,
   hasCamcorder = false,
+  hasTriggercam = false,
   clockMinutes,
   shotPairs,
   focusPairId = null,
@@ -301,13 +312,18 @@ export function AwareAppView({
     () => initialHunter ?? { x: 50, y: 50 },
   );
   const [destination, setDestination] = useState<CellPoint | null>(null);
-  const [nerve, setNerve] = useState(0);
+  const [nerve, setNerve] = useState(() =>
+    Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, initialBirdNerve)),
+  );
   const [moveHoldSec, setMoveHoldSec] = useState(0);
   const [shootWizard, setShootWizard] = useState<ShootWizard>({
     phase: "idle",
   });
   const [status, setStatus] = useState(() => {
     if (stalking) {
+      if (initialBirdNerve > 0) {
+        return "Fuglen er allerede skremt én gang — mer nervøs. Trykk på kartet · hold piltaster. Hold øye med nervøsitet.";
+      }
       return "Trykk på kartet for trygg sone · hold piltaster for å flytte deg. Hold øye med nervøsitet.";
     }
     const pair = shotPairs.find((p) => p.id === focusPairId);
@@ -338,7 +354,9 @@ export function AwareAppView({
   const destRef = useRef(destination);
   destRef.current = destination;
   /** Source of truth for the rAF sim — do not sync from state (wipes instant bumps). */
-  const nerveRef = useRef(0);
+  const nerveRef = useRef(
+    Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, initialBirdNerve)),
+  );
   const moveHoldRef = useRef(0);
   const flushedRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -409,13 +427,17 @@ export function AwareAppView({
   );
 
   const shootWizardActive = shootWizard.phase !== "idle";
+  /** Cam gear that "remembers" stand→bird for skuddpar autofill. */
+  const skuddparAutofill = hasTriggercam || camcorderReady;
   /** Stand→bird while defining skuddpar (wizard stand is frozen). */
-  const wizardBirdDistanceM = shootWizardActive
-    ? distanceMBetween(shootWizard.stand, birdWorld)
-    : null;
-  const wizardBirdBearingDeg = shootWizardActive
-    ? bearingDegFromTo(shootWizard.stand, birdWorld)
-    : null;
+  const wizardBirdDistanceM =
+    shootWizardActive && skuddparAutofill
+      ? distanceMBetween(shootWizard.stand, birdWorld)
+      : null;
+  const wizardBirdBearingDeg =
+    shootWizardActive && skuddparAutofill
+      ? bearingDegFromTo(shootWizard.stand, birdWorld)
+      : null;
 
   const shootPreviewImpact =
     shootWizard.phase === "range" || shootWizard.phase === "direction"
@@ -425,6 +447,7 @@ export function AwareAppView({
             bearingDeg: shootWizard.bearingDeg,
             distanceM: shootWizard.rangeM,
           });
+          if (!skuddparAutofill) return dialed;
           // Keep preview on the bird when dial matches (slider step rounding).
           return distanceMBetween(dialed, birdWorld) <= 12
             ? birdWorld
@@ -582,22 +605,34 @@ export function AwareAppView({
 
   function startShootPair() {
     const stand = { ...hunter };
-    // Prefill with geometry to the bird marker so dialed m/° land on the green dot.
-    const exactDist = distanceMBetween(stand, birdWorld);
-    const exactBearing = bearingDegFromTo(stand, birdWorld);
-    const rangeM = Math.max(
-      50,
-      Math.min(450, Math.round(exactDist / 5) * 5),
-    );
-    const bearingDeg = Math.round(exactBearing) % 360;
+    if (skuddparAutofill) {
+      const exactDist = distanceMBetween(stand, birdWorld);
+      const exactBearing = bearingDegFromTo(stand, birdWorld);
+      const rangeM = Math.max(
+        50,
+        Math.min(450, Math.round(exactDist / 5) * 5),
+      );
+      const bearingDeg = Math.round(exactBearing) % 360;
+      setShootWizard({
+        phase: "direction",
+        stand,
+        rangeM,
+        bearingDeg,
+      });
+      setStatus(
+        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${Math.round(exactBearing)}° — juster ved behov, deretter lagre.`,
+      );
+      return;
+    }
+    // No cam: blank dials — player must knote direction/range from memory.
     setShootWizard({
       phase: "direction",
       stand,
-      rangeM,
-      bearingDeg,
+      rangeM: 200,
+      bearingDeg: 0,
     });
     setStatus(
-      `Skuddpar: stand låst. Fugl ligger på ${Math.round(exactDist)} m / ${Math.round(exactBearing)}° — juster om du vil simulere usikkerhet, deretter lagre.`,
+      "Skuddpar: stand låst. Uten Triggercam/camcorder må du stille retning og avstand selv — ingen autofyll.",
     );
   }
 
@@ -614,10 +649,10 @@ export function AwareAppView({
       bearingDeg,
       distanceM: rangeM,
     });
-    // Snap to the true bird marker when the dial is within one slider step —
-    // avoids clamp/round drift so skuddpar-prikk = fugleprikk.
+    // Snap to true bird only when cam autofill is allowed (within one slider step).
     const snapM = distanceMBetween(dialed, birdWorld);
-    const target = snapM <= 12 ? { ...birdWorld } : dialed;
+    const target =
+      skuddparAutofill && snapM <= 12 ? { ...birdWorld } : dialed;
     const pair: ShotPair = {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
@@ -772,6 +807,7 @@ export function AwareAppView({
       hunter,
       bird: birdWorld,
       camcorderActive: hasCamcorder && camcorderReady,
+      birdNerve: nerveRef.current,
     });
   }
 
@@ -1064,9 +1100,9 @@ export function AwareAppView({
           {mode === "shoot" ? (
             <div className="aware-actions">
               <p className="shop-row-note">
-                {hasLrf
-                  ? "Shoot: lås stand → retning/avstand fylles fra fugleprikken. Justér bare hvis du vil simulere usikkerhet."
-                  : "Uten LRF: retning/avstand fylles fra fugleprikken på kartet. Justér for å øve på å treffe treet."}
+                {skuddparAutofill
+                  ? "Cam i bruk: retning/avstand prefylles fra fugleprikken — juster ved behov."
+                  : "Uten Triggercam/oppsatt camcorder: still retning og avstand selv (ingen autofyll)."}
               </p>
 
               {shootWizard.phase === "idle" ? (

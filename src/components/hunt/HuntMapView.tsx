@@ -130,6 +130,7 @@ import {
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
+import { initialEncounterNerve } from "@/lib/game/nervousness";
 import type { ShotHitFasit, ShotPair } from "@/lib/aware/types";
 import { caliberBulletDiameterMm } from "@/lib/range/precision";
 import {
@@ -218,6 +219,8 @@ type ShootSession = {
   camcorderActive?: boolean;
   /** Where the displayed range came from. */
   rangeSource: "lrf" | "estimated";
+  /** Bird nerve carried from Aware (distance/move/cam already baked in). */
+  birdNerve: number;
 };
 
 type AwareSession = {
@@ -328,11 +331,10 @@ export function HuntMapView({
   );
   const [walkSession, setWalkSession] = useState<WalkSession | null>(null);
   const [spotSession, setSpotSession] = useState<SpotSession | null>(null);
-  /** Keep landscape when «Fortsett spotting» after a shot in this cell. */
-  const [spotImageForCell, setSpotImageForCell] = useState<{
-    cellKey: string;
-    imageSrc: string;
-  } | null>(null);
+  /** Spot landscape sticky per cell for this hunt round (cleared on end / terrain reset). */
+  const [spotImageByCell, setSpotImageByCell] = useState<
+    Record<string, string>
+  >({});
   const [shootSession, setShootSession] = useState<ShootSession | null>(null);
   const [awareSession, setAwareSession] = useState<AwareSession | null>(null);
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
@@ -507,7 +509,7 @@ export function HuntMapView({
     setShootSession(null);
     setAwareSession(null);
     setPendingPostShot(null);
-    setSpotImageForCell(null);
+    setSpotImageByCell({});
     setShotPairs(loadShotPairsForHuntStart(terrainId));
     setFindHitAar(null);
     setEatSession(null);
@@ -801,7 +803,6 @@ export function HuntMapView({
       (nowDark ? " Det er mørkt — skuddlys er over." : "");
 
     setWalkSession(null);
-    setSpotImageForCell(null);
 
     if (
       isStrandedAtNight(
@@ -856,19 +857,26 @@ export function HuntMapView({
       return;
     }
     const cellKey = `${pos.row},${pos.col}`;
-    const reuse = opts?.reuseImageSrc ?? null;
-    // Only birds still in this cell (post-shot flush must stick).
     const marked = spotImagesWithPerches();
+    const isUsableSpotSrc = (src: string) =>
+      marked.length === 0 ||
+      marked.includes(src) ||
+      src.startsWith("/images/spot/");
+    const preferred =
+      opts?.reuseImageSrc && isUsableSpotSrc(opts.reuseImageSrc)
+        ? opts.reuseImageSrc
+        : null;
+    const cached = spotImageByCell[cellKey];
+    const cachedOk = cached && isUsableSpotSrc(cached) ? cached : null;
     const imageSrc =
-      reuse &&
-      (marked.length === 0 ||
-        marked.includes(reuse) ||
-        reuse.startsWith("/images/spot/"))
-        ? reuse
-        : marked.length > 0
-          ? marked[Math.floor(Math.random() * marked.length)]!
-          : pickSpotImage();
-    setSpotImageForCell({ cellKey, imageSrc });
+      preferred ??
+      cachedOk ??
+      (marked.length > 0
+        ? marked[Math.floor(Math.random() * marked.length)]!
+        : pickSpotImage());
+    setSpotImageByCell((prev) =>
+      prev[cellKey] === imageSrc ? prev : { ...prev, [cellKey]: imageSrc },
+    );
     const bound = bindBirdsToSpotImage(birds, pos, imageSrc, {
       fillAllPerches: false,
     });
@@ -918,7 +926,7 @@ export function HuntMapView({
       );
     } else if (hiddenFar.length > 0) {
       setLog(
-        `${modeLabel} (${timeLabel})${bakedNote}: Ingen fugl synlig med øynene. Prøv kikkert — det kan være noe lenger unna.`,
+        `${modeLabel} (${timeLabel})${bakedNote}: Ingen fugl synlig med øynene (rød/lilla). Prøv kikkert — det kan være noe lenger unna.`,
       );
     } else {
       setLog(
@@ -943,10 +951,12 @@ export function HuntMapView({
     const forfeitNote = forfeitUncommittedShotPairs();
     const imageSrc = spotSession?.imageSrc ?? pickSpotImage();
     if (spotSession?.imageSrc) {
-      setSpotImageForCell({
-        cellKey: `${pos.row},${pos.col}`,
-        imageSrc: spotSession.imageSrc,
-      });
+      const cellKey = `${pos.row},${pos.col}`;
+      setSpotImageByCell((prev) =>
+        prev[cellKey] === spotSession.imageSrc
+          ? prev
+          : { ...prev, [cellKey]: spotSession.imageSrc },
+      );
     }
     const lookMin = info.gameSeconds / 60;
     setMentalFatigue((m) =>
@@ -1109,6 +1119,7 @@ export function HuntMapView({
       birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
       camcorderActive: !!stance?.camcorderActive,
       rangeSource: hasBinos ? "lrf" : "estimated",
+      birdNerve: Math.max(0, stance?.birdNerve ?? 0),
     });
     setLog(
       hold
@@ -1214,9 +1225,8 @@ export function HuntMapView({
     const stayed = pendingPostShot.stayedCount;
     const reuseImageSrc =
       pendingPostShot.aware?.imageSrc ??
-      (spotImageForCell?.cellKey === `${pos.row},${pos.col}`
-        ? spotImageForCell.imageSrc
-        : null);
+      spotImageByCell[`${pos.row},${pos.col}`] ??
+      null;
     setPendingPostShot(null);
     setLog(
       stayed > 0
@@ -1847,11 +1857,31 @@ export function HuntMapView({
         mentalFatigue={mentalFatigue}
         birdFlip={!!shootSession.bird.flip}
         birdSpriteId={shootSession.bird.spriteId}
+        camoBirdSpot={camoBirdSpot}
+        birdNerve={shootSession.birdNerve}
         onAffinitiesChange={onAffinitiesChange}
         onConsumeAmmo={onConsumeAmmo}
         onEnsureZeroing={onEnsureZeroing}
         onAbort={abortShoot}
         onShotResult={onHuntShotResult}
+        onGameSeconds={addGameSeconds}
+        onBirdFlushedFromWait={() => {
+          if (!shootSession || !map) return;
+          const id = shootSession.bird.birdId;
+          const result = spookBird(birds, id, map);
+          setBirds(result.birds);
+          setShootSession(null);
+          if (!result.event) {
+            setLog("Fuglen ble for nervøs — den letter.");
+            setPanel("arrived");
+            return;
+          }
+          if (result.event.gone) {
+            setMentalFatigue((m) => clampFatigue(m + GONE_BIRD_MENTAL_HIT));
+          }
+          setFlushQueue([result.event]);
+          setLog(`Fuglen ble for nervøs — ${flushMessage(result.event)}`);
+        }}
       />
     );
   }
@@ -1867,11 +1897,15 @@ export function HuntMapView({
         initialBird={awareSession.birdPos ?? null}
         weather={weather}
         camoBirdSpot={camoBirdSpot}
+        initialBirdNerve={initialEncounterNerve(
+          birds.find((b) => b.id === awareSession.bird.birdId)?.spookCount ?? 0,
+        )}
         hasLrf={hasBinos}
         ammo={primaryAmmo?.ammo ?? null}
         hasKestrel={!!kestrelItem}
         hasBdx={!!binoItem?.lrf.hasOnboardBallistics}
         hasCamcorder={hasCamcorder}
+        hasTriggercam={hasTriggercam}
         clockMinutes={clockMinutes}
         shotPairs={shotPairs}
         focusPairId={awareSession.ettersokPairId ?? null}

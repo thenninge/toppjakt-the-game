@@ -31,7 +31,7 @@ import {
 } from "@/lib/ballistics/solver";
 import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
-import { ScopeTurrets } from "@/components/range/ScopeTurrets";
+import { ScopeTurrets, type ScopeHudTab } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
@@ -72,6 +72,12 @@ import {
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 import { formatHuntClock } from "@/lib/hunt/travel";
+import {
+  ENCOUNTER_NERVE,
+  ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC,
+  ENVIRO_TIME_FACTOR,
+  tickEncounterNerve,
+} from "@/lib/game/nervousness";
 import type { CSSProperties } from "react";
 
 type HuntShootViewProps = {
@@ -117,8 +123,16 @@ type HuntShootViewProps = {
   birdFlip?: boolean;
   /** Topp/target pair chosen at spot time. */
   birdSpriteId?: BirdSpriteId;
+  /** Kit camo bird-spot factor (Aware / Enviro nerve). */
+  camoBirdSpot?: number;
+  /** Bird nerve carried from Aware (0–cap). */
+  birdNerve?: number;
   onAbort: () => void;
   onShotResult: (result: HuntShotResult) => void;
+  /** Advance hunt clock (Enviro tab runs at 5×). */
+  onGameSeconds?: (sec: number) => void;
+  /** Bird flushed when combined nerve (distance/camo + Enviro faffe) hits threshold. */
+  onBirdFlushedFromWait?: () => void;
 };
 
 type Keys = {
@@ -161,8 +175,12 @@ export function HuntShootView({
   mentalFatigue = 0,
   birdFlip = false,
   birdSpriteId = "tiur-1",
+  camoBirdSpot = 0.5,
+  birdNerve = 0,
   onAbort,
   onShotResult,
+  onGameSeconds,
+  onBirdFlushedFromWait,
 }: HuntShootViewProps) {
   const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
   const mmToPx = (mm: number) => birdMmToNativePx(mm, shotGeom);
@@ -210,6 +228,16 @@ export function HuntShootView({
       ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
       : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
   );
+  const [hudTab, setHudTab] = useState<ScopeHudTab>("overhead");
+  const birdNerveRef = useRef(
+    Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
+  );
+  const camoBirdSpotRef = useRef(camoBirdSpot);
+  camoBirdSpotRef.current = camoBirdSpot;
+  const onGameSecondsRef = useRef(onGameSeconds);
+  onGameSecondsRef.current = onGameSeconds;
+  const onBirdFlushedFromWaitRef = useRef(onBirdFlushedFromWait);
+  onBirdFlushedFromWaitRef.current = onBirdFlushedFromWait;
   const [focusUi, setFocusUi] = useState<{
     phase: "idle" | "focused" | "fatigued";
     remainingMs: number;
@@ -240,6 +268,35 @@ export function HuntShootView({
     diameterMm: number;
   } | null>(null);
   const [replay, setReplay] = useState<HuntShotResult | null>(null);
+
+  // Enviro / Lapua: clock ×5; nerve = distance/camo (still) + app-faffe — not a solo timer.
+  useEffect(() => {
+    if (hudTab !== "enviro" || fired) return;
+    let last = performance.now();
+    const id = window.setInterval(() => {
+      const now = performance.now();
+      const realSec = Math.min(0.5, (now - last) / 1000);
+      last = now;
+      if (realSec <= 0) return;
+      const gameSec = realSec * ENVIRO_TIME_FACTOR;
+      onGameSecondsRef.current?.(gameSec);
+      const tick = tickEncounterNerve(birdNerveRef.current, gameSec, {
+        distanceM: distanceRef.current,
+        isMoving: false,
+        moveHoldSec: 0,
+        camoBirdSpot: camoBirdSpotRef.current,
+      });
+      const withFaffe = Math.min(
+        ENCOUNTER_NERVE.nerveCap,
+        tick.nerve + gameSec * ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC,
+      );
+      birdNerveRef.current = withFaffe;
+      if (tick.flushes || withFaffe >= ENCOUNTER_NERVE.flushThreshold) {
+        onBirdFlushedFromWaitRef.current?.();
+      }
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [hudTab, fired]);
 
   const hasTriggercam = kitItems.some((i) => i.id === TRIGGERCAM_ITEM_ID);
 
@@ -868,6 +925,7 @@ export function HuntShootView({
           sessionZeroYMm={sessionZeroYMm}
           onNudge={nudgeZero}
           disabled={fired}
+          onHudTabChange={setHudTab}
           enviroPanel={
             <HuntShotConditions
               rangeM={measuredDistanceM}

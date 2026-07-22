@@ -25,12 +25,17 @@ type LapuaBallisticsAppProps = {
   ammoLabel: string;
   /** Suggested starting range (LRF / Aware). */
   initialRangeM: number;
-  /** Live wind — prefill only; player dials the app. */
+  /** Live wind — used only when {@link autoPrefill} (Kestrel). */
   liveWindSpeedMs: number;
   liveWindFromDeg: number;
-  /** Live air / powder temp — prefill only; player must dial Temp. */
+  /** Live air / powder temp — used only when {@link autoPrefill}. */
   liveTemperatureC: number;
   shotBearingDeg: number;
+  /**
+   * When true (Kestrel in kit), dials start from live range/wind/temp.
+   * Without Kestrel the player must set everything manually.
+   */
+  autoPrefill?: boolean;
 };
 
 const RANGE_VALUES = Array.from({ length: 41 }, (_, i) => 50 + i * 10); // 50–450
@@ -205,21 +210,32 @@ export function LapuaBallisticsApp({
   liveWindFromDeg,
   liveTemperatureC,
   shotBearingDeg,
+  autoPrefill = false,
 }: LapuaBallisticsAppProps) {
   const dialRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
   const [rangeM, setRangeM] = useState(() =>
-    snapTo(RANGE_VALUES, Math.round(initialRangeM)),
+    autoPrefill
+      ? snapTo(RANGE_VALUES, Math.round(initialRangeM))
+      : snapTo(RANGE_VALUES, 200),
   );
   const [windSpeed, setWindSpeed] = useState(() =>
-    snapTo(WIND_VALUES, Math.round(liveWindSpeedMs)),
+    autoPrefill
+      ? snapTo(WIND_VALUES, Math.round(liveWindSpeedMs))
+      : 0,
   );
-  const [tempC, setTempC] = useState(() => clampTempC(liveTemperatureC));
+  const [tempC, setTempC] = useState(() =>
+    autoPrefill
+      ? clampTempC(liveTemperatureC)
+      : POWDER_TEMP_REFERENCE_C,
+  );
   /** Cosmetic only — incline wheel, not used for hold. */
   const [angleDeg, setAngleDeg] = useState(0);
   const [windRelDeg, setWindRelDeg] = useState(() =>
-    snapWindRelDeg(relativeWindDeg(liveWindFromDeg, shotBearingDeg)),
+    autoPrefill
+      ? snapWindRelDeg(relativeWindDeg(liveWindFromDeg, shotBearingDeg))
+      : 0,
   );
 
   const windFromDeg =
@@ -435,8 +451,9 @@ export function LapuaBallisticsApp({
       </p>
 
       <p className="lapua-app-hint">
-        Dra rød pil rundt sirkelen = vindretning · Temp nede til høyre · Vinkel
-        (deg) er kun UI.
+        {autoPrefill
+          ? "Kestrel-prefill · juster ved behov, dial tårnene etter mrad."
+          : "Ingen auto-data — still Range + Wind + Temp selv, deretter dial tårnene."}
       </p>
     </div>
   );

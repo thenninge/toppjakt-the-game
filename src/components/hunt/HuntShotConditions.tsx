@@ -137,11 +137,12 @@ export function HuntShotConditions({
 
         {!hasKestrel ? (
           <p className="hunt-shot-cond-hint">
-            Bruk App til høyre: sett range + vind + temp, dial tårnene.
+            Uten Kestrel: App starter blank — knote range/vind/temp selv.
+            Tid går ×5 her; fuglen blir nervøs.
           </p>
         ) : (
           <p className="hunt-shot-cond-hint">
-            App = estimat · Kestrel bruker live temp + dV/dT automatisk.
+            Kestrel: App prefyller live. Ellers bruk Kestrel-fanen for fasit.
           </p>
         )}
 
@@ -191,6 +192,7 @@ export function HuntShotConditions({
             liveWindFromDeg={windFromDeg}
             liveTemperatureC={tempC}
             shotBearingDeg={shotBearingDeg}
+            autoPrefill={hasKestrel}
           />
         ) : (
           <p className="hunt-dope-empty">Velg ammo for å bruke appen.</p>

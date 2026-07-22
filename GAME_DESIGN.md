@@ -53,12 +53,19 @@ Alltid synlig etter karakterskaping:
 **Ikke** synlig i by / Pike Pro / Sheriff / Home. Under jakt: kompakt **hjørne-chip** (nede til høyre) som ekspanderer til live + forecast.  
 Kode: `src/lib/weather/spec.ts`, UI: `WeatherFrame` (FAB).
 
-### Startkit / narrativ
+### Startkit / narrativ / startkapital
 
-- Onkel gir bort **CZ 452 .22 LR** (iron sights, ingen picatinny).
+- Onkel gir bort **CZ 452 .22 LR** (iron sights, ingen picatinny) via `grantUncleRifle` (normale starter).
 - Spilleren må kjøpe ammo, evt. demper, øve på range, og senere søke/kjøpe bedre våpen.
-- Konto starter midlertidig på **500 000 kr** for testing (endre `STARTING_BALANCE` i `src/lib/player.ts` før «ekte» økonomi).
-- **Test-loadout ved boot** (midlertidig): Sauer 200 STR + ZCO 527 + Norma Black Diamond 139gr & Lapua Scenar 139gr (6,5×55) + Svemko Genesis can + RRS bipod + MDT ACC Elite stock — alt i kit. Loading **1 s**.
+- **Startkapital** (`startingBalanceForName` i `src/lib/player.ts`):
+
+| Navn ved registrering | Saldo |
+|-----------------------|-------|
+| Vanlig | **10 000 kr** (`STARTING_BALANCE`) |
+| Fornavn **Jørn / Ivar / Tomas** (ordtreff, case-insensitive; f.eks. «Jørn Nilsson») | **100 000 kr** (`VIP_STARTING_BALANCE`) |
+| **Neppe** (cheat) | **500 000 kr** + full `grantStarterGear` |
+
+- Starter-hunt kit (ikke VIP) er onkel-rifle + Biltema-kikkert + gift-lisens — ikke full premium-loadout. Neppe får test/jakt-loadout (Sauer, NF, Kestrel, …). Loading **1 s**.
 
 ---
 
@@ -70,10 +77,27 @@ Hver ammo-type i katalog har:
 |------|---------------------|-----------|
 | `caliber` | Ja | 6,5×55, 6,5 Creedmoor, .223, .22 LR, .17 HMR, .308, .30-06, … |
 | `projectileType` | Ja | `FMJ` \| `OTM` \| `SP` |
-| `v0` | Ja | Utgangshastighet (m/s) |
+| `v0` | Ja | Utgangshastighet (m/s) **ved 15 °C kruttemperatur** |
 | `bc` + `bcModel` | Ja | Ballistisk koeffisient (G1/G7) |
 | `damageFactor` | Ja (senere/engine) | Kjøttødelegging / ekspansjon (0–1) |
 | `maxAchievableMoa` | **Nei — internt** | Beste (laveste) spredning ammo kan bidra til |
+
+#### Powder temperature (dV/dT) — ✅ wired
+
+Katalog-`v0` er referanse ved **15 °C**. Live luft/krut-temp justerer realisert munningshastighet før drop/hold:
+
+```
+v0(T) = catalogV0 + (T − 15) × dV/dT
+dV/dT = 1 m/s/°C   (centerfire)
+      = 2 m/s/°C   (.22 LR)
+```
+
+Eksempel centerfire 800 m/s @ 15 °C → 785 @ 0 °C → 775 @ −10 °C.  
+.22 LR 360 @ 15 → 350 @ 10 → 340 @ 0 → 330 @ −5.
+
+- **Kestrel / exact hold:** bruker live temp automatisk (tetthet + powder temp).
+- **Lapua-app (Enviro):** spilleren må stille **Temp** (−25…30 °C) i tillegg til range/vind.
+- Kode: `src/lib/ballistics/powderTemp.ts`, brukt i `solver.ts` / `dispersion.ts` / skudd-UI.
 
 #### damageFactor — hvordan vi setter den
 
@@ -134,15 +158,15 @@ Sannsynlighet for å treffe jaktmål på lenger hold er **ikke** bare 100 m-grup
 
 | # | Faktor | Status / kilde |
 |---|--------|----------------|
-| 1 | **POA** (retikkel ved avtrekk) | Range: pust/fokus, calm, wobble |
-| 2 | **Vinkel-spredning** rifle+ammo(+stock, affinity), N σ Gauss | `dispersion.ts` |
-| 3 | **v0-variasjon** (drop/TOF) | `dispersion.ts` (vokser med avstand) |
-| 4 | **Vind** — sann vs trodd (Kestrel lokal vs LRF/AB forecast) | Delvis i vær/optics-design |
-| 5 | **Kikkert-klikk / zero** — `clickAccuracyFactor`, `zeroRetentionInaccuracy` | Scope-katalog |
+| 1 | **POA** (retikkel ved avtrekk) | Range/jakt: pust/fokus, calm, wobble; jakt: BODY→calm, MIND→MOA |
+| 2 | **Vinkel-spredning** rifle+ammo(+stock, affinity), N σ Gauss | `dispersion.ts` (+ MIND scale) |
+| 3 | **v0-variasjon** (drop/TOF) + **powder temp dV/dT** | `dispersion.ts`, `powderTemp.ts` |
+| 4 | **Vind** — sann vs trodd (Kestrel lokal vs LRF/AB forecast); spillvind **0–5 m/s** | `weather/spec.ts` |
+| 5 | **Kikkert-klikk / zero** — `clickErrorPercent` (±% på dialte klikk) | Scope-katalog / `optics/spec.ts` |
 | 6 | **Avstandsmåling** — LRF `rangeErrorPercent` | `optics/spec.ts` |
-| 7 | **Atmosfære / BC-path** | Planlagt |
+| 7 | **Atmosfære** — tetthet fra live temp + powder temp → v0 | ✅ `densityRatioFromTempC` + dV/dT |
 | 8 | **Zero-tilstand** (cold bore, cant, sist verifisert) | Planlagt |
-| 9 | **Vital-sone geometri** — ikke loot-roll | Planlagt jakt |
+| 9 | **Vital-sone geometri** — ikke loot-roll | ✅ jakt (`shoot.ts`) |
 
 **Prinsipp:** Sample (eller integrer) full miss-vektor i målplanet, *deretter* klassifiser vital/body/miss. Aldri kollaps til én `accuracy × distance`-fudge.
 
@@ -238,16 +262,19 @@ Hver **dag** har en `DayWeather`:
 | `forecast` | Morgenprognose (temp, vindstyrke, vindretning) — det LRF/AB/apper bruker |
 | `live` | Sannhet på bakken; driver over `missionMinutes` |
 
-Forecast har feil vs morgen-truth (`FORECAST_WIND_SPEED_ERROR_PERCENT ≈ 18%`, retning ±25°, temp ±2°C). I løpet av dagen driver `live` videre (vind/temp endres).
+**Vindstyrke er capped til 0–5 m/s** (`MAX_WIND_SPEED_MS`) — over det sitter det omtrent ikke fugl i trærne. Forecast-feil og live-drift respekterer samme tak.
 
-| Kilde | Crosswind | Typisk vindfeil |
-|-------|-----------|-----------------|
-| **Kestrel / ACE / anemometer** | Måler lokal vind → **ekte crosswind** for skuddretning | ±3–16% (produkt) |
-| **LRF med AB / forecast-solver** | Vet ikke reell crosswind; gir ofte **full-value windage** (antar vind fra 90°) basert på forecast | ≈ forecast ±18% + avrunding |
+Forecast har feil vs morgen-truth (`FORECAST_WIND_SPEED_ERROR_PERCENT ≈ 18%`, retning ±25°, temp ±2°C). I løpet av dagen driver `live` videre (vind/temp endres innen båndet).
 
-Derfor: dyr LRF med AB kan gjøre separat solver valgfri for *hold for drop*, men **Kestrel er fortsatt verdifull for windage**. Billig LRF + Kestrel er et ærlig alternativ.
+| Kilde | Crosswind | Temp / dV/dT | Typisk vindfeil |
+|-------|-----------|--------------|-----------------|
+| **Kestrel 5700 Elite** (+ BDX) | Lokal live → **ekte crosswind** + auto hold | Live temp automatisk | ±3% (Elite) |
+| **Lapua-app (Enviro)** | Spilleren dialer range + vind + **Temp** | Må stilles manuelt | Estimat (kan bomme på temp/vind) |
+| **LRF med AB / forecast** | Ofte **full-value** (antar 90°) fra forecast | Forecast-temp | ≈ forecast ±18% + avrunding |
 
-Kode: `src/lib/weather/spec.ts`, `src/lib/ballistics/spec.ts`.
+UI: Kestrel-fanen viser enhet + **forstørret LCD** (E/W/Tgt/Wind). Lapua: rød vindpil rundt sirkel + Temp-stepper.
+
+Kode: `src/lib/weather/spec.ts`, `src/lib/ballistics/spec.ts`, `KestrelFasitView`, `LapuaBallisticsApp`, `HuntShotConditions`.
 
 ---
 
@@ -256,19 +283,19 @@ Kode: `src/lib/weather/spec.ts`, `src/lib/ballistics/spec.ts`.
 Kategorier:
 
 1. **LRF / Avstandsmålere** — Biltema-monokkel → Leica / Zeiss / Vortex Fury. Felt `hasOnboardBallistics` + `rangeErrorPercent` (±% randomizer på målt avstand; premium ≈ ±1%, Biltema/Jula ≈ ±3%). Filter: «kun m/intern ballistikk».  
-2. **Scopes** — sort/filter: pris, vekt, min/max zoom, MRAD vs MOA. Spec: `clickAccuracyFactor`, `zeroRetentionInaccuracy` (MOA).  
+2. **Scopes** — sort/filter: pris, vekt, min/max zoom, MRAD vs MOA. Spec: `clickErrorPercent` (±% på dialte elev/windage-klikk ved skudd; premium NF/Kahles/ZCO/… = 0 %, Viper 3 %, budget Biltema/Jula/Clas 10 %). `zeroRetentionInaccuracy` (MOA) der relevant.  
 3. **Lyddempere** — kun vekt for nå (kit +1×, weapon calm +2×). Ingen ekstra dB/POI-styr.  
 3b. **Bipods / Tofot** — kit-vekt + `weaponCalm` (dyrere/tyngre → høyere calm). Score10: `weaponCalm`, `deploySpeed`, `tracking`. Calm gjelder når tofot er ute.  
 4. **Stokker** — GRS / MDT / McMillan + budget. Spec: `moaDelta` (additivt; f.eks. −0.05 MOA; aldri 0).  
 5. **Rifler** — `averageBestAccuracyMoa` (kjent gulv med matchende ammo). Tune-tabell: `RIFLE_AVERAGE_BEST_MOA`. Per-spiller ammo-affinity randomizer (uflaks) — må testes på range.  
-6. **Ammunisjon** — Norma, Lapua, Sako, … + budget  
+6. **Ammunisjon** — Norma, Lapua, Sako, … + budget (`v0` @ 15 °C; se dV/dT)  
 7. **Camouflage** — fullsett + apparel-slots: buff, beanie, hansker, boots, **skistøvler** (påkrevd med ski). Score: birdSpot (lav=bra) + `terrainSpeed`/`stamina` (høy=bra; dyrere ≈ bedre).  
-8. **Ballistics** — Kestrel/ACE måler lokal **crosswind** (lav ±%). LRF med AB bruker **forecast** + typisk full-value windage (antar 90°) — større feil enn Kestrel. Garmin Foretrex ≈ forecast-path.  
+8. **Ballistics** — Kestrel/ACE måler lokal **crosswind** + live temp (dV/dT). LRF med AB bruker **forecast** + typisk full-value windage (antar 90°) — større feil enn Kestrel. Garmin Foretrex ≈ forecast-path.  
 9. **Backpacks** — Score10: `carryComfort`, `quickRelease` (+ `opticsAccess`). Høyere = bedre.  
 10. **Chestrigs** — samme Score10-akse; `opticsAccess` er hovedknagg.  
 11. **Skis/Snowshoes** — Score10: `maxSpeed`, `flowPerKg` + `widthMm` (brede = bedre i dyp snø med tung sekk).  
 12. **Food** — Real turmat (krever MSR PocketRocket + gass for stamina), klar mat (brød/baguette/boller). Gassboks 230 g ≈ 10 turer.  
-13. **Misc kult kit** — futteraler, soft cases, termos, sittpute  
+13. **Misc kult kit** — futteraler, soft cases, termos, sittpute, **Triggercam**, **jakt-camcorder** (Aware: +20 % nervøsitet ved oppsett; bedre ettersøk-cue), thermal (egen batteritid)
 
 **Butikksortering (alle kategorier):** pris ↑↓, vekt ↑↓.
 
@@ -313,7 +340,7 @@ Mål: spiller ser alltid «høy = bra». Planlagte butikk-scorer:
 | Skis/Snowshoes | maxSpeed, flowPerKg (+ widthMm) ✅ |
 | Bipod / Tofot | weaponCalm, deploySpeed, tracking ✅ |
 | LRF | rangingAccuracy (fra ±%), ballisticCapability |
-| Scope | clickAccuracy, zeroRetention |
+| Scope | clickAccuracy (fra `clickErrorPercent`), zeroRetention |
 | Stock | rigidity / accuracyGain |
 | Suppressor | calm (fra fremre masse), hush |
 | Rifle | averageBestAccuracyMoa → Score10 ✅ (+ ammo affinity randomizer) |
@@ -326,14 +353,35 @@ Rå motorverdier beholdes der fysikk krever det; Score10 er UX-laget.
 
 #### Nervøsitets-utregning (fugl sitter vs. letter)
 
-Samme «trykk»-familie som dårlig kamo og mye bevegelse. Fuglen akkumulerer nervøsitet; over terskel → flush.
+Samme «trykk»-familie som dårlig kamo og mye bevegelse. Fuglen akkumulerer nervøsitet som **summen av alle valg** (avstand, bevegelse, camo, camcorder, Enviro-faffe, …); over terskel → flush.
+
+**Aware encounter-tick** (primær modell i felt): `tickEncounterNerve` i `src/lib/game/nervousness.ts` — avstandsbånd (>350 m / 80–350 m / ≤80 m), bevegelse, camo `birdSpot`, cover/LOS-hooks.
+
+**Baseline ved re-møte:**
+
+| Situasjon | Start-nerve |
+|-----------|-------------|
+| Første møte (`spookCount === 0`) | `0` |
+| Allerede skremt én gang (`spookCount ≥ 1`) | `0.40` (`RESPOOKED_BIRD_START_NERVE`) |
+
+**Engangskostnader:**
+
+| Handling | Δ nerve (0–1 skala) |
+|----------|---------------------|
+| Sett opp **jakt-camcorder** før skudd | `+0.20` (`CAMCORDER_SETUP_NERVE`) — umiddelbart på baren |
+
+Camcorder gir bedre ettersøk-cue (retning + landingsavstand) etter treff, men kan trigge flush hvis nerve allerede er høy.
+
+**Enviro / Lapua (skudd-HUD):** nerven fra Aware bæres inn. Mens Enviro-fanen er åpen går klokken ×5 (`ENVIRO_TIME_FACTOR`); nerve tickes videre med `tickEncounterNerve` (avstand + camo, still) **pluss** app-faffe (`ENVIRO_APP_FAFFE_NERVE_PER_GAME_SEC`) — ikke en egen nedtelling fra null. Flush ved `ENCOUNTER_NERVE.flushThreshold`.
+
+Legacy snapshot-formel (range/HUD-placeholder):
 
 ```
 nervousness ≈
-    distancePressure(distance, dangerRadius)   // nærmere = høyere
-  + effectiveBirdSpotFactor * spotWeight       // snow vs no-snow camo factor
-  + timeInDangerZoneSec * timeWeight           // tid i faresonen
-  + faffeSeconds * faffeWeight                 // tid brukt på å faffe med glass/rifle
+    distancePressure(distance, dangerRadius)
+  + effectiveBirdSpotFactor * spotWeight
+  + timeInDangerZoneSec * timeWeight
+  + faffeSeconds * faffeWeight
   + movementNoise * …
 
 if nervousness >= flushThreshold → bird flies
@@ -341,7 +389,9 @@ if nervousness >= flushThreshold → bird flies
 
 **Faffe-sekunder** kommer typisk fra `carryToEngine()` (optics/rifle deploy) når spilleren faktisk tar fram kikkert eller rifle *mens* hen er i faresonen. Bra chestrig (høy `opticsAccess`) sparer observasjons-faffe; bra pack (høy `quickRelease`) sparer rifle-faffe.
 
-Kode (placeholder-formel): `src/lib/game/nervousness.ts`.
+Kode: `src/lib/game/nervousness.ts`, `CAMCORDER_SETUP_NERVE` i `src/lib/hunt/shoot.ts`, UI `AwareAppView`.
+
+**Stamina / shake-avhengigheter** (BODY/MIND → skudd): se [`STAMINA_AND_SHAKE.md`](./STAMINA_AND_SHAKE.md).
 
 ---
 
@@ -862,7 +912,7 @@ const LEVEL_1: GameLevel = {
 ```
 +----------------------------------+
 |  Avstand: [____] m (Estimat)     |
-|  Vind: 5 m/s fra NØ              |
+|  Vind: ≤5 m/s fra NØ             |
 |  Vindjustering: [____]           |
 |                                  |
 |       [KIKKERT-VISNING]          |
@@ -957,11 +1007,11 @@ const LEVEL_1: GameLevel = {
 ---
 
 **Dokument opprettet:** 2026-07-19  
-**Sist oppdatert:** 2026-07-19  
-**Versjon:** 1.1 — lagt til Realisme-kjernen (ammo/MOA/damageFactor/vekt/shop/town)
+**Sist oppdatert:** 2026-07-22  
+**Versjon:** 1.2 — startkapital (VIP/Neppe), dV/dT + vind ≤5 m/s, clickErrorPercent, Kestrel/Lapua/camcorder/nerv, kryssref til STAMINA_AND_SHAKE
 
 **Kontakt:** Tomas Henningsen  
 **Prosjekt:** Cold Bore Toppjakt - The Game  
-**Relatert:** Aware hunting app  
+**Relatert:** Aware hunting app · [`STAMINA_AND_SHAKE.md`](./STAMINA_AND_SHAKE.md)
 
-> **Vedlikehold:** Når du utvider tall (MOA, v0, BC, damageFactor, vekter, priser) eller nye produkter — oppdater både katalogkode *og* denne seksjonen hvis regelen endres. Tall kan leve i kode; **regler og intensjon** skal stå her.
+> **Vedlikehold:** Når du utvider tall (MOA, v0, BC, damageFactor, vekter, priser, dV/dT, vindtak) eller nye produkter — oppdater både katalogkode *og* denne seksjonen hvis regelen endres. Tall kan leve i kode; **regler og intensjon** skal stå her.

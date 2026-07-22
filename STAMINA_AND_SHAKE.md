@@ -53,7 +53,7 @@ stamina = clamp(1 − fatigue)     // 0…1
 
 | Handling | Δ fatigue | Spilltid |
 |----------|-----------|----------|
-| Rest 10 min | `−0.12` | 10 min |
+| Rest 10 min | `−0.12` BODY / `−0.15` MIND | 10 min (`SHORT_REST_RECOVERY`) |
 | Spise | `−(staminaGain/10) × 0.35` | 5 min |
 | Tvungen hvile (slutt) | **settes til `0.15`** | 60 min |
 | Camp over natten | `−0.35` | til neste 08:00 |
@@ -63,7 +63,7 @@ stamina = clamp(1 − fatigue)     // 0…1
 | Effekt | Status |
 |--------|--------|
 | Tvungen hvile når `≥ 1` | ✅ |
-| Våpen-shake (`×0.55` penalty) | ✅ jakt-skudd |
+| Våpen-shake via calm (`−50%` ved tom BODY) | ✅ jakt-skudd |
 | Spotting-sannsynlighet | ❌ formel finnes, kalles ikke |
 | Gangtid / flush / trigger-delay | ❌ |
 | Kit-vekt | ❌ ikke wired inn i fatigue |
@@ -88,7 +88,7 @@ Andre flush (`gone`): demotivering + flukt-tekst 5 s.
 
 | Handling | Δ fatigue |
 |----------|-----------|
-| Rest 10 min | `−0.15` |
+| Rest 10 min | `−0.15` (`SHORT_REST_RECOVERY.mindGain`) |
 | Spise | `−(staminaGain/10) × 0.2` |
 | Tvungen hvile (slutt) | `−0.25` |
 | Camp over natten | `−0.2` |
@@ -97,7 +97,8 @@ Andre flush (`gone`): demotivering + flukt-tekst 5 s.
 
 | Effekt | Status |
 |--------|--------|
-| Våpen-shake (`×0.40` penalty) | ✅ jakt-skudd |
+| Rifle+ammo **MOA-envelope** (opptil **2×** ved tom MIND) | ✅ jakt-skudd |
+| Våpen-shake via calm | ❌ MIND treffer ikke lenger calm |
 | Spotting-sannsynlighet | ❌ ikke wired |
 | Soft-lock ved 0 % | ❌ (kun BODY tvinger pause) |
 | Fokus-vindu (F) | ❌ uavhengig |
@@ -187,11 +188,13 @@ Real uten kokeutstyr = **0 restore** (du bruker 5 min, men ingen stamina).
 
 ### 4.5 Hvile — ✅ wired
 
-**Frivillig rest (10 min):**
+**Frivillig rest (10 min)** — `SHORT_REST_RECOVERY` i `src/lib/food/spec.ts`:
 
 ```
-mentalFatigue   −= 0.15
-physicalFatigue −= 0.12
+physicalFatigue −= 0.12   // bodyGain
+mentalFatigue   −= 0.15   // mindGain
+klokke          += 10 min
+// Ingen fugl-flush (i motsetning til tyribål)
 ```
 
 **Tvungen hvile (BODY = 0 %):**
@@ -250,7 +253,14 @@ amp ∝ 1 / effectiveCalm
 effectiveCalm =
     weaponCalm          // bipod + demper
   × focusMult           // F / pust
-  × fatigueCalmFactor   // BODY + MIND (kun jakt)
+  × fatigueCalmFactor   // BODY only (jakt)
+```
+
+Envelope (rifle+ammo MOA) skaleres **i tillegg** av MIND:
+
+```
+dispersionScale = fatigueDispersionFactor(mentalFatigue)
+               // 1.0 fresh → 2.0 ved tom MIND
 ```
 
 ### Gear calm
@@ -274,19 +284,26 @@ Rifle-/kit-totalvekt er **ikke** i calm.
 | Rent vindu | 8000 ms → calm ×3 |
 | Etter 8 s fortsatt hold | calm ×0.65 (verre enn idle) |
 
-### Fatigue → calm
+### Fatigue → calm (BODY) og MOA (MIND)
+
+Kilde: `fatigueCalmFactor` / `fatigueDispersionFactor` i `precision.ts`.
 
 ```
-(1 − physicalFatigue × 0.55) × (1 − mentalFatigue × 0.40)
-gulv = 0.25
+fatigueCalmFactor =
+  max(0.20, 1 − physicalFatigue × 0.50)
+  // MIND inngår ikke i calm
+
+fatigueDispersionFactor =
+  1 + mentalFatigue × (2 − 1)
+  // fresh → 1× MOA; tom MIND → 2× MOA
 ```
 
-| Tilstand | Faktor |
-|----------|--------|
-| Fresh | 1.00 |
-| BODY tom | 0.45 |
-| MIND tom | 0.60 |
-| Begge tomme | 0.27 |
+| Tilstand | Calm-faktor | MOA-skala |
+|----------|-------------|-----------|
+| Fresh | 1.00 | 1.00 |
+| BODY tom | 0.50 | 1.00 |
+| MIND tom | 1.00 | 2.00 |
+| Begge tomme | 0.50 | 2.00 |
 
 ### Amplitude
 
@@ -433,19 +450,23 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
               ▼
      physicalFatigue / mentalFatigue
               │
-      ┌───────┼────────┐
-      ▼       ▼        ▼
- forced   fatigueCalm  spotting*
-  rest      Factor      (ikke wired)
-              │
-   gearCalm × focus(F) × fatigue
+      ┌───────┼────────────────┐
+      ▼       ▼                ▼
+ forced   fatigueCalm     fatigueDispersion
+  rest    Factor (BODY)   Factor (MIND → MOA ×)
+              │                │
+   gearCalm × focus(F) × calm    envelopeMoa × scale
+              ▼                │
+         wobble → POA ─────────┘
               ▼
-         wobble → POA → treffsone
+         sampleShot (drop/v0/vind) → treffsone
               ▼
      damageFactor × zone × v_impact
               ▼
          meatRuin → marketValueNok
 ```
+
+**Separat (ikke BODY/MIND):** Thermal har egen **batteri-bar** (`THERMAL_BATTERY_GAME_MINUTES` = 60 min spilltid; Lynx `timeFactor` 20×, Condor 30×).
 
 ---
 
@@ -469,18 +490,19 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 | Tema | Fil |
 |------|-----|
 | Fatigue state, eat/rest/camp, pass til skudd | `src/components/hunt/HuntMapView.tsx` |
-| BODY/MIND bars | `src/components/hunt/HuntStaminaBars.tsx` |
+| BODY/MIND (+ thermal BATT) bars | `src/components/hunt/HuntStaminaBars.tsx` |
 | Travel, effort, fatigueFromStep, spotting-formel | `src/lib/hunt/travel.ts` |
 | Pace | `src/lib/hunt/pace.ts` |
 | Spook / gone mind-hit | `src/lib/hunt/birds.ts` |
-| Mat effective stamina | `src/lib/food/spec.ts` |
-| Calm / wobble / fatigue→shake | `src/lib/range/precision.ts` |
+| Mat + short rest restore | `src/lib/food/spec.ts` |
+| Calm / wobble / BODY→calm / MIND→MOA | `src/lib/range/precision.ts` |
 | Treffsone / vital kill-roll | `src/lib/hunt/shoot.ts` |
 | meatRuin / marketValue | `src/lib/hunt/carcass.ts` |
 | damageFactor-filosofi | `src/lib/ammo/spec.ts` |
 | Kit top-speed (display) | `src/lib/kit/speed.ts` |
 | Carry / endurance (display) | `src/lib/carry/spec.ts`, `src/lib/misc/spec.ts` |
 | Meat Market UI | `src/components/town/MeatMarket.tsx` |
+| Thermal timeFactor / batteri | `src/lib/hunt/images.ts`, `SpotView` |
 
 ---
 
@@ -488,11 +510,12 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 
 | Følelse | Hvor |
 |---------|------|
-| BODY ødelegger hold | `PHYSICAL_FATIGUE_CALM_PENALTY` (0.55) |
-| MIND ødelegger hold | `MENTAL_FATIGUE_CALM_PENALTY` (0.40) |
+| BODY ødelegger hold (calm) | `PHYSICAL_FATIGUE_CALM_PENALTY` (0.5) |
+| Calm-gulv | `FATIGUE_CALM_FLOOR` (0.2) |
+| MIND øker MOA | `MENTAL_FATIGUE_DISPERSION_MAX_MULT` (2) |
 | Fatigue per rute | `0.045` / `0.035` × effort × strain |
 | Pace-balanse | `HUNT_PACES` |
-| Rest / eat restore | hardkodet i `HuntMapView` |
+| Rest 10 min | `SHORT_REST_RECOVERY` (body 0.12 / mind 0.15) |
 | Gone-bird demotivering | `GONE_BIRD_MENTAL_HIT` (0.2) |
 | Sone-ruin | `ZONE_RUIN_BASE` (0.14 / 0.48 / 0.82) |
 | Ammo → ruin | `ammoFactor = 0.28 + 0.72×damageFactor` |
@@ -502,7 +525,8 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 | Art min/maks kr | `SPECIES_MARKET` |
 | Baseline wobble | `BASE_WOBBLE_MM` (18) |
 | Avtrekksbar / merke / ±perfekt | `TRIGGER_BAR_MS` / `TARGET_MIN/MAX` / `PERFECT_BAND_MS` |
+| Thermal batteri | `THERMAL_BATTERY_GAME_MINUTES` (60) |
 
 ---
 
-*Sist synket mot kode: fatigue↔shake, gone-bird mind-hit, carcass verditap (zone×ammo×velocity), kit-vekt ennå ikke i stamina, skill-avtrekk (hold/slipp Space mot F-merke).*
+*Sist synket mot kode: BODY→calm (−50%), MIND→MOA (opptil 2×), short rest, thermal batteri (eget lag), gone-bird mind-hit, carcass verditap, kit-vekt ennå ikke i stamina, skill-avtrekk.*

@@ -34,6 +34,8 @@ type ScopeTurretsProps = {
    * Kestrel tab content. Only pass when Kestrel is in kit / solution exists.
    */
   kestrelPanel?: ReactNode;
+  /** Fires when the active HUD tab changes (e.g. Enviro time pressure). */
+  onHudTabChange?: (tab: ScopeHudTab) => void;
 };
 
 function milLabel(clicks: number): string {
@@ -467,6 +469,7 @@ export function ScopeTurrets({
   actions,
   enviroPanel,
   kestrelPanel,
+  onHudTabChange,
 }: ScopeTurretsProps) {
   const hasEnviro = enviroPanel != null;
   const hasKestrel = kestrelPanel != null;
@@ -484,6 +487,10 @@ export function ScopeTurrets({
     // Re-read when kit gains/loses Kestrel or Enviro.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedTabs derived from panels
   }, [hasEnviro, hasKestrel]);
+
+  useEffect(() => {
+    onHudTabChange?.(tab);
+  }, [tab, onHudTabChange]);
 
   function setAndStoreTab(next: ScopeHudTab) {
     setTab(next);
