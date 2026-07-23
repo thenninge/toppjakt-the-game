@@ -118,7 +118,7 @@ export function MeatMarket({
             vipps-gebyr for tårer.»
           </p>
           <p className="intro-hint-balance">
-            Konto: {balance.toLocaleString("nb-NO")} kr · I bilen:{" "}
+            Konto: {balance.toLocaleString("nb-NO")} kr · Til salgs:{" "}
             {carcasses.length} fugl
             {carcasses.length === 1 ? "" : "er"}
           </p>
@@ -140,7 +140,7 @@ export function MeatMarket({
           <p className="intro-line">
             Vebjørn kikker ut bak deg. «Ingen fjær. Ingen lukt. Enten har du
             bomma, eller så har du allerede solgt til svogeren. Kom tilbake når
-            du har noe i sekken.»
+            du har noe i fryseren.»
           </p>
           <button
             type="button"

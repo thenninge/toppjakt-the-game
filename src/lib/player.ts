@@ -103,8 +103,16 @@ export type PlayerStats = {
    */
   lifetimeTiur: number;
   lifetimeOrrhaner: number;
-  /** Harvested birds ready for Meat Market (weight + meat quality). */
+  /**
+   * Birds in the hunting pack/sekk (this hunt only).
+   * Moved to {@link freezerCarcasses} when the hunt ends.
+   */
   carcasses: GameCarcass[];
+  /**
+   * Home freezer — harvested birds stored until sold at Meat Market.
+   * Does not count toward pack weight on the next hunt.
+   */
+  freezerCarcasses: GameCarcass[];
   /** Longest hunting hit distance in meters. */
   maxRange: number;
   inventory: InventoryEntry[];
@@ -359,6 +367,7 @@ export function createInitialStats(): PlayerStats {
     lifetimeTiur: 0,
     lifetimeOrrhaner: 0,
     carcasses: [],
+    freezerCarcasses: [],
     maxRange: 0,
     inventory: [],
     kit: [],

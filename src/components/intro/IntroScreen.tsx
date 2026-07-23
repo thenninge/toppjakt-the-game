@@ -348,7 +348,9 @@ export function IntroScreen() {
   function sellCarcasses(carcassIds: string[]) {
     const idSet = new Set(carcassIds);
     setStats((prev) => {
-      const selling = prev.carcasses.filter((c) => idSet.has(c.id));
+      const selling = [...prev.freezerCarcasses, ...prev.carcasses].filter(
+        (c) => idSet.has(c.id),
+      );
       if (selling.length === 0) return prev;
       let tiur = prev.tiur;
       let orrhaner = prev.orrhaner;
@@ -364,6 +366,7 @@ export function IntroScreen() {
         balance: prev.balance + payout,
         tiur,
         orrhaner,
+        freezerCarcasses: prev.freezerCarcasses.filter((c) => !idSet.has(c.id)),
         carcasses: prev.carcasses.filter((c) => !idSet.has(c.id)),
       };
     });
@@ -590,12 +593,17 @@ export function IntroScreen() {
           ...prev,
           jaktkort: next,
           selectedHuntingTerrainId: next?.terrainId ?? null,
+          // Pack → freezer when leaving the field.
+          freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
+          carcasses: [],
         };
       });
     } else {
       setStats((prev) => ({
         ...prev,
         selectedHuntingTerrainId: prev.jaktkort?.terrainId ?? null,
+        freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
+        carcasses: [],
       }));
     }
     setHuntHud(null);
@@ -829,7 +837,7 @@ export function IntroScreen() {
             playerName={stats.name}
             nickname={stats.nickname}
             balance={stats.balance}
-            carcasses={stats.carcasses}
+            carcasses={[...stats.freezerCarcasses, ...stats.carcasses]}
             onSell={sellCarcasses}
             onLeave={backToTown}
           />
@@ -862,7 +870,7 @@ export function IntroScreen() {
             shotLog={stats.shotLog}
             dopeCard={stats.dopeCard}
             customsMods={stats.customsMods}
-            carcasses={stats.carcasses}
+            freezerCarcasses={stats.freezerCarcasses}
             licenseCount={stats.weaponLicenses.length}
             rifleCount={countHuntingRifles(stats)}
             unusedLicenses={unusedLicenseCount(stats)}

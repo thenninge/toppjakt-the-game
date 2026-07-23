@@ -27,7 +27,10 @@ import {
 import { computeKitOverview } from "@/lib/kit/overview";
 import { computePackLoad } from "@/lib/kit/pack";
 import {
+  formatMarketKr,
   formatWeightKg as formatCarcassWeightKg,
+  meatQualityLabelNb,
+  speciesLabelNb,
   type GameCarcass,
 } from "@/lib/hunt/carcass";
 import { kitCanBoil } from "@/lib/food/spec";
@@ -87,8 +90,8 @@ type HomeBaseProps = {
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
   customsMods?: CustomsMods;
-  /** Unsold harvested birds — still in the bag until Meat Market. */
-  carcasses?: GameCarcass[];
+  /** Harvested birds in the home freezer (until Meat Market). */
+  freezerCarcasses?: GameCarcass[];
   licenseCount: number;
   rifleCount: number;
   unusedLicenses: number;
@@ -120,7 +123,7 @@ export function HomeBase({
   shotLog,
   dopeCard,
   customsMods = EMPTY_CUSTOMS_MODS,
-  carcasses = [],
+  freezerCarcasses = [],
   licenseCount,
   rifleCount,
   unusedLicenses,
@@ -163,9 +166,10 @@ export function HomeBase({
       computePackLoad({
         kitItems,
         customsMods,
-        carcasses,
+        // Freezer birds stay home — pack weight is kit only until the next hunt.
+        carcasses: [],
       }),
-    [kitItems, customsMods, carcasses],
+    [kitItems, customsMods],
   );
 
   const totalWeightGrams = packLoad.totalGrams;
@@ -210,10 +214,17 @@ export function HomeBase({
       computeKitOverview({
         kitItems,
         customsMods,
-        carcasses,
+        carcasses: [],
       }),
-    [kitItems, customsMods, carcasses],
+    [kitItems, customsMods],
   );
+
+  const freezerSummary = useMemo(() => {
+    if (freezerCarcasses.length === 0) return "Tom — ingen vilt";
+    const kg = freezerCarcasses.reduce((s, c) => s + c.weightKg, 0);
+    const value = freezerCarcasses.reduce((s, c) => s + c.marketValueNok, 0);
+    return `${freezerCarcasses.length} fugl${freezerCarcasses.length === 1 ? "" : "er"} · ${formatCarcassWeightKg(kg)} · ${formatMarketKr(value)}`;
+  }, [freezerCarcasses]);
 
   const inventoryValueNok = useMemo(
     () =>
@@ -465,6 +476,37 @@ export function HomeBase({
             </div>
           </li>
         </ul>
+        </section>
+      </ExpandableSection>
+
+      <ExpandableSection title="Freezer" summary={freezerSummary}>
+        <section className="home-freezer" aria-label="Freezer">
+          <p className="shop-row-note current-rig-inline-note">
+            Felt vilt flyttes hit når du avslutter jakt. Ligger til du selger på
+            Meat Market — teller ikke i sekk-vekt på neste tur.
+          </p>
+          {freezerCarcasses.length === 0 ? (
+            <p className="intro-line">Tom fryser. Ut og jakt.</p>
+          ) : (
+            <ul className="shop-list home-freezer-list">
+              {freezerCarcasses.map((c) => (
+                <li key={c.id} className="shop-row">
+                  <div className="shop-row-main">
+                    <span className="shop-row-name">
+                      {speciesLabelNb(c.species)} · {formatCarcassWeightKg(c.weightKg)}
+                    </span>
+                    <span className="shop-row-meta">
+                      {meatQualityLabelNb(c.meatRuin)} · {c.distanceM} m
+                      {c.ammoLabel ? ` · ${c.ammoLabel}` : ""}
+                    </span>
+                  </div>
+                  <span className="shop-row-price">
+                    {formatMarketKr(c.marketValueNok)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </ExpandableSection>
 

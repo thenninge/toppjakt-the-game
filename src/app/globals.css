@@ -2630,6 +2630,13 @@ body {
   overflow: visible;
 }
 
+.home-expandable-panel .home-freezer-list {
+  border: 0;
+  background: transparent;
+  max-height: none;
+  overflow: visible;
+}
+
 @media (max-width: 720px) {
   .kit-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));

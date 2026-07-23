@@ -35,7 +35,16 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     id === "rulles-bonna-li" ? "rulles-kristian-li" : id,
   );
 
-  const carcasses = Array.isArray(raw.carcasses) ? raw.carcasses : [];
+  const rawPack = Array.isArray(raw.carcasses) ? raw.carcasses : [];
+  const rawFreezer = Array.isArray(raw.freezerCarcasses)
+    ? raw.freezerCarcasses
+    : null;
+  /**
+   * Pre-freezer saves kept all birds in `carcasses` while at home.
+   * Migrate those into the freezer; pack starts empty outside an active hunt.
+   */
+  const freezerCarcasses = (rawFreezer ?? rawPack) as PlayerStats["freezerCarcasses"];
+  const carcasses = (rawFreezer != null ? rawPack : []) as PlayerStats["carcasses"];
   const inventory = Array.isArray(raw.inventory) ? raw.inventory : base.inventory;
   const kit = Array.isArray(raw.kit) ? raw.kit : base.kit;
   const weaponLicenses = Array.isArray(raw.weaponLicenses)
@@ -73,7 +82,8 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
         : typeof raw.orrhaner === "number" && Number.isFinite(raw.orrhaner)
           ? Math.max(0, Math.floor(raw.orrhaner))
           : base.lifetimeOrrhaner,
-    carcasses: carcasses as PlayerStats["carcasses"],
+    carcasses,
+    freezerCarcasses,
     maxRange:
       typeof raw.maxRange === "number" && Number.isFinite(raw.maxRange)
         ? Math.max(0, Math.floor(raw.maxRange))
