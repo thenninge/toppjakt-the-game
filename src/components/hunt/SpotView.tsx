@@ -13,8 +13,11 @@ import {
   type BirdVisualPlacement,
 } from "@/lib/hunt/birds";
 import {
+  clampOpticPan,
+  landscapeAtLensCenter,
   measureDistanceWithLrf,
   opticAperturePercent,
+  opticApertureRadiusPct,
   type LrfSpec,
 } from "@/lib/optics/spec";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
@@ -203,13 +206,10 @@ function findBirdNearPoint(
   return best;
 }
 
-function clampPan(n: number): number {
-  return Math.max(0, Math.min(100, n));
-}
-
 /**
  * Same landscape frame for eyes and binos (identical placement %).
- * Binos = circular crop + real optic zoom; pan 0–100 covers the full eyes view.
+ * Binos = circular crop + real optic zoom; pan is limited by the circular
+ * aperture reaching the spotting-image edge (not the rectangular frame).
  * Thermal = pixelated B&W heat map; birds render as muted topp silhouettes.
  */
 export function SpotView({
@@ -254,12 +254,28 @@ export function SpotView({
   const [mode, setMode] = useState<SpotMode>(startMode);
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
-  const zoom = mode === "thermal" ? thermalZoom : binoZoom;
+  /**
+   * Spec mag is through the clear circular aperture, not the full frame.
+   * Zoom the world by mag×(aperture/100) so the circle shows 1/mag of the eyes view.
+   * (Applying mag to the full frame then cropping overstated zoom by ~1/aperture.)
+   */
+  const opticAperture =
+    mode === "thermal"
+      ? opticAperturePercent(thermalPriceNok)
+      : opticAperturePercent(binosPriceNok);
+  const rawMag = mode === "thermal" ? thermalZoom : binoZoom;
+  const zoom = Math.max(1, rawMag * (opticAperture / 100));
   const timeFactor = spotTimeFactor(mode, thermalFactor);
   const [lookedGameSec, setLookedGameSec] = useState(0);
   const lookedRef = useRef(0);
   const modeRef = useRef<SpotMode>(mode);
   modeRef.current = mode;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const opticApertureRef = useRef(opticAperture);
+  opticApertureRef.current = opticAperture;
+  const frameRef = useRef<HTMLDivElement>(null);
+  const frameSizeRef = useRef({ w: 800, h: 520 });
   const thermalFactorRef = useRef(thermalFactor);
   thermalFactorRef.current = thermalFactor;
   const onGameSecondsRef = useRef(onGameSeconds);
@@ -289,6 +305,46 @@ export function SpotView({
     origX: number;
     origY: number;
   } | null>(null);
+
+  /** Pan stop when the circular aperture hits the landscape edge. */
+  function clampPanXY(x: number, y: number): { x: number; y: number } {
+    const z = zoomRef.current;
+    const ap = opticApertureRef.current;
+    const { w, h } = frameSizeRef.current;
+    return {
+      x: clampOpticPan(x, z, opticApertureRadiusPct(ap, "x", w, h)),
+      y: clampOpticPan(y, z, opticApertureRadiusPct(ap, "y", w, h)),
+    };
+  }
+
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const sync = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        frameSizeRef.current = { w: rect.width, h: rect.height };
+        const next = clampPanXY(panRef.current.x, panRef.current.y);
+        if (next.x !== panRef.current.x || next.y !== panRef.current.y) {
+          panRef.current = next;
+          setPan(next);
+        }
+      }
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Re-clamp when zoom / aperture changes (mode switch, price tier).
+  useEffect(() => {
+    const next = clampPanXY(panRef.current.x, panRef.current.y);
+    if (next.x !== panRef.current.x || next.y !== panRef.current.y) {
+      panRef.current = next;
+      setPan(next);
+    }
+  }, [zoom, opticAperture]);
 
   const [lrfReading, setLrfReading] = useState<string | null>(null);
   const fireLrfRef = useRef<(
@@ -347,10 +403,7 @@ export function SpotView({
 
   useEffect(() => {
     function nudge(dx: number, dy: number) {
-      const next = {
-        x: clampPan(panRef.current.x + dx),
-        y: clampPan(panRef.current.y + dy),
-      };
+      const next = clampPanXY(panRef.current.x + dx, panRef.current.y + dy);
       panRef.current = next;
       setPan(next);
     }
@@ -444,10 +497,10 @@ export function SpotView({
         dx -= holdSpeed(k.left) * dt;
         dx += holdSpeed(k.right) * dt;
         if (dx !== 0 || dy !== 0) {
-          const next = {
-            x: clampPan(panRef.current.x + dx),
-            y: clampPan(panRef.current.y + dy),
-          };
+          const next = clampPanXY(
+            panRef.current.x + dx,
+            panRef.current.y + dy,
+          );
           panRef.current = next;
           setPan(next);
         }
@@ -495,9 +548,9 @@ export function SpotView({
     const sensY = (100 / Math.max(1, rect.height)) / zoom;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-    const nextX = clampPan(drag.origX - dx * sensX * 1.15);
-    const nextY = clampPan(drag.origY - dy * sensY * 1.15);
-    const next = { x: nextX, y: nextY };
+    const nextX = drag.origX - dx * sensX * 1.15;
+    const nextY = drag.origY - dy * sensY * 1.15;
+    const next = clampPanXY(nextX, nextY);
     panRef.current = next;
     setPan(next);
   }
@@ -586,19 +639,16 @@ export function SpotView({
         : "Spotting med øynene";
 
   const isOpticMode = mode === "binos" || mode === "thermal";
-  const opticAperture =
-    mode === "thermal"
-      ? opticAperturePercent(thermalPriceNok)
-      : opticAperturePercent(binosPriceNok);
   const opticFrameStyle = {
-    "--optic-aperture": opticAperture,
+    "--optic-aperture": String(opticAperture),
   } as CSSProperties;
 
   /**
-   * Live look direction: optic centre = pan.x in landscape %;
-   * eyes = full frame centre (same as sticky view bearing).
+   * Live look direction: landscape under optic centre (not the pan param).
    */
-  const lookXPct = isOpticMode ? pan.x : 50;
+  const lookXPct = isOpticMode
+    ? landscapeAtLensCenter(pan.x, zoom)
+    : 50;
   const lookBearingDeg = bearingFromSpotFrame(viewBearingDeg, lookXPct);
   const lookBearing = ((Math.round(lookBearingDeg) % 360) + 360) % 360;
   const lookCompass = compassLabelFromDeg(lookBearing);
@@ -720,6 +770,7 @@ export function SpotView({
       </header>
 
       <div
+        ref={frameRef}
         className={
           mode === "binos"
             ? "spot-eyes-frame spot-binos-frame"

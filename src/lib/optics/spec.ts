@@ -95,6 +95,8 @@ export type ThermalSpec = {
  * (`radial-gradient` closest-side). Higher price → thinner black bezel
  * → more of the spotting image visible at the same magnification.
  *
+ * Spec magnification is measured through this aperture (see SpotView zoom).
+ *
  *   0–7 000 kr  → 65 % (budsjett)
  *   7–15 000 kr → 75 % (mid)
  *   over 15 000 → 95 % (premium)
@@ -146,4 +148,58 @@ export function landscapePointInLens(
     x: (1 - zoom) * pan.x + landscapeX * zoom,
     y: (1 - zoom) * pan.y + landscapeY * zoom,
   };
+}
+
+/**
+ * Clear-aperture radius in frame % (0–100 scale) for one axis.
+ * Matches CSS `radial-gradient(circle closest-side)` with
+ * {@link opticAperturePercent} as % of that radius.
+ */
+export function opticApertureRadiusPct(
+  aperturePercent: number,
+  axis: "x" | "y",
+  frameWidth: number,
+  frameHeight: number,
+): number {
+  const a = Math.min(100, Math.max(1, aperturePercent)) / 100;
+  const w = Math.max(1, frameWidth);
+  const h = Math.max(1, frameHeight);
+  const closest = Math.min(w, h);
+  if (axis === "x") return ((a * closest) / 2 / w) * 100;
+  return ((a * closest) / 2 / h) * 100;
+}
+
+/**
+ * Pan limits so the *circular* aperture edge can reach the landscape edge
+ * (not the rectangular frame). With full aperture (r=50) this is [0, 100].
+ */
+export function opticPanRange(
+  zoom: number,
+  apertureRadiusPct: number,
+): { min: number; max: number } {
+  const z = Math.max(1, zoom);
+  const r = Math.min(50, Math.max(0, apertureRadiusPct));
+  if (z <= 1.001) return { min: 0, max: 100 };
+  return {
+    min: (r - 50) / (z - 1),
+    max: (100 * z - 50 - r) / (z - 1),
+  };
+}
+
+export function clampOpticPan(
+  n: number,
+  zoom: number,
+  apertureRadiusPct: number,
+): number {
+  const { min, max } = opticPanRange(zoom, apertureRadiusPct);
+  return Math.max(min, Math.min(max, n));
+}
+
+/** Landscape % under the optic centre (lens 50,50) for current pan/zoom. */
+export function landscapeAtLensCenter(
+  pan: number,
+  zoom: number,
+): number {
+  const z = Math.max(1, zoom);
+  return (50 - (1 - z) * pan) / z;
 }

@@ -1715,23 +1715,23 @@ body {
 
 .spot-binos-vignette,
 .spot-optic-vignette {
-  --optic-aperture: 72;
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  /* Clear circle grows with gear price (thinner black bezel). */
+  /* Clear circle grows with gear price (thinner black bezel).
+     --optic-aperture is set on the frame; do not override here. */
   background: radial-gradient(
     circle closest-side at center,
-    transparent calc(var(--optic-aperture) * 1%),
-    rgba(5, 4, 3, 0.45) calc(var(--optic-aperture) * 1% + 5%),
-    rgba(5, 4, 3, 0.92) calc(var(--optic-aperture) * 1% + 14%),
-    #050403 calc(var(--optic-aperture) * 1% + 22%)
+    transparent calc(var(--optic-aperture, 72) * 1%),
+    rgba(5, 4, 3, 0.45) calc(var(--optic-aperture, 72) * 1% + 5%),
+    rgba(5, 4, 3, 0.92) calc(var(--optic-aperture, 72) * 1% + 14%),
+    #050403 calc(var(--optic-aperture, 72) * 1% + 22%)
   );
   box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.4);
 }
 
-/* Thermal spotter — same circular optic as binos. */
+/* Thermal spotter — same circular optic as binos (soft vignette only). */
 .spot-thermal-frame {
   touch-action: none;
   cursor: grab;
@@ -1749,17 +1749,6 @@ body {
   z-index: 1;
   width: 100%;
   height: 100%;
-  /* Soft circular crop matching vignette aperture. */
-  -webkit-mask-image: radial-gradient(
-    circle closest-side at center,
-    #000 calc(var(--optic-aperture, 72) * 1%),
-    transparent calc(var(--optic-aperture, 72) * 1% + 8%)
-  );
-  mask-image: radial-gradient(
-    circle closest-side at center,
-    #000 calc(var(--optic-aperture, 72) * 1%),
-    transparent calc(var(--optic-aperture, 72) * 1% + 8%)
-  );
 }
 
 .spot-thermal-scanlines {
@@ -1768,16 +1757,6 @@ body {
   z-index: 2;
   pointer-events: none;
   opacity: 0.08;
-  -webkit-mask-image: radial-gradient(
-    circle closest-side at center,
-    #000 calc(var(--optic-aperture, 72) * 1%),
-    transparent calc(var(--optic-aperture, 72) * 1% + 8%)
-  );
-  mask-image: radial-gradient(
-    circle closest-side at center,
-    #000 calc(var(--optic-aperture, 72) * 1%),
-    transparent calc(var(--optic-aperture, 72) * 1% + 8%)
-  );
   background: repeating-linear-gradient(
     0deg,
     transparent,
