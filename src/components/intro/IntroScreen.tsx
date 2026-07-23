@@ -345,6 +345,18 @@ export function IntroScreen() {
     });
   }
 
+  /** Mid-hunt: pack → car (same freezer stash as end-of-hunt). */
+  function depositCarcassesAtCar() {
+    setStats((prev) => {
+      if (prev.carcasses.length === 0) return prev;
+      return {
+        ...prev,
+        freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
+        carcasses: [],
+      };
+    });
+  }
+
   function sellCarcasses(carcassIds: string[]) {
     const idSet = new Set(carcassIds);
     setStats((prev) => {
@@ -917,6 +929,7 @@ export function IntroScreen() {
             onBirdHarvested={harvestBird}
             carcasses={stats.carcasses}
             onConsumeCarcasses={consumeHuntCarcasses}
+            onDepositCarcassesAtCar={depositCarcassesAtCar}
             onHudChange={onHuntHudChange}
             onCampOvernight={consumeJaktkortOvernight}
             onLeave={endHunt}

@@ -41,6 +41,7 @@ import {
 import {
   ENDEX_SUNSET_IMAGE,
   FORCED_REST_MINUTES,
+  drawImageWithoutReplacement,
   isBakedSpotImage,
   pickEatImage,
   pickFireImage,
@@ -109,6 +110,7 @@ import {
   flushDirectionHeadline,
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
+  SHOOT_FLUSH_MIND_HIT,
   panToCenterOnBird,
   pickFluktImage,
   resolveFlushesOnPath,
@@ -209,6 +211,11 @@ type HuntMapViewProps = {
   onBirdHarvested: (carcass: GameCarcass) => void;
   carcasses: GameCarcass[];
   onConsumeCarcasses: (carcassIds: string[]) => void;
+  /**
+   * Parkering / startcelle: empty the pack into the car (freezer) so further
+   * walking is not weighed down by harvested birds.
+   */
+  onDepositCarcassesAtCar: () => void;
   onHudChange?: (hud: HuntHudStatus) => void;
   /**
    * Called when the hunter camps overnight. Consumes one jaktkort day.
@@ -427,6 +434,7 @@ export function HuntMapView({
   onBirdHarvested,
   carcasses,
   onConsumeCarcasses,
+  onDepositCarcassesAtCar,
   onHudChange,
   onCampOvernight,
   onLeave,
@@ -455,6 +463,12 @@ export function HuntMapView({
   const [spotLayoutByCell, setSpotLayoutByCell] = useState<
     Record<string, SpotCellLayout>
   >({});
+  /**
+   * Spot landscapes drawn without replacement until the perch-marked pool
+   * is empty, then reshuffled. Sticky per cell still reuses the same photo.
+   */
+  const spotImageDeckRef = useRef<string[]>([]);
+  const lastSpotImageDrawnRef = useRef<string | null>(null);
   /** Aware map bearing/pos sticky per birdId until spooked. */
   const [birdMapContacts, setBirdMapContacts] = useState<
     Record<string, BirdMapContact>
@@ -689,6 +703,8 @@ export function HuntMapView({
     setPostShotGhost(null);
     setPostShotGhostSecLeft(0);
     setSpotLayoutByCell({});
+    spotImageDeckRef.current = [];
+    lastSpotImageDrawnRef.current = null;
     setBirdMapContacts({});
     setBirdEncounter(null);
     latentSpotNerveRef.current = {};
@@ -1190,6 +1206,17 @@ export function HuntMapView({
     const nowDark = isHuntDark(nowMins);
     const arrivedParking = isAtParking(arrivedAt, activeMap);
 
+    /** Drop pack birds in the car — lighter for the next leg of the hunt. */
+    let carStashNote = "";
+    if (arrivedParking && carcasses.length > 0) {
+      const n = carcasses.length;
+      onDepositCarcassesAtCar();
+      carStashNote =
+        n === 1
+          ? " La fuglen i bilen — sekken er lettere."
+          : ` La ${n} fugler i bilen — sekken er lettere.`;
+    }
+
     // After skuddlys: no flush events / «fuglen flyr» while racing to the car.
     const flush = nowDark
       ? { birds, events: [] as FlushEvent[] }
@@ -1227,6 +1254,7 @@ export function HuntMapView({
 
     const walkLog =
       `Gikk til ${cellLabel(walkSession.to)} på ${walkSession.minutes} min (${usedPace.label}, ${walkSession.path.length} ruter).` +
+      carStashNote +
       (nowDark
         ? arrivedParking
           ? " Mørkt — du nådde bilen. Endex for i dag."
@@ -1383,9 +1411,16 @@ export function HuntMapView({
     const imageSrc =
       preferred ??
       cachedOk?.imageSrc ??
-      (marked.length > 0
-        ? marked[Math.floor(Math.random() * marked.length)]!
-        : pickSpotImage());
+      (() => {
+        const pool = marked.length > 0 ? marked : [];
+        const drawn = drawImageWithoutReplacement(
+          spotImageDeckRef.current,
+          pool.length > 0 ? pool : ["/images/spot/spot1.png"],
+          { avoidSrc: lastSpotImageDrawnRef.current },
+        );
+        lastSpotImageDrawnRef.current = drawn;
+        return drawn;
+      })();
 
     const here = birdsInCell(birdList, at);
     const hereIds = new Set(here.map((b) => b.id));
@@ -2907,7 +2942,13 @@ export function HuntMapView({
             delete next[id];
             return next;
           });
+          setMentalFatigue((m) =>
+            clampFatigue(m + SHOOT_FLUSH_MIND_HIT),
+          );
           queueNervousFlush(result.event);
+          setLog(
+            "Fuglen flyr rett før du er klar til avtrekk.. ingen sigar på deg. Bitterheten river. 30% redusert morale.",
+          );
         }}
         onNerveChange={(nerve) => {
           setBirdEncounter((prev) => {

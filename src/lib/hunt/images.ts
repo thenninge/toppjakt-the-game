@@ -175,6 +175,56 @@ export function pickRandomImage(pool: readonly string[]): string {
   return pool[i]!;
 }
 
+/** Fisher–Yates shuffle (copy). */
+export function shuffleImages(
+  pool: readonly string[],
+  random: () => number = Math.random,
+): string[] {
+  const deck = [...pool];
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    const a = deck[i]!;
+    deck[i] = deck[j]!;
+    deck[j] = a;
+  }
+  return deck;
+}
+
+/**
+ * Draw without replacement from a mutable deck.
+ * When empty, reshuffles the full pool (optionally avoiding an immediate
+ * repeat of `avoidSrc` when the pool has more than one image).
+ */
+export function drawImageWithoutReplacement(
+  deck: string[],
+  pool: readonly string[],
+  opts?: {
+    random?: () => number;
+    /** Prefer not drawing this as the first card after a reshuffle. */
+    avoidSrc?: string | null;
+  },
+): string {
+  const random = opts?.random ?? Math.random;
+  const catalog = pool.length > 0 ? pool : SPOT_IMAGES;
+  if (deck.length === 0) {
+    const next = shuffleImages(catalog, random);
+    const avoid = opts?.avoidSrc;
+    if (
+      avoid &&
+      next.length > 1 &&
+      next[next.length - 1] === avoid
+    ) {
+      // Pop order is from the end — swap last with an earlier card.
+      const swapAt = Math.floor(random() * (next.length - 1));
+      const last = next[next.length - 1]!;
+      next[next.length - 1] = next[swapAt]!;
+      next[swapAt] = last;
+    }
+    deck.push(...next);
+  }
+  return deck.pop() ?? catalog[0] ?? "/images/spot/spot1.png";
+}
+
 export function pickSpotImage(scene?: HuntImageScene | null): string {
   return pickRandomImage(spotImagesForScene(scene));
 }

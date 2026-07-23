@@ -1,10 +1,19 @@
 /**
  * Deterministic bebyggelse + terrengbakgrunn for a hunt grid cell.
  *
- * ONE source of truth: danger wedges drawn on the Aware pie are the SAME
- * wedges used to allow/deny «Klar til skudd». No hidden margins.
+ * Hazards are fixed distant points. Kakestykker are drawn from the current
+ * stand / plan origin toward those points with a CONSTANT half-angle (no
+ * distance-based widening). Apex moves; width does not — so lateral moves
+ * open safe shot corridors without the slices “morphing”.
+ *
+ * ONE source of truth: drawn wedges === Klar til skudd.
  */
 
+import {
+  AWARE_METERS_PER_PCT,
+  bearingDegFromTo,
+  type CellPoint,
+} from "@/lib/aware/cellGeometry";
 import { cellLabel, type HuntGridCell, type HuntMapId } from "@/lib/hunt/maps";
 import {
   HABITATION_COLORS,
@@ -38,20 +47,44 @@ const CATEGORIES: HabitationCategory[] = [
   "village",
 ];
 
+/** Cell-local origin used when anchoring hazards (map centre of the cell). */
+const CELL_CENTER: CellPoint = { x: 50, y: 50 };
+
 export type DangerKind = "habitation" | "terrain";
 
-/** Absolute compass wedge — identical for draw + fire permission. */
-export type DangerWedge = {
-  bearingDeg: number;
+/**
+ * Fixed far hazard. `halfAngleDeg` is constant for the whole encounter;
+ * only the bearing from the current apex → target is recomputed.
+ */
+export type DangerHazard = {
+  target: CellPoint;
   halfAngleDeg: number;
   kind: DangerKind;
   label: string;
-  /** Habitation only — for colour. */
   category?: HabitationCategory;
   fill: string;
 };
 
+/** Hazard projected from a stand / plan apex (draw + fire permission). */
+export type DangerWedge = DangerHazard & {
+  bearingDeg: number;
+};
+
 export const TERRAIN_BACKSTOP_FILL = "rgba(90, 70, 160, 0.5)";
+
+/** Place a point `distanceM` along compass bearing from `origin` (cell %). */
+export function cellPointFromBearingDistance(
+  origin: CellPoint,
+  bearingDeg: number,
+  distanceM: number,
+): CellPoint {
+  const rad = ((bearingDeg - 90) * Math.PI) / 180;
+  const pct = distanceM / AWARE_METERS_PER_PCT;
+  return {
+    x: origin.x + pct * Math.cos(rad),
+    y: origin.y + pct * Math.sin(rad),
+  };
+}
 
 /** Smallest absolute angle difference (degrees). */
 export function angleDeltaDeg(a: number, b: number): number {
@@ -69,8 +102,8 @@ export function bearingHitsWedge(
 }
 
 /**
- * Habitation pie slices around the hunter for this cell.
- * Bearings are compass degrees (0 = north / up on the cell map).
+ * Habitation catalog for this cell (seeded).
+ * `bearingDeg` / `distanceM` are from cell centre — the fixed hazard seat.
  */
 export function habitationSlicesForCell(
   mapId: HuntMapId,
@@ -90,44 +123,48 @@ export function habitationSlicesForCell(
       halfAngleDeg: half + rnd() * 3,
       category: cat,
       label: HABITATION_LABELS[cat],
-      distanceM: 400 + Math.floor(rnd() * 2200),
+      // Far enough that lateral moves barely change bearing (width stays fixed).
+      distanceM: 900 + Math.floor(rnd() * 2000),
     });
   }
   return slices;
 }
 
-/** Terrain backstop danger wedges (road / cliff / open valley). */
-export function terrainBackstopWedgesForCell(
+function terrainHazardsForCell(
   mapId: HuntMapId,
   cell: HuntGridCell,
-): DangerWedge[] {
+): DangerHazard[] {
   const seed = hashStr(`${mapId}:${cellLabel(cell)}:back`);
   const rnd = mulberry32(seed);
   const badCount = 1 + Math.floor(rnd() * 2);
-  const wedges: DangerWedge[] = [];
+  const hazards: DangerHazard[] = [];
   for (let i = 0; i < badCount; i++) {
-    wedges.push({
-      bearingDeg: rnd() * 360,
-      halfAngleDeg: 15 + rnd() * 20,
+    const bearingDeg = rnd() * 360;
+    const distanceM = 1000 + Math.floor(rnd() * 1800);
+    const halfAngleDeg = 15 + rnd() * 20;
+    hazards.push({
+      target: cellPointFromBearingDistance(CELL_CENTER, bearingDeg, distanceM),
+      halfAngleDeg,
       kind: "terrain",
       label: "Utrygg terrengbakgrunn",
       fill: TERRAIN_BACKSTOP_FILL,
     });
   }
-  return wedges;
+  return hazards;
 }
 
-/**
- * All fire-blocking wedges for this cell — draw these, and only these,
- * when deciding Klar til skudd.
- */
-export function dangerWedgesForCell(
+/** Fixed hazards for this cell (stable for the hunt encounter). */
+export function dangerHazardsForCell(
   mapId: HuntMapId,
   cell: HuntGridCell,
-): DangerWedge[] {
+): DangerHazard[] {
   const hab = habitationSlicesForCell(mapId, cell).map(
-    (s): DangerWedge => ({
-      bearingDeg: s.bearingDeg,
+    (s): DangerHazard => ({
+      target: cellPointFromBearingDistance(
+        CELL_CENTER,
+        s.bearingDeg,
+        s.distanceM,
+      ),
       halfAngleDeg: s.halfAngleDeg,
       kind: "habitation",
       label: s.label,
@@ -135,7 +172,40 @@ export function dangerWedgesForCell(
       fill: HABITATION_COLORS[s.category],
     }),
   );
-  return [...hab, ...terrainBackstopWedgesForCell(mapId, cell)];
+  return [...hab, ...terrainHazardsForCell(mapId, cell)];
+}
+
+/**
+ * Project hazards from `origin` (hunter or clicked plan point).
+ * Bearing updates with apex; {@link DangerHazard.halfAngleDeg} does not.
+ */
+export function dangerWedgesFromOrigin(
+  hazards: readonly DangerHazard[],
+  origin: CellPoint,
+): DangerWedge[] {
+  return hazards.map((h) => ({
+    ...h,
+    bearingDeg: bearingDegFromTo(origin, h.target),
+  }));
+}
+
+/**
+ * Wedges from cell centre (legacy). Prefer
+ * {@link dangerHazardsForCell} + {@link dangerWedgesFromOrigin}.
+ */
+export function dangerWedgesForCell(
+  mapId: HuntMapId,
+  cell: HuntGridCell,
+): DangerWedge[] {
+  return dangerWedgesFromOrigin(dangerHazardsForCell(mapId, cell), CELL_CENTER);
+}
+
+/** @deprecated Prefer dangerHazardsForCell + dangerWedgesFromOrigin. */
+export function terrainBackstopWedgesForCell(
+  mapId: HuntMapId,
+  cell: HuntGridCell,
+): DangerWedge[] {
+  return dangerWedgesFromOrigin(terrainHazardsForCell(mapId, cell), CELL_CENTER);
 }
 
 /** True if firing bearing clears every danger wedge (exact match to drawn pie). */
@@ -146,7 +216,7 @@ export function bearingIsSafe(
   return wedges.every((w) => !bearingHitsWedge(bearingDeg, w));
 }
 
-/** @deprecated Prefer dangerWedgesForCell + bearingIsSafe. */
+/** @deprecated Prefer dangerWedgesFromOrigin + bearingIsSafe. */
 export function terrainBackstopOk(
   mapId: HuntMapId,
   cell: HuntGridCell,

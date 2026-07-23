@@ -12,7 +12,8 @@ import {
   bearingHitsWedge,
   bearingIsSafe,
   coverFactorForCell,
-  dangerWedgesForCell,
+  dangerHazardsForCell,
+  dangerWedgesFromOrigin,
   type DangerWedge,
 } from "@/lib/aware/cellSafety";
 import {
@@ -181,6 +182,25 @@ function compassLabel(deg: number): string {
   if (d === 180) return "S";
   if (d === 270) return "V";
   return `${d}°`;
+}
+
+/** Store/display bearing always in 0–359. */
+function normalizeBearingDeg(deg: number): number {
+  return ((Math.round(deg) % 360) + 360) % 360;
+}
+
+/**
+ * Skuddpar direction slider: center = N (0°), right = clockwise,
+ * left = counter-clockwise. Maps 0–359 ↔ −180…+180 for the thumb.
+ */
+function bearingToSliderOffset(bearingDeg: number): number {
+  let d = normalizeBearingDeg(bearingDeg);
+  if (d > 180) d -= 360;
+  return d;
+}
+
+function sliderOffsetToBearing(offset: number): number {
+  return normalizeBearingDeg(offset);
 }
 
 function sliceWedgePath(
@@ -434,9 +454,20 @@ export function AwareAppView({
     ? distanceMBetween(hunter, destination)
     : null;
 
-  const dangerWedges = useMemo(
-    () => dangerWedgesForCell(map.id, cell),
+  /** Fixed far hazards for this cell — half-angles never change with movement. */
+  const dangerHazards = useMemo(
+    () => dangerHazardsForCell(map.id, cell),
     [map.id, cell],
+  );
+  /** Cakes from plan apex (click mål, else hunter). Width = hazard halfAngle. */
+  const dangerWedges = useMemo(
+    () => dangerWedgesFromOrigin(dangerHazards, planOrigin),
+    [dangerHazards, planOrigin],
+  );
+  /** Klar til skudd — must match wedges from where you actually stand. */
+  const liveDangerWedges = useMemo(
+    () => dangerWedgesFromOrigin(dangerHazards, hunter),
+    [dangerHazards, hunter],
   );
 
   const windSnap = hasKestrel ? weather.live : weather.forecast;
@@ -466,7 +497,7 @@ export function AwareAppView({
     (w) => w.kind === "terrain" && bearingHitsWedge(planBearing, w),
   );
   /** Actual stand — Klar til skudd must use where you are now. */
-  const liveBakgrunnOk = bearingIsSafe(liveBearing, dangerWedges);
+  const liveBakgrunnOk = bearingIsSafe(liveBearing, liveDangerWedges);
   const coverFactor = useMemo(
     () => coverFactorForCell(map.id, cell),
     [map.id, cell],
@@ -661,7 +692,7 @@ export function AwareAppView({
         50,
         Math.min(450, Math.round(exactDist / 5) * 5),
       );
-      const bearingDeg = Math.round(exactBearing) % 360;
+      const bearingDeg = normalizeBearingDeg(exactBearing);
       setShootWizard({
         phase: "direction",
         stand,
@@ -669,7 +700,7 @@ export function AwareAppView({
         bearingDeg,
       });
       setStatus(
-        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${Math.round(exactBearing)}° — juster ved behov, deretter lagre.`,
+        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster ved behov, deretter lagre.`,
       );
       return;
     }
@@ -1153,7 +1184,8 @@ export function AwareAppView({
                 </button>
               ) : null}
               <p className="shop-row-note">
-                Trykk kart → planleggingsmål (kakene + skuddlinje flyttes dit).
+                Trykk kart → planleggingsmål (kakene tegnes herfra med samme
+                bredde · skuddlinje følger).
                 Hold piltaster for å gå. Grønn linje = klar sektor; rød = fare.
                 {hasCamcorder
                   ? camcorderReady
@@ -1209,21 +1241,24 @@ export function AwareAppView({
                     1/2 — Sett skuddretning ({compassLabel(shootWizard.bearingDeg)}
                     )
                     {wizardBirdBearingDeg != null
-                      ? ` · fugl ${Math.round(wizardBirdBearingDeg)}°`
+                      ? ` · fugl ${normalizeBearingDeg(wizardBirdBearingDeg)}°`
                       : ""}
                   </p>
                   <label className="shop-filter aware-shoot-slider">
-                    Retning {Math.round(shootWizard.bearingDeg)}°
+                    Retning {normalizeBearingDeg(shootWizard.bearingDeg)}° (0° =
+                    N, midtstilt)
                     <input
                       type="range"
-                      min={0}
-                      max={359}
+                      min={-180}
+                      max={180}
                       step={1}
-                      value={Math.round(shootWizard.bearingDeg)}
+                      value={bearingToSliderOffset(shootWizard.bearingDeg)}
                       onChange={(e) =>
                         setShootWizard({
                           ...shootWizard,
-                          bearingDeg: Number(e.target.value),
+                          bearingDeg: sliderOffsetToBearing(
+                            Number(e.target.value),
+                          ),
                         })
                       }
                     />

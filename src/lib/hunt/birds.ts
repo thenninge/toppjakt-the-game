@@ -9,6 +9,7 @@ import {
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
 import {
+  cellLabel,
   clampCell,
   type HuntGridCell,
   type HuntMapAsset,
@@ -41,6 +42,12 @@ export const MAX_SPOOKS_BEFORE_GONE = 2;
 
 /** Mental fatigue gain when a bird is spooked away for good (0–1 scale). */
 export const GONE_BIRD_MENTAL_HIT = 0.2;
+
+/**
+ * Mind hit when the bird flushes in Hunt shoot (after «Klar til skudd»),
+ * right before the trigger — bitter near-miss.
+ */
+export const SHOOT_FLUSH_MIND_HIT = 0.3;
 
 /** Eyes resolve rød + lilla bands (placement ≤230 m); grønn/gul needs binos/thermal. */
 export const EYES_MAX_DISTANCE_M = 230;
@@ -95,7 +102,14 @@ export const POST_SHOT_STAY_CHANCE = 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED;
 
 /** Chance a second bird of the same species shares the cell on spawn. */
 export const TIUR_COMPANION_CHANCE = 0.2;
-export const ORRHANE_COMPANION_CHANCE = 0.4;
+/** Orrhane pairs are common — double the old 40 % baseline. */
+export const ORRHANE_COMPANION_CHANCE = 0.8;
+
+/**
+ * When binding a bird to a spot perch: prefer binos-only seats (grønn/gul).
+ * Eyes seats (rød/lilla) get the remainder.
+ */
+export const SPOT_PERCH_FAR_BAND_CHANCE = 0.65;
 
 export function postShotStayChance(
   hasSuppressor: boolean,
@@ -308,7 +322,7 @@ export function relocateBirdCell(
 /**
  * Spawn birds across the map (tiur / orrhane mix from terrain ratings).
  * Cells are weighted by hand-marked seats (green = tiur, red = orrhane).
- * Same-species companions: tiur +20 %, orrhane +40 %.
+ * Same-species companions: tiur +20 %, orrhane +80 %.
  */
 export function spawnTiurOnMap(
   map: HuntMapAsset,
@@ -409,6 +423,57 @@ function placementFromPerch(
   };
 }
 
+function isEyesBandPerch(perch: Pick<SpotPerch, "distanceMaxM">): boolean {
+  return perch.distanceMaxM <= EYES_MAX_DISTANCE_M;
+}
+
+function isFarBandPerch(perch: Pick<SpotPerch, "distanceMinM">): boolean {
+  return perch.distanceMinM > EYES_MAX_DISTANCE_M;
+}
+
+function pickOneFromPool(
+  pool: SpotPerch[],
+  random: () => number,
+): SpotPerch | null {
+  if (pool.length === 0) return null;
+  const i = Math.floor(random() * pool.length);
+  return pool.splice(i, 1)[0] ?? null;
+}
+
+/**
+ * Pick `count` perches with band bias: 65 % grønn/gul (binos), 35 % rød/lilla
+ * (eyes). Within a band, seats are uniform. Falls back to the other band if
+ * one is empty.
+ */
+function selectPerchesWeighted(
+  perches: SpotPerch[],
+  count: number,
+  random: () => number,
+): SpotPerch[] {
+  if (count <= 0) return [];
+  if (count >= perches.length) return [...perches];
+
+  const eyesPool = perches.filter(isEyesBandPerch);
+  const farPool = perches.filter(isFarBandPerch);
+  const picked: SpotPerch[] = [];
+
+  while (picked.length < count) {
+    const preferFar = random() < SPOT_PERCH_FAR_BAND_CHANCE;
+    let pick: SpotPerch | null = null;
+    if (preferFar) {
+      pick =
+        pickOneFromPool(farPool, random) ?? pickOneFromPool(eyesPool, random);
+    } else {
+      pick =
+        pickOneFromPool(eyesPool, random) ?? pickOneFromPool(farPool, random);
+    }
+    if (!pick) break;
+    picked.push(pick);
+  }
+
+  return picked;
+}
+
 function randomCrownPlacement(
   bird: HuntBird,
   index: number,
@@ -489,16 +554,10 @@ export function bindBirdsToSpotImage(
     ? perches.length
     : Math.min(perches.length, Math.max(here.length, 0));
 
-  // Equal chance for every perch (rød/lilla/grønn/gul). Eyes-only only
-  // filters *visibility* later via distanceM ≤ EYES_MAX_DISTANCE_M.
-  let ordered = [...perches];
-  if (!opts.fillAllPerches && here.length < perches.length) {
-    ordered = ordered
-      .map((p) => ({ p, r: random() }))
-      .sort((a, b) => a.r - b.r)
-      .map((x) => x.p)
-      .slice(0, perchCount);
-  }
+  // 65 % grønn/gul (binos-only), 35 % rød/lilla (eyes). Eyes filter visibility later.
+  const ordered = opts.fillAllPerches
+    ? [...perches]
+    : selectPerchesWeighted(perches, perchCount, random);
 
   for (const perch of ordered) {
     let bird = takeBird(perch.species);
@@ -628,6 +687,7 @@ export function spookBird(
 
 /**
  * For each cell entered (path), birds there may flush based on pace.
+ * Direction + relocate are from that cell (intermediate or destination).
  * 1st spook: relocate 1–2 cells. 2nd spook: gone for good.
  */
 export function resolveFlushesOnPath(
@@ -781,22 +841,24 @@ export function flushDirectionNb(direction: FlushDirection): string {
   return labels[direction];
 }
 
-/** Short splash headline: "I retning SV — sørvest". */
+/** Short splash headline: "Fra C6 · i retning S — sør". */
 export function flushDirectionHeadline(event: FlushEvent): string {
-  return `I retning ${event.direction} — ${flushDirectionNb(event.direction)}`;
+  const from = cellLabel(event.from);
+  return `Fra ${from} · i retning ${event.direction} — ${flushDirectionNb(event.direction)}`;
 }
 
 export function flushMessage(event: FlushEvent): string {
   const species = event.species === "tiur" ? "Tiuren" : "Orrhanen";
-  const dir = flushDirectionHeadline(event);
+  const from = cellLabel(event.from);
+  const dir = `${flushDirectionNb(event.direction)} (fra ${from})`;
   if (event.gone) {
     return (
-      `${species} letter ${dir.toLowerCase()} — og er borte for godt. ` +
+      `${species} letter mot ${dir} — og er borte for godt. ` +
       "Du innser at du er en dårlig jeger og burde håndtert situasjonen bedre."
     );
   }
   return (
-    `Du hører vingeslag og ser opp. ${species} letter ${dir.toLowerCase()} ` +
+    `Du hører vingeslag og ser opp. ${species} letter mot ${dir} ` +
     `(spook ${event.spookCount}/${MAX_SPOOKS_BEFORE_GONE}). ` +
     `Én spook til og den er borte.`
   );
