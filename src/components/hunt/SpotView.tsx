@@ -261,6 +261,8 @@ export function SpotView({
   const [mode, setMode] = useState<SpotMode>(startMode);
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
+  /** Photo aspect (w/h) so the frame does not squash landscapes into one box. */
+  const [landAspect, setLandAspect] = useState(1.6);
   /**
    * Spec mag is through the clear circular aperture, not the full frame.
    * Zoom the world by mag×(aperture/100) so the circle shows 1/mag of the eyes view.
@@ -277,6 +279,12 @@ export function SpotView({
   const lookedRef = useRef(0);
   const modeRef = useRef<SpotMode>(mode);
   modeRef.current = mode;
+  const hasBinosRef = useRef(hasBinos);
+  hasBinosRef.current = hasBinos;
+  const hasThermalRef = useRef(!!hasThermal);
+  hasThermalRef.current = !!hasThermal;
+  const toggleBinosRef = useRef<() => void>(() => {});
+  const toggleThermalRef = useRef<() => void>(() => {});
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const opticApertureRef = useRef(opticAperture);
@@ -365,7 +373,11 @@ export function SpotView({
     setLandscapeReady(false);
     const img = new Image();
     const markReady = () => {
-      if (!cancelled) setLandscapeReady(true);
+      if (cancelled) return;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setLandAspect(img.naturalWidth / img.naturalHeight);
+      }
+      setLandscapeReady(true);
     };
     img.addEventListener("load", markReady);
     img.addEventListener("error", markReady);
@@ -421,6 +433,20 @@ export function SpotView({
         onDone({ mode: modeRef.current, gameSeconds: lookedRef.current });
         return;
       }
+
+      if ((e.key === "b" || e.key === "B") && !e.repeat) {
+        if (!hasBinosRef.current) return;
+        e.preventDefault();
+        toggleBinosRef.current();
+        return;
+      }
+      if ((e.key === "t" || e.key === "T") && !e.repeat) {
+        if (!hasThermalRef.current) return;
+        e.preventDefault();
+        toggleThermalRef.current();
+        return;
+      }
+
       const optic =
         modeRef.current === "binos" || modeRef.current === "thermal";
       if (!optic) return;
@@ -522,18 +548,38 @@ export function SpotView({
     const center = { x: 50, y: 50 };
     panRef.current = center;
     setPan(center);
+    modeRef.current = targetMode;
     setMode(targetMode);
     setLrfReading(null);
   }
 
-  function enterBinos() {
+  function leaveToEyes() {
+    modeRef.current = "eyes";
+    setMode("eyes");
+    setLrfReading(null);
+  }
+
+  function toggleBinos() {
+    if (!hasBinos) return;
+    if (modeRef.current === "binos") {
+      leaveToEyes();
+      return;
+    }
     enterOpticMode("binos");
   }
 
-  function enterThermal() {
-    if (thermalBatteryGameSec <= 0) return;
+  function toggleThermal() {
+    if (!hasThermal) return;
+    if (modeRef.current === "thermal") {
+      leaveToEyes();
+      return;
+    }
+    if (thermalBatteryRef.current <= 0) return;
     enterOpticMode("thermal");
   }
+
+  toggleBinosRef.current = toggleBinos;
+  toggleThermalRef.current = toggleThermal;
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (mode !== "binos" && mode !== "thermal") return;
@@ -648,8 +694,9 @@ export function SpotView({
         : "Spotting med øynene";
 
   const isOpticMode = mode === "binos" || mode === "thermal";
-  const opticFrameStyle = {
-    "--optic-aperture": String(opticAperture),
+  const frameStyle = {
+    "--spot-ar": String(landAspect),
+    ...(isOpticMode ? { "--optic-aperture": String(opticAperture) } : {}),
   } as CSSProperties;
 
   /**
@@ -705,15 +752,15 @@ export function SpotView({
         </div>
         <div className="spot-view-actions">
           {mode === "eyes" && hasBinos ? (
-            <button type="button" className="intro-button" onClick={enterBinos}>
-              Use binos
+            <button type="button" className="intro-button" onClick={toggleBinos}>
+              Use binos (B)
             </button>
           ) : null}
           {mode === "eyes" && hasThermal ? (
             <button
               type="button"
               className="intro-button"
-              onClick={enterThermal}
+              onClick={toggleThermal}
               disabled={thermalBatteryGameSec <= 0}
               title={
                 thermalBatteryGameSec <= 0
@@ -721,14 +768,14 @@ export function SpotView({
                   : `Batteri ${battMin} min igjen`
               }
             >
-              Use thermal
+              Use thermal (T)
             </button>
           ) : null}
           {mode === "binos" && hasThermal ? (
             <button
               type="button"
               className="intro-button"
-              onClick={enterThermal}
+              onClick={toggleThermal}
               disabled={thermalBatteryGameSec <= 0}
               title={
                 thermalBatteryGameSec <= 0
@@ -736,22 +783,19 @@ export function SpotView({
                   : `Batteri ${battMin} min igjen`
               }
             >
-              Use thermal
+              Use thermal (T)
             </button>
           ) : null}
           {mode === "thermal" && hasBinos ? (
-            <button type="button" className="intro-button" onClick={enterBinos}>
-              Use binos
+            <button type="button" className="intro-button" onClick={toggleBinos}>
+              Use binos (B)
             </button>
           ) : null}
           {isOpticMode ? (
             <button
               type="button"
               className="intro-button"
-              onClick={() => {
-                setMode("eyes");
-                setLrfReading(null);
-              }}
+              onClick={leaveToEyes}
             >
               Eyes only
             </button>
@@ -787,7 +831,7 @@ export function SpotView({
               ? "spot-eyes-frame spot-thermal-frame"
               : "spot-eyes-frame spot-eyes-frame-clickable"
         }
-        style={isOpticMode ? opticFrameStyle : undefined}
+        style={frameStyle}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -878,6 +922,8 @@ export function SpotView({
       {mode === "eyes" ? (
         <p className="spot-binos-hint">
           Kompass øverst viser retning — rød/lilla fugl: klikk for å låse
+          {hasBinos ? " · B = kikkert" : ""}
+          {hasThermal ? " · T = termisk" : ""}
         </p>
       ) : null}
       {mode === "binos" ? (
@@ -885,6 +931,8 @@ export function SpotView({
           {showLrf
             ? "Sirkulært syn · piltaster / dra · sikt med rød sirkel og trykk F / Space / LRF"
             : "Sirkulært syn · piltaster / dra · klikk på fuglen for å låse (ingen LRF)"}
+          {" · B = av kikkert"}
+          {hasThermal ? " · T = termisk" : ""}
           {binosPriceNok > 0
             ? ` · blender ${opticAperture}% (dyrere = tynnere ramme)`
             : ""}
@@ -894,6 +942,8 @@ export function SpotView({
         <p className="spot-binos-hint">
           Sirkulært termisk syn · piltaster / dra · grå silhuett = varm fugl
           {showLrf ? " · LRF integrert" : ""}
+          {" · T = av termisk"}
+          {hasBinos ? " · B = kikkert" : ""}
           {thermalPriceNok > 0
             ? ` · blender ${opticAperture}% (dyrere = tynnere ramme)`
             : ""}

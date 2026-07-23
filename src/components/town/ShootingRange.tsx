@@ -6,11 +6,13 @@ import {
   isAmmoItem,
   isBallisticsItem,
   isBipodItem,
+  isMiscItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { isChronographMisc } from "@/lib/misc/spec";
 import {
   FOCUS_HOLD_MS,
   SHOTS_PER_SERIES,
@@ -128,6 +130,8 @@ type Keys = {
 };
 
 const AIM_SPEED_MM_PER_SEC = 22;
+/** While holding F: slower arrows for fine reticle placement. */
+const FOCUS_AIM_SPEED_MULT = 0.28;
 const DEFAULT_SCOPE_ZOOM = 12;
 
 export function ShootingRange({
@@ -186,6 +190,11 @@ export function ShootingRange({
       kitItems.some(
         (i) => isBallisticsItem(i) && i.ballistics.measuresCrosswind,
       ),
+    [kitItems],
+  );
+  const hasChronograph = useMemo(
+    () =>
+      kitItems.some((i) => isMiscItem(i) && isChronographMisc(i.misc)),
     [kitItems],
   );
   /** Indoor/outdoor range lane — fixed shot bearing for Enviro / App. */
@@ -428,6 +437,7 @@ export function ShootingRange({
         xMm: shot.xMm + realizedZero.xMm,
         yMm: shot.yMm + realizedZero.yMm,
         diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
+        v0Mps: shot.v0,
       };
       const pullFactor = triggerPullRef.current;
       const pullNote =
@@ -438,8 +448,11 @@ export function ShootingRange({
             : pullFactor < 0.7
               ? "rykk"
               : "elendig avtrekk";
+      const chronoNote = hasChronograph
+        ? ` · Xero ${shot.v0.toFixed(0)} m/s`
+        : "";
       setStatus(
-        `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${pullNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
+        `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${pullNote}${chronoNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
       );
       playShotRef.current({
         hasSuppressor: !!suppressor,
@@ -641,7 +654,10 @@ export function ShootingRange({
       const k = keysRef.current;
       let { x, y } = aimRef.current;
       const distFactor = distanceRef.current / RANGE_DISTANCE_M;
-      const speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
+      let speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
+      if (focusRef.current.held) {
+        speed *= FOCUS_AIM_SPEED_MULT;
+      }
       if (k.left) x -= speed;
       if (k.right) x += speed;
       if (k.up) y -= speed;
@@ -748,6 +764,11 @@ export function ShootingRange({
     const m = measureGroup(shots, distanceM);
     setMeasurement(m);
     if (m) {
+      const chronoV0Mps = hasChronograph
+        ? shots
+            .map((s) => s.v0Mps)
+            .filter((v): v is number => v != null && Number.isFinite(v))
+        : undefined;
       const entry: ShotLogEntry = {
         id: `series-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
         atMs: Date.now(),
@@ -777,9 +798,21 @@ export function ShootingRange({
         savedZeroYMm: zeroProfile?.savedYMm ?? 0,
         sessionZeroXMm,
         sessionZeroYMm,
+        ...(chronoV0Mps && chronoV0Mps.length > 0
+          ? {
+              chronoV0Mps,
+              chronoTemperatureC: weather.live.temperatureC,
+            }
+          : {}),
       };
       onLogSeries(entry);
-      setStatus("Serie målt og logget — se stillbilde eller Shotlog.");
+      setStatus(
+        chronoV0Mps && chronoV0Mps.length > 0
+          ? `Serie målt og logget · Xero snitt ${(
+              chronoV0Mps.reduce((a, b) => a + b, 0) / chronoV0Mps.length
+            ).toFixed(0)} m/s @ ${weather.live.temperatureC.toFixed(0)}°C`
+          : "Serie målt og logget — se stillbilde eller Shotlog.",
+      );
     }
   }
 

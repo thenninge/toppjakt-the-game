@@ -47,7 +47,7 @@ import {
   ENCOUNTER_NERVE,
   tickEncounterNerve,
 } from "@/lib/game/nervousness";
-import { CAMCORDER_SETUP_NERVE } from "@/lib/hunt/shoot";
+import { CAMCORDER_SETUP_NERVE, CHRONO_SETUP_NERVE } from "@/lib/hunt/shoot";
 import {
   cellLabel,
   type HuntGridCell,
@@ -77,6 +77,8 @@ export type AwareShootStance = {
   bird: CellPoint;
   /** Camcorder was set up before leaving Aware (nerve cost already paid). */
   camcorderActive?: boolean;
+  /** Chronograph set up before leaving Aware (nerve cost already paid). */
+  chronoActive?: boolean;
   /** Bird nervousness carried into the shoot scene (0–cap). */
   birdNerve?: number;
 };
@@ -103,6 +105,8 @@ type AwareAppViewProps = {
   initialBirdNerve?: number;
   /** Camcorder already deployed (e.g. returning from shoot). */
   initialCamcorderReady?: boolean;
+  /** Chronograph already deployed (e.g. returning from shoot). */
+  initialChronoReady?: boolean;
   /** Has LRF — Shoot-tab still useful, but less critical. */
   hasLrf?: boolean;
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
@@ -110,6 +114,8 @@ type AwareAppViewProps = {
   hasBdx?: boolean;
   /** Kit includes a deployable hunt camcorder. */
   hasCamcorder?: boolean;
+  /** Kit includes Garmin Xero chronograph. */
+  hasChronograph?: boolean;
   /** Triggercam in kit — allows autofill on skuddpar wizard. */
   hasTriggercam?: boolean;
   clockMinutes: number;
@@ -131,7 +137,8 @@ type AwareAppViewProps = {
   onNerveChange?: (nerve: number) => void;
   /** Footer leave button label (default Back to Spot). */
   abortLabel?: string;
-  onAbort: () => void;
+  /** Leave Aware; pass current stand so the next bird can resume here. */
+  onAbort: (opts?: { hunter?: CellPoint }) => void;
   /** Called when a skuddpar is confirmed found (tree / ettersøk). */
   onPairFound?: (pair: ShotPair) => void;
   /**
@@ -305,11 +312,13 @@ export function AwareAppView({
   camoBirdSpot = 0.55,
   initialBirdNerve = 0,
   initialCamcorderReady = false,
+  initialChronoReady = false,
   hasLrf = false,
   ammo = null,
   hasKestrel = false,
   hasBdx = false,
   hasCamcorder = false,
+  hasChronograph = false,
   hasTriggercam = false,
   clockMinutes,
   shotPairs,
@@ -333,6 +342,7 @@ export function AwareAppView({
   );
   const [scanned, setScanned] = useState(true);
   const [camcorderReady, setCamcorderReady] = useState(initialCamcorderReady);
+  const [chronoReady, setChronoReady] = useState(initialChronoReady);
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? { x: 50, y: 50 },
   );
@@ -876,6 +886,7 @@ export function AwareAppView({
       hunter,
       bird: birdWorld,
       camcorderActive: hasCamcorder && camcorderReady,
+      chronoActive: hasChronograph && chronoReady,
       birdNerve: nerveRef.current,
     });
   }
@@ -897,6 +908,29 @@ export function AwareAppView({
       next >= ENCOUNTER_NERVE.flushThreshold
         ? "Camcorder oppe — men fuglen er svært urolig (+20% nervøsitet)!"
         : "Camcorder satt opp mot standplass (+20% nervøsitet). Bedre ettersøk-oversikt etter skudd.",
+    );
+    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+      flushedRef.current = true;
+      onBirdFlushedRef.current(next);
+    }
+  }
+
+  function deployChrono() {
+    if (!hasChronograph || chronoReady || flushedRef.current) return;
+    const next = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      nerveRef.current + CHRONO_SETUP_NERVE,
+    );
+    nerveRef.current = next;
+    flushSync(() => {
+      setNerve(next);
+      setChronoReady(true);
+    });
+    onNerveChangeRef.current?.(next);
+    setStatus(
+      next >= ENCOUNTER_NERVE.flushThreshold
+        ? "Chrono oppe — men fuglen er svært urolig (+5% nervøsitet)!"
+        : "Chrono satt opp foran stand (+5% nervøsitet). Jakt-skudd logges i shotlog med v0 + temperatur.",
     );
     if (next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
@@ -1089,24 +1123,37 @@ export function AwareAppView({
         </div>
 
         <div className="aware-panel">
-          <p className="aware-cell-label">
-            Celle {cellLabel(cell)}
-            {planning ? (
-              <>
-                {" · "}mål→fugl {Math.round(planDistanceM)} m /{" "}
-                {Math.round(planBearing)}°
-                {" · "}her→fugl {Math.round(liveDistanceM)} m /{" "}
-                {Math.round(liveBearing)}°
-                {" · "}her→mål {Math.round(walkToPlanM ?? 0)} m
-              </>
-            ) : (
-              <>
-                {" · "}
-                {Math.round(liveDistanceM)} m · skyteretning{" "}
-                {Math.round(liveBearing)}°
-              </>
-            )}
-          </p>
+          <p className="aware-cell-label">Celle {cellLabel(cell)}</p>
+          {stalking || postShotSkuddparMode ? (
+            <dl className="aware-distance-list">
+              <div>
+                <dt>Avstand fra deg til fugl</dt>
+                <dd>
+                  {Math.round(liveDistanceM)} m · {Math.round(liveBearing)}°
+                </dd>
+              </div>
+              <div>
+                <dt>Avstand fra Aware-point til fugl</dt>
+                <dd>
+                  {Math.round(planDistanceM)} m · {Math.round(planBearing)}°
+                  {!planning ? " · (point = der du står)" : ""}
+                </dd>
+              </div>
+              <div>
+                <dt>Avstand fra deg til Aware-point</dt>
+                <dd>
+                  {planning
+                    ? `${Math.round(walkToPlanM ?? 0)} m`
+                    : "0 m · (ingen point valgt — trykk kart)"}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="shop-row-note">
+              {Math.round(liveDistanceM)} m · skyteretning{" "}
+              {Math.round(liveBearing)}°
+            </p>
+          )}
           {stalking ? (
             <p className="shop-row-note aware-weather-line">{nerveHint}</p>
           ) : null}
@@ -1147,6 +1194,18 @@ export function AwareAppView({
                     : "Sett opp camcorder (+20% nervøsitet)"}
                 </button>
               ) : null}
+              {hasChronograph ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  disabled={chronoReady}
+                  onClick={deployChrono}
+                >
+                  {chronoReady
+                    ? "Chrono klar"
+                    : "Sett opp Chrono (+5% nervøsitet)"}
+                </button>
+              ) : null}
               <p className="shop-row-note">
                 Trykk kart → planleggingsmål (kakene tegnes herfra med samme
                 bredde · skuddlinje følger).
@@ -1155,6 +1214,11 @@ export function AwareAppView({
                   ? camcorderReady
                     ? " Camcorder filmer stand — bedre ettersøk-cue etter skudd."
                     : " Camcorder i kit: sett opp før skudd for retning + landingsavstand (koster nervøsitet)."
+                  : ""}
+                {hasChronograph
+                  ? chronoReady
+                    ? " Chrono måler foran stand (+5% nerve) — shotlog får v0 + °C."
+                    : " Xero i kit: Sett opp Chrono (+5% nervøsitet)."
                   : ""}
                 {holdHint
                   ? " Kestrel AB dialer elev + windage når du går til skudd."
@@ -1479,7 +1543,7 @@ export function AwareAppView({
           <button
             type="button"
             className="intro-button sheriff-secondary"
-            onClick={onAbort}
+            onClick={() => onAbort({ hunter: { ...hunter } })}
           >
             {abortLabel}
           </button>
@@ -1488,6 +1552,11 @@ export function AwareAppView({
               type="button"
               className="intro-button"
               onClick={proceed}
+              title={
+                activePair?.found === true
+                  ? undefined
+                  : "Gir opp søket — fuglen tapes (mentalt −30 %)"
+              }
             >
               {activePair?.found === true
                 ? "Ferdig — fugl funnet"

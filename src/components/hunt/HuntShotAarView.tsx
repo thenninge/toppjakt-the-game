@@ -4,6 +4,7 @@ import {
   birdMmToNativePx,
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
+  formatHuntImpactOffsetMm,
   TIUR_INSTANT_KILL_DIAMETER_MM,
   TIUR_VITAL_DIAMETER_MM,
   type HuntShotResultKind,
@@ -65,9 +66,7 @@ export function HuntShotAarView({
 
   const detail =
     subtitle ??
-    `Treff ${hit.xMm >= 0 ? "+" : ""}${hit.xMm.toFixed(0)} mm side / ${
-      hit.yMm >= 0 ? "+" : ""
-    }${hit.yMm.toFixed(0)} mm høyde (fra vital-senter) · sone ${hit.zone}`;
+    `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`;
 
   return (
     <div

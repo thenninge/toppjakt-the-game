@@ -60,6 +60,13 @@ export type ShotLogEntry = {
   /** Unsaved session clicks at log time (mm-at-100 m). */
   sessionZeroXMm: number;
   sessionZeroYMm: number;
+  /**
+   * Chronograph (Garmin Xero in kit): realized muzzle velocity per shot (m/s).
+   * Omitted when no chrono was packed.
+   */
+  chronoV0Mps?: number[];
+  /** Air / powder temperature (°C) logged with chrono series (for later dV/dT). */
+  chronoTemperatureC?: number;
 };
 
 /**
@@ -159,8 +166,8 @@ export const STARTER_SCOPE_ID = "scope-biltema-3-9x40";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
 
 /**
- * Shared hunt support gear (bag, food, camo, LRF, Kestrel) — appended to every
- * VIP / cheat weapon profile.
+ * Shared hunt support gear (bag, food, camo, Kestrel) — appended to every
+ * VIP / cheat weapon profile. LRF is per-profile ({@link KitProfile.lrfId}).
  */
 export const STARTER_HUNT_SUPPORT_IDS = [
   "misc-vorn-deer-42",
@@ -179,9 +186,11 @@ export const STARTER_HUNT_SUPPORT_IDS = [
   "camo-beanie-forest-swedteam",
   "camo-gloves-forest-swedteam",
   "camo-boots-lowa",
-  "lrf-sig-kilo3000-bdx-10x42",
   "misc-kestrel-5700-elite",
 ] as const;
+
+/** Default LRF when a kit profile omits {@link KitProfile.lrfId}. */
+export const DEFAULT_VIP_LRF_ID = "lrf-sig-kilo3000-bdx-10x42";
 
 /** Extra inventory qty for consumables (default 1). */
 export const STARTER_HUNT_QTY: Partial<Record<string, number>> = {
@@ -197,6 +206,11 @@ export type KitProfile = {
   id: KitProfileId;
   /** Weapon platform item ids (rifle, scope, ammo, can, bipod, stock…). */
   weaponIds: readonly string[];
+  /**
+   * LRF binos in the hunt support loadout.
+   * Defaults to {@link DEFAULT_VIP_LRF_ID} (Sig KILO3000).
+   */
+  lrfId?: string;
   /** Ammo ids that get a perfect 100 m zero with rifle+scope. */
   zeroAmmoIds: readonly string[];
   license: {
@@ -250,6 +264,7 @@ export const KIT_PROFILE_IVAR: KitProfile = {
     "sup-hausken-jd184-xtrm",
     "bipod-game-on-softgun",
   ],
+  lrfId: "lrf-zeiss-victory-rf-10x42",
   zeroAmmoIds: [
     "ammo-norma-65x55-black-diamond",
     "ammo-lapua-65x55-scenar",
@@ -274,6 +289,7 @@ export const KIT_PROFILE_JORN: KitProfile = {
     "sup-atec-optima-50",
     "bipod-caldwell-xla",
   ],
+  lrfId: "lrf-leica-geovid-r-10x42",
   zeroAmmoIds: [
     "ammo-norma-65cm-black-diamond",
     "ammo-lapua-65cm-scenar-l",
@@ -320,11 +336,12 @@ export const KIT_PROFILES: Record<KitProfileId, KitProfile> = {
 /** @deprecated Prefer {@link KIT_PROFILE_NEPPE}.weaponIds */
 export const TEST_RANGE_LOADOUT_IDS = KIT_PROFILE_NEPPE.weaponIds;
 
-/** Full equipped kit for a profile (weapon + hunt support). */
+/** Full equipped kit for a profile (weapon + hunt support + LRF). */
 export function huntLoadoutIdsForProfile(
   profile: KitProfile,
 ): string[] {
-  return [...profile.weaponIds, ...STARTER_HUNT_SUPPORT_IDS];
+  const lrfId = profile.lrfId ?? DEFAULT_VIP_LRF_ID;
+  return [...profile.weaponIds, ...STARTER_HUNT_SUPPORT_IDS, lrfId];
 }
 
 /** @deprecated Prefer {@link huntLoadoutIdsForProfile}(KIT_PROFILE_NEPPE). */
@@ -532,18 +549,42 @@ export function hasNamedStarterKit(stats: PlayerStats): boolean {
   );
 }
 
+/** Equip the profile LRF (add to inventory if needed; replace other LRF in kit). */
+function syncProfileLrf(stats: PlayerStats, profile: KitProfile): PlayerStats {
+  const lrfId = profile.lrfId ?? DEFAULT_VIP_LRF_ID;
+  let next = stats;
+  if (!next.inventory.some((e) => e.itemId === lrfId)) {
+    next = {
+      ...next,
+      inventory: addToInventory(next.inventory, lrfId, 1),
+    };
+  }
+  const withoutLrf = next.kit.filter((id) => !id.startsWith("lrf-"));
+  const kitNeedsSync =
+    !next.kit.includes(lrfId) ||
+    next.kit.some((id) => id.startsWith("lrf-") && id !== lrfId);
+  if (kitNeedsSync) {
+    next = { ...next, kit: [...withoutLrf, lrfId] };
+  }
+  return next;
+}
+
 /**
  * Grant cheat/VIP loadout when the name matches but the profile rifle is
  * missing — e.g. saves created before VIP kits, or load skipping intro.
- * Idempotent if the kit is already present.
+ * Idempotent if the kit is already present; still syncs profile LRF.
  */
 export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
-  if (hasNamedStarterKit(stats)) return stats;
-  if (isCheatPlayerName(stats.name)) return grantStarterGear(stats);
-  if (isVipPlayerName(stats.name)) {
-    return grantVipStarterGear(stats, stats.name);
+  const profile = namedStarterProfile(stats.name);
+  if (!profile) return stats;
+  if (!hasNamedStarterKit(stats)) {
+    if (isCheatPlayerName(stats.name)) return grantStarterGear(stats);
+    if (isVipPlayerName(stats.name)) {
+      return grantVipStarterGear(stats, stats.name);
+    }
+    return stats;
   }
-  return stats;
+  return syncProfileLrf(stats, profile);
 }
 
 export function createInitialStats(): PlayerStats {

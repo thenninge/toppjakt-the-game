@@ -54,6 +54,7 @@ import {
   zeroingKey,
   type DopeCardEntry,
   type InventoryEntry,
+  type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 import { applyScopeClickError } from "@/lib/optics/spec";
@@ -72,6 +73,7 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
+  formatHuntImpactOffsetMm,
   SCOPE_VIEWPORT_REF_PX,
   TIUR_INSTANT_KILL_DIAMETER_MM,
   TIUR_VITAL_DIAMETER_MM,
@@ -115,6 +117,12 @@ type HuntShootViewProps = {
   dopeCard?: DopeCardEntry[];
   /** Persist DOPE after a hit (rifle×ammo×distance upsert). */
   onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
+  /**
+   * Chronograph armed in Aware — log realized v0 + air temp to shotlog on fire.
+   */
+  chronoActive?: boolean;
+  /** Persist chronograph row (hunt shot with Xero set up). */
+  onLogSeries?: (entry: ShotLogEntry) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
@@ -169,6 +177,10 @@ type Keys = {
 };
 
 const AIM_SPEED_MM_PER_SEC = 22;
+/** Landscape acquire: fraction of scope FOV panned per second (was 0.5 — too coarse). */
+const LANDSCAPE_AIM_FOV_FRAC = 0.18;
+/** While holding F: extra slow for fine reticle placement. */
+const FOCUS_AIM_SPEED_MULT = 0.28;
 const DEFAULT_SCOPE_ZOOM = 12;
 
 /** Aim (mm from vital) that puts landscape centre under the reticle. */
@@ -215,6 +227,8 @@ export function HuntShootView({
   zeroingProfiles,
   dopeCard = [],
   onAddDope,
+  chronoActive = false,
+  onLogSeries,
   customsMoaDelta = 0,
   customsTriggerPullScale = 1,
   onAffinitiesChange,
@@ -423,7 +437,7 @@ export function HuntShootView({
   const consumeAmmoRef = useRef(onConsumeAmmo);
   const recoilClearRef = useRef<number | null>(null);
 
-  const { playShot } = useRangeAudio({ enabled: musicEnabled });
+  const { playShot } = useRangeAudio({ enabled: musicEnabled, ambient: false });
 
   const selectedAmmo = ammoOptions.find((a) => a.id === ammoId) ?? null;
   const ammoRemaining = selectedAmmo
@@ -685,6 +699,42 @@ export function HuntShootView({
       });
       dopeNote = ` · DOPE @ ${Math.round(measuredDistanceM)} m`;
     }
+    let chronoNote = "";
+    if (chronoActive && onLogSeries && rifle && scope && Number.isFinite(shot.v0)) {
+      const entry: ShotLogEntry = {
+        id: `hunt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        atMs: Date.now(),
+        rifleId: rifle.id,
+        scopeId: scope.id,
+        ammoId: selectedAmmo.id,
+        rifleLabel: `${rifle.brand} ${rifle.name}`,
+        scopeLabel: `${scope.brand} ${scope.name}`,
+        ammoLabel: `${selectedAmmo.brand} ${selectedAmmo.name} (${selectedAmmo.ammo.caliber})`,
+        distanceM: Math.round(distanceRef.current),
+        shotCount: 1,
+        extremeSpreadMm: 0,
+        groupMoa: 0,
+        meanRadiusMm: 0,
+        poiXMm: impact.xMm,
+        poiYMm: impact.yMm,
+        zeroXMm:
+          (zeroProfile?.baseXMm ?? 0) +
+          (zeroProfile?.savedXMm ?? 0) +
+          sessionZeroXMm,
+        zeroYMm:
+          (zeroProfile?.baseYMm ?? 0) +
+          (zeroProfile?.savedYMm ?? 0) +
+          sessionZeroYMm,
+        savedZeroXMm: zeroProfile?.savedXMm ?? 0,
+        savedZeroYMm: zeroProfile?.savedYMm ?? 0,
+        sessionZeroXMm,
+        sessionZeroYMm,
+        chronoV0Mps: [shot.v0],
+        chronoTemperatureC: powderTempRef.current,
+      };
+      onLogSeries(entry);
+      chronoNote = ` · Xero ${shot.v0.toFixed(0)} m/s @ ${powderTempRef.current.toFixed(0)}°C`;
+    }
     setStatus(
       (kind === "instant_kill"
         ? pullLabel + "Instant kill (grønn sone)!"
@@ -694,7 +744,9 @@ export function HuntShootView({
             ? zone === "vital"
               ? pullLabel + "Vitalt treff, men trenger ettersøk…"
               : pullLabel + "Treff i kroppen — ettersøk."
-            : pullLabel + "Bom.") + dopeNote,
+            : pullLabel + "Bom.") +
+        dopeNote +
+        chronoNote,
     );
 
     if (hasTriggercam) {
@@ -892,9 +944,9 @@ export function HuntShootView({
       let limitX: number;
       let limitY: number;
       if (landscapeSrcRef.current) {
-        // Pan ~half a scope FOV of scene per second — finding the bird takes a moment.
+        // Scene pan in mm — slower acquire; focus multiplies further below.
         const visibleScenePx = SCOPE_VIEWPORT_REF_PX / Math.max(0.01, scale);
-        speed = ((visibleScenePx * 0.5) / pxPerMm) * dt;
+        speed = ((visibleScenePx * LANDSCAPE_AIM_FOV_FRAC) / pxPerMm) * dt;
         const sceneW = g.nativeW * (100 / seat.widthPct);
         const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
         limitX = (sceneW * 0.55) / pxPerMm;
@@ -903,6 +955,9 @@ export function HuntShootView({
         speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
         limitX = 120 * distFactor;
         limitY = limitX;
+      }
+      if (focusRef.current.held) {
+        speed *= FOCUS_AIM_SPEED_MULT;
       }
       if (k.left) x -= speed;
       if (k.right) x += speed;
@@ -1069,9 +1124,7 @@ export function HuntShootView({
           zone: replay.zone,
           kind: replay.kind,
         }}
-        subtitle={`${status} · treff ${lastImpact.xMm >= 0 ? "+" : ""}${lastImpact.xMm.toFixed(0)} mm side / ${
-          lastImpact.yMm >= 0 ? "+" : ""
-        }${lastImpact.yMm.toFixed(0)} mm høyde (fra vital-senter) · sone ${replay.zone}`}
+        subtitle={`${status} · treff ${formatHuntImpactOffsetMm(lastImpact.xMm, lastImpact.yMm)} (fra vital-senter) · sone ${replay.zone}`}
         onContinue={() => onShotResult(replay)}
       />
     );

@@ -30,11 +30,14 @@ export const TRIGGERCAM_ITEM_ID = "misc-triggercam";
 /** Tripod camcorder — better ettersøk overview; deploy costs nerve. */
 export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
 
-/** Garmin Xero chronograph — measures real projectile velocity (wiring later). */
+/** Garmin Xero chronograph — muzzle velocity on shotlog / load development. */
 export const CHRONOGRAPH_ITEM_ID = "misc-garmin-xero-c1-pro";
 
 /** Nerve bump (0–1 scale) when deploying camcorder before the shot. */
 export const CAMCORDER_SETUP_NERVE = 0.2;
+
+/** Nerve bump when setting up chronograph in front of the bird (Aware). */
+export const CHRONO_SETUP_NERVE = 0.05;
 
 /**
  * Reference scope viewport size (px) — matches `.scope-viewport` (~28rem).
@@ -97,6 +100,19 @@ export type HuntShotResult = {
   /** Quiet enough that birds do not flush (subsonic + suppressor). */
   silentShot?: boolean;
 };
+
+/**
+ * Player-facing impact label. Engine stores +y down; UI høyde uses +up.
+ * e.g. low hit (yMm=+52) → "+0 mm side / −52 mm høyde".
+ */
+export function formatHuntImpactOffsetMm(xMm: number, yMm: number): string {
+  const heightMm = -yMm;
+  const side =
+    `${xMm >= 0 ? "+" : ""}${xMm.toFixed(0)} mm side`;
+  const height =
+    `${heightMm >= 0 ? "+" : ""}${heightMm.toFixed(0)} mm høyde`;
+  return `${side} / ${height}`;
+}
 
 export type BirdShotGeom = {
   spriteId: BirdSpriteId;

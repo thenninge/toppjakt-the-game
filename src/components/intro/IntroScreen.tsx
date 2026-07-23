@@ -930,6 +930,7 @@ export function IntroScreen() {
             onConsumeAmmo={spendAmmoRound}
             onEnsureZeroing={ensureComboZero}
             onAddDope={addDopeEntry}
+            onLogSeries={logRangeSeries}
             onConsumeFood={consumeHuntFood}
             onBirdHarvested={harvestBird}
             carcasses={stats.carcasses}

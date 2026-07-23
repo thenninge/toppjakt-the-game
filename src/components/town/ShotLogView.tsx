@@ -12,6 +12,8 @@ type ShotLogViewProps = {
   onBack: () => void;
   /** Where the user came from — used for back button label. */
   backLabel?: string;
+  /** Skip LocationNav when nested under Shotlog/Dope tabs. */
+  embedded?: boolean;
 };
 
 function formatWhen(atMs: number): string {
@@ -38,19 +40,24 @@ export function ShotLogView({
   entries,
   onBack,
   backLabel = "← Tilbake",
+  embedded = false,
 }: ShotLogViewProps) {
   const comboCount = uniqueCombos(entries);
 
   return (
-    <div className="shot-log">
-      <LocationNav
-        onBackToTown={onBack}
-        backLabel={backLabel}
-        hint="Alle målte serier fra skytebanen — ammo, spredning og zero."
-      />
+    <div className={embedded ? "shot-log shot-log--embedded" : "shot-log"}>
+      {embedded ? null : (
+        <LocationNav
+          onBackToTown={onBack}
+          backLabel={backLabel}
+          hint="Alle målte serier fra skytebanen — ammo, spredning og zero."
+        />
+      )}
 
       <header className="shop-header">
-        <p className="intro-line intro-gift">Shotlog</p>
+        {embedded ? null : (
+          <p className="intro-line intro-gift">Shotlog</p>
+        )}
         <p className="shop-row-note">
           {entries.length === 0
             ? "Ingen serier logget ennå. Mål en serie på skytebanen."
@@ -114,16 +121,36 @@ export function ShotLogView({
                       {entry.distanceM} m
                     </dd>
                   </div>
+                <div>
+                  <dt>Lagret / sesjon</dt>
+                  <dd>
+                    lagret {entry.savedZeroXMm.toFixed(0)}/
+                    {entry.savedZeroYMm.toFixed(0)} mm @100 m · sesjon{" "}
+                    {entry.sessionZeroXMm.toFixed(0)}/
+                    {entry.sessionZeroYMm.toFixed(0)} mm @100 m
+                  </dd>
+                </div>
+                {entry.chronoV0Mps && entry.chronoV0Mps.length > 0 ? (
                   <div>
-                    <dt>Lagret / sesjon</dt>
+                    <dt>Chrono (Xero)</dt>
                     <dd>
-                      lagret {entry.savedZeroXMm.toFixed(0)}/
-                      {entry.savedZeroYMm.toFixed(0)} mm @100 m · sesjon{" "}
-                      {entry.sessionZeroXMm.toFixed(0)}/
-                      {entry.sessionZeroYMm.toFixed(0)} mm @100 m
+                      {entry.chronoV0Mps
+                        .map((v) => `${v.toFixed(0)}`)
+                        .join(" · ")}{" "}
+                      m/s
+                      {entry.chronoTemperatureC != null
+                        ? ` · ${entry.chronoTemperatureC.toFixed(0)}°C`
+                        : ""}
+                      {" · snitt "}
+                      {(
+                        entry.chronoV0Mps.reduce((a, b) => a + b, 0) /
+                        entry.chronoV0Mps.length
+                      ).toFixed(0)}{" "}
+                      m/s
                     </dd>
                   </div>
-                </dl>
+                ) : null}
+              </dl>
               </li>
             );
           })}

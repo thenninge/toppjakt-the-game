@@ -70,6 +70,8 @@ export type ShotImpact = {
   yMm: number;
   /** Hole diameter on paper (mm) — bullet caliber. */
   diameterMm: number;
+  /** Realized muzzle velocity this shot (m/s) — for chronograph / shotlog. */
+  v0Mps?: number;
 };
 
 export type GroupMeasurement = {

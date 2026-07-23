@@ -22,6 +22,8 @@ type DopeCardViewProps = {
   onRemove: (id: string) => void;
   onBack: () => void;
   backLabel?: string;
+  /** Skip LocationNav when nested under Shotlog/Dope tabs. */
+  embedded?: boolean;
 };
 
 function formatWhen(atMs: number): string {
@@ -46,6 +48,7 @@ export function DopeCardView({
   onRemove,
   onBack,
   backLabel = "← Tilbake",
+  embedded = false,
 }: DopeCardViewProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const sorted = [...entries].sort((a, b) => {
@@ -55,15 +58,23 @@ export function DopeCardView({
   });
 
   return (
-    <div className="dope-card-home">
-      <LocationNav
-        onBackToTown={onBack}
-        backLabel={backLabel}
-        hint="DOPE fra skytebanen — rediger avstand og klikk, eller slett linjer."
-      />
+    <div
+      className={
+        embedded ? "dope-card-home dope-card-home--embedded" : "dope-card-home"
+      }
+    >
+      {embedded ? null : (
+        <LocationNav
+          onBackToTown={onBack}
+          backLabel={backLabel}
+          hint="DOPE fra skytebanen — rediger avstand og klikk, eller slett linjer."
+        />
+      )}
 
       <header className="shop-header">
-        <p className="intro-line intro-gift">DOPE-kort</p>
+        {embedded ? null : (
+          <p className="intro-line intro-gift">DOPE-kort</p>
+        )}
         <p className="shop-row-note">
           {entries.length === 0
             ? "Ingen linjer ennå. Bruk «Add to DOPE» på skytebanen."

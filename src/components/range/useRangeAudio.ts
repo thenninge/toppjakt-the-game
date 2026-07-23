@@ -9,13 +9,21 @@ import {
 
 type UseRangeAudioOptions = {
   enabled: boolean;
+  /**
+   * Play range entry ambient while mounted.
+   * Off on hunt shoot — hunt scene music must keep playing under shot SFX.
+   */
+  ambient?: boolean;
 };
 
-export function useRangeAudio({ enabled }: UseRangeAudioOptions) {
+export function useRangeAudio({
+  enabled,
+  ambient = true,
+}: UseRangeAudioOptions) {
   const stopAmbientRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !ambient) {
       stopAmbientRef.current?.();
       stopAmbientRef.current = null;
       return;
@@ -26,7 +34,7 @@ export function useRangeAudio({ enabled }: UseRangeAudioOptions) {
       stopAmbientRef.current?.();
       stopAmbientRef.current = null;
     };
-  }, [enabled]);
+  }, [enabled, ambient]);
 
   const playShot = useCallback(
     (hasSuppressorOrOptions: boolean | RangeShotAudioOptions) => {

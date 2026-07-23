@@ -36,7 +36,7 @@ Etter intro står spilleren i byen og velger destinasjon:
 |------|--------|
 | **Pike Pro Shop** | Kjøp våpen, ammo, glass, dempere, stokker, misc kit |
 | **Sheriff** | Søke nye våpen (norsk byråkrati-satire midlertidig) |
-| **Home** | Kit-bygger + **Current rig** (rifle / scope / stock / bipod / can + **flere ammo** til range-sekvens) → total vekt + top speed; lisensstatus (ikke i inventory) |
+| **Home** | Kit-bygger + **Current rig** …; **Shotlog/Dope** (faner); **Laderommet** (planlagt home-load development — se `HOME_LOAD_DEVELOPMENT.md`); lisensstatus |
 | **Shooting Range** | CBA 100 m: kit-rig, piltaster + wobble (calm/bipod×3), +/− zoom, 5-skudds serie, hull + mål i MOA/mm. Låneutstyr senere |
 
 ### Player stats (HUD)

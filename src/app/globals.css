@@ -993,6 +993,40 @@ body {
   color: #e8fff0;
 }
 
+.home-data-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.85rem;
+}
+
+.home-data-tab {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: transparent;
+  color: inherit;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.home-data-tab.is-active {
+  opacity: 1;
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.shot-log--embedded .shop-header,
+.dope-card-home--embedded .shop-header {
+  margin-top: 0;
+}
+
+.laderommet code {
+  font-size: 0.85em;
+}
+
 .home-hunt-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -1548,11 +1582,14 @@ body {
 
 .spot-eyes-frame {
   position: relative;
-  flex: 1 1 auto;
-  width: 100%;
-  /* Fixed box so eyes / binos / thermal share the same % coordinate space. */
-  height: min(52vh, 560px);
+  flex: 0 1 auto;
+  /* Aspect from photo (inline --spot-ar). Width capped so max-height keeps ratio. */
+  width: min(100%, calc(min(70vh, 780px) * var(--spot-ar, 1.6)));
+  max-width: 100%;
+  aspect-ratio: var(--spot-ar, 1.6);
+  height: auto;
   max-height: min(70vh, 780px);
+  margin-inline: auto;
   border: 2px solid #6b5238;
   background: #0a0806;
   overflow: hidden;
@@ -1612,7 +1649,7 @@ body {
   display: block;
   width: 100%;
   height: 100%;
-  /* fill = image % matches overlay % (same as thermal sampling). */
+  /* Frame matches photo aspect — fill does not squash. */
   object-fit: fill;
   object-position: center;
   user-select: none;
@@ -5605,6 +5642,38 @@ body {
   margin: 0;
   color: var(--canyon-sand);
   font-size: 0.95rem;
+}
+
+.aware-distance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  margin: 0.15rem 0 0.25rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid rgba(196, 165, 116, 0.28);
+  background: rgba(8, 6, 4, 0.45);
+}
+
+.aware-distance-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+}
+
+.aware-distance-list dt {
+  margin: 0;
+  color: rgba(245, 230, 200, 0.72);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.aware-distance-list dd {
+  margin: 0;
+  color: var(--accent-gold);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .aware-actions {

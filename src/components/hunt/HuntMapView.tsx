@@ -57,6 +57,7 @@ import {
   getInventoryQty,
   type DopeCardEntry,
   type InventoryEntry,
+  type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 import {
@@ -78,7 +79,7 @@ import {
   formatStaminaPct,
   kitCanBoil,
 } from "@/lib/food/spec";
-import { isCamcorderMisc, isHeadlampMisc } from "@/lib/misc/spec";
+import { isCamcorderMisc, isChronographMisc, isHeadlampMisc } from "@/lib/misc/spec";
 import {
   createCarcassFromHarvest,
   formatWeightKg as formatCarcassWeightKg,
@@ -208,6 +209,8 @@ type HuntMapViewProps = {
   ) => ZeroingProfile;
   /** Persist DOPE after hunt hits. */
   onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
+  /** Persist chronograph / series rows (range + hunt with chrono). */
+  onLogSeries?: (entry: ShotLogEntry) => void;
   onConsumeFood: (itemId: string) => boolean;
   onBirdHarvested: (carcass: GameCarcass) => void;
   carcasses: GameCarcass[];
@@ -298,6 +301,8 @@ type ShootSession = {
   birdPos: CellPoint;
   /** Camcorder was deployed in Aware before this shot. */
   camcorderActive?: boolean;
+  /** Chronograph was deployed in Aware before this shot. */
+  chronoActive?: boolean;
   /** Where the displayed range came from. */
   rangeSource: "lrf" | "estimated";
   /** Bird nerve carried from Aware (distance/move/cam already baked in). */
@@ -327,6 +332,8 @@ type AwareSession = {
   returnNerve?: number;
   /** Camcorder was already deployed this encounter. */
   returnCamcorderActive?: boolean;
+  /** Chronograph was already deployed this encounter. */
+  returnChronoActive?: boolean;
   /**
    * Post-shot: register skuddpar while bird aim marker is still visible
    * (60 s window). Shoot tab only — no Klar til skudd.
@@ -431,6 +438,7 @@ export function HuntMapView({
   onConsumeAmmo,
   onEnsureZeroing,
   onAddDope,
+  onLogSeries,
   onConsumeFood,
   onBirdHarvested,
   carcasses,
@@ -473,6 +481,13 @@ export function HuntMapView({
   /** Aware map bearing/pos sticky per birdId until spooked. */
   const [birdMapContacts, setBirdMapContacts] = useState<
     Record<string, BirdMapContact>
+  >({});
+  /**
+   * Last hunter stand on the Aware map per cell — so a second bird in the
+   * same spot does not force you to re-walk to the safe cake slice.
+   */
+  const [awareStandByCell, setAwareStandByCell] = useState<
+    Record<string, CellPoint>
   >({});
   /** Live bird encounter for HUD BIRD bar + background nerve tick. */
   const [birdEncounter, setBirdEncounter] = useState<BirdEncounter | null>(
@@ -646,6 +661,11 @@ export function HuntMapView({
           i.id === CAMCORDER_ITEM_ID ||
           (isMiscItem(i) && isCamcorderMisc(i.misc)),
       ),
+    [kitItems],
+  );
+  const hasChronograph = useMemo(
+    () =>
+      kitItems.some((i) => isMiscItem(i) && isChronographMisc(i.misc)),
     [kitItems],
   );
   const hasTriggercam = useMemo(
@@ -1655,6 +1675,9 @@ export function HuntMapView({
     };
 
     setSpotSession(null);
+    const stand = recalledAwareStand();
+    const resumedStand =
+      Math.abs(stand.x - 50) > 0.5 || Math.abs(stand.y - 50) > 0.5;
     setAwareSession({
       imageSrc,
       bird: info.placement,
@@ -1664,12 +1687,15 @@ export function HuntMapView({
       crosswindMs: cw,
       birdBearingDeg: birdBearing,
       densityRatio: density,
-      hunterPos: { x: 50, y: 50 },
+      hunterPos: stand,
       birdPos,
       rangeSource: info.rangeSource,
     });
     setLog(
       (forfeitNote ? `${forfeitNote} ` : "") +
+        (resumedStand
+          ? "Du står der du var sist i denne cella. "
+          : "") +
         (info.rangeSource === "lrf"
           ? hold
             ? `LRF ${measured} m — fugl merket i Aware (${Math.round(birdBearing)}°). Kestrel fasit: ${formatHoldClicks(hold)}.`
@@ -1696,7 +1722,24 @@ export function HuntMapView({
     return true;
   }
 
-  function abortAware() {
+  function rememberAwareStand(stand: CellPoint | null | undefined) {
+    if (!stand) return;
+    const key = `${pos.row},${pos.col}`;
+    setAwareStandByCell((prev) => {
+      const cur = prev[key];
+      if (cur && Math.abs(cur.x - stand.x) < 0.05 && Math.abs(cur.y - stand.y) < 0.05) {
+        return prev;
+      }
+      return { ...prev, [key]: { x: stand.x, y: stand.y } };
+    });
+  }
+
+  function recalledAwareStand(): CellPoint {
+    return awareStandByCell[`${pos.row},${pos.col}`] ?? { x: 50, y: 50 };
+  }
+
+  function abortAware(opts?: { hunter?: CellPoint }) {
+    rememberAwareStand(opts?.hunter);
     if (awareSession?.ettersokPairId) {
       const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
       if (pair?.found === true) {
@@ -1710,10 +1753,15 @@ export function HuntMapView({
         );
         return;
       }
-      if (!awareSession.recoveryOnly) {
-        abandonEttersok(awareSession.ettersokPairId);
-        return;
-      }
+      // Avbryt = lukk Track midlertidig. Kun «Avslutt ettersøk» gir opp fuglen.
+      setAwareSession(null);
+      setPanel("arrived");
+      setLog(
+        awareSession.recoveryOnly
+          ? "Tilbake til kart — husk å hente fuglen ved treet (Hent/søk)."
+          : "Tilbake til kart — søket er ikke avsluttet. Speid videre, eller åpne Hent/søk når du er klar.",
+      );
+      return;
     }
     setAwareSession(null);
     setBirdEncounter(null);
@@ -1722,9 +1770,10 @@ export function HuntMapView({
   }
 
   /** Leave Aware stalk back to Spot — nerve keeps running. */
-  function backToSpotFromAware() {
+  function backToSpotFromAware(opts?: { hunter?: CellPoint }) {
+    rememberAwareStand(opts?.hunter);
     if (awareSession?.ettersokPairId) {
-      abortAware();
+      abortAware(opts);
       return;
     }
     setAwareSession(null);
@@ -1734,6 +1783,7 @@ export function HuntMapView({
 
   /**
    * Give up wounded ettersøk without a find — bird lost, mental stamina −30%.
+   * Only via «Avslutt ettersøk» (not Avbryt / Tilbake).
    * Shows a dedicated pause view (like flukt) so the consequence is not buried in the log.
    */
   function abandonEttersok(pairId: string) {
@@ -1816,6 +1866,9 @@ export function HuntMapView({
     }
     setAwareSession(null);
     const nerve = Math.max(0, stance?.birdNerve ?? birdEncounterRef.current?.nerve ?? 0);
+    const hunterStand =
+      stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 };
+    rememberAwareStand(hunterStand);
     setBirdEncounter((prev) => {
       const next: BirdEncounter = {
         birdId: session.bird.birdId,
@@ -1840,16 +1893,17 @@ export function HuntMapView({
       crosswindMs: cw,
       densityRatio: density,
       bearingDeg,
-      hunterPos: stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 },
+      hunterPos: hunterStand,
       birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
       camcorderActive: !!stance?.camcorderActive,
+      chronoActive: !!stance?.chronoActive,
       rangeSource: session.rangeSource,
       birdNerve: nerve,
     });
     setLog(
       hold
-        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${distanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}`
-        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${distanceM} m — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}`,
+        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${distanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}`
+        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${distanceM} m — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}`,
     );
   }
 
@@ -1924,6 +1978,7 @@ export function HuntMapView({
       rangeSource: s.rangeSource,
       returnNerve: nextNerve,
       returnCamcorderActive: !!s.camcorderActive,
+      returnChronoActive: !!s.chronoActive,
     });
     setLog("Tilbake til Aware — fuglen er fortsatt der.");
   }
@@ -2215,6 +2270,7 @@ export function HuntMapView({
     const id = shootSession.bird.birdId;
     const dist = result.measuredDistanceM;
     const stand = shootSession.hunterPos;
+    rememberAwareStand(stand);
     // True bird marker from Aware — keep continuity into ettersøk.
     const birdPos = shootSession.birdPos;
     const camcorderOn = !!shootSession.camcorderActive;
@@ -2920,6 +2976,8 @@ export function HuntMapView({
         onConsumeAmmo={onConsumeAmmo}
         onEnsureZeroing={onEnsureZeroing}
         onAddDope={onAddDope}
+        onLogSeries={onLogSeries}
+        chronoActive={!!shootSession.chronoActive}
         onAbort={abortShoot}
         onBackToAware={returnToAwareFromShoot}
         onShotResult={onHuntShotResult}
@@ -2986,11 +3044,13 @@ export function HuntMapView({
           )
         }
         initialCamcorderReady={!!awareSession.returnCamcorderActive}
+        initialChronoReady={!!awareSession.returnChronoActive}
         hasLrf={hasBinos}
         ammo={primaryAmmo?.ammo ?? null}
         hasKestrel={!!kestrelItem}
         hasBdx={!!binoItem?.lrf.hasOnboardBallistics}
         hasCamcorder={hasCamcorder}
+        hasChronograph={hasChronograph}
         hasTriggercam={hasTriggercam}
         clockMinutes={clockMinutes}
         shotPairs={shotPairs}
@@ -3017,7 +3077,8 @@ export function HuntMapView({
         }
         onAbort={
           awareSession.postShotSkuddpar
-            ? () => {
+            ? (opts) => {
+                rememberAwareStand(opts?.hunter);
                 setAwareSession(null);
                 setLog(
                   postShotGhost

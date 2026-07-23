@@ -46,8 +46,8 @@ import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import { InaturNo } from "@/components/town/InaturNo";
-import { ShotLogView } from "@/components/town/ShotLogView";
-import { DopeCardView } from "@/components/town/DopeCardView";
+import { ShotLogDopeView } from "@/components/town/ShotLogDopeView";
+import { LaderommetView } from "@/components/town/LaderommetView";
 import {
   formatJaktkortStatusNb,
   type ActiveJaktkort,
@@ -142,8 +142,12 @@ export function HomeBase({
   onStartHunt,
   onLeave,
 }: HomeBaseProps) {
-  const [view, setView] = useState<"main" | "inatur" | "shotlog" | "dope">(
-    "main",
+  const [view, setView] = useState<
+    "main" | "inatur" | "shotlog-dope" | "laderommet"
+  >("main");
+  /** When opening Shotlog/Dope from a deep link, which tab. */
+  const [shotlogDopeTab, setShotlogDopeTab] = useState<"shotlog" | "dope">(
+    "shotlog",
   );
   /** Pending rifle/scope swap that needs re-zero warning. */
   const [kitSwapConfirm, setKitSwapConfirm] = useState<ShopItem | null>(null);
@@ -324,26 +328,21 @@ export function HomeBase({
     onToggleKit(id);
   }
 
-  if (view === "shotlog") {
+  if (view === "shotlog-dope") {
     return (
-      <ShotLogView
-        entries={shotLog}
+      <ShotLogDopeView
+        shotLog={shotLog}
+        dopeCard={dopeCard}
+        onUpdateDope={onUpdateDope}
+        onRemoveDope={onRemoveDope}
         onBack={() => setView("main")}
-        backLabel="← Tilbake til hjem"
+        initialTab={shotlogDopeTab}
       />
     );
   }
 
-  if (view === "dope") {
-    return (
-      <DopeCardView
-        entries={dopeCard}
-        onUpdate={onUpdateDope}
-        onRemove={onRemoveDope}
-        onBack={() => setView("main")}
-        backLabel="← Tilbake til hjem"
-      />
-    );
+  if (view === "laderommet") {
+    return <LaderommetView onBack={() => setView("main")} />;
   }
 
   if (view === "inatur") {
@@ -397,16 +396,19 @@ export function HomeBase({
         <button
           type="button"
           className="intro-button sheriff-secondary"
-          onClick={() => setView("shotlog")}
+          onClick={() => {
+            setShotlogDopeTab("shotlog");
+            setView("shotlog-dope");
+          }}
         >
-          Shotlog ({shotLog.length})
+          Shotlog/Dope ({shotLog.length}/{dopeCard.length})
         </button>
         <button
           type="button"
           className="intro-button sheriff-secondary"
-          onClick={() => setView("dope")}
+          onClick={() => setView("laderommet")}
         >
-          Se/edit DOPE ({dopeCard.length})
+          Laderommet
         </button>
         <button
           type="button"

@@ -30,11 +30,20 @@ export function ShotVideoView({
   function finish() {
     if (doneRef.current) return;
     doneRef.current = true;
+    window.dispatchEvent(new Event("toppjakt-resume-music"));
     onContinueRef.current();
   }
 
   useEffect(() => {
     doneRef.current = false;
+  }, [videoSrc]);
+
+  useEffect(() => {
+    // Video playback often pauses looping HTMLAudio — nudge music back on.
+    window.dispatchEvent(new Event("toppjakt-resume-music"));
+    return () => {
+      window.dispatchEvent(new Event("toppjakt-resume-music"));
+    };
   }, [videoSrc]);
 
   useEffect(() => {
@@ -66,6 +75,9 @@ export function ShotVideoView({
           muted
           playsInline
           preload="auto"
+          onPlay={() =>
+            window.dispatchEvent(new Event("toppjakt-resume-music"))
+          }
           onEnded={finish}
           onError={finish}
         />

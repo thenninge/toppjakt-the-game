@@ -22,9 +22,15 @@ type GameMusicProps = {
   enabled: boolean;
 };
 
+/**
+ * Looping scene music. Browsers often pause HTMLAudio when a <video> starts
+ * (even muted post-shot clips) — we resume whenever we still want music on.
+ */
 export function GameMusic({ scene, enabled }: GameMusicProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const trackRef = useRef<string | null>(null);
+  /** False only around intentional pause/disable — skips auto-resume. */
+  const wantPlayRef = useRef(false);
 
   useEffect(() => {
     const audio = audioRef.current ?? new Audio();
@@ -32,35 +38,78 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
     audio.volume = MUSIC_VOLUME;
     audioRef.current = audio;
 
+    function tryResume() {
+      if (!wantPlayRef.current) return;
+      if (!audio.paused) return;
+      void audio.play().catch(() => {});
+    }
+
+    function onUnexpectedPause() {
+      // Intentional pause sets wantPlayRef false first in the same tick.
+      queueMicrotask(tryResume);
+    }
+
+    audio.addEventListener("pause", onUnexpectedPause);
+    document.addEventListener("visibilitychange", tryResume);
+    window.addEventListener(
+      "toppjakt-resume-music" as keyof WindowEventMap,
+      tryResume as EventListener,
+    );
+
     if (!enabled || !scene) {
+      wantPlayRef.current = false;
       audio.pause();
       trackRef.current = null;
-      return;
+      return () => {
+        audio.removeEventListener("pause", onUnexpectedPause);
+        document.removeEventListener("visibilitychange", tryResume);
+        window.removeEventListener(
+          "toppjakt-resume-music" as keyof WindowEventMap,
+          tryResume as EventListener,
+        );
+      };
     }
 
     const track = getMusicTrack(scene);
     if (!track) {
+      wantPlayRef.current = false;
       audio.pause();
       trackRef.current = null;
-      return;
+      return () => {
+        audio.removeEventListener("pause", onUnexpectedPause);
+        document.removeEventListener("visibilitychange", tryResume);
+        window.removeEventListener(
+          "toppjakt-resume-music" as keyof WindowEventMap,
+          tryResume as EventListener,
+        );
+      };
     }
 
     const nextSrc = new URL(track, window.location.href).href;
     const sameTrack = trackRef.current === nextSrc;
 
     if (!sameTrack) {
+      wantPlayRef.current = false;
       audio.pause();
       audio.src = track;
       trackRef.current = nextSrc;
+      wantPlayRef.current = true;
       void audio.play().catch(() => {
         /* Autoplay blocked until next user gesture — toggle will retry. */
       });
-      return;
+    } else {
+      wantPlayRef.current = true;
+      tryResume();
     }
 
-    if (audio.paused) {
-      void audio.play().catch(() => {});
-    }
+    return () => {
+      audio.removeEventListener("pause", onUnexpectedPause);
+      document.removeEventListener("visibilitychange", tryResume);
+      window.removeEventListener(
+        "toppjakt-resume-music" as keyof WindowEventMap,
+        tryResume as EventListener,
+      );
+    };
   }, [scene, enabled]);
 
   return null;

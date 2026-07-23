@@ -2577,8 +2577,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "Xero C1 Pro",
     priceNok: 5499,
     note:
-      "Doppler-kronograf — måler reell hastighet på prosjektilene (muzzle velocity). " +
-      "Kult kit; funksjon kobles inn senere (DOPE / zero / ballistikk).",
+      "Doppler-kronograf — måler reell muzzle velocity. I kit på skytebane: shotlog logger v0 + temperatur per serie. På jakt: Sett opp Chrono (+5 % nervøsitet) før skudd — da logges v0 + temperatur.",
     misc: { enduranceGrams: 0, isChronograph: true },
   },
   {
