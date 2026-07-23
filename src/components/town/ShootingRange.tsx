@@ -45,6 +45,7 @@ import {
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
+import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -84,6 +85,9 @@ type ShootingRangeProps = {
   weather: DayWeather;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
+  balance: number;
+  onPayCompetitionFee: (amountNok: number) => boolean;
+  onAwardCompetitionPayout: (amountNok: number) => void;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
   onEnsureZeroing: (
@@ -130,6 +134,9 @@ export function ShootingRange({
   dopeCard,
   weather,
   customsMoaDelta = 0,
+  balance,
+  onPayCompetitionFee,
+  onAwardCompetitionPayout,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -142,6 +149,8 @@ export function ShootingRange({
   onLeave,
 }: ShootingRangeProps) {
   const [view, setView] = useState<"range" | "shotlog" | "dope">("range");
+  const [lane, setLane] = useState<"zeroing" | "competitions">("zeroing");
+  const [compId, setCompId] = useState<"lobby" | "moa-std">("lobby");
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
@@ -850,6 +859,116 @@ export function ShootingRange({
     );
   }
 
+  const laneTabs = (
+    <div className="range-lane-tabs" role="tablist" aria-label="Skytebane">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={lane === "zeroing"}
+        className={
+          lane === "zeroing" ? "range-lane-tab is-active" : "range-lane-tab"
+        }
+        onClick={() => {
+          setLane("zeroing");
+          setCompId("lobby");
+        }}
+      >
+        Zeroing
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={lane === "competitions"}
+        className={
+          lane === "competitions"
+            ? "range-lane-tab is-active"
+            : "range-lane-tab"
+        }
+        onClick={() => setLane("competitions")}
+      >
+        Competitions
+      </button>
+    </div>
+  );
+
+  if (lane === "competitions") {
+    if (compId === "moa-std") {
+      return (
+        <div className="shooting-range">
+          <LocationNav
+            onBackToTown={onLeave}
+            hint="MOA-konkurranse — 10 skudd, worst shot teller"
+          />
+          {laneTabs}
+          <MoaCompetitionView
+            balance={balance}
+            kitItems={kitItems}
+            inventory={inventory}
+            ammoAffinities={ammoAffinities}
+            zeroingProfiles={zeroingProfiles}
+            weather={weather}
+            customsMoaDelta={customsMoaDelta}
+            musicEnabled={musicEnabled}
+            onAffinitiesChange={onAffinitiesChange}
+            onConsumeAmmo={onConsumeAmmo}
+            onEnsureZeroing={onEnsureZeroing}
+            onPayEntryFee={onPayCompetitionFee}
+            onAwardPayout={onAwardCompetitionPayout}
+            onBack={() => setCompId("lobby")}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="shooting-range">
+        <LocationNav
+          onBackToTown={onLeave}
+          hint="Entre konkurranser og tjen penger"
+        />
+        {laneTabs}
+        <header className="shop-header">
+          <p className="intro-line intro-gift">Competitions</p>
+          <p className="shop-row-note">
+            Saldo {balance.toLocaleString("nb-NO")} kr
+          </p>
+        </header>
+        <ul className="moa-comp-event-list">
+          <li className="moa-comp-event">
+            <div className="moa-comp-event-main">
+              <span className="moa-comp-event-title">MOA-konkurranse · STD</span>
+              <span className="moa-comp-event-meta">
+                100 m · 10 blink · score = worst shot · start 100 kr
+              </span>
+            </div>
+            <button
+              type="button"
+              className="intro-button"
+              disabled={!ready}
+              onClick={() => setCompId("moa-std")}
+            >
+              Entre
+            </button>
+          </li>
+        </ul>
+        {!ready ? (
+          <p className="shop-row-note">
+            Trenger rifle, scope og ammo i kit for å delta.
+          </p>
+        ) : null}
+        <div className="range-actions">
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={onLeave}
+          >
+            Ferdig
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!ready) {
     return (
       <div className="shooting-range">
@@ -922,8 +1041,10 @@ export function ShootingRange({
         hint="Velg avstand + ammo · dra zoom-ringen (kl. 8→12→4) · F / Space-avtrekk"
       />
 
+      {laneTabs}
+
       <header className="shop-header">
-        <p className="intro-line intro-gift">Shooting Range</p>
+        <p className="intro-line intro-gift">Shooting Range — Zeroing</p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name}
           {" · "}

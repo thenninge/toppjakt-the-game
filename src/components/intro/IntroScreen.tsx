@@ -677,15 +677,25 @@ export function IntroScreen() {
           }
         >
           {phase === "hunt" && huntHud ? (
-            <p
-              className={
-                huntHud.isDark
-                  ? "intro-header-clock hunt-clock is-dark"
-                  : "intro-header-clock hunt-clock"
-              }
-            >
-              Kl {formatHuntClock(huntHud.clockMinutes)}
-            </p>
+            <div className="intro-header-clock-stack">
+              <p
+                className={
+                  huntHud.isDark
+                    ? "intro-header-clock hunt-clock is-dark"
+                    : "intro-header-clock hunt-clock"
+                }
+              >
+                Kl {formatHuntClock(huntHud.clockMinutes)}
+              </p>
+              <p className="intro-header-distance">
+                Distance travelled:{" "}
+                {(huntHud.distanceTravelledM ?? 0) >= 1000
+                  ? `${((huntHud.distanceTravelledM ?? 0) / 1000).toFixed(
+                      (huntHud.distanceTravelledM ?? 0) % 1000 === 0 ? 0 : 1,
+                    )} km`
+                  : `${huntHud.distanceTravelledM ?? 0} m`}
+              </p>
+            </div>
           ) : phase === "hunt" ? (
             <span className="intro-header-side" aria-hidden />
           ) : null}
@@ -909,6 +919,23 @@ export function IntroScreen() {
             dopeCard={stats.dopeCard}
             weather={weather}
             customsMoaDelta={customsBeddingMoaDelta(stats.customsMods)}
+            balance={stats.balance}
+            onPayCompetitionFee={(amountNok) => {
+              let paid = false;
+              setStats((prev) => {
+                if (prev.balance < amountNok) return prev;
+                paid = true;
+                return { ...prev, balance: prev.balance - amountNok };
+              });
+              return paid;
+            }}
+            onAwardCompetitionPayout={(amountNok) => {
+              if (amountNok <= 0) return;
+              setStats((prev) => ({
+                ...prev,
+                balance: prev.balance + amountNok,
+              }));
+            }}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))
             }

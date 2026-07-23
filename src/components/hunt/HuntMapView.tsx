@@ -164,6 +164,8 @@ import type { CellPoint } from "@/lib/aware/cellGeometry";
 export type HuntHudStatus = {
   clockMinutes: number;
   isDark: boolean;
+  /** Cumulative map travel this hunt (meters). */
+  distanceTravelledM: number;
   /** Remaining mental stamina 0–1 (1 = fresh). */
   mentalStamina: number;
   /** Remaining physical stamina 0–1 (1 = fresh). */
@@ -358,6 +360,8 @@ function staminaLeft(fatigue: number): number {
 
 /** Keep 70% of current mental stamina (= 30% setback). */
 const ETTERSOK_ABANDON_MENTAL_KEEP = 0.7;
+/** Finding a shot bird restores 33 percentage points of mind (= −0.33 fatigue). */
+const FIND_BIRD_MIND_GAIN = 0.33;
 
 function birdNameNb(species: string | undefined): string {
   return species === "orrhane" ? "orrhane" : "tiur";
@@ -393,6 +397,7 @@ export function HuntMapView({
   );
   const clockSecondsRef = useRef(HUNT_DAY_START_MINUTES * 60);
   const [clockMinutes, setClockMinutes] = useState(HUNT_DAY_START_MINUTES);
+  const [distanceTravelledM, setDistanceTravelledM] = useState(0);
   const [mentalFatigue, setMentalFatigue] = useState(0);
   const [physicalFatigue, setPhysicalFatigue] = useState(0);
   const [selected, setSelected] = useState<HuntGridCell | null>(null);
@@ -616,6 +621,7 @@ export function HuntMapView({
     setPos({ ...map.start });
     clockSecondsRef.current = HUNT_DAY_START_MINUTES * 60;
     setClockMinutes(HUNT_DAY_START_MINUTES);
+    setDistanceTravelledM(0);
     setMentalFatigue(0);
     setPhysicalFatigue(0);
     setSelected(null);
@@ -844,6 +850,7 @@ export function HuntMapView({
     onHudChange?.({
       clockMinutes,
       isDark: isHuntDark(clockMinutes),
+      distanceTravelledM,
       mentalStamina: staminaLeft(mentalFatigue),
       physicalStamina: staminaLeft(physicalFatigue),
       thermalBattery: hasThermal
@@ -864,6 +871,7 @@ export function HuntMapView({
     });
   }, [
     clockMinutes,
+    distanceTravelledM,
     mentalFatigue,
     physicalFatigue,
     thermalBatteryGameSec,
@@ -1089,6 +1097,9 @@ export function HuntMapView({
     if (!walkSession) return;
     const usedPace = getHuntPace(walkSession.paceId);
     advanceClockMinutes(walkSession.minutes);
+    setDistanceTravelledM(
+      (d) => d + walkSession.path.length * CELL_WIDTH_M,
+    );
     const nextFatigue = fatigueAfterPath(walkSession.path, usedPace);
     setMentalFatigue(nextFatigue.mental);
     setPhysicalFatigue(nextFatigue.physical);
@@ -2685,6 +2696,7 @@ export function HuntMapView({
           awareSession.ettersokPairId ? abortAware : backToSpotFromAware
         }
         onPairFound={(pair) => {
+          setMentalFatigue((m) => clampFatigue(m - FIND_BIRD_MIND_GAIN));
           setFindReveal({ imageSrc: pickFunnImage(), pair });
         }}
       />

@@ -21,10 +21,10 @@ function luminanceToThermal(r: number, g: number, b: number): number {
 }
 
 /**
- * Peak bird heat after ~40% intensity cut vs pure white
- * (255 × 0.6 ≈ 153) — blends more with the gray terrain.
+ * Peak bird heat after intensity cut vs pure white.
+ * Was 0.6 (~40% cut); +10% visibility → 0.66.
  */
-const THERMAL_BIRD_GRAY = Math.round(255 * 0.6);
+const THERMAL_BIRD_GRAY = Math.round(255 * 0.66);
 
 /**
  * Pixelated thermal background + bird silhouettes (same topp shape as binos),

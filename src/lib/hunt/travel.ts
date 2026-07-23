@@ -6,11 +6,11 @@ import type { HuntPace } from "@/lib/hunt/pace";
 /** Physical effort on a cell: 1 (lett) … 5 (tungt). */
 export type EffortScore = 1 | 2 | 3 | 4 | 5;
 
-/** One grid cell = 500 m. Effort 1 → 10 min, effort 5 → 30 min at speed 1. */
+/** One grid cell = 500 m. Effort 1 → 6.4 min, effort 5 → 19.2 min at speed 1. */
 export const CELL_WIDTH_M = 500;
 /** Base travel minutes at speed 1 (effort 1 → min, effort 5 → max). */
-export const EFFORT_MIN_MINUTES = 8;
-export const EFFORT_MAX_MINUTES = 24;
+export const EFFORT_MIN_MINUTES = 6.4;
+export const EFFORT_MAX_MINUTES = 19.2;
 
 export const HUNT_DAY_START_MINUTES = 8 * 60; // 08:00
 export const HUNT_DARK_MINUTES = 17 * 60; // 17:00 — skuddlys over
