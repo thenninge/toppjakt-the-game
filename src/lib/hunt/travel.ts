@@ -59,6 +59,20 @@ export function ettersokMinutesForSearch(
   return n * ETTERSOK_MINUTES_PER_TRACK_POINT + minutesForDistanceM(distanceM);
 }
 
+/**
+ * Meters added to the hunt distance counter for one ettersøk search.
+ * Shot distance + equivalent meters for track-point time (5 min → 50 m).
+ */
+export function ettersokSearchDistanceM(
+  trackPointCount: number,
+  distanceM: number,
+): number {
+  const n = Math.max(0, Math.floor(trackPointCount));
+  const fromPoints =
+    n * (ETTERSOK_MINUTES_PER_TRACK_POINT / MINUTES_PER_100M) * 100;
+  return fromPoints + Math.max(0, distanceM);
+}
+
 /** @deprecated Use {@link ettersokMinutesForSearch} with distance. */
 export function ettersokMinutesForTrackPoints(pointCount: number): number {
   return ettersokMinutesForSearch(pointCount, 0);
@@ -310,6 +324,25 @@ export function fatigueFromStep(
   return {
     mental: pace.mentalStrain * 0.035 * effort,
     physical: pace.physicalStrain * 0.045 * effort * load,
+  };
+}
+
+/**
+ * Fatigue for Track ettersøk / tree recovery — scaled like walking
+ * reference effort-3 cells for the same number of game minutes.
+ */
+export function fatigueFromEttersokMinutes(
+  minutes: number,
+  pace: HuntPace,
+  fatigueLoadFactor = 1,
+): { mental: number; physical: number } {
+  const refEffort = 3 as EffortScore;
+  const refMin = baseMinutesForEffort(refEffort);
+  const cellsEquiv = Math.max(0, minutes) / Math.max(1, refMin);
+  const step = fatigueFromStep(refEffort, pace, fatigueLoadFactor);
+  return {
+    mental: step.mental * cellsEquiv,
+    physical: step.physical * cellsEquiv,
   };
 }
 

@@ -120,6 +120,12 @@ function spotTimeFactor(mode: SpotMode, thermalTimeFactor: number): number {
 
 /** Minimum click/tap target as % of spot frame (sprites can be ~1% wide). */
 const BIRD_HIT_MIN_PCT = 4.5;
+/**
+ * Floor for drawn sprite width (% of landscape). Gul band (~300–500 m) is
+ * ~0.45–0.75% by 1/range — easy to lose in the photo / look “behind” it.
+ * LRF / distance still use the true placement.widthPct.
+ */
+const BIRD_SPRITE_MIN_PCT = 0.85;
 
 function BirdOverlay({
   placement,
@@ -130,8 +136,9 @@ function BirdOverlay({
   onSelect?: (placement: BirdVisualPlacement) => void;
 }) {
   const selectable = !!onSelect;
-  const hitPct = Math.max(placement.widthPct, BIRD_HIT_MIN_PCT);
-  const spriteScale = (placement.widthPct / hitPct) * 100;
+  const drawPct = Math.max(placement.widthPct, BIRD_SPRITE_MIN_PCT);
+  const hitPct = Math.max(drawPct, BIRD_HIT_MIN_PCT);
+  const spriteScale = (drawPct / hitPct) * 100;
   const flip = placement.flip ? " scaleX(-1)" : "";
 
   if (!selectable) {
@@ -144,7 +151,7 @@ function BirdOverlay({
         style={{
           left: `${placement.x}%`,
           top: `${placement.y}%`,
-          width: `${placement.widthPct}%`,
+          width: `${drawPct}%`,
           transform: `translate(-50%, -50%)${flip}`,
         }}
       />
@@ -595,9 +602,11 @@ export function SpotView({
   const lookedMin = Math.floor(lookedGameSec / 60);
   const lookedSec = Math.floor(lookedGameSec % 60);
 
-  const visibleBirds = birdPlacements.filter((p) =>
-    visibleInSpotMode(p.distanceM, mode),
-  );
+  const visibleBirds = birdPlacements
+    .filter((p) => visibleInSpotMode(p.distanceM, mode))
+    // Far first → nearer sprites paint on top when perches overlap.
+    .slice()
+    .sort((a, b) => b.distanceM - a.distanceM);
   /** Never mount bird sprites until the landscape has painted. */
   const birdsOnFrame = landscapeReady ? visibleBirds : [];
 

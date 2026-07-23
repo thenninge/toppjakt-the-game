@@ -194,11 +194,11 @@ export function StatsFrame({
         </div>
         <div className="stats-item">
           <dt>Orrhaner</dt>
-          <dd>{stats.orrhaner}</dd>
+          <dd>{stats.lifetimeOrrhaner}</dd>
         </div>
         <div className="stats-item">
           <dt>Tiur</dt>
-          <dd>{stats.tiur}</dd>
+          <dd>{stats.lifetimeTiur}</dd>
         </div>
         <div className="stats-item">
           <dt>Max Range</dt>

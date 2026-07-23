@@ -25,6 +25,7 @@ import {
   estimatedBirdChancePct,
   describeBirdChance,
   fatigueFromStep,
+  fatigueFromEttersokMinutes,
   formatHuntClock,
   getCellEffort,
   HUNT_DAY_START_MINUTES,
@@ -126,7 +127,10 @@ import {
 } from "@/lib/hunt/shoot";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { pickShotVideoForResult } from "@/lib/hunt/vids";
-import { lrfOpticalMagnification } from "@/lib/optics/spec";
+import {
+  lrfOpticalMagnification,
+  opticAperturePercent,
+} from "@/lib/optics/spec";
 import {
   DEFAULT_BINOS_MAGNIFICATION,
   SPOT_TIME_FACTOR_THERMAL,
@@ -199,6 +203,8 @@ type HuntMapViewProps = {
     scopeId: string,
     ammoId: string,
   ) => ZeroingProfile;
+  /** Persist DOPE after hunt hits. */
+  onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
   onConsumeFood: (itemId: string) => boolean;
   onBirdHarvested: (carcass: GameCarcass) => void;
   carcasses: GameCarcass[];
@@ -313,6 +319,11 @@ type AwareSession = {
   returnNerve?: number;
   /** Camcorder was already deployed this encounter. */
   returnCamcorderActive?: boolean;
+  /**
+   * Post-shot: register skuddpar while bird aim marker is still visible
+   * (60 s window). Shoot tab only — no Klar til skudd.
+   */
+  postShotSkuddpar?: boolean;
 };
 
 type EatSession = {
@@ -349,6 +360,37 @@ type PendingPostShot = {
   resultKind: HuntShotResult["kind"];
 };
 
+/**
+ * After a contact shot without cam/pre-saved skuddpar: bird aim stays on
+ * Aware for 60 real seconds so the player can register stand→tree via Shoot.
+ */
+type PostShotGhost = {
+  expiresAtMs: number;
+  imageSrc: string;
+  bird: BirdVisualPlacement;
+  stand: CellPoint;
+  /** Aim / tree position (shown on Aware). */
+  birdAim: CellPoint;
+  /** True land / fall (hidden until Track). */
+  impact: CellPoint;
+  bearingDeg: number;
+  trueDistanceM: number;
+  measuredDistanceM: number;
+  ballisticHold: BallisticHoldSolution | null;
+  crosswindMs: number;
+  densityRatio: number;
+  rangeSource: "lrf" | "estimated";
+  camcorderActive: boolean;
+  harvestDraft: BirdHarvestInput;
+  hitFasit: ShotHitFasit;
+  fleeObservation?: ShotPair["fleeObservation"];
+  resultKind: HuntShotResult["kind"];
+  recoveryOnly: boolean;
+};
+
+/** Real-time window to register skuddpar after a shot. */
+const POST_SHOT_SKUDDPAR_WINDOW_MS = 60_000;
+
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
@@ -380,6 +422,7 @@ export function HuntMapView({
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
+  onAddDope,
   onConsumeFood,
   onBirdHarvested,
   carcasses,
@@ -448,6 +491,11 @@ export function HuntMapView({
   /** After video: choose «fortsett spotting» vs Track / ettersøk. */
   const [pendingPostShot, setPendingPostShot] =
     useState<PendingPostShot | null>(null);
+  /** 60 s real-time window to register skuddpar after a contact shot. */
+  const [postShotGhost, setPostShotGhost] = useState<PostShotGhost | null>(
+    null,
+  );
+  const [postShotGhostSecLeft, setPostShotGhostSecLeft] = useState(0);
   const [eatSession, setEatSession] = useState<EatSession | null>(null);
   const [forcedRest, setForcedRest] = useState<ForcedRestSession | null>(null);
   const [forcedCamp, setForcedCamp] = useState<ForcedCampPrompt | null>(null);
@@ -462,8 +510,10 @@ export function HuntMapView({
   const midnightHandledRef = useRef(false);
   /** Extreme caution: spotted bird before it spotted you. */
   const [prespotReveal, setPrespotReveal] = useState<{
+    /** Atmosphere splash (not the spot landscape). */
     imageSrc: string;
-    focusBirdId: string;
+    /** Spot session already bound to the arrival cell — open as-is. */
+    spot: SpotSession;
   } | null>(null);
   const [birds, setBirds] = useState<HuntBird[]>(() =>
     map
@@ -494,6 +544,11 @@ export function HuntMapView({
   const binosMagnification = binoItem
     ? lrfOpticalMagnification(binoItem)
     : DEFAULT_BINOS_MAGNIFICATION;
+  /** Same world zoom SpotView uses for binos (mag × aperture), for pan-to-bird. */
+  const binosWorldZoom = Math.max(
+    1,
+    binosMagnification * (opticAperturePercent(binoItem?.priceNok ?? 0) / 100),
+  );
   const thermalItem = useMemo(
     () => kitItems.find(isThermalItem) ?? null,
     [kitItems],
@@ -631,6 +686,8 @@ export function HuntMapView({
     setShootSession(null);
     setAwareSession(null);
     setPendingPostShot(null);
+    setPostShotGhost(null);
+    setPostShotGhostSecLeft(0);
     setSpotLayoutByCell({});
     setBirdMapContacts({});
     setBirdEncounter(null);
@@ -659,6 +716,9 @@ export function HuntMapView({
   useEffect(() => {
     saveShotPairsForTerrain(terrainId, shotPairs);
   }, [terrainId, shotPairs]);
+
+  const postShotGhostRef = useRef(postShotGhost);
+  postShotGhostRef.current = postShotGhost;
 
   function leaveHunt(opts?: {
     skipJaktkortConsume?: boolean;
@@ -734,6 +794,8 @@ export function HuntMapView({
     latentSpotNerveRef.current = {};
     setFlushQueue([]);
     setPendingPostShot(null);
+    setPostShotGhost(null);
+    setPostShotGhostSecLeft(0);
     setEndexReveal(false);
     setForcedCamp(null);
     setSelected(null);
@@ -1009,6 +1071,25 @@ export function HuntMapView({
     return true;
   }
 
+  /** Body/mind + distance from Track ettersøk / tree recovery. */
+  function applyEttersokEffort(opts: { minutes: number; distanceM: number }) {
+    const dist = Math.max(0, opts.distanceM);
+    if (dist > 0) {
+      setDistanceTravelledM((d) => d + dist);
+    }
+    const gain = fatigueFromEttersokMinutes(
+      opts.minutes,
+      pace,
+      packLoad.fatigueLoadFactor,
+    );
+    setMentalFatigue((m) => clampFatigue(m + gain.mental));
+    setPhysicalFatigue((p) => {
+      const next = clampFatigue(p + gain.physical);
+      triggerForcedRestIfNeeded(next);
+      return next;
+    });
+  }
+
   function onCellClick(cell: HuntGridCell) {
     if (
       walkSession ||
@@ -1103,10 +1184,11 @@ export function HuntMapView({
     const nextFatigue = fatigueAfterPath(walkSession.path, usedPace);
     setMentalFatigue(nextFatigue.mental);
     setPhysicalFatigue(nextFatigue.physical);
-    setPos({ ...walkSession.to });
+    const arrivedAt = { ...walkSession.to };
+    setPos(arrivedAt);
     const nowMins = Math.floor(clockSecondsRef.current / 60);
     const nowDark = isHuntDark(nowMins);
-    const arrivedParking = isAtParking(walkSession.to, activeMap);
+    const arrivedParking = isAtParking(arrivedAt, activeMap);
 
     // After skuddlys: no flush events / «fuglen flyr» while racing to the car.
     const flush = nowDark
@@ -1178,7 +1260,11 @@ export function HuntMapView({
       hasBinos &&
       Math.random() < EXTREME_CAUTION_PRESPOT_CHANCE
     ) {
-      const prepared = prepareSpotAtPos({ birdList: flush.birds });
+      // Must use arrivedAt — setPos is async; bare `pos` is still the cell we left.
+      const prepared = prepareSpotAtPos({
+        birdList: flush.birds,
+        cell: arrivedAt,
+      });
       if (prepared && prepared.birdPlacements.length > 0) {
         const focus =
           prepared.birdPlacements[
@@ -1187,7 +1273,11 @@ export function HuntMapView({
         pendingForcedRestRef.current = nextFatigue.physical >= 1;
         setPrespotReveal({
           imageSrc: pickPrespottedImage(),
-          focusBirdId: focus.birdId,
+          spot: {
+            ...prepared,
+            initialMode: "binos",
+            initialPan: panToCenterOnBird(focus, binosWorldZoom),
+          },
         });
         return;
       }
@@ -1270,11 +1360,14 @@ export function HuntMapView({
   function prepareSpotAtPos(opts?: {
     reuseImageSrc?: string | null;
     birdList?: HuntBird[];
+    /** Explicit cell — required when called in the same tick as setPos (async). */
+    cell?: HuntGridCell;
   }): SpotSession | null {
     if (!canHuntAtTime(clockMinutes)) return null;
 
     const birdList = opts?.birdList ?? birds;
-    const cellKey = `${pos.row},${pos.col}`;
+    const at = opts?.cell ?? pos;
+    const cellKey = `${at.row},${at.col}`;
     const marked = spotImagesWithPerches();
     const isUsableSpotSrc = (src: string) =>
       marked.length === 0 ||
@@ -1294,29 +1387,32 @@ export function HuntMapView({
         ? marked[Math.floor(Math.random() * marked.length)]!
         : pickSpotImage());
 
-    const here = birdsInCell(birdList, pos);
+    const here = birdsInCell(birdList, at);
     const hereIds = new Set(here.map((b) => b.id));
 
     if (cachedOk && cachedOk.imageSrc === imageSrc) {
       const sticky = cachedOk.placements.filter((p) => hereIds.has(p.birdId));
-      const viewBearingDeg = Number.isFinite(cachedOk.viewBearingDeg)
-        ? cachedOk.viewBearingDeg
-        : rollSpotViewBearingDeg();
-      setSpotLayoutByCell((prev) => ({
-        ...prev,
-        [cellKey]: { imageSrc, placements: sticky, viewBearingDeg },
-      }));
-      const syncedBirds = birdList.map((b) => {
-        const p = sticky.find((x) => x.birdId === b.id);
-        return p ? { ...b, distanceM: p.distanceM } : b;
-      });
-      setBirds(syncedBirds);
-      seedLatentSpotNerve(sticky, syncedBirds);
-      return { imageSrc, birdPlacements: sticky, viewBearingDeg };
+      // Stale cache (birds flushed / replaced) with live birds here → rebind.
+      if (sticky.length > 0 || here.length === 0) {
+        const viewBearingDeg = Number.isFinite(cachedOk.viewBearingDeg)
+          ? cachedOk.viewBearingDeg
+          : rollSpotViewBearingDeg();
+        setSpotLayoutByCell((prev) => ({
+          ...prev,
+          [cellKey]: { imageSrc, placements: sticky, viewBearingDeg },
+        }));
+        const syncedBirds = birdList.map((b) => {
+          const p = sticky.find((x) => x.birdId === b.id);
+          return p ? { ...b, distanceM: p.distanceM } : b;
+        });
+        setBirds(syncedBirds);
+        seedLatentSpotNerve(sticky, syncedBirds);
+        return { imageSrc, birdPlacements: sticky, viewBearingDeg };
+      }
     }
 
     const viewBearingDeg = rollSpotViewBearingDeg();
-    const bound = bindBirdsToSpotImage(birdList, pos, imageSrc, {
+    const bound = bindBirdsToSpotImage(birdList, at, imageSrc, {
       fillAllPerches: false,
     });
     setSpotLayoutByCell((prev) => ({
@@ -1355,7 +1451,7 @@ export function HuntMapView({
       const focus =
         prepared.birdPlacements.find((p) => p.birdId === opts.focusBirdId) ??
         prepared.birdPlacements[0]!;
-      initialPan = panToCenterOnBird(focus, binosMagnification);
+      initialPan = panToCenterOnBird(focus, binosWorldZoom);
       initialMode = initialMode ?? "binos";
     }
 
@@ -1368,12 +1464,12 @@ export function HuntMapView({
 
   function finishPrespotReveal() {
     if (!prespotReveal) return;
-    const focusBirdId = prespotReveal.focusBirdId;
+    const spot = prespotReveal.spot;
     setPrespotReveal(null);
     setLog(
       "Du går forsiktig og observant og ser fuglen før den ser deg — kikkert klar.",
     );
-    beginSpot({ initialMode: "binos", focusBirdId });
+    setSpotSession(spot);
   }
 
   function finishSpot(info: { mode: SpotMode; gameSeconds: number }) {
@@ -1799,9 +1895,167 @@ export function HuntMapView({
     if (!pendingPostShot?.aware) return;
     const next = pendingPostShot.aware;
     setPendingPostShot(null);
+    setPostShotGhost(null);
     setAwareSession(next);
     setPanel("arrived");
   }
+
+  /** Fallback uncommitted pair when the 60 s register window expires. */
+  function createFallbackPairFromGhost(g: PostShotGhost): ShotPair {
+    const bearingDeg = SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG;
+    const distanceM = SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M;
+    const target = impactFromShot({
+      stand: g.stand,
+      bearingDeg,
+      distanceM,
+    });
+    return {
+      id: `pair-${Date.now()}`,
+      atMs: Date.now(),
+      cell: { ...pos },
+      cellLabel: cellLabel(pos),
+      stand: g.stand,
+      target,
+      impact: g.impact,
+      distanceM,
+      bearingDeg,
+      resultKind: g.resultKind,
+      trackPoints: [],
+      found: null,
+      harvestDraft: g.harvestDraft,
+      fleeObservation: g.fleeObservation,
+      hitFasit: g.hitFasit,
+      skuddparCommitted: false,
+    };
+  }
+
+  function awareSessionFromGhost(
+    g: PostShotGhost,
+    pairId: string | null,
+  ): AwareSession {
+    return {
+      imageSrc: g.imageSrc,
+      bird: g.bird,
+      trueDistanceM: g.trueDistanceM,
+      measuredDistanceM: g.measuredDistanceM,
+      ballisticHold: g.ballisticHold,
+      crosswindMs: g.crosswindMs,
+      densityRatio: g.densityRatio,
+      birdBearingDeg: g.bearingDeg,
+      hunterPos: g.stand,
+      birdPos: pairId ? g.impact : g.birdAim,
+      rangeSource: g.rangeSource,
+      ettersokPairId: pairId,
+      recoveryOnly: g.recoveryOnly,
+      returnCamcorderActive: g.camcorderActive,
+      postShotSkuddpar: !pairId,
+    };
+  }
+
+  /** 60 s window timed out — create default pair so Track still works. */
+  function expirePostShotGhost() {
+    const g = postShotGhostRef.current;
+    if (!g) return;
+    const pair = createFallbackPairFromGhost(g);
+    setShotPairs((prev) => [pair, ...prev]);
+    setPostShotGhost(null);
+    setPostShotGhostSecLeft(0);
+    setPendingPostShot((prev) =>
+      prev
+        ? {
+            ...prev,
+            aware: awareSessionFromGhost(g, pair.id),
+          }
+        : {
+            aware: awareSessionFromGhost(g, pair.id),
+            stayedCount: 0,
+            flushedCount: 0,
+            resultKind: g.resultKind,
+          },
+    );
+    setLog(
+      "Skuddpar-vinduet er ute — standard skuddpar lagret. Åpne Hent/søk, eller lagre bedre skuddpar neste gang før tiden går ut.",
+    );
+    // If still in Aware registering, kick back to map.
+    setAwareSession((prev) => (prev?.postShotSkuddpar ? null : prev));
+  }
+
+  /** Open Aware with bird aim marker to register skuddpar (Shoot). */
+  function openPostShotSkuddparAware() {
+    const g = postShotGhost;
+    if (!g || Date.now() >= g.expiresAtMs) {
+      expirePostShotGhost();
+      return;
+    }
+    setAwareSession(awareSessionFromGhost(g, null));
+    setPanel("arrived");
+    setLog(
+      `Registrer skuddpar — fugleposisjon synlig i ${Math.ceil((g.expiresAtMs - Date.now()) / 1000)} s. Shoot → stand → tre.`,
+    );
+  }
+
+  function onPostShotSkuddparSaved(draft: {
+    stand: CellPoint;
+    target: CellPoint;
+    distanceM: number;
+    bearingDeg: number;
+  }) {
+    const g = postShotGhostRef.current;
+    if (!g) return;
+    const pair: ShotPair = {
+      id: `pair-${Date.now()}`,
+      atMs: Date.now(),
+      cell: { ...pos },
+      cellLabel: cellLabel(pos),
+      stand: draft.stand,
+      target: draft.target,
+      impact: g.impact,
+      distanceM: draft.distanceM,
+      bearingDeg: draft.bearingDeg,
+      resultKind: g.resultKind,
+      trackPoints: [],
+      found: null,
+      harvestDraft: g.harvestDraft,
+      fleeObservation: g.fleeObservation,
+      hitFasit: g.hitFasit,
+      skuddparCommitted: true,
+    };
+    setShotPairs((prev) => [pair, ...prev]);
+    setPostShotGhost(null);
+    setPostShotGhostSecLeft(0);
+    setPendingPostShot(null);
+    setAwareSession({
+      ...awareSessionFromGhost(g, pair.id),
+      postShotSkuddpar: false,
+      birdPos: g.impact,
+      ettersokPairId: pair.id,
+    });
+    setLog(
+      `Skuddpar lagret: ${pair.distanceM} m / ${Math.round(pair.bearingDeg)}° — fortsett i Track (Hent/søk).`,
+    );
+  }
+
+  // Post-shot skuddpar window countdown (real time).
+  useEffect(() => {
+    if (!postShotGhost) {
+      setPostShotGhostSecLeft(0);
+      return;
+    }
+    function tick() {
+      const g = postShotGhostRef.current;
+      if (!g) return;
+      const leftMs = g.expiresAtMs - Date.now();
+      if (leftMs <= 0) {
+        expirePostShotGhost();
+        return;
+      }
+      setPostShotGhostSecLeft(Math.ceil(leftMs / 1000));
+    }
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postShotGhost]);
 
   /** Unfinished kill/ettersøk pairs — still need Track (hent / søk). */
   const unfinishedShotPairs = useMemo(
@@ -1871,8 +2125,13 @@ export function HuntMapView({
     const stayed = pendingPostShot.stayedCount;
     const reuseImageSrc =
       pendingPostShot.aware?.imageSrc ??
+      postShotGhost?.imageSrc ??
       spotLayoutByCell[`${pos.row},${pos.col}`]?.imageSrc ??
       null;
+    if (postShotGhost) {
+      // Spotting without registering → fallback pair so Track still works later.
+      expirePostShotGhost();
+    }
     setPendingPostShot(null);
     setLog(
       stayed > 0
@@ -2024,31 +2283,10 @@ export function HuntMapView({
       );
       pairNote = " Skuddpar fra Shoot er koblet til skuddet.";
     } else if (result.kind !== "miss") {
-      // No cam / no pre-save: still allow Track for THIS bird until you shoot another.
-      const bearingDeg = SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG;
-      const distanceM = SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M;
-      const target = impactFromShot({ stand, bearingDeg, distanceM });
-      pair = {
-        id: `pair-${Date.now()}`,
-        atMs: Date.now(),
-        cell: { ...pos },
-        cellLabel: cellLabel(pos),
-        stand,
-        target,
-        impact,
-        distanceM,
-        bearingDeg,
-        resultKind: result.kind,
-        trackPoints: [],
-        found: null,
-        harvestDraft,
-        fleeObservation,
-        hitFasit,
-        skuddparCommitted: false,
-      };
-      setShotPairs((prev) => [pair!, ...prev]);
+      // No cam / no pre-save: 60 s window to register skuddpar on Aware.
+      pair = null;
       pairNote =
-        " Ingen lagret skuddpar — du kan fortsatt hente/søke, men skyt ikke flere før du er ferdig (eller lagre skuddpar / bruk cam).";
+        " Registrer skuddpar i Aware innen 60 s (fugleposisjonen er synlig), ellers lagres et standard skuddpar.";
     }
 
     const clip = pickShotVideoForResult(result.kind);
@@ -2123,6 +2361,35 @@ export function HuntMapView({
     if (isContact) {
       const recoveryOnly =
         result.kind === "instant_kill" || result.kind === "vital_kill";
+      const needsSkuddparWindow = !pair;
+      if (needsSkuddparWindow) {
+        setPostShotGhost({
+          expiresAtMs: Date.now() + POST_SHOT_SKUDDPAR_WINDOW_MS,
+          imageSrc: shootSession.imageSrc,
+          bird: shootSession.bird,
+          stand,
+          birdAim: birdPos,
+          impact,
+          bearingDeg: shootSession.bearingDeg,
+          trueDistanceM: shootSession.trueDistanceM,
+          measuredDistanceM: shootSession.measuredDistanceM,
+          ballisticHold: shootSession.ballisticHold,
+          crosswindMs: shootSession.crosswindMs,
+          densityRatio: shootSession.densityRatio,
+          rangeSource: shootSession.rangeSource,
+          camcorderActive: camcorderOn,
+          harvestDraft,
+          hitFasit,
+          fleeObservation,
+          resultKind: result.kind,
+          recoveryOnly,
+        });
+        setPostShotGhostSecLeft(
+          Math.ceil(POST_SHOT_SKUDDPAR_WINDOW_MS / 1000),
+        );
+      } else {
+        setPostShotGhost(null);
+      }
       const aware: AwareSession | null = pair
         ? {
             imageSrc: shootSession.imageSrc,
@@ -2614,6 +2881,7 @@ export function HuntMapView({
         onAffinitiesChange={onAffinitiesChange}
         onConsumeAmmo={onConsumeAmmo}
         onEnsureZeroing={onEnsureZeroing}
+        onAddDope={onAddDope}
         onAbort={abortShoot}
         onBackToAware={returnToAwareFromShoot}
         onShotResult={onHuntShotResult}
@@ -2685,6 +2953,7 @@ export function HuntMapView({
         focusPairId={awareSession.ettersokPairId ?? null}
         onShotPairsChange={setShotPairs}
         onGameSeconds={addGameSeconds}
+        onEttersokEffort={applyEttersokEffort}
         onProceedToShoot={proceedFromAware}
         onBirdFlushed={onAwareBirdFlushed}
         onNerveChange={(nerve) => {
@@ -2695,10 +2964,30 @@ export function HuntMapView({
             return next;
           });
         }}
-        abortLabel={awareSession.ettersokPairId ? "Avbryt" : "Back to Spot"}
-        onAbort={
-          awareSession.ettersokPairId ? abortAware : backToSpotFromAware
+        abortLabel={
+          awareSession.postShotSkuddpar
+            ? "Tilbake til kart"
+            : awareSession.ettersokPairId
+              ? "Avbryt"
+              : "Back to Spot"
         }
+        onAbort={
+          awareSession.postShotSkuddpar
+            ? () => {
+                setAwareSession(null);
+                setLog(
+                  postShotGhost
+                    ? `Tilbake til kart — ${Math.max(0, Math.ceil((postShotGhost.expiresAtMs - Date.now()) / 1000))} s igjen til å registrere skuddpar.`
+                    : "Tilbake til kart.",
+                );
+              }
+            : awareSession.ettersokPairId
+              ? abortAware
+              : backToSpotFromAware
+        }
+        postShotSkuddparMode={!!awareSession.postShotSkuddpar}
+        postShotSkuddparSecLeft={postShotGhostSecLeft}
+        onPostShotSkuddparSaved={onPostShotSkuddparSaved}
         onPairFound={(pair) => {
           setMentalFatigue((m) => clampFatigue(m - FIND_BIRD_MIND_GAIN));
           setFindReveal({ imageSrc: pickFunnImage(), pair });
@@ -3022,10 +3311,21 @@ export function HuntMapView({
               {pendingPostShot ? (
                 <div className="hunt-side-actions hunt-side-actions-stack">
                   <p className="shop-row-note">
-                    {pendingPostShot.resultKind === "ettersok"
-                      ? "Ettersøk venter. Speid videre om du vil, eller åpne Hent/søk."
-                      : "Skuddpar lagret. Speid videre om noen ble sittende, eller åpne Hent/søk."}
+                    {postShotGhost
+                      ? `Fugleposisjon synlig i Aware i ${postShotGhostSecLeft} s — registrer skuddpar (Shoot) før tiden går ut.`
+                      : pendingPostShot.resultKind === "ettersok"
+                        ? "Ettersøk venter. Speid videre om du vil, eller åpne Hent/søk."
+                        : "Skuddpar lagret. Speid videre om noen ble sittende, eller åpne Hent/søk."}
                   </p>
+                  {postShotGhost ? (
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={openPostShotSkuddparAware}
+                    >
+                      Registrer skuddpar ({postShotGhostSecLeft} s)
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="intro-button"

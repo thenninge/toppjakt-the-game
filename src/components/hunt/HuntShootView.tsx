@@ -45,8 +45,12 @@ import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
   clampTurretMm,
+  dopeClicksToMmAt100,
   effectiveZeroOffsetMm,
   getInventoryQty,
+  mmAt100ToClicks,
+  formatDopeElevationClicks,
+  formatDopeWindageClicks,
   zeroingKey,
   type DopeCardEntry,
   type InventoryEntry,
@@ -108,6 +112,8 @@ type HuntShootViewProps = {
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
   dopeCard?: DopeCardEntry[];
+  /** Persist DOPE after a hit (rifle×ammo×distance upsert). */
+  onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -205,6 +211,7 @@ export function HuntShootView({
   ammoAffinities,
   zeroingProfiles,
   dopeCard = [],
+  onAddDope,
   customsMoaDelta = 0,
   onAffinitiesChange,
   onConsumeAmmo,
@@ -649,8 +656,29 @@ export function HuntShootView({
           : pullFactor < 0.7
             ? "Rykk i avtrekket · "
             : "Elendig avtrekk · ";
+    // Auto-DOPE on hit: snapshot what you dialed at measured range.
+    let dopeNote = "";
+    if (
+      onAddDope &&
+      rifle &&
+      scope &&
+      (kind === "instant_kill" ||
+        kind === "vital_kill" ||
+        kind === "ettersok")
+    ) {
+      onAddDope({
+        rifleId: rifle.id,
+        scopeId: scope.id,
+        ammoId: selectedAmmo.id,
+        ammoLabel: `${selectedAmmo.brand} ${selectedAmmo.name}`,
+        distanceM: Math.round(measuredDistanceM),
+        elevationClicks: mmAt100ToClicks(sessionZeroYMm),
+        windageClicks: mmAt100ToClicks(sessionZeroXMm),
+      });
+      dopeNote = ` · DOPE @ ${Math.round(measuredDistanceM)} m`;
+    }
     setStatus(
-      kind === "instant_kill"
+      (kind === "instant_kill"
         ? pullLabel + "Instant kill (grønn sone)!"
         : kind === "vital_kill"
           ? pullLabel + "Vitalt treff — fuglen faller."
@@ -658,8 +686,9 @@ export function HuntShootView({
             ? zone === "vital"
               ? pullLabel + "Vitalt treff, men trenger ettersøk…"
               : pullLabel + "Treff i kroppen — ettersøk."
-            : pullLabel + "Bom.",
+            : pullLabel + "Bom.") + dopeNote,
     );
+
     if (hasTriggercam) {
       setReplay(result);
     } else {
@@ -1118,6 +1147,23 @@ export function HuntShootView({
                   ? `${selectedAmmo.brand} ${selectedAmmo.name}`
                   : "Ammo"
               }
+              dopeDialDisabled={!!activeHold || fired}
+              onUseDope={(entry) => {
+                if (fired || activeHold) return;
+                setSessionZeroXMm(
+                  clampTurretMm(dopeClicksToMmAt100(entry.windageClicks)),
+                );
+                setSessionZeroYMm(
+                  clampTurretMm(dopeClicksToMmAt100(entry.elevationClicks)),
+                );
+                setStatus(
+                  `DOPE @ ${entry.distanceM} m dialt · elev ${formatDopeElevationClicks(entry.elevationClicks)}${
+                    entry.windageClicks
+                      ? ` · wind ${formatDopeWindageClicks(entry.windageClicks)}`
+                      : ""
+                  } · hold F · Space.`,
+                );
+              }}
             />
           }
           kestrelPanel={

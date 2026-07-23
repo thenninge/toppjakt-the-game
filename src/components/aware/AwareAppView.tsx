@@ -56,6 +56,7 @@ import {
   MINUTES_PER_100M,
   TREE_RECOVERY_MINUTES_PER_100M,
   ettersokMinutesForSearch,
+  ettersokSearchDistanceM,
   formatHuntClock,
   treeRecoveryMinutes,
 } from "@/lib/hunt/travel";
@@ -114,6 +115,14 @@ type AwareAppViewProps = {
   focusPairId?: string | null;
   onShotPairsChange: (pairs: ShotPair[]) => void;
   onGameSeconds: (sec: number) => void;
+  /**
+   * Track effort: body/mind fatigue + distance travelled for ettersøk /
+   * tree recovery (clock is still via onGameSeconds).
+   */
+  onEttersokEffort?: (opts: {
+    minutes: number;
+    distanceM: number;
+  }) => void;
   onProceedToShoot: (stance?: AwareShootStance) => void;
   onBirdFlushed: (nervousness: number) => void;
   /** Live nerve for global HUD BIRD bar (0–cap). */
@@ -123,6 +132,20 @@ type AwareAppViewProps = {
   onAbort: () => void;
   /** Called when a skuddpar is confirmed found (tree / ettersøk). */
   onPairFound?: (pair: ShotPair) => void;
+  /**
+   * Post-shot: bird already hit — register skuddpar while aim marker is up.
+   * Starts on Shoot tab; no Klar til skudd / nerve flush.
+   */
+  postShotSkuddparMode?: boolean;
+  /** Seconds left in the register window (HUD). */
+  postShotSkuddparSecLeft?: number;
+  /** Persist skuddpar after a post-shot Shoot registration. */
+  onPostShotSkuddparSaved?: (draft: {
+    stand: CellPoint;
+    target: CellPoint;
+    distanceM: number;
+    bearingDeg: number;
+  }) => void;
 };
 
 type MoveKeys = {
@@ -309,16 +332,20 @@ export function AwareAppView({
   focusPairId = null,
   onShotPairsChange,
   onGameSeconds,
+  onEttersokEffort,
   onProceedToShoot,
   onBirdFlushed,
   onNerveChange,
   abortLabel = "Back to Spot",
   onAbort,
   onPairFound,
+  postShotSkuddparMode = false,
+  postShotSkuddparSecLeft = 0,
+  onPostShotSkuddparSaved,
 }: AwareAppViewProps) {
   const stalking = !focusPairId;
   const [mode, setMode] = useState<AwareAppMode>(
-    focusPairId ? "track" : "aware",
+    focusPairId ? "track" : postShotSkuddparMode ? "shoot" : "aware",
   );
   const [scanned, setScanned] = useState(true);
   const [camcorderReady, setCamcorderReady] = useState(initialCamcorderReady);
@@ -334,6 +361,9 @@ export function AwareAppView({
     phase: "idle",
   });
   const [status, setStatus] = useState(() => {
+    if (postShotSkuddparMode) {
+      return "Skudd avfyrt — fugleposisjonen er synlig en kort stund. Shoot → registrer stand og tre før tiden går ut.";
+    }
     if (stalking) {
       if (initialBirdNerve > 0) {
         return "Fuglen er allerede skremt én gang — mer nervøs. Trykk på kartet · hold piltaster. Hold øye med nervøsitet.";
@@ -557,21 +587,23 @@ export function AwareAppView({
           onGameSecondsRef.current(whole);
         }
 
-        const dist = distanceMBetween(hunterRef.current, birdWorld);
-        const nerveDt = moving ? dt * AWARE_SNEAK_NERVE_MULT : dt;
-        const result = tickEncounterNerve(nerveRef.current, nerveDt, {
-          distanceM: dist,
-          isMoving: moving,
-          moveHoldSec: moveHoldRef.current,
-          camoBirdSpot: camoRef.current,
-          coverFactor,
-        });
-        nerveRef.current = result.nerve;
-        setNerve(result.nerve);
-        onNerveChangeRef.current?.(result.nerve);
-        if (result.flushes) {
-          flushedRef.current = true;
-          onBirdFlushedRef.current(result.nerve);
+        if (!postShotSkuddparMode) {
+          const dist = distanceMBetween(hunterRef.current, birdWorld);
+          const nerveDt = moving ? dt * AWARE_SNEAK_NERVE_MULT : dt;
+          const result = tickEncounterNerve(nerveRef.current, nerveDt, {
+            distanceM: dist,
+            isMoving: moving,
+            moveHoldSec: moveHoldRef.current,
+            camoBirdSpot: camoRef.current,
+            coverFactor,
+          });
+          nerveRef.current = result.nerve;
+          setNerve(result.nerve);
+          onNerveChangeRef.current?.(result.nerve);
+          if (result.flushes) {
+            flushedRef.current = true;
+            onBirdFlushedRef.current(result.nerve);
+          }
         }
       } else {
         const gameDt = dt * AWARE_IDLE_TIME_FACTOR;
@@ -588,7 +620,7 @@ export function AwareAppView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [stalking, birdWorld, coverFactor, shootWizardActive]);
+  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode]);
 
   const activePair =
     shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
@@ -670,6 +702,20 @@ export function AwareAppView({
     const snapM = distanceMBetween(dialed, birdWorld);
     const target =
       skuddparAutofill && snapM <= 12 ? { ...birdWorld } : dialed;
+    const distanceM = Math.round(distanceMBetween(stand, target));
+    const bearing = Math.round(bearingDegFromTo(stand, target));
+
+    if (postShotSkuddparMode && onPostShotSkuddparSaved) {
+      onPostShotSkuddparSaved({
+        stand,
+        target,
+        distanceM,
+        bearingDeg: bearing,
+      });
+      setShootWizard({ phase: "idle" });
+      return;
+    }
+
     const pair: ShotPair = {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
@@ -678,8 +724,8 @@ export function AwareAppView({
       stand,
       target,
       impact: target,
-      distanceM: Math.round(distanceMBetween(stand, target)),
-      bearingDeg: Math.round(bearingDegFromTo(stand, target)),
+      distanceM,
+      bearingDeg: bearing,
       resultKind: "ettersok",
       trackPoints: [],
       found: null,
@@ -753,6 +799,10 @@ export function AwareAppView({
     }
     const searchMin = ettersokMinutesForSearch(trackN, activePair.distanceM);
     onGameSeconds(searchMin * 60);
+    onEttersokEffort?.({
+      minutes: searchMin,
+      distanceM: ettersokSearchDistanceM(trackN, activePair.distanceM),
+    });
     const attemptNo = (activePair.ettersokAttempts ?? 0) + 1;
     const est = estimateEttersokFind(activePair);
     const sweep = {
@@ -797,6 +847,10 @@ export function AwareAppView({
     }
     const recoverMin = treeRecoveryMinutes(activePair.distanceM);
     onGameSeconds(recoverMin * 60);
+    onEttersokEffort?.({
+      minutes: recoverMin,
+      distanceM: Math.max(0, activePair.distanceM),
+    });
     const updated: ShotPair = { ...activePair, found: true };
     const next = shotPairs.map((p) =>
       p.id === activePair.id ? updated : p,
@@ -877,11 +931,17 @@ export function AwareAppView({
           <span className="aware-clock">{formatHuntClock(clockMinutes)}</span>
         </header>
 
-        {stalking ? (
+        {stalking && !postShotSkuddparMode ? (
           <NerveProgressBar
             nerve={nerve}
             threshold={ENCOUNTER_NERVE.flushThreshold}
           />
+        ) : null}
+
+        {postShotSkuddparMode ? (
+          <p className="shop-row-note" style={{ margin: "0.35rem 0.75rem 0" }}>
+            Skuddpar-vindu: {postShotSkuddparSecLeft} s — fugleprikk = siktepunkt
+          </p>
         ) : null}
 
         <div className="aware-mode-tabs" role="tablist">
@@ -1126,9 +1186,11 @@ export function AwareAppView({
           {mode === "shoot" ? (
             <div className="aware-actions">
               <p className="shop-row-note">
-                {skuddparAutofill
-                  ? "Cam i bruk: retning/avstand prefylles fra fugleprikken — juster ved behov."
-                  : "Uten Triggercam/oppsatt camcorder: still retning og avstand selv (ingen autofyll)."}
+                {postShotSkuddparMode
+                  ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen). Fugleprikken er der du siktet.`
+                  : skuddparAutofill
+                    ? "Cam i bruk: retning/avstand prefylles fra fugleprikken — juster ved behov."
+                    : "Uten Triggercam/oppsatt camcorder: still retning og avstand selv (ingen autofyll)."}
               </p>
 
               {shootWizard.phase === "idle" ? (
@@ -1432,7 +1494,7 @@ export function AwareAppView({
                 ? "Ferdig — fugl funnet"
                 : "Avslutt ettersøk"}
             </button>
-          ) : (
+          ) : postShotSkuddparMode ? null : (
             <button
               type="button"
               className="intro-button"

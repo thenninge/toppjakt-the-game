@@ -8,6 +8,7 @@ import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import {
   formatDopeElevationClicks,
   formatDopeWindageClicks,
+  nearestDopeEntry,
   type DopeCardEntry,
 } from "@/lib/player";
 import type { AmmoSpec } from "@/lib/ammo/spec";
@@ -32,6 +33,13 @@ type HuntShotConditionsProps = {
   /** Active ammo for the ballistics app (required for App panel). */
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel" | "caliber"> | null;
   ammoLabel?: string;
+  /**
+   * Apply nearest DOPE line to scope turrets.
+   * Hidden/disabled when Kestrel AB is already dialing.
+   */
+  onUseDope?: (entry: DopeCardEntry) => void;
+  /** When true, Use DOPE is unavailable (Kestrel AB owns the dials). */
+  dopeDialDisabled?: boolean;
 };
 
 /**
@@ -50,6 +58,8 @@ export function HuntShotConditions({
   rifleId = null,
   ammo = null,
   ammoLabel = "Ammo",
+  onUseDope,
+  dopeDialDisabled = false,
 }: HuntShotConditionsProps) {
   const tempC = Number.isFinite(temperatureC)
     ? temperatureC
@@ -59,20 +69,22 @@ export function HuntShotConditions({
   const shotCompass = compassLabelFromDeg(bearing);
   const windCompass = formatWindCompass(windFrom);
 
+  const nearest =
+    rifleId && ammoId
+      ? nearestDopeEntry(dopeCard, {
+          rifleId,
+          ammoId,
+          distanceM: rangeM,
+        })
+      : null;
+
   const dopeRows = dopeCard
     .filter((e) => (rifleId ? e.rifleId === rifleId : true))
     .filter((e) => (ammoId ? e.ammoId === ammoId : true))
     .slice()
     .sort((a, b) => a.distanceM - b.distanceM);
 
-  const nearestId =
-    dopeRows.length > 0
-      ? dopeRows.reduce((best, e) =>
-          Math.abs(e.distanceM - rangeM) < Math.abs(best.distanceM - rangeM)
-            ? e
-            : best,
-        ).id
-      : null;
+  const nearestId = nearest?.id ?? null;
 
   return (
     <div className="hunt-enviro-app" aria-label="Enviro og ballistics-app">
@@ -150,7 +162,8 @@ export function HuntShotConditions({
           <span className="hunt-shot-cond-label">DOPE</span>
           {dopeRows.length === 0 ? (
             <p className="hunt-dope-empty">
-              Ingen linjer — «Add to DOPE» på banen.
+              Ingen linjer — treff i jakt lagres automatisk, eller «Add to DOPE»
+              på banen.
             </p>
           ) : (
             <ul className="hunt-dope-list">
@@ -178,6 +191,30 @@ export function HuntShotConditions({
           )}
           {dopeRows[0] ? (
             <p className="hunt-dope-ammo">{dopeRows[0].ammoLabel}</p>
+          ) : null}
+          {onUseDope ? (
+            <button
+              type="button"
+              className="intro-button hunt-dope-use-btn"
+              disabled={!nearest || dopeDialDisabled}
+              title={
+                dopeDialDisabled
+                  ? "Kestrel AB dialer allerede — Use DOPE er for manuell hold"
+                  : nearest
+                    ? `Still kikkerten etter DOPE @ ${nearest.distanceM} m`
+                    : "Ingen DOPE-linje for denne ammoen"
+              }
+              onClick={() => {
+                if (!nearest || dopeDialDisabled) return;
+                onUseDope(nearest);
+              }}
+            >
+              {dopeDialDisabled
+                ? "Use DOPE (Kestrel aktiv)"
+                : nearest
+                  ? `Use DOPE (${nearest.distanceM} m)`
+                  : "Use DOPE"}
+            </button>
           ) : null}
         </div>
       </aside>

@@ -469,6 +469,32 @@ export function removeDopeCardEntry(
   return card.filter((e) => e.id !== id);
 }
 
+/**
+ * Nearest DOPE row for rifle×ammo at a given range (Enviro «Use DOPE»).
+ */
+export function nearestDopeEntry(
+  card: readonly DopeCardEntry[],
+  opts: {
+    rifleId: string;
+    ammoId: string;
+    distanceM: number;
+  },
+): DopeCardEntry | null {
+  const rows = card.filter(
+    (e) => e.rifleId === opts.rifleId && e.ammoId === opts.ammoId,
+  );
+  if (rows.length === 0) return null;
+  const d = opts.distanceM;
+  return rows.reduce((best, e) =>
+    Math.abs(e.distanceM - d) < Math.abs(best.distanceM - d) ? e : best,
+  );
+}
+
+/** 0.1 mil clicks → mm-at-100 for session turrets. */
+export function dopeClicksToMmAt100(clicks: number): number {
+  return Math.round(clicks) * ZERO_CLICK_MM;
+}
+
 export function formatDopeElevationClicks(clicks: number): string {
   if (clicks === 0) return "0";
   const mil = Math.abs(clicks / 10).toFixed(1);

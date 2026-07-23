@@ -1700,10 +1700,15 @@ body {
   position: absolute;
   inset: auto;
   z-index: 1;
+  /* Own stacking context so landscape stays under bird sprites. */
+  isolation: isolate;
   transform-origin: top left;
 }
 
 .spot-binos-world-img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -2017,6 +2022,13 @@ body {
   font-size: 0.6rem;
   color: var(--canyon-dust);
   line-height: 1.25;
+}
+
+.hunt-dope-use-btn {
+  margin-top: 0.35rem;
+  width: 100%;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.55rem;
 }
 
 .hunt-shot-cond-dope {
