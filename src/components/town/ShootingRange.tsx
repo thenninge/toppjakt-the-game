@@ -16,7 +16,6 @@ import {
   SHOTS_PER_SERIES,
   TRIGGER_BAR_MS,
   caliberBulletDiameterMm,
-  cbaBullseyeOffsetFromImageCenterPx,
   clampScopeZoom,
   combinedDispersionMoa,
   computeWeaponCalmFactor,
@@ -25,7 +24,6 @@ import {
   focusPhase,
   focusRemainingMs,
   measureGroup,
-  mmToPx,
   RANGE_DISTANCE_M,
   RANGE_DISTANCES_M,
   rollTriggerTargetMs,
@@ -38,6 +36,14 @@ import {
   type RangeDistanceM,
   type ShotImpact,
 } from "@/lib/range/precision";
+import {
+  DEFAULT_TARGET_BY_DISTANCE,
+  RANGE_TARGET_IDS,
+  getRangeTarget,
+  mmToPxOnTarget,
+  targetBullseyeOffsetFromImageCenterPx,
+  type RangeTargetId,
+} from "@/lib/range/targets";
 import {
   DEFAULT_ZERO_DISTANCE_M,
   dropBelowLosMm,
@@ -85,6 +91,8 @@ type ShootingRangeProps = {
   weather: DayWeather;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
+  /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
+  customsTriggerPullScale?: number;
   balance: number;
   onPayCompetitionFee: (amountNok: number) => boolean;
   onAwardCompetitionPayout: (amountNok: number) => void;
@@ -121,9 +129,6 @@ type Keys = {
 
 const AIM_SPEED_MM_PER_SEC = 22;
 const DEFAULT_SCOPE_ZOOM = 12;
-const IMG_SRC = "/range/cba-detail.png";
-const IMG_NATURAL_W = 949;
-const IMG_NATURAL_H = 1024;
 
 export function ShootingRange({
   kitItems,
@@ -134,6 +139,7 @@ export function ShootingRange({
   dopeCard,
   weather,
   customsMoaDelta = 0,
+  customsTriggerPullScale = 1,
   balance,
   onPayCompetitionFee,
   onAwardCompetitionPayout,
@@ -190,6 +196,10 @@ export function ShootingRange({
 
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
   const [distanceM, setDistanceM] = useState<RangeDistanceM>(RANGE_DISTANCE_M);
+  const [targetId, setTargetId] = useState<RangeTargetId>(
+    DEFAULT_TARGET_BY_DISTANCE[RANGE_DISTANCE_M],
+  );
+  const target = getRangeTarget(targetId);
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
@@ -222,7 +232,8 @@ export function ShootingRange({
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const bullseyeOffRef = useRef({ x: 0, y: 0 });
-  const imgNaturalWRef = useRef(IMG_NATURAL_W);
+  const imgNaturalWRef = useRef(target.nativeWidth);
+  const targetPxPerMmRef = useRef(target.pxPerMm);
   const [recoilActive, setRecoilActive] = useState(false);
   const recoilClearRef = useRef<number | null>(null);
 
@@ -376,7 +387,7 @@ export function ShootingRange({
       };
       const envelopeMoa = combinedDispersionMoa(dispersionInput);
       const pull = triggerPullOffsetMm(
-        triggerPullRef.current,
+        triggerPullRef.current * customsTriggerPullScale,
         envelopeMoa,
         distanceRef.current,
       );
@@ -618,9 +629,9 @@ export function ShootingRange({
       const ay = aimRef.current.y + wobbleRef.current.y;
       const scale = targetScaleRef.current;
       const off = bullseyeOffRef.current;
-      const w = imgNaturalWRef.current;
-      const panPxX = (off.x + mmToPx(ax, w)) * scale;
-      const panPxY = (off.y + mmToPx(ay, w)) * scale;
+      const pxPerMm = targetPxPerMmRef.current;
+      const panPxX = (off.x + ax * pxPerMm) * scale;
+      const panPxY = (off.y + ay * pxPerMm) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
     }
 
@@ -706,16 +717,15 @@ export function ShootingRange({
     : 1;
   /** Target shrinks with distance (angular size). Reticle uses zoom-only
    * scale so mil hashes stay true angular — a fixed mil error is the same
-   * screen size at every distance. */
+   * screen size at every distance. Per-skive visualScale fixes board size. */
   const targetScale = scope
-    ? scopeImageScale(zoom, scope.scope, distanceM)
-    : 1;
-  const bullseyeOff = cbaBullseyeOffsetFromImageCenterPx(
-    IMG_NATURAL_W,
-    IMG_NATURAL_H,
-  );
+    ? scopeImageScale(zoom, scope.scope, distanceM) * target.visualScale
+    : target.visualScale;
+  const bullseyeOff = targetBullseyeOffsetFromImageCenterPx(target);
   targetScaleRef.current = targetScale;
   bullseyeOffRef.current = bullseyeOff;
+  imgNaturalWRef.current = target.nativeWidth;
+  targetPxPerMmRef.current = target.pxPerMm;
 
   const ballisticHint = selectedAmmo
     ? (() => {
@@ -754,8 +764,15 @@ export function ShootingRange({
         meanRadiusMm: m.meanRadiusMm,
         poiXMm: m.poiXMm,
         poiYMm: m.poiYMm,
-        zeroXMm: effectiveZero.xMm,
-        zeroYMm: effectiveZero.yMm,
+        // mm-at-100 m (same unit as saved/session) — mils via formatZeroAxisMm
+        zeroXMm:
+          (zeroProfile?.baseXMm ?? 0) +
+          (zeroProfile?.savedXMm ?? 0) +
+          sessionZeroXMm,
+        zeroYMm:
+          (zeroProfile?.baseYMm ?? 0) +
+          (zeroProfile?.savedYMm ?? 0) +
+          sessionZeroYMm,
         savedZeroXMm: zeroProfile?.savedXMm ?? 0,
         savedZeroYMm: zeroProfile?.savedYMm ?? 0,
         sessionZeroXMm,
@@ -826,6 +843,7 @@ export function ShootingRange({
   function changeDistance(next: RangeDistanceM) {
     if (next === distanceM) return;
     setDistanceM(next);
+    setTargetId(DEFAULT_TARGET_BY_DISTANCE[next]);
     setAimMm({ x: 0, y: 0 });
     aimRef.current = { x: 0, y: 0 };
     wobbleRef.current = { x: 0, y: 0 };
@@ -833,6 +851,23 @@ export function ShootingRange({
     setMeasurement(null);
     abortTrigger("");
     setStatus(`Avstand satt til ${next} m — ny serie.`);
+  }
+
+  function changeTarget(next: RangeTargetId) {
+    if (next === targetId) return;
+    setTargetId(next);
+    setAimMm({ x: 0, y: 0 });
+    aimRef.current = { x: 0, y: 0 };
+    wobbleRef.current = { x: 0, y: 0 };
+    setShots([]);
+    setMeasurement(null);
+    abortTrigger("");
+    const def = DEFAULT_TARGET_BY_DISTANCE[distanceM];
+    setStatus(
+      next === def
+        ? `Skive: ${getRangeTarget(next).label} (default for ${distanceM} m).`
+        : `Skive: ${getRangeTarget(next).label} (avvik fra ${distanceM} m-default).`,
+    );
   }
 
   const setupLocked = shots.length > 0 && !measurement;
@@ -908,6 +943,7 @@ export function ShootingRange({
             zeroingProfiles={zeroingProfiles}
             weather={weather}
             customsMoaDelta={customsMoaDelta}
+            customsTriggerPullScale={customsTriggerPullScale}
             musicEnabled={musicEnabled}
             onAffinitiesChange={onAffinitiesChange}
             onConsumeAmmo={onConsumeAmmo}
@@ -1090,6 +1126,49 @@ export function ShootingRange({
         </div>
 
         <div className="range-setup-block">
+          <p className="range-setup-label" id="range-target-label">
+            Skive
+            {targetId !== DEFAULT_TARGET_BY_DISTANCE[distanceM] ? (
+              <span className="range-setup-lock"> · avvik fra default</span>
+            ) : null}
+          </p>
+          <div
+            className="range-segment"
+            role="group"
+            aria-labelledby="range-target-label"
+          >
+            {RANGE_TARGET_IDS.map((id) => {
+              const t = getRangeTarget(id);
+              const isDefault = id === DEFAULT_TARGET_BY_DISTANCE[distanceM];
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={
+                    targetId === id
+                      ? "range-seg-btn is-active"
+                      : "range-seg-btn"
+                  }
+                  disabled={setupLocked}
+                  aria-pressed={targetId === id}
+                  title={
+                    isDefault
+                      ? `Default for ${distanceM} m`
+                      : t.label
+                  }
+                  onClick={() => changeTarget(id)}
+                >
+                  <span className="range-seg-value">{t.shortLabel}</span>
+                  <span className="range-seg-unit">
+                    {isDefault ? "def" : "m"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="range-setup-block">
           <div className="range-setup-label-row">
             <p className="range-setup-label" id="range-ammo-label">
               Ammunisjon
@@ -1243,9 +1322,7 @@ export function ShootingRange({
         <SeriesMeasureView
           shots={shots}
           measurement={measurement}
-          imageSrc={IMG_SRC}
-          imageWidth={IMG_NATURAL_W}
-          imageHeight={IMG_NATURAL_H}
+          target={target}
         />
       ) : (
         <div className="scope-stage" tabIndex={0}>
@@ -1287,16 +1364,25 @@ export function ShootingRange({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     className="scope-target"
-                    src={IMG_SRC}
-                    alt="CBA blink"
+                    src={target.src}
+                    alt={target.label}
                     draggable={false}
-                    width={IMG_NATURAL_W}
-                    height={IMG_NATURAL_H}
+                    width={target.nativeWidth}
+                    height={target.nativeHeight}
+                    style={{ width: target.nativeWidth }}
                   />
                   {shots.map((s, i) => {
-                    const hx = bullseyeOff.x + mmToPx(s.xMm, IMG_NATURAL_W);
-                    const hy = bullseyeOff.y + mmToPx(s.yMm, IMG_NATURAL_W);
-                    const d = mmToPx(s.diameterMm, IMG_NATURAL_W);
+                    const hx =
+                      bullseyeOff.x +
+                      mmToPxOnTarget(s.xMm, target, target.nativeWidth);
+                    const hy =
+                      bullseyeOff.y +
+                      mmToPxOnTarget(s.yMm, target, target.nativeWidth);
+                    const d = mmToPxOnTarget(
+                      s.diameterMm,
+                      target,
+                      target.nativeWidth,
+                    );
                     return (
                       <span
                         key={`hole-${i}`}

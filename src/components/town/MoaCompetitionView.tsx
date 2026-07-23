@@ -76,6 +76,8 @@ type MoaCompetitionViewProps = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   weather: DayWeather;
   customsMoaDelta?: number;
+  /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
+  customsTriggerPullScale?: number;
   musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
@@ -179,6 +181,7 @@ export function MoaCompetitionView({
   zeroingProfiles,
   weather,
   customsMoaDelta = 0,
+  customsTriggerPullScale = 1,
   musicEnabled,
   onAffinitiesChange,
   onConsumeAmmo,
@@ -389,7 +392,7 @@ export function MoaCompetitionView({
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(
-      triggerPullRef.current,
+      triggerPullRef.current * customsTriggerPullScale,
       envelopeMoa,
       MOA_COMP_DISTANCE_M,
     );

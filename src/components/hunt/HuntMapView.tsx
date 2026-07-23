@@ -100,6 +100,7 @@ import {
   EMPTY_CUSTOMS_MODS,
   applyCustomCamoBirdSpot,
   customsBeddingMoaDelta,
+  customsTriggerPullScale,
   type CustomsMods,
 } from "@/lib/customs/spec";
 import {
@@ -630,6 +631,7 @@ export function HuntMapView({
     [kitItems, customsMods],
   );
   const customsMoaDelta = customsBeddingMoaDelta(customsMods);
+  const triggerPullScale = customsTriggerPullScale(customsMods);
   const hasHeadlamp = useMemo(
     () =>
       kitItems.some(
@@ -2902,6 +2904,7 @@ export function HuntMapView({
         zeroingProfiles={zeroingProfiles}
         dopeCard={dopeCard}
         customsMoaDelta={customsMoaDelta}
+        customsTriggerPullScale={triggerPullScale}
         musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={mentalFatigue}

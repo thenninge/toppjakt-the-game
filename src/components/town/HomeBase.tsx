@@ -15,6 +15,9 @@ import {
   isCamoItem,
   isFoodItem,
   isSkiItem,
+  inventoryGroupForItem,
+  INVENTORY_GROUPS,
+  type InventoryGroupId,
   type ShopCategory,
   type ShopItem,
 } from "@/lib/shop/types";
@@ -41,6 +44,7 @@ import {
 } from "@/lib/customs/spec";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
+import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import { InaturNo } from "@/components/town/InaturNo";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
@@ -141,6 +145,8 @@ export function HomeBase({
   const [view, setView] = useState<"main" | "inatur" | "shotlog" | "dope">(
     "main",
   );
+  /** Pending rifle/scope swap that needs re-zero warning. */
+  const [kitSwapConfirm, setKitSwapConfirm] = useState<ShopItem | null>(null);
   const ownedItems = useMemo(() => {
     return inventory
       .map((entry) => {
@@ -154,6 +160,18 @@ export function HomeBase({
           a.item.brand.localeCompare(b.item.brand),
       );
   }, [inventory]);
+
+  const inventoryByGroup = useMemo(() => {
+    const map = new Map<
+      InventoryGroupId,
+      { item: ShopItem; qty: number }[]
+    >();
+    for (const g of INVENTORY_GROUPS) map.set(g.id, []);
+    for (const row of ownedItems) {
+      map.get(inventoryGroupForItem(row.item))!.push(row);
+    }
+    return map;
+  }, [ownedItems]);
 
   const kitItems = useMemo(() => {
     return kit
@@ -292,13 +310,18 @@ export function HomeBase({
     if (isZeroCombo && !alreadyEquipped) {
       const current = kitItems.find((i) => i.category === item.category);
       if (current && current.id !== item.id) {
-        const ok = window.confirm(
-          "Dette gjør at du må skyte inn på nytt. Sikker på at du vil bytte?",
-        );
-        if (!ok) return;
+        setKitSwapConfirm(item);
+        return;
       }
     }
     onToggleKit(item.id);
+  }
+
+  function confirmKitSwap() {
+    if (!kitSwapConfirm) return;
+    const id = kitSwapConfirm.id;
+    setKitSwapConfirm(null);
+    onToggleKit(id);
   }
 
   if (view === "shotlog") {
@@ -684,96 +707,127 @@ export function HomeBase({
         <p className="intro-line">Tomt skap. XXL venter.</p>
       ) : (
         <ExpandableSection title="Inventory" summary={inventorySummary}>
-          <ul className="shop-list home-kit-list">
-          {ownedItems.map(({ item, qty }) => {
-            const equipped = kit.includes(item.id);
-            const finnDeal = finnSalePayoutNok(item, qty);
-            return (
-              <li key={item.id} className="shop-row">
-                <div className="shop-row-main">
-                  <span className="shop-row-name">
-                    {item.brand} {item.name}
-                  </span>
-                  <span className="shop-row-meta">
-                    {item.category} · {formatWeightKg(item.weightGrams)}
-                    {formatInventoryQuantity(item.id, qty)
-                      ? ` · ${formatInventoryQuantity(item.id, qty)}`
-                      : qty > 1
-                        ? ` · ×${qty}`
-                        : ""}
-                    {EXCLUSIVE_KIT_CATEGORIES.has(item.category)
-                      ? " · én i kit"
-                      : ""}
-                    {finnDeal
-                      ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
-                      : ""}
-                  </span>
-                  {isCamoItem(item) ? (
-                    <span className="shop-row-ballistics">
-                      {camoSlot(item.camo)} · bird snow{" "}
-                      {item.camo.birdSpotSnow.toFixed(2)} · speed{" "}
-                      {formatScore10(item.camo.terrainSpeed)} · stam{" "}
-                      {formatScore10(item.camo.stamina)}
+          <div className="home-inventory-groups">
+            {INVENTORY_GROUPS.map((group) => {
+              const rows = inventoryByGroup.get(group.id) ?? [];
+              if (rows.length === 0) return null;
+              return (
+                <section key={group.id} className="home-inventory-group">
+                  <h3 className="home-inventory-group-title">
+                    {group.label}
+                    <span className="home-inventory-group-count">
+                      {rows.length}
                     </span>
-                  ) : null}
-                  {isSkiItem(item) ? (
-                    <span className="shop-row-ballistics">
-                      max {formatScore10(item.ski.maxSpeed)} · flyt/kg{" "}
-                      {formatScore10(item.ski.flowPerKg)} · {item.ski.widthMm}{" "}
-                      mm
-                    </span>
-                  ) : null}
-                  {isFoodItem(item) ? (
-                    <span className="shop-row-ballistics">
-                      {item.food.kind === "stove"
-                        ? "brenner"
-                        : item.food.kind === "fuel"
-                          ? `gass · ${item.food.huntTrips} turer`
-                          : item.food.requiresBoil
-                            ? `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · krever koking`
-                            : `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · ${item.food.minutes} min`}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="home-inventory-actions">
-                  <button
-                    type="button"
-                    className={
-                      equipped
-                        ? "intro-button shop-buy kit-equipped"
-                        : "intro-button shop-buy"
-                    }
-                    onClick={() => requestToggleKit(item)}
-                  >
-                    {equipped ? "I kit" : "Ta med"}
-                  </button>
-                  <button
-                    type="button"
-                    className="intro-button shop-buy sheriff-secondary"
-                    disabled={!finnDeal}
-                    title={
-                      finnDeal
-                        ? isAmmoItem(item)
-                          ? `Selg ${finnDeal.consumeQty} patroner for ${finnDeal.payout.toLocaleString("nb-NO")} kr (50% av eskepris)`
-                          : `Selg for ${finnDeal.payout.toLocaleString("nb-NO")} kr (50% av kjøpspris)`
-                        : "Kan ikke selges"
-                    }
-                    onClick={() => {
-                      if (!finnDeal) return;
-                      onSellOnFinn(item.id);
-                    }}
-                  >
-                    Selg på Finn
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-          </ul>
+                  </h3>
+                  <ul className="shop-list home-kit-list">
+                    {rows.map(({ item, qty }) => {
+                      const equipped = kit.includes(item.id);
+                      const finnDeal = finnSalePayoutNok(item, qty);
+                      return (
+                        <li key={item.id} className="shop-row">
+                          <div className="shop-row-main">
+                            <span className="shop-row-name">
+                              {item.brand} {item.name}
+                            </span>
+                            <span className="shop-row-meta">
+                              {item.category} ·{" "}
+                              {formatWeightKg(item.weightGrams)}
+                              {formatInventoryQuantity(item.id, qty)
+                                ? ` · ${formatInventoryQuantity(item.id, qty)}`
+                                : qty > 1
+                                  ? ` · ×${qty}`
+                                  : ""}
+                              {EXCLUSIVE_KIT_CATEGORIES.has(item.category)
+                                ? " · én i kit"
+                                : ""}
+                              {finnDeal
+                                ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
+                                : ""}
+                            </span>
+                            {isCamoItem(item) ? (
+                              <span className="shop-row-ballistics">
+                                {camoSlot(item.camo)} · bird snow{" "}
+                                {item.camo.birdSpotSnow.toFixed(2)} · speed{" "}
+                                {formatScore10(item.camo.terrainSpeed)} · stam{" "}
+                                {formatScore10(item.camo.stamina)}
+                              </span>
+                            ) : null}
+                            {isSkiItem(item) ? (
+                              <span className="shop-row-ballistics">
+                                max {formatScore10(item.ski.maxSpeed)} · flyt/kg{" "}
+                                {formatScore10(item.ski.flowPerKg)} ·{" "}
+                                {item.ski.widthMm} mm
+                              </span>
+                            ) : null}
+                            {isFoodItem(item) ? (
+                              <span className="shop-row-ballistics">
+                                {item.food.kind === "stove"
+                                  ? "brenner"
+                                  : item.food.kind === "fuel"
+                                    ? `gass · ${item.food.huntTrips} turer`
+                                    : item.food.requiresBoil
+                                      ? `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · krever koking`
+                                      : `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · ${item.food.minutes} min`}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="home-inventory-actions">
+                            <button
+                              type="button"
+                              className={
+                                equipped
+                                  ? "intro-button shop-buy kit-equipped"
+                                  : "intro-button shop-buy"
+                              }
+                              onClick={() => requestToggleKit(item)}
+                            >
+                              {equipped ? "I kit" : "Ta med"}
+                            </button>
+                            <button
+                              type="button"
+                              className="intro-button shop-buy sheriff-secondary"
+                              disabled={!finnDeal}
+                              title={
+                                finnDeal
+                                  ? isAmmoItem(item)
+                                    ? `Selg ${finnDeal.consumeQty} patroner for ${finnDeal.payout.toLocaleString("nb-NO")} kr (50% av eskepris)`
+                                    : `Selg for ${finnDeal.payout.toLocaleString("nb-NO")} kr (50% av kjøpspris)`
+                                  : "Kan ikke selges"
+                              }
+                              onClick={() => {
+                                if (!finnDeal) return;
+                                onSellOnFinn(item.id);
+                              }}
+                            >
+                              Selg på Finn
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
         </ExpandableSection>
       )}
 
       <LocationNav onBackToTown={onLeave} />
+
+      {kitSwapConfirm ? (
+        <GameConfirmDialog
+          title="Bytte utstyr"
+          message={
+            `Du bytter ${kitSwapConfirm.category === "scope" ? "kikkert" : "rifle"}.\n` +
+            "Dette gjør at du må skyte inn på nytt. Sikker på at du vil bytte?"
+          }
+          confirmLabel="Bytt"
+          cancelLabel="Avbryt"
+          onConfirm={confirmKitSwap}
+          onCancel={() => setKitSwapConfirm(null)}
+        />
+      ) : null}
     </div>
   );
 }

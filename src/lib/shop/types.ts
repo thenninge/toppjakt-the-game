@@ -439,4 +439,41 @@ export const SHOP_CATEGORIES: ShopCategory[] = [
   "misc",
 ];
 
+/** Home inventory buckets (skap-gruppering). */
+export type InventoryGroupId = "gun_kit" | "kit_kit" | "camo" | "food";
+
+export const INVENTORY_GROUPS: readonly {
+  id: InventoryGroupId;
+  label: string;
+}[] = [
+  { id: "gun_kit", label: "Gun-kit" },
+  { id: "kit_kit", label: "Kit-kit" },
+  { id: "camo", label: "Camo/clothes" },
+  { id: "food", label: "Food" },
+] as const;
+
+/**
+ * Gun-kit = rifle/optik/ammo/tofoter.
+ * Kit-kit = LRF/bino, thermal, Kestrel, chestrig, headlamp, camcorder, …
+ * Camo/clothes + Food = egne lister.
+ */
+export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
+  switch (item.category) {
+    case "rifle":
+    case "scope":
+    case "suppressor":
+    case "stock":
+    case "bipod":
+    case "ammo":
+      return "gun_kit";
+    case "camo":
+      return "camo";
+    case "food":
+      return "food";
+    default:
+      // lrf, thermal, ballistics, backpack, chestrig, skis, misc
+      return "kit_kit";
+  }
+}
+
 export type { ProjectileType };

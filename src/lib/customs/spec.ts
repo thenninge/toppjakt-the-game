@@ -11,6 +11,8 @@ export type CustomsMods = {
   pillarBedding: boolean;
   fluting: boolean;
   stockSlim: boolean;
+  /** Light trigger — halves POI error from a bad break on the trigger bar. */
+  triggerTuning: boolean;
   /** Paid setup — unlocks ordering CB Home Load ammo. */
   homeLoadsSetup: boolean;
   customCamo: boolean;
@@ -21,6 +23,7 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   pillarBedding: false,
   fluting: false,
   stockSlim: false,
+  triggerTuning: false,
   homeLoadsSetup: false,
   customCamo: false,
 };
@@ -30,6 +33,7 @@ export type CustomsServiceId =
   | "pillar_bedding"
   | "fluting"
   | "stock_slim"
+  | "trigger_tuning"
   | "home_loads_setup"
   | "custom_camo"
   | "custom_build";
@@ -56,6 +60,11 @@ export const STOCK_SLIM_FRACTION = 0.25;
  * Lower = better concealment. ~15% harder for birds to pick you up.
  */
 export const CUSTOM_CAMO_SPOT_MULT = 0.85;
+/**
+ * Multiplier on trigger-pull POI error after trigger tuning.
+ * 0.5 = half the miss distance from a bad release vs the trigger-bar mark.
+ */
+export const TRIGGER_TUNING_PULL_SCALE = 0.5;
 
 export const HOME_LOAD_SETUP_NOK = 5000;
 export const HOME_LOAD_PER_ROUND_NOK = 100;
@@ -88,6 +97,12 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     effect: `Reduserer stokkvekt med ${Math.round(STOCK_SLIM_FRACTION * 100)}% — beholder presisjon.`,
   },
   {
+    id: "trigger_tuning",
+    name: "Trigger tuning",
+    priceNok: 3000,
+    effect: `Fjærlett avtrekk — halverer treffpunktfeil når avtrekket slippes feil ift merket på trigger-baren.`,
+  },
+  {
     id: "home_loads_setup",
     name: "Home loads (oppsett)",
     priceNok: HOME_LOAD_SETUP_NOK,
@@ -117,9 +132,15 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     pillarBedding: o.pillarBedding === true,
     fluting: o.fluting === true,
     stockSlim: o.stockSlim === true,
+    triggerTuning: o.triggerTuning === true,
     homeLoadsSetup: o.homeLoadsSetup === true,
     customCamo: o.customCamo === true,
   };
+}
+
+/** Scale on trigger-bar pull error → POI (1 = stock trigger, 0.5 = tuned). */
+export function customsTriggerPullScale(mods: CustomsMods): number {
+  return mods.triggerTuning ? TRIGGER_TUNING_PULL_SCALE : 1;
 }
 
 /** Negative MOA delta from bedding work (pillar supersedes plain bedding). */
@@ -165,6 +186,7 @@ export function serviceOwned(
   if (id === "pillar_bedding") return mods.pillarBedding;
   if (id === "fluting") return mods.fluting;
   if (id === "stock_slim") return mods.stockSlim;
+  if (id === "trigger_tuning") return mods.triggerTuning;
   if (id === "home_loads_setup") return mods.homeLoadsSetup;
   if (id === "custom_camo") return mods.customCamo;
   return false;

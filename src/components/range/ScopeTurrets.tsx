@@ -10,8 +10,8 @@ import {
 } from "react";
 import { ZERO_CLICK_MM } from "@/lib/player";
 
-/** Turret visual modes + optional field/app tabs (hunt). */
-export type ScopeHudTab = "overhead" | "shooter" | "enviro" | "kestrel";
+/** Field HUD tabs — Shooter dials + optional Enviro / Kestrel. */
+export type ScopeHudTab = "shooter" | "enviro" | "kestrel";
 
 type TurretView = "overhead" | "shooter";
 
@@ -59,18 +59,24 @@ function capRotationDeg(clicks: number): number {
 }
 
 function readStoredTab(allowed: ScopeHudTab[]): ScopeHudTab {
-  if (typeof window === "undefined") return "overhead";
+  if (typeof window === "undefined") return "shooter";
   try {
     const v =
       window.localStorage.getItem(VIEW_STORAGE_KEY) ??
       window.localStorage.getItem("toppjakt-scope-turret-view");
-    if (v === "shooter" || v === "overhead" || v === "enviro" || v === "kestrel") {
-      if (allowed.includes(v)) return v;
+    // Legacy "overhead" (Oversikt) → Shooter.
+    const normalized = v === "overhead" ? "shooter" : v;
+    if (
+      normalized === "shooter" ||
+      normalized === "enviro" ||
+      normalized === "kestrel"
+    ) {
+      if (allowed.includes(normalized)) return normalized;
     }
   } catch {
     /* ignore */
   }
-  return "overhead";
+  return "shooter";
 }
 
 function useHoldRepeat(action: () => void, disabled: boolean) {
@@ -458,8 +464,8 @@ function TurretDial({
 }
 
 /**
- * Scope elevation (top turret) + windage (side turret) — click dials with mil readout.
- * Tabs: Oversikt / Shooter for turrets; optional Enviro / Kestrel for field apps.
+ * Scope elevation (top turret) + windage (side turret) — shooter dials with mil readout.
+ * Tabs: Shooter; optional Enviro / Kestrel for field apps.
  */
 export function ScopeTurrets({
   sessionZeroXMm,
@@ -474,13 +480,12 @@ export function ScopeTurrets({
   const hasEnviro = enviroPanel != null;
   const hasKestrel = kestrelPanel != null;
   const allowedTabs: ScopeHudTab[] = [
-    "overhead",
     "shooter",
     ...(hasEnviro ? (["enviro"] as const) : []),
     ...(hasKestrel ? (["kestrel"] as const) : []),
   ];
 
-  const [tab, setTab] = useState<ScopeHudTab>("overhead");
+  const [tab, setTab] = useState<ScopeHudTab>("shooter");
 
   useEffect(() => {
     setTab(readStoredTab(allowedTabs));
@@ -507,9 +512,8 @@ export function ScopeTurrets({
   const elevFace = -elevClicks;
   const windFace = windClicks;
 
-  const turretView: TurretView =
-    tab === "shooter" ? "shooter" : "overhead";
-  const showTurrets = tab === "overhead" || tab === "shooter";
+  const turretView: TurretView = "shooter";
+  const showTurrets = tab === "shooter";
   const showEnviro = tab === "enviro" && hasEnviro;
   const showKestrel = tab === "kestrel" && hasKestrel;
 
@@ -522,20 +526,6 @@ export function ScopeTurrets({
       }
     >
       <div className="scope-turrets-view-toggle" role="tablist" aria-label="Skyte-HUD">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "overhead"}
-          className={
-            tab === "overhead"
-              ? "scope-turrets-view-btn is-active"
-              : "scope-turrets-view-btn"
-          }
-          disabled={disabled}
-          onClick={() => setAndStoreTab("overhead")}
-        >
-          Oversikt
-        </button>
         <button
           type="button"
           role="tab"

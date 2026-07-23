@@ -16,7 +16,9 @@ import {
   formatPermitFee,
   grantStarterGear,
   grantUncleRifle,
+  ensureNamedStarterGear,
   isCheatPlayerName,
+  isVipPlayerName,
   startingBalanceForName,
   resolvePlayerItem,
   saveZeroing,
@@ -35,6 +37,7 @@ import {
 import type { ShopItem } from "@/lib/shop/types";
 import { StatsFrame } from "@/components/hud/StatsFrame";
 import { StatusBar } from "@/components/hud/StatusBar";
+import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import {
   GameMusic,
   readMusicEnabled,
@@ -70,6 +73,7 @@ import {
   CUSTOMS_SERVICES,
   HOME_LOAD_PER_ROUND_NOK,
   customsBeddingMoaDelta,
+  customsTriggerPullScale,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
 import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem } from "@/lib/shop/types";
@@ -123,6 +127,7 @@ export function IntroScreen() {
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [hunterStatusEnabled, setHunterStatusEnabled] = useState(true);
   const [huntHud, setHuntHud] = useState<HuntHudStatus | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const statsRef = useRef(stats);
 
   const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
@@ -155,8 +160,11 @@ export function IntroScreen() {
     const done = window.setTimeout(() => {
       const saved = loadPlayerSave();
       if (saved?.stats.name) {
-        setStats(saved.stats);
-        setName(saved.stats.name);
+        // VIP/cheat kit is granted on first «head into town»; older saves (or
+        // reloads) never re-ran that — backfill if profile rifle is missing.
+        const stats = ensureNamedStarterGear(saved.stats);
+        setStats(stats);
+        setName(stats.name);
         setPhase("town");
         return;
       }
@@ -182,14 +190,12 @@ export function IntroScreen() {
   }
 
   /** Wipe local save — log out and create a new hunter. */
-  function deleteUserAndRestart() {
-    const label = stats.name || "jegeren";
-    const ok = window.confirm(
-      `Slette ${label} for godt?\n\n` +
-        "Alt lagret (penger, kit, jakt, skuddpar) forsvinner i denne nettleseren. " +
-        "Du kan logge inn på nytt med et nytt navn.",
-    );
-    if (!ok) return;
+  function requestDeleteUser() {
+    setDeleteConfirmOpen(true);
+  }
+
+  function confirmDeleteUserAndRestart() {
+    setDeleteConfirmOpen(false);
     clearPlayerSave();
     clearShotPairsStorage();
     setStats(createInitialStats());
@@ -423,6 +429,9 @@ export function IntroScreen() {
       } else if (id === "stock_slim") {
         if (mods.stockSlim) return prev;
         mods.stockSlim = true;
+      } else if (id === "trigger_tuning") {
+        if (mods.triggerTuning) return prev;
+        mods.triggerTuning = true;
       } else if (id === "home_loads_setup") {
         if (mods.homeLoadsSetup) return prev;
         mods.homeLoadsSetup = true;
@@ -649,16 +658,12 @@ export function IntroScreen() {
 
   function headIntoTown() {
     setStats((prev) => {
-      if (isCheatPlayerName(prev.name)) {
-        return grantStarterGear({
-          ...prev,
-          balance: startingBalanceForName(prev.name),
-        });
+      const balance = startingBalanceForName(prev.name);
+      const withBalance = { ...prev, balance };
+      if (isCheatPlayerName(prev.name) || isVipPlayerName(prev.name)) {
+        return ensureNamedStarterGear(withBalance);
       }
-      return grantUncleRifle({
-        ...prev,
-        balance: startingBalanceForName(prev.name),
-      });
+      return grantUncleRifle(withBalance);
     });
     setPhase("town");
   }
@@ -680,7 +685,7 @@ export function IntroScreen() {
             <StatsFrame
               stats={stats}
               onRename={renameHunter}
-              onDeleteUser={deleteUserAndRestart}
+              onDeleteUser={requestDeleteUser}
             />
           ) : null}
         </div>
@@ -948,6 +953,7 @@ export function IntroScreen() {
             dopeCard={stats.dopeCard}
             weather={weather}
             customsMoaDelta={customsBeddingMoaDelta(stats.customsMods)}
+            customsTriggerPullScale={customsTriggerPullScale(stats.customsMods)}
             balance={stats.balance}
             onPayCompetitionFee={(amountNok) => {
               let paid = false;
@@ -1042,6 +1048,22 @@ export function IntroScreen() {
           Drop your landscape art in /public/intro-bg.png
         </p>
       )}
+
+      {deleteConfirmOpen ? (
+        <GameConfirmDialog
+          title="Slett jeger"
+          message={
+            `Slette ${stats.name || "jegeren"} for godt?\n` +
+            "Alt lagret (penger, kit, jakt, skuddpar) forsvinner i denne nettleseren. " +
+            "Du kan logge inn på nytt med et nytt navn."
+          }
+          confirmLabel="Slett"
+          cancelLabel="Avbryt"
+          danger
+          onConfirm={confirmDeleteUserAndRestart}
+          onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

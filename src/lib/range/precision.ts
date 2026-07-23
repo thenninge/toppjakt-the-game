@@ -29,8 +29,8 @@ export {
 } from "@/lib/ballistics/dispersion";
 
 export const RANGE_DISTANCE_M = 100;
-/** Selectable CBA distances on the indoor/outdoor range. */
-export const RANGE_DISTANCES_M = [100, 200, 300, 400] as const;
+/** Selectable lane distances on the zeroing range. */
+export const RANGE_DISTANCES_M = [100, 200, 300, 400, 500] as const;
 export type RangeDistanceM = (typeof RANGE_DISTANCES_M)[number];
 
 export const SHOTS_PER_SERIES = 5;

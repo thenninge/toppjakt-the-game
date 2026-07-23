@@ -41,6 +41,8 @@ export const RIFLE_AVERAGE_BEST_MOA: Record<string, number> = {
   // Megabra / competition class
   "rifle-ai-at-x": 0.25,
   "rifle-sauer-200str": 0.28, // custom Krieger builds can sit ~0.25
+  "rifle-rem-700-sa-hansen-custom": 0.28,
+  "rifle-carbonwolf-berillium": 0.3,
 
   // Bra-bra precision / varmint / LR hunting
   "rifle-tikka-t3x-tac-a1": 0.35,
@@ -48,6 +50,7 @@ export const RIFLE_AVERAGE_BEST_MOA: Record<string, number> = {
   "rifle-cz457": 0.4, // Varmint MTR rimfire
   "rifle-bergara-b14-hmr": 0.4,
   "rifle-sako-90-peak": 0.4,
+  "rifle-sako-85-carbonwolf": 0.4,
   "rifle-sako-s20": 0.45,
   "rifle-sauer-404": 0.45,
   "rifle-browning-xbolt-pro": 0.45,
@@ -56,6 +59,7 @@ export const RIFLE_AVERAGE_BEST_MOA: Record<string, number> = {
 
   // Solid hunting / mid
   "rifle-rem-700-aac-sd": 0.55,
+  "rifle-rem-700-sa-65cm": 0.55,
   "rifle-bergara-b14-ridge": 0.55,
   "rifle-tikka-t3x-lite": 0.6,
   "rifle-howa-1500-hs": 0.65,

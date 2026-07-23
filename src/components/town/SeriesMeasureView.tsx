@@ -1,19 +1,20 @@
 "use client";
 
 import {
-  cbaBullseyePx,
   formatPoiOffset,
-  mmToPx,
   type GroupMeasurement,
   type ShotImpact,
 } from "@/lib/range/precision";
+import {
+  mmToPxOnTarget,
+  targetBullseyePx,
+  type RangeTargetDef,
+} from "@/lib/range/targets";
 
 type SeriesMeasureViewProps = {
   shots: ShotImpact[];
   measurement: GroupMeasurement;
-  imageSrc: string;
-  imageWidth: number;
-  imageHeight: number;
+  target: RangeTargetDef;
 };
 
 function formatMmShort(n: number): string {
@@ -27,15 +28,15 @@ function formatMoaShort(n: number): string {
 export function SeriesMeasureView({
   shots,
   measurement,
-  imageSrc,
-  imageWidth,
-  imageHeight,
+  target,
 }: SeriesMeasureViewProps) {
-  const bull = cbaBullseyePx(imageWidth, imageHeight);
+  const imageWidth = target.nativeWidth;
+  const imageHeight = target.nativeHeight;
+  const bull = targetBullseyePx(target, imageWidth, imageHeight);
   const cx = bull.x;
   const cy = bull.y;
-  const toX = (xMm: number) => cx + mmToPx(xMm, imageWidth);
-  const toY = (yMm: number) => cy + mmToPx(yMm, imageWidth);
+  const toX = (xMm: number) => cx + mmToPxOnTarget(xMm, target, imageWidth);
+  const toY = (yMm: number) => cy + mmToPxOnTarget(yMm, target, imageWidth);
 
   const xs = shots.map((s) => toX(s.xMm));
   const ys = shots.map((s) => toY(s.yMm));
@@ -47,8 +48,8 @@ export function SeriesMeasureView({
 
   const poiX = toX(measurement.poiXMm);
   const poiY = toY(measurement.poiYMm);
-  const meanR = mmToPx(measurement.meanRadiusMm, imageWidth);
-  const cross = Math.max(6, mmToPx(2, imageWidth));
+  const meanR = mmToPxOnTarget(measurement.meanRadiusMm, target, imageWidth);
+  const cross = Math.max(6, mmToPxOnTarget(2, target, imageWidth));
 
   return (
     <div className="series-measure" aria-live="polite">
@@ -61,8 +62,8 @@ export function SeriesMeasureView({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className="series-still-img"
-            src={imageSrc}
-            alt="CBA blink med treff"
+            src={target.src}
+            alt={`${target.label} med treff`}
             width={imageWidth}
             height={imageHeight}
             draggable={false}
@@ -102,7 +103,7 @@ export function SeriesMeasureView({
             {shots.map((s, i) => {
               const x = toX(s.xMm);
               const y = toY(s.yMm);
-              const holeR = mmToPx(s.diameterMm / 2, imageWidth);
+              const holeR = mmToPxOnTarget(s.diameterMm / 2, target, imageWidth);
               return (
                 <g key={`shot-${i}`}>
                   <circle

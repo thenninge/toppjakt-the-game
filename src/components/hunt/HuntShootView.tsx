@@ -85,6 +85,7 @@ import {
   ENVIRO_TIME_FACTOR,
   tickEncounterNerve,
 } from "@/lib/game/nervousness";
+import { BirdNerveBar } from "@/components/hunt/BirdNerveBar";
 import type { CSSProperties } from "react";
 
 type HuntShootViewProps = {
@@ -116,6 +117,8 @@ type HuntShootViewProps = {
   onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
+  /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
+  customsTriggerPullScale?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string) => boolean;
   onEnsureZeroing: (
@@ -213,6 +216,7 @@ export function HuntShootView({
   dopeCard = [],
   onAddDope,
   customsMoaDelta = 0,
+  customsTriggerPullScale = 1,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -280,10 +284,13 @@ export function HuntShootView({
       ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
       : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
   );
-  const [hudTab, setHudTab] = useState<ScopeHudTab>("overhead");
+  const [hudTab, setHudTab] = useState<ScopeHudTab>("shooter");
   const hudTabRef = useRef(hudTab);
   hudTabRef.current = hudTab;
   const birdNerveRef = useRef(
+    Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
+  );
+  const [nerveUi, setNerveUi] = useState(() =>
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
   );
   const camoBirdSpotRef = useRef(camoBirdSpot);
@@ -363,6 +370,7 @@ export function HuntShootView({
         camoBirdSpot: camoBirdSpotRef.current,
       });
       birdNerveRef.current = tick.nerve;
+      setNerveUi(tick.nerve);
       onNerveChangeRef.current?.(tick.nerve);
       if (tick.flushes) {
         onBirdFlushedFromWaitRef.current?.();
@@ -538,7 +546,7 @@ export function HuntShootView({
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(
-      triggerPullRef.current,
+      triggerPullRef.current * customsTriggerPullScale,
       envelopeMoa,
       distanceRef.current,
     );
@@ -1190,6 +1198,13 @@ export function HuntShootView({
       </div>
 
       <div className="scope-stage" tabIndex={0}>
+        {!fired ? (
+          <BirdNerveBar
+            className="hunt-scope-nerve"
+            nerve={nerveUi}
+            threshold={ENCOUNTER_NERVE.flushThreshold}
+          />
+        ) : null}
         <div className="scope-stage-optic-row">
           <div className="range-side-rail range-side-rail--focus">
             <span

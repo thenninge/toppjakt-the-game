@@ -145,6 +145,7 @@ export function CbCustoms({
           ? ` · bedding ${moaDelta.toFixed(2)} MOA`
           : ""}
         {weightCut > 0 ? ` · −${formatWeightKg(weightCut)} kitvekt` : ""}
+        {customsMods.triggerTuning ? " · trigger tuning" : ""}
         {customsMods.customCamo ? " · custom camo" : ""}
       </p>
 

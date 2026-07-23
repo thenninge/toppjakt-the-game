@@ -48,13 +48,16 @@ export type ShotLogEntry = {
   meanRadiusMm: number;
   poiXMm: number;
   poiYMm: number;
-  /** Effective zero offset on paper when the series was shot (mm). */
+  /**
+   * Effective zero as mm-at-100 m (angular: base + saved + session).
+   * Paper shift at series distance = value × (distanceM / 100).
+   */
   zeroXMm: number;
   zeroYMm: number;
-  /** Saved turret correction at log time (mm). */
+  /** Saved turret correction at log time (mm-at-100 m). */
   savedZeroXMm: number;
   savedZeroYMm: number;
-  /** Unsaved session clicks at log time (mm). */
+  /** Unsaved session clicks at log time (mm-at-100 m). */
   sessionZeroXMm: number;
   sessionZeroYMm: number;
 };
@@ -154,23 +157,12 @@ export const VIP_STARTING_BALANCE = 100_000;
 export const STARTER_RIFLE_ID = "rifle-cz452";
 export const STARTER_SCOPE_ID = "scope-biltema-3-9x40";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
-/** Temporary range-test weapon platform (Sauer 200 STR + NF + match ammo). */
-export const TEST_RANGE_LOADOUT_IDS = [
-  "rifle-sauer-200str",
-  "scope-nf-nx8-4-32-mrad",
-  "ammo-norma-65x55-black-diamond",
-  "ammo-lapua-65x55-scenar",
-  "sup-svemko-genesis-30",
-  "bipod-trs-really-right",
-  "stock-mdt-acc-elite-rem700",
-] as const;
 
 /**
- * Full starter hunt kit (also equipped). One item per slot — expand later if asked.
- * Food qty overrides are in STARTER_HUNT_QTY.
+ * Shared hunt support gear (bag, food, camo, LRF, Kestrel) — appended to every
+ * VIP / cheat weapon profile.
  */
-export const STARTER_HUNT_LOADOUT_IDS = [
-  ...TEST_RANGE_LOADOUT_IDS,
+export const STARTER_HUNT_SUPPORT_IDS = [
   "misc-vorn-deer-42",
   "food-msr-pocketrocket",
   "food-msr-isopro-230",
@@ -199,7 +191,148 @@ export const STARTER_HUNT_QTY: Partial<Record<string, number>> = {
   "food-dronning-kokesjokolade": 1,
 };
 
-export const TEST_RANGE_LICENSE_ID = "license-test-sauer-200str";
+export type KitProfileId = "tomas" | "ivar" | "jorn" | "neppe";
+
+export type KitProfile = {
+  id: KitProfileId;
+  /** Weapon platform item ids (rifle, scope, ammo, can, bipod, stock…). */
+  weaponIds: readonly string[];
+  /** Ammo ids that get a perfect 100 m zero with rifle+scope. */
+  zeroAmmoIds: readonly string[];
+  license: {
+    id: string;
+    brand: string;
+    type: string;
+    caliber: string;
+  };
+  /** Pre-applied CB Customs work (Tomas: søylebedding + flute + slank stokk). */
+  customsMods?: CustomsMods;
+};
+
+/** Tomas — Sauer 200 STR + ZCO 527 + Svemko Hunter + softgun + CB Customs (inkl. trigger tuning). */
+export const KIT_PROFILE_TOMAS: KitProfile = {
+  id: "tomas",
+  weaponIds: [
+    "rifle-sauer-200str",
+    "scope-zco-527-mct",
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+    "sup-svemko-hunter-1",
+    "bipod-game-on-softgun",
+  ],
+  zeroAmmoIds: [
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+  ],
+  license: {
+    id: "license-vip-tomas-sauer-200str",
+    brand: "Sauer",
+    type: "200 STR",
+    caliber: "6,5×55",
+  },
+  customsMods: {
+    ...EMPTY_CUSTOMS_MODS,
+    pillarBedding: true,
+    fluting: true,
+    stockSlim: true,
+    triggerTuning: true,
+  },
+};
+
+/** Ivar — CarbonWölf Berillium Level + Nightforce MIL + Hausken JD184 + softgun. */
+export const KIT_PROFILE_IVAR: KitProfile = {
+  id: "ivar",
+  weaponIds: [
+    "rifle-carbonwolf-berillium",
+    "scope-nf-nx8-4-32-mrad",
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+    "sup-hausken-jd184-xtrm",
+    "bipod-game-on-softgun",
+  ],
+  zeroAmmoIds: [
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+  ],
+  license: {
+    id: "license-vip-ivar-carbonwolf-berillium",
+    brand: "CarbonWölf",
+    type: "Berillium Level",
+    caliber: "6,5×55",
+  },
+};
+
+/** Jørn — Rem700 SA Hansen Custom + MDT HNT26 + Kahles K525i + A-TEC + Caldwell XLA. */
+export const KIT_PROFILE_JORN: KitProfile = {
+  id: "jorn",
+  weaponIds: [
+    "rifle-rem-700-sa-hansen-custom",
+    "stock-mdt-hnt26-rem700",
+    "scope-kahles-k525i-5-25-mrad",
+    "ammo-norma-65cm-black-diamond",
+    "ammo-lapua-65cm-scenar-l",
+    "sup-atec-optima-50",
+    "bipod-caldwell-xla",
+  ],
+  zeroAmmoIds: [
+    "ammo-norma-65cm-black-diamond",
+    "ammo-lapua-65cm-scenar-l",
+  ],
+  license: {
+    id: "license-vip-jorn-rem-700-hansen-custom",
+    brand: "Hansen Custom",
+    type: "Rem700 SA",
+    caliber: "6,5 Creedmoor",
+  },
+};
+
+/** Neppe (cheat) — competition Sauer + NF + Genesis + ACC Elite. */
+export const KIT_PROFILE_NEPPE: KitProfile = {
+  id: "neppe",
+  weaponIds: [
+    "rifle-sauer-200str",
+    "scope-nf-nx8-4-32-mrad",
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+    "sup-svemko-genesis-30",
+    "bipod-trs-really-right",
+    "stock-mdt-acc-elite-rem700",
+  ],
+  zeroAmmoIds: [
+    "ammo-norma-65x55-black-diamond",
+    "ammo-lapua-65x55-scenar",
+  ],
+  license: {
+    id: "license-test-sauer-200str",
+    brand: "Sauer",
+    type: "200 STR",
+    caliber: "6,5×55",
+  },
+};
+
+export const KIT_PROFILES: Record<KitProfileId, KitProfile> = {
+  tomas: KIT_PROFILE_TOMAS,
+  ivar: KIT_PROFILE_IVAR,
+  jorn: KIT_PROFILE_JORN,
+  neppe: KIT_PROFILE_NEPPE,
+};
+
+/** @deprecated Prefer {@link KIT_PROFILE_NEPPE}.weaponIds */
+export const TEST_RANGE_LOADOUT_IDS = KIT_PROFILE_NEPPE.weaponIds;
+
+/** Full equipped kit for a profile (weapon + hunt support). */
+export function huntLoadoutIdsForProfile(
+  profile: KitProfile,
+): string[] {
+  return [...profile.weaponIds, ...STARTER_HUNT_SUPPORT_IDS];
+}
+
+/** @deprecated Prefer {@link huntLoadoutIdsForProfile}(KIT_PROFILE_NEPPE). */
+export const STARTER_HUNT_LOADOUT_IDS = huntLoadoutIdsForProfile(
+  KIT_PROFILE_NEPPE,
+);
+
+export const TEST_RANGE_LICENSE_ID = KIT_PROFILE_NEPPE.license.id;
 /** Norwegian satire: max legal hunting rifles before the system says nei. */
 export const MAX_HUNTING_RIFLES = 8;
 /** Base søknadsgebyr — doubles per paid license (500, 1000, 2000…). */
@@ -240,13 +373,21 @@ export function isCheatPlayerName(name: string): boolean {
  * (Jørn / Ivar / Tomas — e.g. "Jørn Nilsson").
  */
 export function isVipPlayerName(name: string): boolean {
+  return vipKitProfileIdForName(name) != null;
+}
+
+/** Map login name → VIP kit profile id (null if not a VIP first name). */
+export function vipKitProfileIdForName(name: string): KitProfileId | null {
   const words = name
     .trim()
     .toLowerCase()
     .normalize("NFC")
     .split(/[\s\-_/.,]+/)
     .filter(Boolean);
-  return VIP_NAME_TOKENS.some((token) => words.includes(token));
+  if (words.includes("tomas")) return "tomas";
+  if (words.includes("ivar")) return "ivar";
+  if (words.includes("jørn") || words.includes("jorn")) return "jorn";
+  return null;
 }
 
 /** Starting cash for a newly registered display name. */
@@ -295,14 +436,16 @@ export function grantUncleRifle(stats: PlayerStats): PlayerStats {
 }
 
 /**
- * Cheat / developer loadout: full hunt + range kit, licenses, perfect zeros.
- * Call after setting balance to CHEAT_STARTING_BALANCE.
+ * Grant a named kit profile: inventory + equipped kit + license + zeros + customs.
  */
-export function grantStarterGear(stats: PlayerStats): PlayerStats {
+export function grantKitProfile(
+  stats: PlayerStats,
+  profile: KitProfile,
+): PlayerStats {
   let next = grantUncleRifle(stats);
+  const loadout = huntLoadoutIdsForProfile(profile);
 
-  // Full hunt + range test loadout — inventory and kit.
-  for (const id of STARTER_HUNT_LOADOUT_IDS) {
+  for (const id of loadout) {
     if (!next.inventory.some((e) => e.itemId === id)) {
       const item = getShopItem(id);
       let qty = STARTER_HUNT_QTY[id] ?? 1;
@@ -315,46 +458,92 @@ export function grantStarterGear(stats: PlayerStats): PlayerStats {
       };
     }
   }
-  if (!next.weaponLicenses.some((l) => l.id === TEST_RANGE_LICENSE_ID)) {
+
+  if (!next.weaponLicenses.some((l) => l.id === profile.license.id)) {
     next = {
       ...next,
       weaponLicenses: [
         ...next.weaponLicenses,
-        {
-          id: TEST_RANGE_LICENSE_ID,
-          brand: "Sauer",
-          type: "200 STR",
-          caliber: "6,5×55",
-          gifted: true,
-        },
+        { ...profile.license, gifted: true },
       ],
     };
   }
 
-  next = { ...next, kit: [...STARTER_HUNT_LOADOUT_IDS] };
+  next = { ...next, kit: [...loadout] };
 
-  // Starter platform is already zeroed — BDX holds assume perfect 100 m zero.
+  if (profile.customsMods) {
+    next = { ...next, customsMods: { ...profile.customsMods } };
+  }
+
   const perfect: ZeroingProfile = {
     baseXMm: 0,
     baseYMm: 0,
     savedXMm: 0,
     savedYMm: 0,
   };
-  const rifleId = TEST_RANGE_LOADOUT_IDS[0];
-  const scopeId = TEST_RANGE_LOADOUT_IDS[1];
-  let profiles = { ...next.zeroingProfiles };
-  for (const ammoId of [
-    "ammo-norma-65x55-black-diamond",
-    "ammo-lapua-65x55-scenar",
-  ]) {
-    profiles = {
-      ...profiles,
-      [zeroingKey(rifleId, scopeId, ammoId)]: perfect,
-    };
+  const rifleId = profile.weaponIds.find((id) => id.startsWith("rifle-"));
+  const scopeId = profile.weaponIds.find((id) => id.startsWith("scope-"));
+  if (rifleId && scopeId) {
+    let profiles = { ...next.zeroingProfiles };
+    for (const ammoId of profile.zeroAmmoIds) {
+      profiles = {
+        ...profiles,
+        [zeroingKey(rifleId, scopeId, ammoId)]: perfect,
+      };
+    }
+    next = { ...next, zeroingProfiles: profiles };
   }
-  next = { ...next, zeroingProfiles: profiles };
 
   return next;
+}
+
+/** Cheat (Neppe) — full competition Sauer kit. */
+export function grantStarterGear(stats: PlayerStats): PlayerStats {
+  return grantKitProfile(stats, KIT_PROFILE_NEPPE);
+}
+
+/** VIP first-name loadout (Tomas / Ivar / Jørn). */
+export function grantVipStarterGear(
+  stats: PlayerStats,
+  name: string,
+): PlayerStats {
+  const id = vipKitProfileIdForName(name);
+  if (!id) return grantUncleRifle(stats);
+  return grantKitProfile(stats, KIT_PROFILES[id]);
+}
+
+/** Profile for cheat/VIP names, else null. */
+function namedStarterProfile(name: string): KitProfile | null {
+  if (isCheatPlayerName(name)) return KIT_PROFILE_NEPPE;
+  const profileId = vipKitProfileIdForName(name);
+  if (!profileId) return null;
+  return KIT_PROFILES[profileId];
+}
+
+/**
+ * True when cheat/VIP already owns every profile weapon id
+ * (rifle/scope/ammo/… — not shared hunt-support gear).
+ */
+export function hasNamedStarterKit(stats: PlayerStats): boolean {
+  const profile = namedStarterProfile(stats.name);
+  if (!profile) return true;
+  return profile.weaponIds.every((id) =>
+    stats.inventory.some((e) => e.itemId === id),
+  );
+}
+
+/**
+ * Grant cheat/VIP loadout when the name matches but the profile rifle is
+ * missing — e.g. saves created before VIP kits, or load skipping intro.
+ * Idempotent if the kit is already present.
+ */
+export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
+  if (hasNamedStarterKit(stats)) return stats;
+  if (isCheatPlayerName(stats.name)) return grantStarterGear(stats);
+  if (isVipPlayerName(stats.name)) {
+    return grantVipStarterGear(stats, stats.name);
+  }
+  return stats;
 }
 
 export function createInitialStats(): PlayerStats {

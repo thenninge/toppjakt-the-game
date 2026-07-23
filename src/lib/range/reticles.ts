@@ -56,6 +56,32 @@ export const RETICLES: Record<string, ReticleDef> = {
     opticalCenterX: 263,
     opticalCenterY: 235,
   },
+  /**
+   * Kahles SKMR-style mil tree (kahles.png, 1200²).
+   * Native hash pitch ≈ 26 px between marks; initial 1 mil read as 131 px
+   * was ~5× too small vs CBA/target — ÷5, then ×1.02 visual bump → ÷1.02.
+   */
+  kahles: {
+    id: "kahles",
+    label: "SKMR",
+    src: "/range/reticles/kahles.png",
+    nativeWidth: 1200,
+    nativeHeight: 1200,
+    centerTo1MilPx: 131 / 5 / 1.02,
+  },
+  /**
+   * Schmidt & Bender mil tree (sb.png, 500²).
+   * 0.5 mil ticks ≈ 10 px → 1 mil ≈ 20 px; ×1.12 so 1 cm on reticle
+   * matches 1 cm on the CBA blink at 100 m.
+   */
+  sb: {
+    id: "sb",
+    label: "P4F",
+    src: "/range/reticles/sb.png",
+    nativeWidth: 500,
+    nativeHeight: 500,
+    centerTo1MilPx: 20 / 1.12,
+  },
 };
 
 export function getReticleDef(id: string | undefined): ReticleDef | null {

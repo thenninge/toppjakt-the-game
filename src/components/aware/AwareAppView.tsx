@@ -42,6 +42,7 @@ import {
   ShotPairPreview,
   SearchTrackOverlay,
 } from "@/components/aware/ShotPairOverlay";
+import { BirdNerveBar } from "@/components/hunt/BirdNerveBar";
 import {
   ENCOUNTER_NERVE,
   tickEncounterNerve,
@@ -286,43 +287,6 @@ function DangerOverlay({
         transform={`translate(${bird.x} ${bird.y}) rotate(${Math.atan2(bird.x - hunter.x, -(bird.y - hunter.y)) * (180 / Math.PI)})`}
       />
     </svg>
-  );
-}
-
-function NerveProgressBar({
-  nerve,
-  threshold,
-}: {
-  nerve: number;
-  threshold: number;
-}) {
-  const pct = Math.min(100, Math.max(0, (nerve / threshold) * 100));
-  const hot = pct >= 75;
-  return (
-    <div
-      className="aware-nerve-wrap"
-      role="meter"
-      aria-label="Fuglens nervøsitet"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(pct)}
-    >
-      <div className="aware-nerve-label">
-        <span>Nervøsitet</span>
-        <span>
-          {pct.toFixed(0)}%
-          {pct >= 100 ? " — letter!" : ""}
-        </span>
-      </div>
-      <div className="aware-nerve-track">
-        <div
-          className={
-            hot ? "aware-nerve-fill aware-nerve-fill-hot" : "aware-nerve-fill"
-          }
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -963,7 +927,7 @@ export function AwareAppView({
         </header>
 
         {stalking && !postShotSkuddparMode ? (
-          <NerveProgressBar
+          <BirdNerveBar
             nerve={nerve}
             threshold={ENCOUNTER_NERVE.flushThreshold}
           />
