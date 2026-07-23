@@ -14,6 +14,7 @@ type ShotVideoViewProps = {
 /**
  * Full-frame post-shot clip (kill / hit / miss).
  * Continues when the video ends, errors, or the player skips.
+ * Always muted — scene music runs on Web Audio and must not be interrupted.
  */
 export function ShotVideoView({
   videoSrc,
@@ -24,13 +25,19 @@ export function ShotVideoView({
   ariaLabel = "Skuddresultat",
 }: ShotVideoViewProps) {
   const doneRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const onContinueRef = useRef(onContinue);
   onContinueRef.current = onContinue;
 
   function finish() {
     if (doneRef.current) return;
     doneRef.current = true;
-    window.dispatchEvent(new Event("toppjakt-resume-music"));
+    const el = videoRef.current;
+    if (el) {
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+    }
     onContinueRef.current();
   }
 
@@ -39,11 +46,28 @@ export function ShotVideoView({
   }, [videoSrc]);
 
   useEffect(() => {
-    // Video playback often pauses looping HTMLAudio — nudge music back on.
-    window.dispatchEvent(new Event("toppjakt-resume-music"));
-    return () => {
-      window.dispatchEvent(new Event("toppjakt-resume-music"));
-    };
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = true;
+    el.defaultMuted = true;
+    el.volume = 0;
+    // Some browsers still expose an audio track — silence every one.
+    try {
+      const anyEl = el as HTMLVideoElement & {
+        audioTracks?: { length: number; [i: number]: { enabled: boolean } };
+      };
+      const tracks = anyEl.audioTracks;
+      if (tracks) {
+        for (let i = 0; i < tracks.length; i++) {
+          tracks[i]!.enabled = false;
+        }
+      }
+    } catch {
+      /* audioTracks not supported */
+    }
+    void el.play().catch(() => {
+      /* autoplay blocked — user can skip */
+    });
   }, [videoSrc]);
 
   useEffect(() => {
@@ -69,15 +93,14 @@ export function ShotVideoView({
       <div className="walk-view-frame">
         <video
           key={videoSrc}
+          ref={videoRef}
           className="walk-view-img"
           src={videoSrc}
           autoPlay
           muted
           playsInline
           preload="auto"
-          onPlay={() =>
-            window.dispatchEvent(new Event("toppjakt-resume-music"))
-          }
+          disableRemotePlayback
           onEnded={finish}
           onError={finish}
         />
