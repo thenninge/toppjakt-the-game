@@ -27,6 +27,8 @@ type RullesBarProps = {
   unlockedTerrainIds: string[];
   hunter: HunterRésumé;
   onSpend: (amountNok: number) => boolean;
+  /** Earn cash (e.g. dishwashing). */
+  onEarn: (amountNok: number) => void;
   onUnlockTerrain: (terrainId: HuntingTerrainId) => void;
   onLeave: () => void;
 };
@@ -82,6 +84,9 @@ function formatRange(m: number): string {
   return m > 0 ? `${m} m` : "—";
 }
 
+/** Dishwashing shift when the wallet is empty. */
+const DISHWASH_PAY_NOK = 500;
+
 /**
  * Rulles — kebab, pizza, bar & fine dining.
  * Snøvling + påspandering + hunt résumé → handshake-jaktterreng.
@@ -93,6 +98,7 @@ export function RullesBar({
   unlockedTerrainIds,
   hunter,
   onSpend,
+  onEarn,
   onUnlockTerrain,
   onLeave,
 }: RullesBarProps) {
@@ -280,7 +286,9 @@ export function RullesBar({
               >
                 <span className="town-location-name">Enrique (kjøkken)</span>
                 <span className="town-location-blurb">
-                  Pizza, hemmeligheter, og null jaktkort.
+                  {balance < DISHWASH_PAY_NOK
+                    ? "Pizza, hemmeligheter — og oppvask hvis du er blakk."
+                    : "Pizza, hemmeligheter, og null jaktkort."}
                 </span>
               </button>
             </li>
@@ -766,6 +774,34 @@ export function RullesBar({
               >
                 <span className="town-location-name">Be om gratis tips</span>
                 <span className="town-location-blurb">Han gir dem likevel.</span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                disabled={balance >= DISHWASH_PAY_NOK}
+                onClick={() => {
+                  if (balance >= DISHWASH_PAY_NOK) {
+                    setStatus(
+                      "Enrique ser på hendene dine. «Du er ikke blakk nok. Kom tilbake når kontoen skriker.»",
+                    );
+                    return;
+                  }
+                  onEarn(DISHWASH_PAY_NOK);
+                  setStatus(
+                    `Du tar oppvasken i to timer. Enrique dytter ${formatKr(DISHWASH_PAY_NOK)} i lomma di. «Nå lukter du løk og muligheter. Ikke spill det bort på champagne.»`,
+                  );
+                }}
+              >
+                <span className="town-location-name">
+                  Tilby å ta oppvasken (+{formatKr(DISHWASH_PAY_NOK)})
+                </span>
+                <span className="town-location-blurb">
+                  {balance >= DISHWASH_PAY_NOK
+                    ? "Bare når du er blakk (under 500 kr)."
+                    : "Rulle nikker. Stablen vokser. Hendene dine også."}
+                </span>
               </button>
             </li>
           </ul>

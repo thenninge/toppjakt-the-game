@@ -857,6 +857,13 @@ export function IntroScreen() {
               maxRange: stats.maxRange,
             }}
             onSpend={spendAtRulles}
+            onEarn={(amountNok) => {
+              if (amountNok <= 0) return;
+              setStats((prev) => ({
+                ...prev,
+                balance: prev.balance + amountNok,
+              }));
+            }}
             onUnlockTerrain={unlockRullesTerrain}
             onLeave={backToTown}
           />
