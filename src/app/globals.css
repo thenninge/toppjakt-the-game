@@ -1860,6 +1860,37 @@ body {
   margin-top: 0.35rem;
 }
 
+/* Spot landscape + bird as one world (zooms/pans with the scope). */
+.hunt-scope-scene {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.hunt-scope-landscape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hunt-scope-bird-wrap {
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.hunt-scope-bird-wrap .scope-target.hunt-tiur-target {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
 /* Hunt shoot — turret HUD row (Oversikt / Shooter / Enviro / Kestrel) */
 .hunt-shoot-dope-row {
   display: flex;

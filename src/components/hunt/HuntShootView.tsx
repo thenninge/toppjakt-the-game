@@ -63,10 +63,12 @@ import {
 } from "@/lib/shop/types";
 import {
   birdMmToNativePx,
+  birdNativePxPerMm,
   birdScopeImageScale,
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
+  SCOPE_VIEWPORT_REF_PX,
   TIUR_INSTANT_KILL_DIAMETER_MM,
   TIUR_VITAL_DIAMETER_MM,
   TRIGGERCAM_ITEM_ID,
@@ -124,6 +126,13 @@ type HuntShootViewProps = {
   birdFlip?: boolean;
   /** Topp/target pair chosen at spot time. */
   birdSpriteId?: BirdSpriteId;
+  /** Spotting landscape behind the bird (same photo as SpotView). */
+  landscapeSrc?: string;
+  /** Bird position on the spot photo (%, same as SpotView placement). */
+  landscapeFocusX?: number;
+  landscapeFocusY?: number;
+  /** Bird width as % of landscape (same as SpotView placement.widthPct). */
+  landscapeBirdWidthPct?: number;
   /** Kit camo bird-spot factor (Aware / Enviro nerve). */
   camoBirdSpot?: number;
   /** Bird nerve carried from Aware (0–cap). */
@@ -152,6 +161,28 @@ type Keys = {
 
 const AIM_SPEED_MM_PER_SEC = 22;
 const DEFAULT_SCOPE_ZOOM = 12;
+
+/** Aim (mm from vital) that puts landscape centre under the reticle. */
+function aimMmForLandscapeCenter(opts: {
+  nativeW: number;
+  nativeH: number;
+  spriteHeightMm: number;
+  widthPct: number;
+  landAspect: number;
+  birdXPct: number;
+  birdYPct: number;
+  vitalOff: { x: number; y: number };
+}): { x: number; y: number } {
+  const sceneW = opts.nativeW * (100 / Math.max(0.05, opts.widthPct));
+  const sceneH = sceneW / Math.max(0.25, opts.landAspect);
+  const ox = (opts.birdXPct / 100) * sceneW - sceneW / 2;
+  const oy = (opts.birdYPct / 100) * sceneH - sceneH / 2;
+  const pxPerMm = opts.nativeH / opts.spriteHeightMm;
+  return {
+    x: -(ox + opts.vitalOff.x) / pxPerMm,
+    y: -(oy + opts.vitalOff.y) / pxPerMm,
+  };
+}
 
 /**
  * Hunt shoot: same scope loop as the range, tiurtopp1 as target,
@@ -183,6 +214,10 @@ export function HuntShootView({
   mentalFatigue = 0,
   birdFlip = false,
   birdSpriteId = "tiur-1",
+  landscapeSrc,
+  landscapeFocusX = 50,
+  landscapeFocusY = 50,
+  landscapeBirdWidthPct,
   camoBirdSpot = 0.5,
   birdNerve = 0,
   onAbort,
@@ -276,6 +311,23 @@ export function HuntShootView({
   const vitalOffRef = useRef({ x: 0, y: 0 });
   const geomRef = useRef(shotGeom);
   geomRef.current = shotGeom;
+  /** Bird seat on landscape (%, widthPct) — same as SpotView placement. */
+  const birdSeatRef = useRef({
+    x: landscapeFocusX,
+    y: landscapeFocusY,
+    widthPct: landscapeBirdWidthPct ?? 2,
+  });
+  birdSeatRef.current = {
+    x: landscapeFocusX,
+    y: landscapeFocusY,
+    widthPct: Math.max(0.05, landscapeBirdWidthPct ?? 2),
+  };
+  /** Landscape aspect (w/h); updated on image load. */
+  const [landAspect, setLandAspect] = useState(4 / 3);
+  const landAspectRef = useRef(landAspect);
+  landAspectRef.current = landAspect;
+  const landscapeSrcRef = useRef(landscapeSrc);
+  landscapeSrcRef.current = landscapeSrc;
   const [recoilActive, setRecoilActive] = useState(false);
   const [fired, setFired] = useState(false);
   const [lastImpact, setLastImpact] = useState<{
@@ -331,6 +383,7 @@ export function HuntShootView({
     right: false,
   });
   const aimRef = useRef({ x: 0, y: 0 });
+  const hasPannedRef = useRef(false);
   const wobbleRef = useRef({ x: 0, y: 0 });
   const distanceRef = useRef(trueDistanceM);
   const crosswindRef = useRef(crosswindMs);
@@ -765,9 +818,26 @@ export function HuntShootView({
       const scale = targetScaleRef.current;
       const vo = vitalOffRef.current;
       const g = geomRef.current;
-      const panPxX = (vo.x + birdMmToNativePx(ax, g)) * scale;
-      const panPxY = (vo.y + birdMmToNativePx(ay, g)) * scale;
-      el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+      const seat = birdSeatRef.current;
+      const aimPxX = birdMmToNativePx(ax, g);
+      const aimPxY = birdMmToNativePx(ay, g);
+
+      if (landscapeSrc) {
+        // Scene sized so bird at widthPct% equals native topp width — hit math unchanged.
+        const sceneW = g.nativeW * (100 / seat.widthPct);
+        const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+        const birdCx = (seat.x / 100) * sceneW;
+        const birdCy = (seat.y / 100) * sceneH;
+        const ox = birdCx - sceneW / 2;
+        const oy = birdCy - sceneH / 2;
+        const panPxX = (ox + vo.x + aimPxX) * scale;
+        const panPxY = (oy + vo.y + aimPxY) * scale;
+        el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+      } else {
+        const panPxX = (vo.x + aimPxX) * scale;
+        const panPxY = (vo.y + aimPxY) * scale;
+        el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+      }
     }
 
     function tick(now: number) {
@@ -776,14 +846,34 @@ export function HuntShootView({
       const k = keysRef.current;
       let { x, y } = aimRef.current;
       const distFactor = distanceRef.current / 100;
-      const speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
+      const g = geomRef.current;
+      const seat = birdSeatRef.current;
+      const pxPerMm = birdNativePxPerMm(g);
+      const scale = targetScaleRef.current;
+
+      let speed: number;
+      let limitX: number;
+      let limitY: number;
+      if (landscapeSrcRef.current) {
+        // Pan ~half a scope FOV of scene per second — finding the bird takes a moment.
+        const visibleScenePx = SCOPE_VIEWPORT_REF_PX / Math.max(0.01, scale);
+        speed = ((visibleScenePx * 0.5) / pxPerMm) * dt;
+        const sceneW = g.nativeW * (100 / seat.widthPct);
+        const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+        limitX = (sceneW * 0.55) / pxPerMm;
+        limitY = (sceneH * 0.55) / pxPerMm;
+      } else {
+        speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
+        limitX = 120 * distFactor;
+        limitY = limitX;
+      }
       if (k.left) x -= speed;
       if (k.right) x += speed;
       if (k.up) y -= speed;
       if (k.down) y += speed;
-      const aimLimit = 120 * distFactor;
-      x = Math.max(-aimLimit, Math.min(aimLimit, x));
-      y = Math.max(-aimLimit, Math.min(aimLimit, y));
+      if (k.left || k.right || k.up || k.down) hasPannedRef.current = true;
+      x = Math.max(-limitX, Math.min(limitX, x));
+      y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
 
       const calm = effectiveCalmWithFocus(
@@ -842,7 +932,41 @@ export function HuntShootView({
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [ready, fired]);
+  }, [ready, fired, landscapeSrc]);
+
+  // Start with landscape centre in the glass — player must find the bird.
+  useEffect(() => {
+    if (!landscapeSrc) {
+      aimRef.current = { x: 0, y: 0 };
+      hasPannedRef.current = false;
+      return;
+    }
+    if (hasPannedRef.current) return;
+    const g = shotGeom;
+    const vitalBase = birdVitalOffsetFromImageCenterPx(g);
+    const vitalOff = birdFlip
+      ? { x: -vitalBase.x, y: vitalBase.y }
+      : vitalBase;
+    const widthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
+    aimRef.current = aimMmForLandscapeCenter({
+      nativeW: g.nativeW,
+      nativeH: g.nativeH,
+      spriteHeightMm: g.spriteHeightMm,
+      widthPct,
+      landAspect,
+      birdXPct: landscapeFocusX,
+      birdYPct: landscapeFocusY,
+      vitalOff,
+    });
+  }, [
+    landscapeSrc,
+    landscapeBirdWidthPct,
+    landscapeFocusX,
+    landscapeFocusY,
+    landAspect,
+    shotGeom,
+    birdFlip,
+  ]);
 
   function nudgeZero(axis: "x" | "y", deltaMm: number) {
     if (fired) return;
@@ -878,6 +1002,12 @@ export function HuntShootView({
     : vitalBase;
   targetScaleRef.current = targetScale;
   vitalOffRef.current = vitalOff;
+
+  const birdWidthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
+  const sceneW = landscapeSrc
+    ? shotGeom.nativeW * (100 / birdWidthPct)
+    : shotGeom.nativeW;
+  const sceneH = landscapeSrc ? sceneW / landAspect : shotGeom.nativeH;
 
   const activeHold =
     ballisticHold && selectedAmmo
@@ -1051,33 +1181,94 @@ export function HuntShootView({
               }
             >
               <div ref={scopeWorldRef} className="scope-world">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="scope-target hunt-tiur-target"
-                  src={shotGeom.displaySrc}
-                  alt="Fugl"
-                  draggable={false}
-                  width={shotGeom.nativeW}
-                  height={shotGeom.nativeH}
-                  style={{
-                    width: shotGeom.nativeW,
-                    height: shotGeom.nativeH,
-                    transform: birdFlip ? "scaleX(-1)" : undefined,
-                  }}
-                />
-                {lastImpact ? (
-                  <span
-                    className="bullet-hole"
-                    style={{
-                      width: mmToPx(lastImpact.diameterMm),
-                      height: mmToPx(lastImpact.diameterMm),
-                      left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
-                      top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
-                      marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
-                      marginTop: -mmToPx(lastImpact.diameterMm) / 2,
-                    }}
-                  />
-                ) : null}
+                {landscapeSrc ? (
+                  <div
+                    className="hunt-scope-scene"
+                    style={{ width: sceneW, height: sceneH }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className="hunt-scope-landscape"
+                      src={landscapeSrc}
+                      alt=""
+                      draggable={false}
+                      aria-hidden
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                          setLandAspect(img.naturalWidth / img.naturalHeight);
+                        }
+                      }}
+                    />
+                    <div
+                      className="hunt-scope-bird-wrap"
+                      style={{
+                        left: `${landscapeFocusX}%`,
+                        top: `${landscapeFocusY}%`,
+                        width: `${birdWidthPct}%`,
+                        aspectRatio: `${shotGeom.nativeW} / ${shotGeom.nativeH}`,
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        className="scope-target hunt-tiur-target"
+                        src={shotGeom.displaySrc}
+                        alt="Fugl"
+                        draggable={false}
+                        width={shotGeom.nativeW}
+                        height={shotGeom.nativeH}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          transform: birdFlip ? "scaleX(-1)" : undefined,
+                        }}
+                      />
+                      {lastImpact ? (
+                        <span
+                          className="bullet-hole"
+                          style={{
+                            width: mmToPx(lastImpact.diameterMm),
+                            height: mmToPx(lastImpact.diameterMm),
+                            left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
+                            top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
+                            marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
+                            marginTop: -mmToPx(lastImpact.diameterMm) / 2,
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className="scope-target hunt-tiur-target"
+                      src={shotGeom.displaySrc}
+                      alt="Fugl"
+                      draggable={false}
+                      width={shotGeom.nativeW}
+                      height={shotGeom.nativeH}
+                      style={{
+                        width: shotGeom.nativeW,
+                        height: shotGeom.nativeH,
+                        transform: birdFlip ? "scaleX(-1)" : undefined,
+                      }}
+                    />
+                    {lastImpact ? (
+                      <span
+                        className="bullet-hole"
+                        style={{
+                          width: mmToPx(lastImpact.diameterMm),
+                          height: mmToPx(lastImpact.diameterMm),
+                          left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
+                          top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
+                          marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
+                          marginTop: -mmToPx(lastImpact.diameterMm) / 2,
+                        }}
+                      />
+                    ) : null}
+                  </>
+                )}
               </div>
               <ScopeReticle
                 scope={scope.scope}

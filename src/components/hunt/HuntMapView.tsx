@@ -2605,6 +2605,10 @@ export function HuntMapView({
         mentalFatigue={mentalFatigue}
         birdFlip={!!shootSession.bird.flip}
         birdSpriteId={shootSession.bird.spriteId}
+        landscapeSrc={shootSession.imageSrc}
+        landscapeFocusX={shootSession.bird.x}
+        landscapeFocusY={shootSession.bird.y}
+        landscapeBirdWidthPct={shootSession.bird.widthPct}
         camoBirdSpot={camoBirdSpot}
         birdNerve={shootSession.birdNerve}
         onAffinitiesChange={onAffinitiesChange}
