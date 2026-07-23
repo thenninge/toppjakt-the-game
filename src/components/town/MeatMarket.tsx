@@ -76,6 +76,12 @@ export function MeatMarket({
   );
 
   function sellOne(c: GameCarcass) {
+    if (c.species === "ugle") {
+      setLastSaleNok(0);
+      setLastSaleLabel("ugle");
+      setStep("haggle");
+      return;
+    }
     setLastSaleNok(c.marketValueNok);
     setLastSaleLabel(
       `${speciesLabelNb(c.species)} ${formatWeightKg(c.weightKg)}`,
@@ -86,17 +92,22 @@ export function MeatMarket({
   }
 
   function sellAll() {
-    if (carcasses.length === 0) {
+    const sellable = carcasses.filter((c) => c.species !== "ugle");
+    if (sellable.length === 0) {
+      if (carcasses.some((c) => c.species === "ugle")) {
+        setLastSaleLabel("ugle");
+        setStep("haggle");
+        return;
+      }
       setStep("empty");
       return;
     }
-    setLastSaleNok(totalOffer);
+    const offer = sellable.reduce((s, c) => s + c.marketValueNok, 0);
+    setLastSaleNok(offer);
     setLastSaleLabel(
-      carcasses.length === 1
-        ? `1 fugl`
-        : `${carcasses.length} fugler`,
+      sellable.length === 1 ? `1 fugl` : `${sellable.length} fugler`,
     );
-    onSell(carcasses.map((c) => c.id));
+    onSell(sellable.map((c) => c.id));
     setSelectedId(null);
     setStep("sold");
   }
@@ -223,15 +234,32 @@ export function MeatMarket({
 
       {step === "haggle" ? (
         <>
-          <h2 className="intro-title">Pruting</h2>
-          <p className="intro-line">
-            Vebjørn smiler uten tenner foran. «Prisene er satt etter vekt og
-            hvor mye kule som har gjort kjøttet til saus. Grønn sone betaler
-            bedre enn rød. Rød bedre enn «jeg traff vingen og håpte».»
-          </p>
-          <p className="intro-line">
-            «Du kan prute. Jeg kan late som jeg hører. Budet står.»
-          </p>
+          <h2 className="intro-title">
+            {lastSaleLabel === "ugle" ? "Ugle?" : "Pruting"}
+          </h2>
+          {lastSaleLabel === "ugle" ? (
+            <>
+              <p className="intro-line">
+                Vebjørn ser på posen. Så på deg. Så på posen. «Nei. Absolutt
+                nei. Det der er ikke vilt. Det er en… situasjon. Jeg kjøper ikke
+                ugler. Ikke i dag. Ikke i morgen. Ikke om Stortinget ber.»
+              </p>
+              <p className="intro-line">
+                «Ta den med deg. Helst ut av bygget. Og ikke si at du var her.»
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="intro-line">
+                Vebjørn smiler uten tenner foran. «Prisene er satt etter vekt og
+                hvor mye kule som har gjort kjøttet til saus. Grønn sone betaler
+                bedre enn rød. Rød bedre enn «jeg traff vingen og håpte».»
+              </p>
+              <p className="intro-line">
+                «Du kan prute. Jeg kan late som jeg hører. Budet står.»
+              </p>
+            </>
+          )}
           <button
             type="button"
             className="intro-button"

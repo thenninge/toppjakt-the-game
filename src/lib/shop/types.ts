@@ -18,6 +18,7 @@ export type ShopCategory =
   | "stock"
   | "rifle"
   | "ammo"
+  | "reloading"
   | "camo"
   | "ballistics"
   | "backpack"
@@ -411,6 +412,7 @@ export const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
   stock: "Stokker",
   rifle: "Rifler",
   ammo: "Ammunisjon",
+  reloading: "Hjemmelading",
   camo: "Camouflage",
   ballistics: "Ballistics",
   backpack: "Backpacks",
@@ -430,6 +432,7 @@ export const SHOP_CATEGORIES: ShopCategory[] = [
   "stock",
   "rifle",
   "ammo",
+  "reloading",
   "camo",
   "ballistics",
   "backpack",
@@ -465,6 +468,7 @@ export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
     case "stock":
     case "bipod":
     case "ammo":
+    case "reloading":
       return "gun_kit";
     case "camo":
       return "camo";

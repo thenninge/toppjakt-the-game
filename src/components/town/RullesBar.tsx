@@ -11,6 +11,8 @@ import {
   checkAudience,
   RULLES_AUDIENCE,
 } from "@/lib/rulles/audience";
+import type { GameCarcass } from "@/lib/hunt/carcass";
+import { UGLE_TACO_NOK } from "@/lib/hunt/owlEasterEgg";
 
 type HunterRésumé = {
   tiur: number;
@@ -26,6 +28,9 @@ type RullesBarProps = {
   balance: number;
   unlockedTerrainIds: string[];
   hunter: HunterRésumé;
+  /** Hidden off-menu bird — only shown as a quiet dialogue option. */
+  ugleCarcass?: GameCarcass | null;
+  onSellUgle?: (carcassId: string) => boolean;
   onSpend: (amountNok: number) => boolean;
   /** Earn cash (e.g. dishwashing). */
   onEarn: (amountNok: number) => void;
@@ -37,6 +42,7 @@ type Step =
   | "welcome"
   | "floor"
   | "rulle"
+  | "ugletaco"
   | "kari"
   | "kristian"
   | "lovenskiold"
@@ -97,6 +103,8 @@ export function RullesBar({
   balance,
   unlockedTerrainIds,
   hunter,
+  ugleCarcass = null,
+  onSellUgle,
   onSpend,
   onEarn,
   onUnlockTerrain,
@@ -343,6 +351,25 @@ export function RullesBar({
                 </button>
               </li>
             ))}
+            {ugleCarcass ? (
+              <li>
+                <button
+                  type="button"
+                  className="town-location"
+                  onClick={() => {
+                    setStatus("");
+                    setStep("ugletaco");
+                  }}
+                >
+                  <span className="town-location-name">
+                    …om noe nederst i sekken
+                  </span>
+                  <span className="town-location-blurb">
+                    Rulle senker stemmen. «Vi snakker ikke om det her.»
+                  </span>
+                </button>
+              </li>
+            ) : null}
           </ul>
           {status ? <p className="shop-row-note">{status}</p> : null}
           <button
@@ -352,6 +379,48 @@ export function RullesBar({
           >
             Tilbake til salongen
           </button>
+        </>
+      ) : null}
+
+      {step === "ugletaco" && ugleCarcass ? (
+        <>
+          <h2 className="intro-title">Rulle — lavmælt</h2>
+          <p className="intro-line">
+            Han kikker ned i disken. «Ugletaco. Spesial. Ikke på menyen. Ikke på
+            Trustpilot. Ikke på Instagram. Ti tusen, kontant, og vi glemmer at
+            vi snakket.»
+          </p>
+          <p className="shop-row-note">
+            Tilbud: {formatKr(UGLE_TACO_NOK)} for ugla i sekken/fryseren.
+          </p>
+          {status ? <p className="shop-row-note">{status}</p> : null}
+          <div className="hunt-side-actions">
+            <button
+              type="button"
+              className="intro-button"
+              onClick={() => {
+                if (!onSellUgle?.(ugleCarcass.id)) {
+                  setStatus(
+                    "Rulle rynker pannen. «Hvor ble den av? Jeg så den jo.»",
+                  );
+                  return;
+                }
+                setStatus(
+                  `Rulle stikker ${formatKr(UGLE_TACO_NOK)} i hånda di. «Ugletaco. God appetitt — til noen andre.»`,
+                );
+                setStep("result");
+              }}
+            >
+              Selg ugla ({formatKr(UGLE_TACO_NOK)})
+            </button>
+            <button
+              type="button"
+              className="intro-button sheriff-secondary"
+              onClick={() => setStep("rulle")}
+            >
+              Nei takk — beholder den
+            </button>
+          </div>
         </>
       ) : null}
 

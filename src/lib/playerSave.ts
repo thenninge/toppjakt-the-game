@@ -82,6 +82,17 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
         : typeof raw.orrhaner === "number" && Number.isFinite(raw.orrhaner)
           ? Math.max(0, Math.floor(raw.orrhaner))
           : base.lifetimeOrrhaner,
+    lifetimeUgle:
+      typeof raw.lifetimeUgle === "number" && Number.isFinite(raw.lifetimeUgle)
+        ? Math.max(0, Math.floor(raw.lifetimeUgle))
+        : base.lifetimeUgle,
+    owlLastOfferedMilestone:
+      typeof raw.owlLastOfferedMilestone === "number" &&
+      Number.isFinite(raw.owlLastOfferedMilestone)
+        ? Math.max(0, Math.floor(raw.owlLastOfferedMilestone))
+        : raw.owlLastOfferedMilestone === null
+          ? null
+          : base.owlLastOfferedMilestone,
     carcasses,
     freezerCarcasses,
     maxRange:

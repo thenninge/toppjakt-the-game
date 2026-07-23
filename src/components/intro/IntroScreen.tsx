@@ -59,6 +59,7 @@ import { XxlShop } from "@/components/town/XxlShop";
 import { CbCustoms } from "@/components/town/CbCustoms";
 import { MeatMarket } from "@/components/town/MeatMarket";
 import { RullesBar } from "@/components/town/RullesBar";
+import { UGLE_TACO_NOK } from "@/lib/hunt/owlEasterEgg";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
 import { ShootingRange } from "@/components/town/ShootingRange";
 import { HuntMapView, type HuntHudStatus } from "@/components/hunt/HuntMapView";
@@ -324,6 +325,10 @@ export function IntroScreen() {
           carcass.species === "orrhane"
             ? prev.lifetimeOrrhaner + 1
             : prev.lifetimeOrrhaner,
+        lifetimeUgle:
+          carcass.species === "ugle"
+            ? prev.lifetimeUgle + 1
+            : prev.lifetimeUgle,
         carcasses: [...prev.carcasses, carcass],
         maxRange: Math.max(prev.maxRange, carcass.distanceM),
       };
@@ -367,7 +372,7 @@ export function IntroScreen() {
     const idSet = new Set(carcassIds);
     setStats((prev) => {
       const selling = [...prev.freezerCarcasses, ...prev.carcasses].filter(
-        (c) => idSet.has(c.id),
+        (c) => idSet.has(c.id) && c.species !== "ugle",
       );
       if (selling.length === 0) return prev;
       let tiur = prev.tiur;
@@ -379,15 +384,33 @@ export function IntroScreen() {
         tiur = next.tiur;
         orrhaner = next.orrhaner;
       }
+      const soldIds = new Set(selling.map((c) => c.id));
       return {
         ...prev,
         balance: prev.balance + payout,
         tiur,
         orrhaner,
-        freezerCarcasses: prev.freezerCarcasses.filter((c) => !idSet.has(c.id)),
-        carcasses: prev.carcasses.filter((c) => !idSet.has(c.id)),
+        freezerCarcasses: prev.freezerCarcasses.filter((c) => !soldIds.has(c.id)),
+        carcasses: prev.carcasses.filter((c) => !soldIds.has(c.id)),
       };
     });
+  }
+
+  /** Rulle's off-menu Ugletaco — not advertised at Meat Market. */
+  function sellUgleToRulle(carcassId: string): boolean {
+    const prev = statsRef.current;
+    const all = [...prev.freezerCarcasses, ...prev.carcasses];
+    const ugle = all.find((c) => c.id === carcassId && c.species === "ugle");
+    if (!ugle) return false;
+    const next = {
+      ...prev,
+      balance: prev.balance + UGLE_TACO_NOK,
+      freezerCarcasses: prev.freezerCarcasses.filter((c) => c.id !== carcassId),
+      carcasses: prev.carcasses.filter((c) => c.id !== carcassId),
+    };
+    statsRef.current = next;
+    setStats(next);
+    return true;
   }
 
   function spendAtRulles(amountNok: number): boolean {
@@ -873,6 +896,12 @@ export function IntroScreen() {
               lifetimeOrrhaner: stats.lifetimeOrrhaner,
               maxRange: stats.maxRange,
             }}
+            ugleCarcass={
+              [...stats.freezerCarcasses, ...stats.carcasses].find(
+                (c) => c.species === "ugle",
+              ) ?? null
+            }
+            onSellUgle={sellUgleToRulle}
             onSpend={spendAtRulles}
             onEarn={(amountNok) => {
               if (amountNok <= 0) return;
@@ -939,6 +968,16 @@ export function IntroScreen() {
             onHudChange={onHuntHudChange}
             onCampOvernight={consumeJaktkortOvernight}
             onLeave={endHunt}
+            lifetimeTiur={stats.lifetimeTiur}
+            lifetimeOrrhaner={stats.lifetimeOrrhaner}
+            lifetimeUgle={stats.lifetimeUgle}
+            owlLastOfferedMilestone={stats.owlLastOfferedMilestone}
+            onOwlOffered={(milestone) =>
+              setStats((prev) => ({
+                ...prev,
+                owlLastOfferedMilestone: milestone,
+              }))
+            }
           />
         ) : null}
 

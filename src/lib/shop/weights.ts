@@ -257,6 +257,80 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "food-circlek-baguette": 260,
   "food-boller-5pk": 400,
   "food-dronning-kokesjokolade": 100,
+
+  // Hjemmelading — presser / verktøy
+  "reload-lee-challenger-t2": 3200,
+  "reload-rcbs-rock-chucker": 8500,
+  "reload-hornady-lnl-classic": 7800,
+  "reload-forster-coax": 9200,
+  "reload-lee-hand-primer": 180,
+  "reload-rcbs-universal-primer": 420,
+  "reload-hornady-primer-seater": 350,
+  "reload-lee-primer-pocket-cleaner": 95,
+  "reload-rcbs-primer-pocket-brush": 160,
+  "reload-frankford-annealer": 2100,
+  "reload-amp-annealer": 18500,
+  "reload-lee-safety-scale": 480,
+  "reload-rcbs-505": 920,
+  "reload-hornady-gs1500": 1100,
+  "reload-rcbs-chargemaster": 4200,
+  "reload-hornady-auto-charge-pro": 4800,
+  "reload-imperial-sizing-wax": 85,
+  "reload-hornady-one-shot": 220,
+  "reload-lee-case-neck-brush": 65,
+  "reload-rcbs-case-brush-kit": 280,
+  "reload-lee-cutter-lock-stud": 340,
+  "reload-hornady-cam-lock-trimmer": 890,
+  "reload-lee-powder-funnel": 75,
+  "reload-rcbs-loading-block": 120,
+  "reload-frankford-calipers": 390,
+  "reload-hornady-l-n-l-gauge": 450,
+  "reload-lee-inertia-puller": 290,
+
+  // Hylsedier (sett)
+  "reload-lee-dies-308": 620,
+  "reload-lee-dies-65cm": 620,
+  "reload-lee-dies-65x55": 640,
+  "reload-lee-dies-3006": 640,
+  "reload-lee-dies-223": 590,
+  "reload-rcbs-dies-308": 980,
+  "reload-rcbs-dies-65cm": 980,
+  "reload-rcbs-dies-65x55": 990,
+  "reload-forster-bushing-308": 1890,
+
+  // Kuler (eske)
+  "reload-lapua-scenar-139-308": 890,
+  "reload-lapua-scenar-123-65": 920,
+  "reload-lapua-scenar-136-65": 980,
+  "reload-lapua-lockbase-155-308": 760,
+  "reload-sierra-mk-168-308": 720,
+  "reload-sierra-mk-175-308": 780,
+  "reload-sierra-mk-140-65": 750,
+  "reload-hornady-eldm-140-65": 690,
+  "reload-hornady-eldm-168-308": 710,
+  "reload-hornady-eldx-143-65": 740,
+  "reload-berger-hybrid-140-65": 820,
+  "reload-berger-hybrid-168-308": 840,
+  "reload-berger-vld-185-308": 910,
+
+  // Krutt
+  "reload-norma-203b": 890,
+  "reload-norma-mrp": 920,
+  "reload-viht-n140": 980,
+  "reload-viht-n150": 980,
+  "reload-viht-n160": 990,
+  "reload-viht-n540": 1050,
+  "reload-hodgdon-h4350": 920,
+  "reload-hodgdon-varget": 940,
+  "reload-hodgdon-h4895": 900,
+
+  // Tennhetter
+  "reload-cci-br2": 420,
+  "reload-cci-200": 380,
+  "reload-cci-250": 410,
+  "reload-federal-210": 390,
+  "reload-federal-215": 430,
+  "reload-federal-gm210m": 520,
 };
 
 /** Fallback if an id is missing — keep catalog from crashing; fix weights map. */
@@ -276,6 +350,8 @@ export function defaultWeightGrams(category: ShopCategory): number {
       return 3500;
     case "ammo":
       return 400;
+    case "reloading":
+      return 500;
     case "misc":
       return 500;
     case "camo":

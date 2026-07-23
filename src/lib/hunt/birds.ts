@@ -22,7 +22,7 @@ import {
 } from "@/lib/hunt/spotPerches";
 import { weightedSpawnCells } from "@/lib/hunt/mapPlacements";
 
-export type BirdSpecies = "tiur" | "orrhane";
+export type BirdSpecies = "tiur" | "orrhane" | "ugle";
 
 export type HuntBird = {
   id: string;
@@ -122,6 +122,7 @@ export function postShotStayChance(
 }
 
 export function companionChanceForSpecies(species: BirdSpecies): number {
+  if (species === "ugle") return 0;
   return species === "orrhane"
     ? ORRHANE_COMPANION_CHANCE
     : TIUR_COMPANION_CHANCE;
@@ -338,13 +339,13 @@ export function spawnTiurOnMap(
   const orrhaneRating = Math.max(0, opts?.orrhaneRating ?? 2);
   const speciesWeight = tiurRating + orrhaneRating;
 
-  const pickSpecies = (): BirdSpecies => {
+  const pickSpecies = (): "tiur" | "orrhane" => {
     if (speciesWeight <= 0) return "tiur";
     return random() < orrhaneRating / speciesWeight ? "orrhane" : "tiur";
   };
 
   const pickWeightedCell = (
-    species: BirdSpecies,
+    species: "tiur" | "orrhane",
   ): HuntGridCell | null => {
     const weighted = weightedSpawnCells(map.id, species, map.start);
     if (weighted.length === 0) return null;
@@ -848,7 +849,12 @@ export function flushDirectionHeadline(event: FlushEvent): string {
 }
 
 export function flushMessage(event: FlushEvent): string {
-  const species = event.species === "tiur" ? "Tiuren" : "Orrhanen";
+  const species =
+    event.species === "tiur"
+      ? "Tiuren"
+      : event.species === "ugle"
+        ? "Uglen"
+        : "Orrhanen";
   const from = cellLabel(event.from);
   const dir = `${flushDirectionNb(event.direction)} (fra ${from})`;
   if (event.gone) {
@@ -862,4 +868,36 @@ export function flushMessage(event: FlushEvent): string {
     `(spook ${event.spookCount}/${MAX_SPOOKS_BEFORE_GONE}). ` +
     `Én spook til og den er borte.`
   );
+}
+
+/**
+ * Turn one placement (and matching HuntBird) into the easter-egg owl.
+ * Prefers a visible perch; no-op if already an ugle or empty.
+ */
+export function morphSpotBirdToOwl(
+  birds: HuntBird[],
+  placements: BirdVisualPlacement[],
+): { birds: HuntBird[]; placements: BirdVisualPlacement[] } {
+  if (placements.some((p) => p.species === "ugle")) {
+    return { birds, placements };
+  }
+  const target =
+    placements.find((p) => p.species === "tiur" || p.species === "orrhane") ??
+    placements[0];
+  if (!target) return { birds, placements };
+  const sprite = getBirdSprite("ugle-1");
+  const nextPlacements = placements.map((p) =>
+    p.birdId === target.birdId
+      ? {
+          ...p,
+          species: "ugle" as const,
+          spriteId: "ugle-1" as const,
+          imageSrc: sprite.toppSrc,
+        }
+      : p,
+  );
+  const nextBirds = birds.map((b) =>
+    b.id === target.birdId ? { ...b, species: "ugle" as const } : b,
+  );
+  return { birds: nextBirds, placements: nextPlacements };
 }

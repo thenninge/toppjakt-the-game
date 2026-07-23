@@ -10,7 +10,7 @@
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
 
-export type BirdSpriteId = "tiur-1" | "tiur-2" | "orre-1" | "orre-2";
+export type BirdSpriteId = "tiur-1" | "tiur-2" | "orre-1" | "orre-2" | "ugle-1";
 
 export type BirdSpriteDef = {
   id: BirdSpriteId;
@@ -122,13 +122,28 @@ export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
     targetVitalCxPx: 103.8,
     targetVitalCyPx: 77.5,
   }),
+  "ugle-1": def({
+    id: "ugle-1",
+    species: "ugle",
+    toppSrc: "/images/birds/ugle/ugle.png",
+    targetSrc: "/images/birds/ugle/ugle_target/ugle_target.png",
+    toppW: 116,
+    toppH: 174,
+    targetW: 110,
+    targetH: 166,
+    targetVitalCxPx: 57.1,
+    targetVitalCyPx: 78.2,
+  }),
 };
 
 const TIUR_IDS: BirdSpriteId[] = ["tiur-1", "tiur-2"];
 const ORRE_IDS: BirdSpriteId[] = ["orre-1", "orre-2"];
+const UGLE_IDS: BirdSpriteId[] = ["ugle-1"];
 
 export function spriteIdsForSpecies(species: BirdSpecies): BirdSpriteId[] {
-  return species === "orrhane" ? ORRE_IDS : TIUR_IDS;
+  if (species === "orrhane") return ORRE_IDS;
+  if (species === "ugle") return UGLE_IDS;
+  return TIUR_IDS;
 }
 
 export function getBirdSprite(id: BirdSpriteId): BirdSpriteDef {

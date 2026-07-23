@@ -113,6 +113,13 @@ export type PlayerStats = {
    */
   lifetimeTiur: number;
   lifetimeOrrhaner: number;
+  /** Easter-egg owl harvests (never sold at Meat Market). */
+  lifetimeUgle: number;
+  /**
+   * Last owl observation milestone offered (26 / 36 / 46…).
+   * Prevents re-offering until the next decade after a miss/flush.
+   */
+  owlLastOfferedMilestone: number | null;
   /**
    * Birds in the hunting pack/sekk (this hunt only).
    * Moved to {@link freezerCarcasses} when the hunt ends.
@@ -596,6 +603,8 @@ export function createInitialStats(): PlayerStats {
     tiur: 0,
     lifetimeTiur: 0,
     lifetimeOrrhaner: 0,
+    lifetimeUgle: 0,
+    owlLastOfferedMilestone: null,
     carcasses: [],
     freezerCarcasses: [],
     maxRange: 0,

@@ -98,12 +98,15 @@ type SpeciesMarketSpec = {
 export const SPECIES_WEIGHT: Record<BirdSpecies, SpeciesWeightSpec> = {
   tiur: { minKg: 3.5, maxKg: 5.5, medianKg: 4.1 },
   orrhane: { minKg: 0.8, maxKg: 2.0, medianKg: 1.3 },
+  /** Easter-egg owl — not for Audun's ledger. */
+  ugle: { minKg: 0.6, maxKg: 1.4, medianKg: 0.9 },
 };
 
 /** Pent skutt tung fugl → max; dårlig skutt lett → min. */
 export const SPECIES_MARKET: Record<BirdSpecies, SpeciesMarketSpec> = {
   tiur: { minNok: 1000, maxNok: 5500 },
   orrhane: { minNok: 500, maxNok: 2000 },
+  ugle: { minNok: 0, maxNok: 0 },
 };
 
 /** Base meat ruin by hit zone (grønn / rød / kropp). */
@@ -246,7 +249,9 @@ export function marketValueNok(
 }
 
 export function speciesLabelNb(species: BirdSpecies): string {
-  return species === "tiur" ? "Tiur" : "Orrfugl";
+  if (species === "tiur") return "Tiur";
+  if (species === "ugle") return "Ugle";
+  return "Orrfugl";
 }
 
 export function meatQualityLabelNb(meatRuin: number): string {
@@ -381,7 +386,8 @@ export function addCarcassToStatsCounts(
   species: BirdSpecies,
 ): { tiur: number; orrhaner: number } {
   if (species === "tiur") return { tiur: tiur + 1, orrhaner };
-  return { tiur, orrhaner: orrhaner + 1 };
+  if (species === "orrhane") return { tiur, orrhaner: orrhaner + 1 };
+  return { tiur, orrhaner };
 }
 
 export function removeCarcassFromStatsCounts(
@@ -390,5 +396,8 @@ export function removeCarcassFromStatsCounts(
   species: BirdSpecies,
 ): { tiur: number; orrhaner: number } {
   if (species === "tiur") return { tiur: Math.max(0, tiur - 1), orrhaner };
-  return { tiur, orrhaner: Math.max(0, orrhaner - 1) };
+  if (species === "orrhane") {
+    return { tiur, orrhaner: Math.max(0, orrhaner - 1) };
+  }
+  return { tiur, orrhaner };
 }

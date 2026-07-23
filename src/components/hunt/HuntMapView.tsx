@@ -92,6 +92,14 @@ import { formatWeightKg } from "@/lib/shop/weights";
 import { SpotView, type SpotMode } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
 import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
+import {
+  owlMilestoneForBagged,
+  shouldOfferOwl,
+  UGLE_FUNN_IMAGE,
+  UGLE_FUNN_SUBTITLE,
+  UGLE_FUNN_TITLE,
+  lifetimeGamebirdsBagged,
+} from "@/lib/hunt/owlEasterEgg";
 import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { ShotVideoView } from "@/components/hunt/ShotVideoView";
@@ -113,6 +121,7 @@ import {
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
   SHOOT_FLUSH_MIND_HIT,
+  morphSpotBirdToOwl,
   panToCenterOnBird,
   pickFluktImage,
   resolveFlushesOnPath,
@@ -227,6 +236,13 @@ type HuntMapViewProps = {
    */
   onCampOvernight?: () => boolean;
   onLeave: (opts?: { skipJaktkortConsume?: boolean }) => void;
+  /** Lifetime bagged tiur+orre — gates the owl easter egg. */
+  lifetimeTiur?: number;
+  lifetimeOrrhaner?: number;
+  lifetimeUgle?: number;
+  owlLastOfferedMilestone?: number | null;
+  /** Persist that an owl observation slot was consumed (26 / 36 / …). */
+  onOwlOffered?: (milestone: number) => void;
 };
 
 type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
@@ -421,7 +437,9 @@ const ETTERSOK_ABANDON_MENTAL_KEEP = 0.7;
 const FIND_BIRD_MIND_GAIN = 0.33;
 
 function birdNameNb(species: string | undefined): string {
-  return species === "orrhane" ? "orrhane" : "tiur";
+  if (species === "orrhane") return "orrhane";
+  if (species === "ugle") return "ugle";
+  return "tiur";
 }
 
 export function HuntMapView({
@@ -447,6 +465,11 @@ export function HuntMapView({
   onHudChange,
   onCampOvernight,
   onLeave,
+  lifetimeTiur = 0,
+  lifetimeOrrhaner = 0,
+  lifetimeUgle = 0,
+  owlLastOfferedMilestone = null,
+  onOwlOffered,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
@@ -1407,6 +1430,31 @@ export function HuntMapView({
    * Bind birds in the current cell to a spot landscape (sticky per cell).
    * Returns null when hunting is closed; otherwise session payload.
    */
+  function maybeMorphOwlIntoSpot(
+    birdList: HuntBird[],
+    placements: BirdVisualPlacement[],
+  ): { birds: HuntBird[]; placements: BirdVisualPlacement[] } {
+    if (
+      !shouldOfferOwl({
+        lifetimeTiur,
+        lifetimeOrrhaner,
+        lifetimeUgle,
+        owlLastOfferedMilestone,
+      })
+    ) {
+      return { birds: birdList, placements };
+    }
+    if (placements.length === 0) {
+      return { birds: birdList, placements };
+    }
+    const morphed = morphSpotBirdToOwl(birdList, placements);
+    const milestone = owlMilestoneForBagged(
+      lifetimeGamebirdsBagged(lifetimeTiur, lifetimeOrrhaner),
+    );
+    if (milestone != null) onOwlOffered?.(milestone);
+    return morphed;
+  }
+
   function prepareSpotAtPos(opts?: {
     reuseImageSrc?: string | null;
     birdList?: HuntBird[];
@@ -1454,17 +1502,26 @@ export function HuntMapView({
         const viewBearingDeg = Number.isFinite(cachedOk.viewBearingDeg)
           ? cachedOk.viewBearingDeg
           : rollSpotViewBearingDeg();
+        const owl = maybeMorphOwlIntoSpot(birdList, sticky);
         setSpotLayoutByCell((prev) => ({
           ...prev,
-          [cellKey]: { imageSrc, placements: sticky, viewBearingDeg },
+          [cellKey]: {
+            imageSrc,
+            placements: owl.placements,
+            viewBearingDeg,
+          },
         }));
-        const syncedBirds = birdList.map((b) => {
-          const p = sticky.find((x) => x.birdId === b.id);
-          return p ? { ...b, distanceM: p.distanceM } : b;
+        const syncedBirds = owl.birds.map((b) => {
+          const p = owl.placements.find((x) => x.birdId === b.id);
+          return p ? { ...b, distanceM: p.distanceM, species: p.species } : b;
         });
         setBirds(syncedBirds);
-        seedLatentSpotNerve(sticky, syncedBirds);
-        return { imageSrc, birdPlacements: sticky, viewBearingDeg };
+        seedLatentSpotNerve(owl.placements, syncedBirds);
+        return {
+          imageSrc,
+          birdPlacements: owl.placements,
+          viewBearingDeg,
+        };
       }
     }
 
@@ -1472,15 +1529,20 @@ export function HuntMapView({
     const bound = bindBirdsToSpotImage(birdList, at, imageSrc, {
       fillAllPerches: false,
     });
+    const owl = maybeMorphOwlIntoSpot(bound.birds, bound.placements);
     setSpotLayoutByCell((prev) => ({
       ...prev,
-      [cellKey]: { imageSrc, placements: bound.placements, viewBearingDeg },
+      [cellKey]: {
+        imageSrc,
+        placements: owl.placements,
+        viewBearingDeg,
+      },
     }));
-    setBirds(bound.birds);
-    seedLatentSpotNerve(bound.placements, bound.birds);
+    setBirds(owl.birds);
+    seedLatentSpotNerve(owl.placements, owl.birds);
     return {
       imageSrc,
-      birdPlacements: bound.placements,
+      birdPlacements: owl.placements,
       viewBearingDeg,
     };
   }
@@ -2906,13 +2968,18 @@ export function HuntMapView({
   }
 
   if (findReveal) {
+    const isUgle = findReveal.pair.harvestDraft?.species === "ugle";
     return (
       <AtmospherePauseView
         imageSrc={findReveal.imageSrc}
-        title="Du fant fuglen! Godt utført ettersøk."
-        subtitle="Fuglen er i sekken — klar for Vebjørn på kjøttmarkedet."
+        title={isUgle ? UGLE_FUNN_TITLE : "Du fant fuglen! Godt utført ettersøk."}
+        subtitle={
+          isUgle
+            ? UGLE_FUNN_SUBTITLE
+            : "Fuglen er i sekken — klar for Vebjørn på kjøttmarkedet."
+        }
         durationMinutes={0}
-        holdMs={4500}
+        holdMs={isUgle ? 7000 : 4500}
         clockMinutes={clockMinutes}
         onContinue={() => {
           const pair = findReveal.pair;
@@ -2921,7 +2988,7 @@ export function HuntMapView({
           if (pair.hitFasit) setFindHitAar(pair);
         }}
         skipLabel="Fortsett"
-        ariaLabel="Fugl funnet"
+        ariaLabel={isUgle ? "Ugle funnet" : "Fugl funnet"}
       />
     );
   }
@@ -3095,7 +3162,13 @@ export function HuntMapView({
         onPostShotSkuddparSaved={onPostShotSkuddparSaved}
         onPairFound={(pair) => {
           setMentalFatigue((m) => clampFatigue(m - FIND_BIRD_MIND_GAIN));
-          setFindReveal({ imageSrc: pickFunnImage(), pair });
+          setFindReveal({
+            imageSrc:
+              pair.harvestDraft?.species === "ugle"
+                ? UGLE_FUNN_IMAGE
+                : pickFunnImage(),
+            pair,
+          });
         }}
       />
     );
