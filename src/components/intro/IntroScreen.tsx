@@ -53,6 +53,7 @@ import {
   type DayWeather,
 } from "@/lib/weather/spec";
 import { TownHub, type TownLocationId } from "@/components/town/TownHub";
+import { HowToPlayView } from "@/components/town/HowToPlayView";
 import {
   SheriffOffice,
   type SheriffFinishResult,
@@ -1213,6 +1214,10 @@ export function IntroScreen() {
           />
         )}
 
+        {phase === "location" && location === "how-to-play" && (
+          <HowToPlayView onLeave={backToTown} />
+        )}
+
         {phase === "sheriff-applied" && (
           <div className="intro-dialogue">
             {lastPermit?.approved ? (
@@ -1256,7 +1261,8 @@ export function IntroScreen() {
           location !== "home" &&
           location !== "meat-market" &&
           location !== "rulles" &&
-          location !== "shooting-range" && (
+          location !== "shooting-range" &&
+          location !== "how-to-play" && (
           <div className="intro-dialogue">
             <p className="intro-line intro-gift">{location}</p>
             <p className="intro-line">

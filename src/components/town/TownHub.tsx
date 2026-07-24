@@ -5,6 +5,7 @@ export type TownLocationId =
   | "sheriff"
   | "home"
   | "shooting-range"
+  | "how-to-play"
   | "meat-market"
   | "rulles"
   | "cb-customs";
@@ -50,6 +51,11 @@ const LOCATIONS: TownLocation[] = [
     id: "shooting-range",
     name: "Shooting Range",
     blurb: "Zeroing, practice, and pattern boards.",
+  },
+  {
+    id: "how-to-play",
+    name: "How to play",
+    blurb: "BODY, MIND, Kestrel, LRF, Habrok, pace — det som faktisk betyr noe.",
   },
 ];
 
