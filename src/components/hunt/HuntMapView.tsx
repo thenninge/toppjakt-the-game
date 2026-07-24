@@ -653,19 +653,19 @@ export function HuntMapView({
     [kitItems],
   );
   /**
-   * Exact auto-dial: AB meter (Kestrel Elite) + LRF that can pair for holds
-   * (BDX / onboard AB binos, or Habrok integrated LRF).
-   * Budget LRF without ballistics does not auto-dial.
+   * Exact auto-dial: AB meter (Kestrel Elite) + LRF that pairs for holds —
+   * BDX / onboard-AB binos (Sig KILO3000, Geovid, …), or Habrok thermal binos.
+   * Condor/other thermal spotters with LRF do not count as BDX pairing.
    */
   const hasExactBallistics = !!(
     abMeterItem &&
     (binoItem?.lrf.hasOnboardBallistics ||
-      thermalItem?.thermal.hasIntegratedLrf)
+      !!thermalItem?.thermal.isThermalBinocular)
   );
   /** LRF with onboard AB/BDX, or Habrok — used for Aware Kestrel messaging. */
   const hasBdxOrHabrokLrf = !!(
     binoItem?.lrf.hasOnboardBallistics ||
-    thermalItem?.thermal.hasIntegratedLrf
+    !!thermalItem?.thermal.isThermalBinocular
   );
   const lrfSpec = useMemo(() => {
     if (binoItem?.lrf) {
