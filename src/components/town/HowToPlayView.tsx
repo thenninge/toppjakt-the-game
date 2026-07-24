@@ -36,8 +36,8 @@ const SECTIONS: GuideSection[] = [
   {
     title: "Zero, dV/dT, DOPE & Shotlog",
     bullets: [
-      "Zero: hver rifle×scope×ammo-kombo har egen zero på skytebanen. Feil eller manglende zero = systematisk bom på jakt.",
-      "Bytt scope/ammo uten å re-zero → forvent treff utenfor der du siktet til du skrur inn igjen.",
+      "Zero: hver rifle×scope×ammo-kombo må lagres på skytebanen («Lagre zero») før du kan dra på jakt.",
+      "Bytt eller fjern kikkert/rifle → zero nullstilles for den komboen. Du må skyte inn på nytt.",
       "dV/dT: katalog-v0 er ved 15 °C. Kaldere krut → lavere v0 → mer drop. Centerfire ≈ 1 m/s per °C; .22 LR ≈ 2 m/s per °C.",
       "Enviro/Kestrel bruker temp til både lufttetthet og powder-temp (dV/dT). Sett riktig °C — default i appen er 0 °C uten Kestrel-prefill.",
       "Chrono i kit logger v0 (+ temp) i shotlog — nyttig for å se dV/dT i praksis.",

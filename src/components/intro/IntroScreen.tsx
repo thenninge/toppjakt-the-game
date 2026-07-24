@@ -14,6 +14,8 @@ import {
   createInitialStats,
   createWeaponLicense,
   ensureZeroingProfile,
+  clearZeroingForRifle,
+  clearZeroingForScope,
   formatPermitFee,
   grantStarterGear,
   grantUncleRifle,
@@ -717,9 +719,9 @@ export function IntroScreen() {
   }, []);
 
   function toggleKit(itemId: string) {
-    setStats((prev) => ({
-      ...prev,
-      kit: toggleKitItem(
+    setStats((prev) => {
+      const before = prev.kit;
+      const after = toggleKitItem(
         prev.kit,
         itemId,
         (id) => resolvePlayerItem(id)?.category,
@@ -745,8 +747,23 @@ export function IntroScreen() {
             item.thermal.isThermalBinocular
           );
         },
-      ),
-    }));
+      );
+      const removed = before.filter((id) => !after.includes(id));
+      let profiles = prev.zeroingProfiles;
+      for (const id of removed) {
+        const rem = resolvePlayerItem(id);
+        if (rem?.category === "scope") {
+          profiles = clearZeroingForScope(profiles, id);
+        } else if (rem?.category === "rifle") {
+          profiles = clearZeroingForRifle(profiles, id);
+        }
+      }
+      return {
+        ...prev,
+        kit: after,
+        zeroingProfiles: profiles,
+      };
+    });
   }
 
   function selectHuntingTerrain(terrainId: string, kind: JaktkortKind) {
@@ -1118,6 +1135,7 @@ export function IntroScreen() {
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             jaktkort={stats.jaktkort}
             unlockedTerrainIds={stats.unlockedTerrainIds}
+            zeroingProfiles={stats.zeroingProfiles}
             onToggleKit={toggleKit}
             onSellOnFinn={sellOnFinn}
             onPurchaseJaktkort={selectHuntingTerrain}

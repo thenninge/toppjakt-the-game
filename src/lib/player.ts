@@ -27,6 +27,11 @@ export type ZeroingProfile = {
    */
   savedXMm: number;
   savedYMm: number;
+  /**
+   * Set when the player presses «Lagre zero» on the range.
+   * Required before hunt — missing means not hunt-ready for this combo.
+   */
+  verifiedAtMs?: number;
 };
 
 /** One measured series from the shooting range (shotlog row). */
@@ -504,6 +509,7 @@ export function grantKitProfile(
     baseYMm: 0,
     savedXMm: 0,
     savedYMm: 0,
+    verifiedAtMs: Date.now(),
   };
   const rifleId = profile.weaponIds.find((id) => id.startsWith("rifle-"));
   const scopeId = profile.weaponIds.find((id) => id.startsWith("scope-"));
@@ -767,6 +773,42 @@ export function zeroingKey(
   return `${rifleId}::${scopeId}::${ammoId}`;
 }
 
+/** True if the player has pressed «Lagre zero» for this combo (or legacy save). */
+export function isZeroVerified(
+  profile: ZeroingProfile | null | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.verifiedAtMs != null && profile.verifiedAtMs > 0) return true;
+  // Legacy saves: non-zero dial almost always means they saved once.
+  return profile.savedXMm !== 0 || profile.savedYMm !== 0;
+}
+
+/** Drop all zero profiles that include this scope id. */
+export function clearZeroingForScope(
+  map: Record<string, ZeroingProfile>,
+  scopeId: string,
+): Record<string, ZeroingProfile> {
+  const next: Record<string, ZeroingProfile> = {};
+  const needle = `::${scopeId}::`;
+  for (const [key, profile] of Object.entries(map)) {
+    if (!key.includes(needle)) next[key] = profile;
+  }
+  return next;
+}
+
+/** Drop all zero profiles that include this rifle id. */
+export function clearZeroingForRifle(
+  map: Record<string, ZeroingProfile>,
+  rifleId: string,
+): Record<string, ZeroingProfile> {
+  const next: Record<string, ZeroingProfile> = {};
+  const prefix = `${rifleId}::`;
+  for (const [key, profile] of Object.entries(map)) {
+    if (!key.startsWith(prefix)) next[key] = profile;
+  }
+  return next;
+}
+
 /** Clamp the initial random zero offset (±5 clicks). */
 export function clampZeroBaseMm(mm: number): number {
   return Math.max(
@@ -895,6 +937,7 @@ export function saveZeroing(
       ...profile,
       savedXMm: clampTurretMm(profile.savedXMm + sessionXMm),
       savedYMm: clampTurretMm(profile.savedYMm + sessionYMm),
+      verifiedAtMs: Date.now(),
     },
   };
 }

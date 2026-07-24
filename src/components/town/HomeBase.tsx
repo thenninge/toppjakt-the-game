@@ -9,6 +9,7 @@ import {
   type DopeCardEntry,
   type InventoryEntry,
   type ShotLogEntry,
+  type ZeroingProfile,
 } from "@/lib/player";
 import {
   isAmmoItem,
@@ -104,6 +105,7 @@ type HomeBaseProps = {
   selectedHuntingTerrainId: string | null;
   jaktkort: ActiveJaktkort | null;
   unlockedTerrainIds: string[];
+  zeroingProfiles: Record<string, ZeroingProfile>;
   onToggleKit: (itemId: string) => void;
   /** Sell one unit (or ammo eske) on Finn at ~50% catalog price. */
   onSellOnFinn: (itemId: string) => void;
@@ -136,6 +138,7 @@ export function HomeBase({
   selectedHuntingTerrainId,
   jaktkort,
   unlockedTerrainIds,
+  zeroingProfiles,
   onToggleKit,
   onSellOnFinn,
   onPurchaseJaktkort,
@@ -153,6 +156,10 @@ export function HomeBase({
   );
   /** Pending rifle/scope swap that needs re-zero warning. */
   const [kitSwapConfirm, setKitSwapConfirm] = useState<ShopItem | null>(null);
+  /** Pending rifle/scope unequip — clears saved zeros. */
+  const [kitRemoveConfirm, setKitRemoveConfirm] = useState<ShopItem | null>(
+    null,
+  );
   /** Pending Finn.no sale confirm (item + payout). */
   const [finnSaleConfirm, setFinnSaleConfirm] = useState<{
     item: ShopItem;
@@ -306,20 +313,22 @@ export function HomeBase({
         inventory,
         selectedHuntingTerrainId,
         jaktkort,
+        zeroingProfiles,
       }),
-    [kitItems, inventory, selectedHuntingTerrainId, jaktkort],
+    [kitItems, inventory, selectedHuntingTerrainId, jaktkort, zeroingProfiles],
   );
 
   /**
-   * Rifle and scope define the zeroing combo (see zeroingKey). Swapping
-   * either one means the previously dialed-in turrets no longer apply to
-   * the new combo, so warn before replacing what's currently equipped.
-   * Ammo is excluded: each ammo type keeps its own saved zero in parallel,
-   * so switching ammo never loses anything and needs no warning.
+   * Rifle and scope define the zeroing combo. Swapping or removing either
+   * clears saved zeros for that optic — warn the player first.
    */
   function requestToggleKit(item: ShopItem) {
     const isZeroCombo = item.category === "rifle" || item.category === "scope";
     const alreadyEquipped = kit.includes(item.id);
+    if (isZeroCombo && alreadyEquipped) {
+      setKitRemoveConfirm(item);
+      return;
+    }
     if (isZeroCombo && !alreadyEquipped) {
       const current = kitItems.find((i) => i.category === item.category);
       if (current && current.id !== item.id) {
@@ -334,6 +343,13 @@ export function HomeBase({
     if (!kitSwapConfirm) return;
     const id = kitSwapConfirm.id;
     setKitSwapConfirm(null);
+    onToggleKit(id);
+  }
+
+  function confirmKitRemove() {
+    if (!kitRemoveConfirm) return;
+    const id = kitRemoveConfirm.id;
+    setKitRemoveConfirm(null);
     onToggleKit(id);
   }
 
@@ -473,7 +489,7 @@ export function HomeBase({
                 <button
                   type="button"
                   className="current-rig-clear"
-                  onClick={() => onToggleKit(item.id)}
+                  onClick={() => requestToggleKit(item)}
                   title={`Fjern ${label} fra kit`}
                 >
                   Fjern
@@ -847,13 +863,33 @@ export function HomeBase({
         <GameConfirmDialog
           title="Bytte utstyr"
           message={
-            `Du bytter ${kitSwapConfirm.category === "scope" ? "kikkert" : "rifle"}.\n` +
-            "Dette gjør at du må skyte inn på nytt. Sikker på at du vil bytte?"
+            kitSwapConfirm.category === "scope"
+              ? "Du bytter kikkert.\n\nAll lagret zero for den gamle kikkerten slettes. Du må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+              : "Du bytter rifle.\n\nAll lagret zero for den gamle rifla slettes. Du må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
           }
           confirmLabel="Bytt"
           cancelLabel="Avbryt"
           onConfirm={confirmKitSwap}
           onCancel={() => setKitSwapConfirm(null)}
+        />
+      ) : null}
+
+      {kitRemoveConfirm ? (
+        <GameConfirmDialog
+          title={
+            kitRemoveConfirm.category === "scope"
+              ? "Fjern kikkert"
+              : "Fjern rifle"
+          }
+          message={
+            kitRemoveConfirm.category === "scope"
+              ? "Fjerner du kikkerten fra kit, slettes all lagret zero for den kikkerten.\n\nDu må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+              : "Fjerner du rifla fra kit, slettes all lagret zero for den rifla.\n\nDu må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+          }
+          confirmLabel="Fjern"
+          cancelLabel="Avbryt"
+          onConfirm={confirmKitRemove}
+          onCancel={() => setKitRemoveConfirm(null)}
         />
       ) : null}
 

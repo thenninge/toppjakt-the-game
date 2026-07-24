@@ -2,7 +2,7 @@
  * Persist hunter progress in localStorage so deploys / refreshes keep the save.
  */
 
-import { createInitialStats, type PlayerStats } from "@/lib/player";
+import { createInitialStats, type PlayerStats, type ZeroingProfile } from "@/lib/player";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
 import {
   createJaktkort,
@@ -20,6 +20,30 @@ export type PlayerSaveV1 = {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v != null && !Array.isArray(v);
+}
+
+/** Legacy: non-zero dial without verifiedAtMs still counts as saved once. */
+function normalizeZeroingProfiles(
+  raw: Record<string, ZeroingProfile>,
+): Record<string, ZeroingProfile> {
+  const next: Record<string, ZeroingProfile> = {};
+  for (const [key, profile] of Object.entries(raw)) {
+    if (!profile || typeof profile !== "object") continue;
+    const verifiedAtMs =
+      typeof profile.verifiedAtMs === "number" && profile.verifiedAtMs > 0
+        ? profile.verifiedAtMs
+        : profile.savedXMm !== 0 || profile.savedYMm !== 0
+          ? 1
+          : undefined;
+    next[key] = {
+      baseXMm: Number(profile.baseXMm) || 0,
+      baseYMm: Number(profile.baseYMm) || 0,
+      savedXMm: Number(profile.savedXMm) || 0,
+      savedYMm: Number(profile.savedYMm) || 0,
+      ...(verifiedAtMs != null ? { verifiedAtMs } : {}),
+    };
+  }
+  return next;
 }
 
 /** Migrate older / partial saves into a full PlayerStats. */
@@ -106,7 +130,9 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       ? (raw.ammoAffinities as PlayerStats["ammoAffinities"])
       : base.ammoAffinities,
     zeroingProfiles: isRecord(raw.zeroingProfiles)
-      ? (raw.zeroingProfiles as PlayerStats["zeroingProfiles"])
+      ? normalizeZeroingProfiles(
+          raw.zeroingProfiles as PlayerStats["zeroingProfiles"],
+        )
       : base.zeroingProfiles,
     shotLog: shotLog as PlayerStats["shotLog"],
     dopeCard: dopeCard as PlayerStats["dopeCard"],
