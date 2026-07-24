@@ -126,6 +126,40 @@ function spotTimeFactor(mode: SpotMode, thermalTimeFactor: number): number {
   return SPOT_TIME_FACTOR_EYES;
 }
 
+/**
+ * Short HUD optic name — one line with margin (drop zoom/BDX/4K fluff).
+ * e.g. "Sig Sauer KILO3000 BDX 10x42" → "Sig Sauer KILO3000"
+ */
+function shortSpotOpticLabel(
+  full: string | null | undefined,
+  maxChars = 26,
+): string {
+  if (!full) return "";
+  let s = full
+    .replace(/\s+\d+\s*[x×]\s*\d+\w*/gi, "")
+    .replace(/\s+\b(BDX|LRF|4K|F2|F1|FFP|SFP)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (s.length <= maxChars) return s;
+  const parts = s.split(/\s+/).filter(Boolean);
+  let out = parts.slice(0, 2).join(" ");
+  if (parts.length >= 3) {
+    const three = parts.slice(0, 3).join(" ");
+    if (three.length <= maxChars) out = three;
+  }
+  if (out.length > maxChars) {
+    return `${out.slice(0, Math.max(1, maxChars - 1))}…`;
+  }
+  return out;
+}
+
+/** Fixed-width look timer so HUD digits don't reflow the frame. */
+function formatSpotLookedClock(totalSec: number): string {
+  const m = Math.floor(Math.max(0, totalSec) / 60);
+  const s = Math.floor(Math.max(0, totalSec) % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 /** Minimum click/tap target as % of spot frame (sprites can be ~1% wide). */
 const BIRD_HIT_MIN_PCT = 4.5;
 /**
@@ -694,8 +728,9 @@ export function SpotView({
     });
   }
 
-  const lookedMin = Math.floor(lookedGameSec / 60);
-  const lookedSec = Math.floor(lookedGameSec % 60);
+  const lookedClock = formatSpotLookedClock(lookedGameSec);
+  const shortBinos = shortSpotOpticLabel(binosLabel);
+  const shortThermal = shortSpotOpticLabel(thermalLabel);
 
   const visibleBirds = birdPlacements
     .filter((p) =>
@@ -742,10 +777,16 @@ export function SpotView({
 
   const modeTitle =
     mode === "binos"
+      ? `Kikkert ${binoZoom}×${shortBinos ? ` — ${shortBinos}` : ""}`
+      : mode === "thermal"
+        ? `${isThermalBinocular ? "Habrok" : "Termisk"} ${opticSpecZoom.toFixed(isThermalBinocular ? 0 : 1)}×${shortThermal ? ` — ${shortThermal}` : ""}`
+        : "Spotting med øynene";
+  const modeTitleFull =
+    mode === "binos"
       ? `Kikkert ${binoZoom}×${binosLabel ? ` — ${binosLabel}` : ""}`
       : mode === "thermal"
         ? `${isThermalBinocular ? "Habrok" : "Termisk"} ${opticSpecZoom.toFixed(isThermalBinocular ? 0 : 1)}×${thermalLabel ? ` — ${thermalLabel}` : ""}`
-        : "Spotting med øynene";
+        : modeTitle;
 
   const isOpticMode = mode === "binos" || mode === "thermal";
   const frameStyle = {
@@ -791,17 +832,21 @@ export function SpotView({
   return (
     <div className="spot-view" role="dialog" aria-modal="true" aria-label="Spotting">
       <header className="spot-view-hud">
-        <div>
-          <p className="intro-line intro-gift">{modeTitle}</p>
-          <p className="shop-row-note">
-            Kl {formatHuntClock(clockMinutes)} · sett i{" "}
-            {lookedMin > 0 ? `${lookedMin} min ` : ""}
-            {lookedSec} s spilltid · tid ×{timeFactor}
-            {isOpticMode ? " · piltaster / dra for å speide" : ""}
+        <div className="spot-view-hud-text">
+          <p
+            className="intro-line intro-gift spot-view-hud-title"
+            title={modeTitleFull}
+          >
+            {modeTitle}
+          </p>
+          <p className="shop-row-note spot-view-hud-meta">
+            Kl {formatHuntClock(clockMinutes)} · sett i {lookedClock}
+            {" · tid ×"}
+            {timeFactor}
+            {isOpticMode ? " · piltaster / dra" : ""}
             {hasThermal
-              ? ` · batteri ${battMin} min (${battPct}%)`
+              ? ` · batt ${String(battMin).padStart(2, "0")}m (${String(battPct).padStart(2, "0")}%)`
               : ""}
-            {lrfReading ? ` · LRF ${lrfReading}` : ""}
           </p>
         </div>
         <div className="spot-view-actions">
