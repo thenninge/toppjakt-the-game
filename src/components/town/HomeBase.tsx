@@ -48,6 +48,7 @@ import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import { InaturNo } from "@/components/town/InaturNo";
+import { InstagramFeedView } from "@/components/town/InstagramFeedView";
 import { ShotLogDopeView } from "@/components/town/ShotLogDopeView";
 import { LaderommetView } from "@/components/town/LaderommetView";
 import {
@@ -145,7 +146,7 @@ export function HomeBase({
   onLeave,
 }: HomeBaseProps) {
   const [view, setView] = useState<
-    "main" | "inatur" | "shotlog-dope" | "laderommet"
+    "main" | "inatur" | "instagram" | "shotlog-dope" | "laderommet"
   >("main");
   /** When opening Shotlog/Dope from a deep link, which tab. */
   const [shotlogDopeTab, setShotlogDopeTab] = useState<"shotlog" | "dope">(
@@ -378,6 +379,10 @@ export function HomeBase({
     );
   }
 
+  if (view === "instagram") {
+    return <InstagramFeedView onBack={() => setView("main")} />;
+  }
+
   return (
     <div className="home-base">
       <LocationNav
@@ -412,6 +417,14 @@ export function HomeBase({
           onClick={() => setView("inatur")}
         >
           inatur.no
+        </button>
+        <button
+          type="button"
+          className="intro-button home-ig-btn"
+          onClick={() => setView("instagram")}
+          title="@cold_barrel_adjacent"
+        >
+          Instagram
         </button>
         <button
           type="button"
