@@ -14,6 +14,7 @@ type Tab = "shotlog" | "dope";
 type ShotLogDopeViewProps = {
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
+  rifleRoundCounts?: Record<string, number>;
   onUpdateDope: (
     id: string,
     patch: Partial<
@@ -35,6 +36,7 @@ type ShotLogDopeViewProps = {
 export function ShotLogDopeView({
   shotLog,
   dopeCard,
+  rifleRoundCounts = {},
   onUpdateDope,
   onRemoveDope,
   onBack,
@@ -92,6 +94,7 @@ export function ShotLogDopeView({
       {tab === "shotlog" ? (
         <ShotLogView
           entries={shotLog}
+          rifleRoundCounts={rifleRoundCounts}
           onBack={onBack}
           embedded
         />

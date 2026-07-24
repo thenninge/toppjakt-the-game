@@ -32,6 +32,7 @@ import {
   unusedLicenseCount,
   consumeInventoryItem,
   sellInventoryOnFinn,
+  resetRifleBarrel,
   type PlayerStats,
   type ShotLogEntry,
   type DopeCardEntry,
@@ -62,6 +63,7 @@ import {
 } from "@/components/town/SheriffOffice";
 import { XxlShop } from "@/components/town/XxlShop";
 import { CbCustoms } from "@/components/town/CbCustoms";
+import { BARREL_REPLACE_NOK } from "@/lib/rifle/barrelWear";
 import { MeatMarket } from "@/components/town/MeatMarket";
 import { RullesBar } from "@/components/town/RullesBar";
 import { UGLE_TACO_NOK } from "@/lib/hunt/owlEasterEgg";
@@ -631,12 +633,29 @@ export function IntroScreen() {
     });
   }
 
-  const spendAmmoRound = useCallback((ammoId: string): boolean => {
-    const result = consumeAmmoRound(statsRef.current, ammoId);
-    if (!result.ok) return false;
-    setStats(result.stats);
-    return true;
-  }, []);
+  function replaceCustomsBarrel(rifleId: string) {
+    setStats((prev) => {
+      if (prev.balance < BARREL_REPLACE_NOK) return prev;
+      const item = resolvePlayerItem(rifleId);
+      if (!item || item.category !== "rifle") return prev;
+      const rounds = prev.rifleRoundCounts[rifleId] ?? 0;
+      if (rounds <= 0) return prev;
+      return resetRifleBarrel(
+        { ...prev, balance: prev.balance - BARREL_REPLACE_NOK },
+        rifleId,
+      );
+    });
+  }
+
+  const spendAmmoRound = useCallback(
+    (ammoId: string, rifleId?: string): boolean => {
+      const result = consumeAmmoRound(statsRef.current, ammoId, { rifleId });
+      if (!result.ok) return false;
+      setStats(result.stats);
+      return true;
+    },
+    [],
+  );
 
   const ensureComboZero = useCallback(
     (
@@ -1071,8 +1090,10 @@ export function IntroScreen() {
               .map((id) => resolvePlayerItem(id))
               .filter((x): x is ShopItem => x != null)}
             inventory={stats.inventory}
+            rifleRoundCounts={stats.rifleRoundCounts}
             onBuyService={buyCustomsService}
             onOrderHomeLoads={orderCustomsHomeLoads}
+            onReplaceBarrel={replaceCustomsBarrel}
             onLeave={backToTown}
           />
         )}
@@ -1127,6 +1148,7 @@ export function IntroScreen() {
             kit={stats.kit}
             shotLog={stats.shotLog}
             dopeCard={stats.dopeCard}
+            rifleRoundCounts={stats.rifleRoundCounts}
             customsMods={stats.customsMods}
             freezerCarcasses={stats.freezerCarcasses}
             licenseCount={stats.weaponLicenses.length}
@@ -1155,6 +1177,7 @@ export function IntroScreen() {
             inventory={stats.inventory}
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
+            rifleRoundCounts={stats.rifleRoundCounts}
             dopeCard={stats.dopeCard}
             customsMods={stats.customsMods}
             weather={weather}
@@ -1195,6 +1218,7 @@ export function IntroScreen() {
             inventory={stats.inventory}
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
+            rifleRoundCounts={stats.rifleRoundCounts}
             shotLog={stats.shotLog}
             dopeCard={stats.dopeCard}
             weather={weather}

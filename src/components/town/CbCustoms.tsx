@@ -13,7 +13,17 @@ import {
   type CustomsMods,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
-import { formatPermitFee } from "@/lib/player";
+import {
+  formatPermitFee,
+  getRifleRoundCount,
+} from "@/lib/player";
+import {
+  BARREL_REPLACE_NOK,
+  BARREL_WEAR_END_SHOTS,
+  BARREL_WEAR_START_SHOTS,
+  barrelWearLabelNb,
+  barrelWearMoaScale,
+} from "@/lib/rifle/barrelWear";
 import { getShopItem } from "@/lib/shop/catalog";
 import {
   isAmmoItem,
@@ -29,8 +39,12 @@ type CbCustomsProps = {
   /** Resolved kit items (for caliber / weight preview). */
   kitItems: ShopItem[];
   inventory: { itemId: string; qty: number }[];
+  /** Lifetime shots per rifle barrel. */
+  rifleRoundCounts?: Record<string, number>;
   onBuyService: (id: CustomsServiceId) => void;
   onOrderHomeLoads: (ammoId: string, rounds: number) => void;
+  /** Rebarrel equipped rifle — resets round count. */
+  onReplaceBarrel: (rifleId: string) => void;
   onLeave: () => void;
 };
 
@@ -42,8 +56,10 @@ export function CbCustoms({
   customsMods,
   kitItems,
   inventory,
+  rifleRoundCounts = {},
   onBuyService,
   onOrderHomeLoads,
+  onReplaceBarrel,
   onLeave,
 }: CbCustomsProps) {
   const [status, setStatus] = useState("");
@@ -56,6 +72,10 @@ export function CbCustoms({
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
   );
+  const rifleRounds = rifle
+    ? getRifleRoundCount(rifleRoundCounts, rifle.id)
+    : 0;
+  const rifleWearScale = barrelWearMoaScale(rifleRounds);
   const stock = useMemo(
     () => kitItems.find(isStockItem) ?? null,
     [kitItems],
@@ -134,11 +154,30 @@ export function CbCustoms({
     );
   }
 
+  function replaceBarrel() {
+    if (!rifle) {
+      setStatus("Ta med en rifle i kit for å bytte pipe.");
+      return;
+    }
+    if (rifleRounds <= 0) {
+      setStatus("Pipa er ubrukt — ingen grunn til å bytte ennå.");
+      return;
+    }
+    if (balance < BARREL_REPLACE_NOK) {
+      setStatus("Ikke nok penger til ny pipe.");
+      return;
+    }
+    onReplaceBarrel(rifle.id);
+    setStatus(
+      `Ny pipe på ${rifle.brand} ${rifle.name} — ${formatPermitFee(BARREL_REPLACE_NOK)}. Skuddteller nullstilt.`,
+    );
+  }
+
   return (
     <div className="cb-customs">
       <LocationNav onBackToTown={onLeave} />
       <p className="intro-line intro-gift">CB Customs</p>
-      <p className="intro-line">Børsemaker · finish · home loads</p>
+      <p className="intro-line">Børsemaker · finish · home loads · pipe</p>
       <p className="shop-row-note">
         Saldo {formatPermitFee(balance)}
         {moaDelta !== 0
@@ -148,6 +187,34 @@ export function CbCustoms({
         {customsMods.triggerTuning ? " · trigger tuning" : ""}
         {customsMods.customCamo ? " · custom camo" : ""}
       </p>
+
+      <div className="cb-customs-card cb-customs-barrel">
+        <div className="cb-customs-card-head">
+          <strong>Bytt pipe</strong>
+          <span>{formatPermitFee(BARREL_REPLACE_NOK)}</span>
+        </div>
+        <p className="shop-row-note">
+          Nullstiller skuddtelleren på kit-rifla. Rifle-MOA går mot 2× mellom{" "}
+          {BARREL_WEAR_START_SHOTS}–{BARREL_WEAR_END_SHOTS} skudd — etter det
+          trenger du ny pipe (eller nytt våpen).
+        </p>
+        {rifle ? (
+          <p className="shop-row-note">
+            {rifle.brand} {rifle.name}: {rifleRounds} skudd ·{" "}
+            {rifleWearScale.toFixed(2)}× — {barrelWearLabelNb(rifleRounds)}
+          </p>
+        ) : (
+          <p className="shop-row-note">Ingen rifle i kit.</p>
+        )}
+        <button
+          type="button"
+          className="intro-button"
+          disabled={!rifle || rifleRounds <= 0 || balance < BARREL_REPLACE_NOK}
+          onClick={replaceBarrel}
+        >
+          Bytt pipe
+        </button>
+      </div>
 
       <ul className="cb-customs-list">
         {CUSTOMS_SERVICES.map((svc) => {

@@ -39,6 +39,7 @@ import {
   clampTurretMm,
   effectiveZeroOffsetMm,
   getInventoryQty,
+  getRifleRoundCount,
   zeroingKey,
   type InventoryEntry,
   type ZeroingProfile,
@@ -48,6 +49,7 @@ import { densityRatioFromTempC } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import type { DayWeather } from "@/lib/weather/spec";
+import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import {
   MOA_COMP_DISTANCE_M,
   MOA_COMP_ENTRY_FEE_NOK,
@@ -78,13 +80,14 @@ type MoaCompetitionViewProps = {
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  rifleRoundCounts?: Record<string, number>;
   weather: DayWeather;
   customsMoaDelta?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
   musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
-  onConsumeAmmo: (ammoId: string) => boolean;
+  onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
     rifleId: string,
     scopeId: string,
@@ -183,6 +186,7 @@ export function MoaCompetitionView({
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  rifleRoundCounts = {},
   weather,
   customsMoaDelta = 0,
   customsTriggerPullScale = 1,
@@ -195,6 +199,13 @@ export function MoaCompetitionView({
   onBack,
 }: MoaCompetitionViewProps) {
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
+  const barrelWearScale = useMemo(
+    () =>
+      rifle
+        ? barrelWearMoaScale(getRifleRoundCount(rifleRoundCounts, rifle.id))
+        : 1,
+    [rifle, rifleRoundCounts],
+  );
   const scope = useMemo(() => kitItems.find(isScopeItem) ?? null, [kitItems]);
   const stock = useMemo(() => kitItems.find(isStockItem) ?? null, [kitItems]);
   const bipod = useMemo(() => kitItems.find(isBipodItem) ?? null, [kitItems]);
@@ -400,6 +411,7 @@ export function MoaCompetitionView({
       stock: stock?.stock,
       affinity,
       customsMoaDelta,
+      barrelWearScale,
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(
@@ -451,7 +463,7 @@ export function MoaCompetitionView({
       setStatus("Alle blink er skutt.");
       return;
     }
-    if (!consumeAmmoRef.current(selectedAmmo.id)) {
+    if (!consumeAmmoRef.current(selectedAmmo.id, rifle.id)) {
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }

@@ -22,6 +22,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v != null && !Array.isArray(v);
 }
 
+function normalizeRifleRoundCounts(raw: unknown): Record<string, number> {
+  if (!isRecord(raw)) return {};
+  const next: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      next[key] = Math.floor(value);
+    }
+  }
+  return next;
+}
+
 /** Legacy: non-zero dial without verifiedAtMs still counts as saved once. */
 function normalizeZeroingProfiles(
   raw: Record<string, ZeroingProfile>,
@@ -134,6 +145,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
           raw.zeroingProfiles as PlayerStats["zeroingProfiles"],
         )
       : base.zeroingProfiles,
+    rifleRoundCounts: normalizeRifleRoundCounts(raw.rifleRoundCounts),
     shotLog: shotLog as PlayerStats["shotLog"],
     dopeCard: dopeCard as PlayerStats["dopeCard"],
     customsMods: normalizeCustomsMods(raw.customsMods),

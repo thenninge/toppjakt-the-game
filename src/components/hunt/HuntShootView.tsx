@@ -136,8 +136,10 @@ type HuntShootViewProps = {
   customsMoaDelta?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
+  /** Barrel wear multiplier on rifle MOA (1 = fresh … 2 = worn). */
+  barrelWearScale?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
-  onConsumeAmmo: (ammoId: string) => boolean;
+  onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
     rifleId: string,
     scopeId: string,
@@ -241,6 +243,7 @@ export function HuntShootView({
   onLogSeries,
   customsMoaDelta = 0,
   customsTriggerPullScale = 1,
+  barrelWearScale = 1,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -452,6 +455,7 @@ export function HuntShootView({
     (opts: boolean | RangeShotAudioOptions) => void
   >(() => {});
   const consumeAmmoRef = useRef(onConsumeAmmo);
+  const barrelWearScaleRef = useRef(barrelWearScale);
   const recoilClearRef = useRef<number | null>(null);
 
   const { playShot } = useRangeAudio({ enabled: musicEnabled, ambient: false });
@@ -505,6 +509,9 @@ export function HuntShootView({
   useEffect(() => {
     consumeAmmoRef.current = onConsumeAmmo;
   }, [onConsumeAmmo]);
+  useEffect(() => {
+    barrelWearScaleRef.current = barrelWearScale;
+  }, [barrelWearScale]);
 
   const densityRef = useRef(densityRatio);
   useEffect(() => {
@@ -554,7 +561,7 @@ export function HuntShootView({
       setStatus("Tom for ammo.");
       return;
     }
-    if (!consumeAmmoRef.current(selectedAmmo.id)) {
+    if (!consumeAmmoRef.current(selectedAmmo.id, rifle.id)) {
       setStatus("Tom for ammo.");
       return;
     }
@@ -573,6 +580,7 @@ export function HuntShootView({
       stock: stock?.stock,
       affinity,
       customsMoaDelta,
+      barrelWearScale: barrelWearScaleRef.current,
       dispersionScale: fatigueDispersionFactor(fatigueRef.current),
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);

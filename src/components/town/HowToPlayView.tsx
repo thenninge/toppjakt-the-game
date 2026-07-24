@@ -82,8 +82,9 @@ const SECTIONS: GuideSection[] = [
   {
     title: "Skyting på banen & jakt",
     bullets: [
-      "F (fokus) på range/jakt: midlertidig roligere sikte — deretter fatigue til du slipper og trykker på nytt.",
+      "F (fokus) på range/jakt: roligere sikte og setter et «slipp trigger her»-merke på avtrekksbaren — slipp Space på merket for best presisjon. Hold for lenge → fatigue til du slipper F og trykker på nytt.",
       "Rifle + ammo + stock + affinity bestemmer gruppestørrelse. Test ammo på range — butikken skjuler ammo-MOA.",
+      "Pipe-slitasje: skudd pr rifle telles i Shotlog. Etter 300 skudd stiger rifle-MOA mot 2× ved 400 — bytt pipe hos CB Customs (eller kjøp nytt våpen).",
       "Scope click-error: budsjettglass kan «lyve» litt på klikk; premium (NF/Kahles/…) er eksakt.",
       "Jakt-skudd: POA (wobble/avtrekk) + MOA-spredning + vind + zero + LRF-feil + temp/dV/dT stables — ikke én magisk treffsjanse.",
     ],
@@ -92,9 +93,13 @@ const SECTIONS: GuideSection[] = [
     title: "Kit, by & progresjon",
     bullets: [
       "Bygg kit hjemme: rifle, scope, ammo, optikk, camo, mat. Uten jaktkort (inatur.no) kommer du ikke ut.",
-      "Camo med lav birdSpot = vanskeligere å oppdage for fuglen; terreng-buff hjelper gange.",
+      "Camo: lav birdSpot = fuglen bygger nerve saktere (snø- vs barmark-tall). Suit veier tyngst; buff/lue/hansker/støvler demper silhuetten. Feil mønster (snøkamo på bar mark) straffer deg. Custom camo hos CB hjelper litt mer.",
+      "Gange på kartet: pace + celle-effort styrer minutter. Kit «top speed» (Home) påvirkes av ski vs støvler, ski-max/flyt/bredde, sekk-vekt og carry comfort — skistøvler kreves hvis du har ski i kit.",
+      "Chestrig/sekk: opticsAccess og quickRelease er ment for raskere kikkert-/rifle-deploy (mindre faffe nær fugl) — ikke aktivt knyttet til nerve ennå.",
       "Google-innlogging synker save til skyen (samme konto som Aware) — last inn eller overskriv ved konflikt.",
       "Meat Market selger fugl for cash. XXL selger greier. Lensmannen gir lisens før rifle-kjøp.",
+      "Rulles kebab: snakk med folk for å låse opp nye jaktterreng. Blakk? Ta oppvasken for en slant.",
+      "Skytebanen: MOA-konkurranse — tjen penger som konkurranseskytter (i tillegg til oppvask hos Rulles).",
     ],
   },
 ];

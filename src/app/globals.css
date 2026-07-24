@@ -4885,6 +4885,52 @@ body {
   width: min(52rem, 100%);
 }
 
+.shot-log-barrels {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.shot-log-barrels-title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--accent-gold);
+}
+
+.shot-log-barrel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.shot-log-barrel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
+  gap: 0.15rem 0.75rem;
+  align-items: baseline;
+}
+
+.shot-log-barrel-label {
+  font-size: 1.05rem;
+}
+
+.shot-log-barrel-count {
+  font-size: 0.95rem;
+  color: var(--accent-gold);
+  text-align: right;
+}
+
+.shot-log-barrel-row .shop-row-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .shot-log-list {
   list-style: none;
   margin: 0;

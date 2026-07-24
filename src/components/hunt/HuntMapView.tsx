@@ -55,11 +55,13 @@ import { getCellSeatCounts } from "@/lib/hunt/mapPlacements";
 import { spotImagesWithPerches } from "@/lib/hunt/spotPerches";
 import {
   getInventoryQty,
+  getRifleRoundCount,
   type DopeCardEntry,
   type InventoryEntry,
   type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
+import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import {
   isAmmoItem,
   isBallisticsItem,
@@ -67,6 +69,7 @@ import {
   isFoodItem,
   isLrfItem,
   isMiscItem,
+  isRifleItem,
   isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
@@ -206,12 +209,14 @@ type HuntMapViewProps = {
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  /** Lifetime shots per rifle (barrel wear). */
+  rifleRoundCounts?: Record<string, number>;
   dopeCard?: DopeCardEntry[];
   customsMods?: CustomsMods;
   weather: DayWeather;
   musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
-  onConsumeAmmo: (ammoId: string) => boolean;
+  onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
     rifleId: string,
     scopeId: string,
@@ -449,6 +454,7 @@ export function HuntMapView({
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  rifleRoundCounts = {},
   dopeCard = [],
   customsMods = EMPTY_CUSTOMS_MODS,
   weather,
@@ -703,6 +709,13 @@ export function HuntMapView({
   );
   const customsMoaDelta = customsBeddingMoaDelta(customsMods);
   const triggerPullScale = customsTriggerPullScale(customsMods);
+  const huntBarrelWearScale = useMemo(() => {
+    const rifle = kitItems.find(isRifleItem);
+    if (!rifle) return 1;
+    return barrelWearMoaScale(
+      getRifleRoundCount(rifleRoundCounts, rifle.id),
+    );
+  }, [kitItems, rifleRoundCounts]);
   const hasHeadlamp = useMemo(
     () =>
       kitItems.some(
@@ -3064,6 +3077,7 @@ export function HuntMapView({
         dopeCard={dopeCard}
         customsMoaDelta={customsMoaDelta}
         customsTriggerPullScale={triggerPullScale}
+        barrelWearScale={huntBarrelWearScale}
         musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={mentalFatigue}

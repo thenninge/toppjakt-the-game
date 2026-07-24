@@ -71,6 +71,7 @@ import {
   clicksForDropMm,
   effectiveZeroOffsetMm,
   getInventoryQty,
+  getRifleRoundCount,
   MAX_TURRET_OFFSET_MM,
   mmAt100ToClicks,
   ZERO_CLICK_MM,
@@ -85,12 +86,14 @@ import { densityRatioFromTempC } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import type { DayWeather } from "@/lib/weather/spec";
+import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 
 type ShootingRangeProps = {
   kitItems: ShopItem[];
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  rifleRoundCounts?: Record<string, number>;
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
   /** Live day weather (same as hunt) for Enviro / App. */
@@ -103,7 +106,7 @@ type ShootingRangeProps = {
   onPayCompetitionFee: (amountNok: number) => boolean;
   onAwardCompetitionPayout: (amountNok: number) => void;
   onAffinitiesChange: (next: Record<string, number>) => void;
-  onConsumeAmmo: (ammoId: string) => boolean;
+  onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
     rifleId: string,
     scopeId: string,
@@ -143,6 +146,7 @@ export function ShootingRange({
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  rifleRoundCounts = {},
   shotLog,
   dopeCard,
   weather,
@@ -168,6 +172,13 @@ export function ShootingRange({
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
+  );
+  const barrelWearScale = useMemo(
+    () =>
+      rifle
+        ? barrelWearMoaScale(getRifleRoundCount(rifleRoundCounts, rifle.id))
+        : 1,
+    [rifle, rifleRoundCounts],
   );
   const scope = useMemo(
     () => kitItems.find(isScopeItem) ?? null,
@@ -377,7 +388,7 @@ export function ShootingRange({
       }
       return;
     }
-    if (!consumeAmmoRef.current(selectedAmmo.id)) {
+    if (!consumeAmmoRef.current(selectedAmmo.id, rifle.id)) {
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
@@ -404,6 +415,7 @@ export function ShootingRange({
         stock: stock?.stock,
         affinity,
         customsMoaDelta,
+        barrelWearScale,
       };
       const envelopeMoa = combinedDispersionMoa(dispersionInput);
       const pull = triggerPullOffsetMm(
@@ -959,6 +971,7 @@ export function ShootingRange({
     return (
       <ShotLogView
         entries={shotLog}
+        rifleRoundCounts={rifleRoundCounts}
         onBack={() => setView("range")}
         backLabel="← Tilbake til skytebanen"
       />
@@ -1024,6 +1037,7 @@ export function ShootingRange({
             inventory={inventory}
             ammoAffinities={ammoAffinities}
             zeroingProfiles={zeroingProfiles}
+            rifleRoundCounts={rifleRoundCounts}
             weather={weather}
             customsMoaDelta={customsMoaDelta}
             customsTriggerPullScale={customsTriggerPullScale}

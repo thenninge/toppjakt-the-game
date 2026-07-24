@@ -62,19 +62,29 @@ export type DispersionInput = {
   customsMoaDelta?: number;
   /**
    * Multiplier on the combined envelope (mental fatigue: 1 = fresh, 2 = exhausted).
-   * Applied after rifle+ammo+stock+customs.
+   * Applied after rifle+ammo+stock+customs (+ barrel wear on rifle).
    */
   dispersionScale?: number;
+  /**
+   * Barrel wear multiplier on rifle MOA only (1 = fresh … 2 = worn out).
+   * See `barrelWearMoaScale`.
+   */
+  barrelWearScale?: number;
 };
 
 /**
  * Combined angular envelope in MOA (the N-σ figure from catalog terms).
- * rifle + (ammo × affinity) + stock delta + customs bedding,
+ * (rifle × barrelWear) + (ammo × affinity) + stock delta + customs bedding,
  * then optional {@link DispersionInput.dispersionScale} (e.g. MIND fatigue).
  */
 export function combinedDispersionMoa(input: DispersionInput): number {
+  const wear =
+    input.barrelWearScale != null && Number.isFinite(input.barrelWearScale)
+      ? Math.max(1, input.barrelWearScale)
+      : 1;
+  const rifleMoa = Math.max(0, input.rifle.averageBestAccuracyMoa) * wear;
   const ammoMoa = Math.max(0, input.ammo.maxAchievableMoa) * input.affinity;
-  let moa = Math.max(0, input.rifle.averageBestAccuracyMoa) + ammoMoa;
+  let moa = rifleMoa + ammoMoa;
   if (input.stock) {
     moa = applyStockMoaDelta(moa, input.stock);
   }

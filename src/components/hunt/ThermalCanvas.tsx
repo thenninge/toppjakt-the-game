@@ -14,6 +14,8 @@ type ThermalCanvasProps = {
   pixelFactor: number;
   /** White-hot (default), black-hot, outline, or fusion (outlines only). */
   polarity?: ThermalPolarity;
+  /** Visual-only bird width multiplier (spotter default −30%). */
+  birdVisualScale?: number;
   className?: string;
   /** Fired once the landscape bitmap is ready (birds may then be drawn). */
   onLandscapeReady?: () => void;
@@ -111,6 +113,7 @@ export function ThermalCanvas({
   zoom,
   pixelFactor,
   polarity = "wh",
+  birdVisualScale = 0.7,
   className,
   onLandscapeReady,
 }: ThermalCanvasProps) {
@@ -130,11 +133,13 @@ export function ThermalCanvas({
   const polarityRef = useRef(polarity);
   const birdsRef = useRef(birdPlacements);
   const pixelFactorRef = useRef(pixelFactor);
+  const birdScaleRef = useRef(birdVisualScale);
   panRef.current = pan;
   zoomRef.current = zoom;
   polarityRef.current = polarity;
   birdsRef.current = birdPlacements;
   pixelFactorRef.current = pixelFactor;
+  birdScaleRef.current = birdVisualScale;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -146,6 +151,10 @@ export function ThermalCanvas({
     const polarityNow = polarityRef.current;
     const birdPlacementsNow = birdsRef.current;
     const pixelFactorNow = pixelFactorRef.current;
+    const birdScaleNow =
+      Number.isFinite(birdScaleRef.current) && birdScaleRef.current > 0
+        ? birdScaleRef.current
+        : 1;
 
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -297,7 +306,10 @@ export function ThermalCanvas({
         continue;
       }
 
-      const birdW = Math.max(6 * dpr, (p.widthPct / 100) * w * zoomNow);
+      const birdW = Math.max(
+        6 * dpr,
+        (p.widthPct / 100) * w * zoomNow * birdScaleNow,
+      );
       const sprite = getBirdSprite(p.spriteId);
       const aspect = sprite.toppH / Math.max(1, sprite.toppW);
       const birdH = birdW * aspect;
@@ -429,7 +441,7 @@ export function ThermalCanvas({
 
   useEffect(() => {
     draw();
-  }, [draw, pan, zoom, polarity, birdPlacements, pixelFactor]);
+  }, [draw, pan, zoom, polarity, birdPlacements, pixelFactor, birdVisualScale]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

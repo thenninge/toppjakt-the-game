@@ -149,6 +149,11 @@ export type PlayerStats = {
   ammoAffinities: Record<string, number>;
   /** Per player×rifle×scope×ammo zeroing state. */
   zeroingProfiles: Record<string, ZeroingProfile>;
+  /**
+   * Lifetime shots through each rifle barrel (keyed by rifle item id).
+   * Drives barrel-wear MOA; reset by CB Customs rebarrel.
+   */
+  rifleRoundCounts: Record<string, number>;
   /** Chronological range series log (newest first). */
   shotLog: ShotLogEntry[];
   /** Field DOPE card from range (newest first). */
@@ -619,6 +624,7 @@ export function createInitialStats(): PlayerStats {
     weaponLicenses: [],
     ammoAffinities: {},
     zeroingProfiles: {},
+    rifleRoundCounts: {},
     shotLog: [],
     dopeCard: [],
     customsMods: { ...EMPTY_CUSTOMS_MODS },
@@ -1057,10 +1063,11 @@ export function consumeInventoryItem(
   };
 }
 
-/** Spend one round of ammo; drops from kit when empty. */
+/** Spend one round of ammo; drops from kit when empty. Optionally counts a rifle shot. */
 export function consumeAmmoRound(
   stats: PlayerStats,
   ammoId: string,
+  opts?: { rifleId?: string },
 ): { stats: PlayerStats; ok: boolean } {
   const { inventory, ok } = consumeInventoryItem(stats.inventory, ammoId, 1);
   if (!ok) return { stats, ok: false };
@@ -1068,7 +1075,48 @@ export function consumeAmmoRound(
     getInventoryQty(inventory, ammoId) === 0
       ? stats.kit.filter((id) => id !== ammoId)
       : stats.kit;
-  return { stats: { ...stats, inventory, kit }, ok: true };
+  let next: PlayerStats = { ...stats, inventory, kit };
+  if (opts?.rifleId) {
+    next = recordRifleShot(next, opts.rifleId);
+  }
+  return { stats: next, ok: true };
+}
+
+/** Increment lifetime shots through a rifle barrel. */
+export function recordRifleShot(
+  stats: PlayerStats,
+  rifleId: string,
+  count = 1,
+): PlayerStats {
+  if (!rifleId || count <= 0) return stats;
+  const prev = stats.rifleRoundCounts[rifleId] ?? 0;
+  return {
+    ...stats,
+    rifleRoundCounts: {
+      ...stats.rifleRoundCounts,
+      [rifleId]: prev + Math.floor(count),
+    },
+  };
+}
+
+/** Reset barrel round count after CB Customs rebarrel. */
+export function resetRifleBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+): PlayerStats {
+  if (!rifleId) return stats;
+  const next = { ...stats.rifleRoundCounts };
+  next[rifleId] = 0;
+  return { ...stats, rifleRoundCounts: next };
+}
+
+export function getRifleRoundCount(
+  counts: Record<string, number> | undefined,
+  rifleId: string,
+): number {
+  if (!counts) return 0;
+  const n = counts[rifleId];
+  return typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
 }
 
 /** Default Finn.no resale fraction of catalog purchase price. */
@@ -1131,11 +1179,21 @@ export function sellInventoryOnFinn(
     getInventoryQty(inventory, itemId) === 0
       ? stats.kit.filter((id) => id !== itemId)
       : stats.kit;
+  let rifleRoundCounts = stats.rifleRoundCounts;
+  if (
+    item.category === "rifle" &&
+    getInventoryQty(inventory, itemId) === 0 &&
+    rifleRoundCounts[itemId] != null
+  ) {
+    rifleRoundCounts = { ...rifleRoundCounts };
+    delete rifleRoundCounts[itemId];
+  }
   return {
     stats: {
       ...stats,
       inventory,
       kit,
+      rifleRoundCounts,
       balance: stats.balance + deal.payout,
     },
     payout: deal.payout,

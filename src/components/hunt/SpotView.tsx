@@ -170,16 +170,30 @@ const BIRD_HIT_MIN_PCT = 4.5;
  */
 const BIRD_SPRITE_MIN_PCT = 0.85;
 
+/**
+ * Visual-only shrink vs angular size (beta feedback: birds looked too big).
+ * Eyes −15%; binos / thermal spotter −30%. Hit/LRF still use widthPct.
+ */
+const SPOT_BIRD_VISUAL_SCALE_EYES = 0.85;
+const SPOT_BIRD_VISUAL_SCALE_OPTIC = 0.7;
+
 function BirdOverlay({
   placement,
   onSelect,
+  visualScale = 1,
 }: {
   placement: BirdVisualPlacement;
   /** Click / activate → same path as a successful LRF lock. */
   onSelect?: (placement: BirdVisualPlacement) => void;
+  /** Multiplier on drawn width only (not LRF geometry). */
+  visualScale?: number;
 }) {
   const selectable = !!onSelect;
-  const drawPct = Math.max(placement.widthPct, BIRD_SPRITE_MIN_PCT);
+  const scale = Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1;
+  const drawPct = Math.max(
+    placement.widthPct * scale,
+    BIRD_SPRITE_MIN_PCT * scale,
+  );
   const hitPct = Math.max(drawPct, BIRD_HIT_MIN_PCT);
   const spriteScale = (drawPct / hitPct) * 100;
   const flip = placement.flip ? " scaleX(-1)" : "";
@@ -832,6 +846,9 @@ export function SpotView({
         : modeTitle;
 
   const isOpticMode = mode === "binos" || mode === "thermal";
+  const birdVisualScale = isOpticMode
+    ? SPOT_BIRD_VISUAL_SCALE_OPTIC
+    : SPOT_BIRD_VISUAL_SCALE_EYES;
   const frameStyle = {
     "--spot-ar": String(landAspect),
     ...(isOpticMode ? { "--optic-aperture": String(opticAperture) } : {}),
@@ -1122,6 +1139,7 @@ export function SpotView({
                 <BirdOverlay
                   key={p.birdId}
                   placement={p}
+                  visualScale={birdVisualScale}
                   onSelect={birdClickEnabled ? onBirdClick : undefined}
                 />
               ))}
@@ -1141,6 +1159,7 @@ export function SpotView({
                 <BirdOverlay
                   key={p.birdId}
                   placement={p}
+                  visualScale={birdVisualScale}
                   onSelect={birdClickEnabled ? onBirdClick : undefined}
                 />
               ))}
@@ -1168,6 +1187,7 @@ export function SpotView({
                   <BirdOverlay
                     key={p.birdId}
                     placement={p}
+                    visualScale={birdVisualScale}
                     onSelect={undefined}
                   />
                 ))}
@@ -1178,6 +1198,7 @@ export function SpotView({
               birdPlacements={
                 thermalPolarity === "fusion" ? fusionOutlineBirds : birdsOnFrame
               }
+              birdVisualScale={birdVisualScale}
               pan={pan}
               zoom={zoom}
               pixelFactor={thermalPixelFactor}

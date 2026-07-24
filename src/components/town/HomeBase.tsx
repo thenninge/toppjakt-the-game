@@ -96,6 +96,7 @@ type HomeBaseProps = {
   kit: string[];
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
+  rifleRoundCounts?: Record<string, number>;
   customsMods?: CustomsMods;
   /** Harvested birds in the home freezer (until Meat Market). */
   freezerCarcasses?: GameCarcass[];
@@ -130,6 +131,7 @@ export function HomeBase({
   kit,
   shotLog,
   dopeCard,
+  rifleRoundCounts = {},
   customsMods = EMPTY_CUSTOMS_MODS,
   freezerCarcasses = [],
   licenseCount,
@@ -369,6 +371,7 @@ export function HomeBase({
       <ShotLogDopeView
         shotLog={shotLog}
         dopeCard={dopeCard}
+        rifleRoundCounts={rifleRoundCounts}
         onUpdateDope={onUpdateDope}
         onRemoveDope={onRemoveDope}
         onBack={() => setView("main")}

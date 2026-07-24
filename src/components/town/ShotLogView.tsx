@@ -3,12 +3,23 @@
 import {
   angularMmAtDistance,
   formatZeroAxisMm,
+  getRifleRoundCount,
+  resolvePlayerItem,
   type ShotLogEntry,
 } from "@/lib/player";
+import {
+  BARREL_WEAR_END_SHOTS,
+  BARREL_WEAR_START_SHOTS,
+  barrelWearLabelNb,
+  barrelWearMoaScale,
+} from "@/lib/rifle/barrelWear";
 import { LocationNav } from "@/components/town/LocationNav";
+import { isRifleItem } from "@/lib/shop/types";
 
 type ShotLogViewProps = {
   entries: ShotLogEntry[];
+  /** Lifetime shots per rifle barrel. */
+  rifleRoundCounts?: Record<string, number>;
   onBack: () => void;
   /** Where the user came from — used for back button label. */
   backLabel?: string;
@@ -36,13 +47,51 @@ function uniqueCombos(entries: ShotLogEntry[]): number {
   return keys.size;
 }
 
+type RifleWearRow = {
+  rifleId: string;
+  label: string;
+  rounds: number;
+  scale: number;
+  status: string;
+};
+
+function rifleWearRows(
+  counts: Record<string, number>,
+  entries: ShotLogEntry[],
+): RifleWearRow[] {
+  const ids = new Set<string>([
+    ...Object.keys(counts),
+    ...entries.map((e) => e.rifleId),
+  ]);
+  const rows: RifleWearRow[] = [];
+  for (const rifleId of ids) {
+    const item = resolvePlayerItem(rifleId);
+    if (item && !isRifleItem(item)) continue;
+    const rounds = getRifleRoundCount(counts, rifleId);
+    const label = item
+      ? `${item.brand} ${item.name}`
+      : entries.find((e) => e.rifleId === rifleId)?.rifleLabel ?? rifleId;
+    rows.push({
+      rifleId,
+      label,
+      rounds,
+      scale: barrelWearMoaScale(rounds),
+      status: barrelWearLabelNb(rounds),
+    });
+  }
+  rows.sort((a, b) => b.rounds - a.rounds || a.label.localeCompare(b.label));
+  return rows;
+}
+
 export function ShotLogView({
   entries,
+  rifleRoundCounts = {},
   onBack,
   backLabel = "← Tilbake",
   embedded = false,
 }: ShotLogViewProps) {
   const comboCount = uniqueCombos(entries);
+  const wearRows = rifleWearRows(rifleRoundCounts, entries);
 
   return (
     <div className={embedded ? "shot-log shot-log--embedded" : "shot-log"}>
@@ -65,6 +114,28 @@ export function ShotLogView({
         </p>
       </header>
 
+      {wearRows.length > 0 ? (
+        <section className="shot-log-barrels" aria-label="Skudd pr våpen">
+          <h3 className="shot-log-barrels-title">Skudd pr våpen (pipe)</h3>
+          <p className="shop-row-note">
+            Presisjon: frisk til {BARREL_WEAR_START_SHOTS} skudd, deretter opp
+            mot 2× rifle-MOA ved {BARREL_WEAR_END_SHOTS}. Bytt pipe hos CB
+            Customs eller kjøp nytt våpen.
+          </p>
+          <ul className="shot-log-barrel-list">
+            {wearRows.map((row) => (
+              <li key={row.rifleId} className="shot-log-barrel-row">
+                <span className="shot-log-barrel-label">{row.label}</span>
+                <span className="shot-log-barrel-count">
+                  {row.rounds} skudd · {row.scale.toFixed(2)}×
+                </span>
+                <span className="shop-row-note">{row.status}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {entries.length === 0 ? null : (
         <ul className="shot-log-list">
           {entries.map((entry) => {
@@ -75,6 +146,10 @@ export function ShotLogView({
             const paperY = angularMmAtDistance(
               entry.zeroYMm,
               entry.distanceM,
+            );
+            const rifleRounds = getRifleRoundCount(
+              rifleRoundCounts,
+              entry.rifleId,
             );
             return (
               <li key={entry.id} className="shot-log-row">
@@ -88,6 +163,8 @@ export function ShotLogView({
                   {entry.rifleLabel}
                   {" · "}
                   {entry.scopeLabel}
+                  {" · pipe "}
+                  {rifleRounds} skudd
                 </p>
                 <p className="shot-log-ammo">{entry.ammoLabel}</p>
                 <dl className="shot-log-stats">
