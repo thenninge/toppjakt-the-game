@@ -641,7 +641,7 @@ export function HuntMapView({
       ) ?? null,
     [kitItems],
   );
-  /** AB-class meter (Kestrel 5700 Elite) + BDX → exact elev+windage fasit. */
+  /** AB-class meter (Kestrel 5700 Elite) — solver for elev/windage fasit. */
   const abMeterItem = useMemo(
     () =>
       kitItems.find(
@@ -652,9 +652,20 @@ export function HuntMapView({
       ) ?? null,
     [kitItems],
   );
-  /** BDX/AB + local AB meter → exact range and holds from perfect zero. */
+  /**
+   * Exact auto-dial: AB meter (Kestrel Elite) + LRF that can pair for holds
+   * (BDX / onboard AB binos, or Habrok integrated LRF).
+   * Budget LRF without ballistics does not auto-dial.
+   */
   const hasExactBallistics = !!(
-    binoItem?.lrf.hasOnboardBallistics && abMeterItem
+    abMeterItem &&
+    (binoItem?.lrf.hasOnboardBallistics ||
+      thermalItem?.thermal.hasIntegratedLrf)
+  );
+  /** LRF with onboard AB/BDX, or Habrok — used for Aware Kestrel messaging. */
+  const hasBdxOrHabrokLrf = !!(
+    binoItem?.lrf.hasOnboardBallistics ||
+    thermalItem?.thermal.hasIntegratedLrf
   );
   const lrfSpec = useMemo(() => {
     if (binoItem?.lrf) {
@@ -666,8 +677,10 @@ export function HuntMapView({
     // Habrok integrated LRF (no separate binos).
     if (thermalLrfSpec) {
       return {
-        hasOnboardBallistics: false,
-        rangeErrorPercent: thermalLrfSpec.rangeErrorPercent,
+        hasOnboardBallistics: hasExactBallistics,
+        rangeErrorPercent: hasExactBallistics
+          ? 0
+          : thermalLrfSpec.rangeErrorPercent,
         magnification: thermalMagnification,
       };
     }
@@ -3036,6 +3049,7 @@ export function HuntMapView({
         measuredDistanceM={shootSession.measuredDistanceM}
         rangeSource={shootSession.rangeSource}
         ballisticHold={shootSession.ballisticHold}
+        hasKestrelInKit={!!kestrelItem}
         crosswindMs={shootSession.crosswindMs}
         densityRatio={shootSession.densityRatio}
         temperatureC={weather.live.temperatureC}
@@ -3137,7 +3151,7 @@ export function HuntMapView({
         hasLrf={hasBinos}
         ammo={primaryAmmo?.ammo ?? null}
         hasKestrel={!!kestrelItem}
-        hasBdx={!!binoItem?.lrf.hasOnboardBallistics}
+        hasBdx={hasBdxOrHabrokLrf}
         hasCamcorder={hasCamcorder}
         hasChronograph={hasChronograph}
         hasTriggercam={hasTriggercam}

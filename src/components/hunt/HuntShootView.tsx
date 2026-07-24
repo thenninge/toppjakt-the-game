@@ -103,6 +103,11 @@ type HuntShootViewProps = {
   rangeSource?: HuntRangeSource;
   /** Exact BDX+Kestrel hold from perfect zero (null if not equipped). */
   ballisticHold?: BallisticHoldSolution | null;
+  /**
+   * Kestrel (any wind meter) in hunt kit — show Kestrel tab even without
+   * BDX auto-dial pairing.
+   */
+  hasKestrelInKit?: boolean;
   /** True local crosswind (m/s, +from left) for this shot bearing. */
   crosswindMs?: number;
   /** Atmosphere density ratio from live temperature. */
@@ -218,6 +223,7 @@ export function HuntShootView({
   measuredDistanceM,
   rangeSource = "estimated",
   ballisticHold = null,
+  hasKestrelInKit = false,
   crosswindMs = 0,
   densityRatio = 1,
   temperatureC = 15,
@@ -1171,7 +1177,7 @@ export function HuntShootView({
     : shotGeom.nativeW;
   const sceneH = landscapeSrc ? sceneW / landAspect : shotGeom.nativeH;
 
-  const activeHold =
+  const autoDialHold =
     ballisticHold && selectedAmmo
       ? exactBallisticHold(
           selectedAmmo.ammo,
@@ -1180,6 +1186,18 @@ export function HuntShootView({
           { densityRatio, powderTempC: temperatureC },
         )
       : null;
+  /** Kestrel LCD: auto-dial hold, or reference solution when meter is in kit only. */
+  const kestrelDisplayHold =
+    autoDialHold ??
+    (hasKestrelInKit && selectedAmmo
+      ? exactBallisticHold(
+          selectedAmmo.ammo,
+          measuredDistanceM,
+          crosswindMs,
+          { densityRatio, powderTempC: temperatureC },
+        )
+      : null);
+  const activeHold = autoDialHold;
 
   if (replay && lastImpact) {
     return (
@@ -1224,7 +1242,7 @@ export function HuntShootView({
           {" · "}
           vital grønn Ø{TIUR_INSTANT_KILL_DIAMETER_MM} mm / rød Ø
           {TIUR_VITAL_DIAMETER_MM} mm
-          {activeHold ? " · Kestrel i kit (fane)" : null}
+          {activeHold ? " · Kestrel AB auto-dial" : hasKestrelInKit ? " · Kestrel i kit (fane)" : null}
         </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name} · {scope.brand} {scope.name} (
@@ -1298,13 +1316,27 @@ export function HuntShootView({
             />
           }
           kestrelPanel={
-            activeHold ? (
-              <KestrelFasitView
-                hold={activeHold}
-                shotBearingDeg={shotBearingDeg}
-                windFromDeg={windFromDeg}
-                windSpeedMs={windSpeedMs}
-              />
+            hasKestrelInKit ? (
+              kestrelDisplayHold ? (
+                <div className="hunt-kestrel-panel">
+                  {!activeHold ? (
+                    <p className="shop-row-note">
+                      Kestrel i kit — ingen BDX/AB-kobling til LRF. Fasit vises;
+                      dial Enviro/tårn manuelt.
+                    </p>
+                  ) : null}
+                  <KestrelFasitView
+                    hold={kestrelDisplayHold}
+                    shotBearingDeg={shotBearingDeg}
+                    windFromDeg={windFromDeg}
+                    windSpeedMs={windSpeedMs}
+                  />
+                </div>
+              ) : (
+                <p className="shop-row-note">
+                  Kestrel i kit — velg ammo for fasit.
+                </p>
+              )
             ) : undefined
           }
           actions={
