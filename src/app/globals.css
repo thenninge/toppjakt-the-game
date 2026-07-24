@@ -1043,66 +1043,6 @@ body {
   color: #e8fff0;
 }
 
-.home-ig-btn {
-  border-color: #8a4a6a;
-  color: #f0c0d8;
-  background: linear-gradient(
-    135deg,
-    rgba(131, 58, 180, 0.25),
-    rgba(253, 29, 29, 0.18),
-    rgba(252, 176, 69, 0.2)
-  );
-}
-
-.home-ig-btn:hover,
-.home-ig-btn:focus-visible {
-  border-color: #e070a0;
-  color: #ffe8f4;
-}
-
-.ig-feed {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.ig-feed-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.ig-feed-external {
-  text-decoration: none;
-}
-
-.ig-feed-frame-wrap {
-  width: min(100%, 28rem);
-  margin: 0 auto;
-  border: 2px solid #6b5238;
-  background: #0a0a0c;
-  overflow: hidden;
-  min-height: min(72vh, 36rem);
-}
-
-.ig-feed-frame {
-  display: block;
-  width: 100%;
-  height: min(72vh, 36rem);
-  border: 0;
-  background: #0a0a0c;
-}
-
-.ig-feed-hint {
-  margin: 0;
-  max-width: 40rem;
-}
-
-.ig-feed-hint code {
-  font-size: 0.85em;
-  color: var(--accent-gold);
-}
-
 .home-data-tabs {
   display: flex;
   flex-wrap: wrap;
