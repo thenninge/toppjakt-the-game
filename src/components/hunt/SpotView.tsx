@@ -914,156 +914,167 @@ export function SpotView({
             >
               {isThermalBinocular
                 ? thermalBatteryGameSec <= 0
-                  ? "Use Habrok dagoptikk (B/T)"
-                  : "Use Habrok Fusion (B/T)"
-                : "Use thermal (T)"}
+                  ? "Habrok dagoptikk (B/T)"
+                  : "Habrok Fusion (B/T)"
+                : "Termisk (T)"}
             </button>
           ) : null}
           {mode === "eyes" && hasBinos && !isThermalBinocular ? (
             <button type="button" className="intro-button" onClick={toggleBinos}>
-              Use binos (B)
+              Kikkert (B)
             </button>
           ) : null}
-          {mode === "binos" && hasThermal && !habrokBatteryDead ? (
+          {mode === "eyes" ? (
             <button
               type="button"
               className="intro-button"
-              onClick={toggleThermal}
-              disabled={thermalBatteryGameSec <= 0}
-              title={
-                thermalBatteryGameSec <= 0
-                  ? "Batteri tomt"
-                  : `Batteri ${battMin} min igjen`
-              }
-            >
-              {isThermalBinocular ? "Use Habrok termisk (T)" : "Use thermal (T)"}
-            </button>
-          ) : null}
-          {mode === "thermal" && hasBinos && !isThermalBinocular ? (
-            <button type="button" className="intro-button" onClick={toggleBinos}>
-              Use binos (B)
-            </button>
-          ) : null}
-          {mode === "thermal" && isThermalBinocular ? (
-            <>
-              <button
-                type="button"
-                className={
-                  thermalPolarity === "wh"
-                    ? "intro-button"
-                    : "intro-button sheriff-secondary"
-                }
-                onClick={() => setThermalPolarity("wh")}
-              >
-                WH
-              </button>
-              <button
-                type="button"
-                className={
-                  thermalPolarity === "bh"
-                    ? "intro-button"
-                    : "intro-button sheriff-secondary"
-                }
-                onClick={() => setThermalPolarity("bh")}
-              >
-                BH
-              </button>
-              {hasThermalOutline ? (
-                <button
-                  type="button"
-                  className={
-                    thermalPolarity === "outline"
-                      ? "intro-button"
-                      : "intro-button sheriff-secondary"
-                  }
-                  onClick={() => setThermalPolarity("outline")}
-                >
-                  Outline
-                </button>
-              ) : null}
-              {hasThermalFusion ? (
-                <button
-                  type="button"
-                  className={
-                    thermalPolarity === "fusion"
-                      ? "intro-button"
-                      : "intro-button sheriff-secondary"
-                  }
-                  onClick={() => setThermalPolarity("fusion")}
-                >
-                  Fusion
-                </button>
-              ) : null}
-            </>
-          ) : mode === "thermal" ? (
-            <button
-              type="button"
-              className="intro-button sheriff-secondary"
               onClick={() =>
-                setThermalPolarity((p) => (p === "wh" ? "bh" : "wh"))
-              }
-              title={
-                thermalPolarity === "wh"
-                  ? "White-hot — trykk for black-hot"
-                  : "Black-hot — trykk for white-hot"
+                onDone({ mode, gameSeconds: lookedRef.current })
               }
             >
-              {thermalPolarity === "wh" ? "WH" : "BH"}
+              Done
             </button>
           ) : null}
-          {isOpticMode ? (
-            <button
-              type="button"
-              className="intro-button"
-              onClick={leaveToEyes}
-            >
-              Eyes only
-            </button>
-          ) : null}
-          {showLrf ? (
-            <button
-              type="button"
-              className="intro-button spot-lrf-btn"
-              onClick={() => fireLrf(activeLrf)}
-              title="F eller Space"
-            >
-              LRF
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="intro-button"
-            onClick={() =>
-              onDone({ mode, gameSeconds: lookedRef.current })
-            }
-          >
-            Done spotting/map
-          </button>
         </div>
       </header>
 
-      {isThermalBinocular && (mode === "thermal" || mode === "binos") ? (
-        <div className="spot-habrok-zoom">
-          <label className="spot-habrok-zoom-label" htmlFor="habrok-zoom">
-            Zoom {Math.round(habrokZoom)}×
-            <span className="shop-row-note">
-              {" "}
-              ({habrokMin}–{habrokMax}× · termisk/outline: grønn &gt;
-              {HABROK_GREEN_MIN_ZOOM}× · gul &gt;{HABROK_YELLOW_MIN_ZOOM}× ·
-              Fusion: alle fugler, outline følger zoom)
-              {habrokBatteryDead ? " · ingen termisk" : ""}
-            </span>
-          </label>
-          <input
-            id="habrok-zoom"
-            type="range"
-            className="spot-habrok-zoom-slider"
-            min={habrokMin}
-            max={habrokMax}
-            step={1}
-            value={habrokZoom}
-            onChange={(e) => setHabrokZoom(Number(e.target.value))}
-          />
+      {isOpticMode ? (
+        <div className="spot-optic-bar">
+          <div
+            className="spot-optic-toolbar"
+            role="toolbar"
+            aria-label="Optikk-kontroller"
+          >
+            {hasThermal && !habrokBatteryDead ? (
+              <>
+                <button
+                  type="button"
+                  className={
+                    mode === "thermal" &&
+                    (thermalPolarity === "wh" || thermalPolarity === "bh")
+                      ? "intro-button"
+                      : "intro-button sheriff-secondary"
+                  }
+                  title={
+                    thermalPolarity === "bh"
+                      ? "Black-hot — trykk for white-hot"
+                      : "White-hot — trykk for black-hot"
+                  }
+                  onClick={() => {
+                    if (mode === "thermal" && thermalPolarity === "wh") {
+                      setThermalPolarity("bh");
+                    } else if (mode === "thermal" && thermalPolarity === "bh") {
+                      setThermalPolarity("wh");
+                    } else {
+                      setThermalPolarity("wh");
+                      enterOpticMode("thermal");
+                    }
+                  }}
+                >
+                  {mode === "thermal" &&
+                  (thermalPolarity === "wh" || thermalPolarity === "bh")
+                    ? thermalPolarity === "bh"
+                      ? "BH"
+                      : "WH"
+                    : "WH/BH"}
+                </button>
+                {isThermalBinocular && hasThermalOutline ? (
+                  <button
+                    type="button"
+                    className={
+                      mode === "thermal" && thermalPolarity === "outline"
+                        ? "intro-button"
+                        : "intro-button sheriff-secondary"
+                    }
+                    onClick={() => {
+                      setThermalPolarity("outline");
+                      enterOpticMode("thermal");
+                    }}
+                  >
+                    Outline
+                  </button>
+                ) : null}
+                {isThermalBinocular && hasThermalFusion ? (
+                  <button
+                    type="button"
+                    className={
+                      mode === "thermal" && thermalPolarity === "fusion"
+                        ? "intro-button"
+                        : "intro-button sheriff-secondary"
+                    }
+                    onClick={() => {
+                      setThermalPolarity("fusion");
+                      enterOpticMode("thermal");
+                    }}
+                  >
+                    Fusion
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={
+                    mode !== "thermal"
+                      ? "intro-button"
+                      : "intro-button sheriff-secondary"
+                  }
+                  title="Slå av termisk — sparer batteri (dagoptikk)"
+                  onClick={() => {
+                    if (isThermalBinocular) {
+                      enterOpticMode("binos");
+                    } else {
+                      leaveToEyes();
+                    }
+                  }}
+                >
+                  OFF
+                </button>
+              </>
+            ) : null}
+            {showLrf ? (
+              <button
+                type="button"
+                className="intro-button spot-lrf-btn"
+                onClick={() => fireLrf(activeLrf)}
+                title="F eller Space"
+              >
+                LRF
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="intro-button"
+              onClick={() =>
+                onDone({ mode, gameSeconds: lookedRef.current })
+              }
+            >
+              Done
+            </button>
+          </div>
+
+          {isThermalBinocular ? (
+            <div className="spot-habrok-zoom">
+              <label className="spot-habrok-zoom-label" htmlFor="habrok-zoom">
+                Zoom {Math.round(habrokZoom)}×
+                <span className="shop-row-note">
+                  {" "}
+                  ({habrokMin}–{habrokMax}× · termisk/outline: grønn &gt;
+                  {HABROK_GREEN_MIN_ZOOM}× · gul &gt;{HABROK_YELLOW_MIN_ZOOM}× ·
+                  Fusion: alle fugler)
+                  {habrokBatteryDead ? " · ingen termisk" : ""}
+                </span>
+              </label>
+              <input
+                id="habrok-zoom"
+                type="range"
+                className="spot-habrok-zoom-slider"
+                min={habrokMin}
+                max={habrokMax}
+                step={1}
+                value={habrokZoom}
+                onChange={(e) => setHabrokZoom(Number(e.target.value))}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
