@@ -5969,6 +5969,25 @@ body {
   flex: 1;
 }
 
+.aware-go-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.aware-go-btn.is-active {
+  border-color: var(--prompt-green);
+  color: var(--prompt-green);
+  background: rgba(40, 80, 50, 0.35);
+}
+
+.aware-go-btn:active {
+  border-color: var(--prompt-green);
+  color: var(--prompt-green);
+  background: rgba(40, 80, 50, 0.35);
+}
+
 /* --- In-game confirm (replaces window.confirm) --- */
 
 .game-confirm {

@@ -351,6 +351,7 @@ export function AwareAppView({
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, initialBirdNerve)),
   );
   const [moveHoldSec, setMoveHoldSec] = useState(0);
+  const [goToPointHeld, setGoToPointHeld] = useState(false);
   const [shootWizard, setShootWizard] = useState<ShootWizard>({
     phase: "idle",
   });
@@ -387,6 +388,8 @@ export function AwareAppView({
     left: false,
     right: false,
   });
+  /** Mobile: "Gå til punkt" button held — moves toward destination. */
+  const goToPointHeldRef = useRef(false);
   const hunterRef = useRef(hunter);
   hunterRef.current = hunter;
   const destRef = useRef(destination);
@@ -555,20 +558,26 @@ export function AwareAppView({
 
       if (stalking && !flushedRef.current && !shootWizardActive) {
         const keys = keysRef.current;
-        const moving =
-          keys.up || keys.down || keys.left || keys.right;
+        const arrowMoving = keys.up || keys.down || keys.left || keys.right;
+        const dest = destRef.current;
+        const goToPointMoving = goToPointHeldRef.current && dest != null;
+        const moving = arrowMoving || goToPointMoving;
         if (moving) {
           moveHoldRef.current += dt;
           const step = MOVE_PCT_PER_SEC * dt;
-          const dest = destRef.current;
           let next = hunterRef.current;
-          if (dest) {
+          if (dest && (goToPointMoving || arrowMoving)) {
             next = stepToward(next, dest, step);
             if (distanceMBetween(next, dest) < AWARE_METERS_PER_PCT * 0.4) {
               setDestination(null);
               destRef.current = null;
+              // Reset "go to point" when destination is reached.
+              if (goToPointHeldRef.current) {
+                goToPointHeldRef.current = false;
+                setGoToPointHeld(false);
+              }
             }
-          } else {
+          } else if (arrowMoving) {
             next = stepByKeys(next, keys, step);
           }
           if (next.x !== hunterRef.current.x || next.y !== hunterRef.current.y) {
@@ -1547,6 +1556,41 @@ export function AwareAppView({
           >
             {abortLabel}
           </button>
+          {stalking && mode === "aware" && destination ? (
+            <button
+              type="button"
+              className={
+                goToPointHeld
+                  ? "intro-button aware-go-btn is-active"
+                  : "intro-button aware-go-btn"
+              }
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                goToPointHeldRef.current = true;
+                setGoToPointHeld(true);
+                stageRef.current?.focus();
+              }}
+              onPointerUp={(e) => {
+                e.preventDefault();
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+                goToPointHeldRef.current = false;
+                setGoToPointHeld(false);
+              }}
+              onPointerCancel={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+                goToPointHeldRef.current = false;
+                setGoToPointHeld(false);
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              Gå til punkt
+            </button>
+          ) : null}
           {focusPairId ? (
             <button
               type="button"
