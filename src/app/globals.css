@@ -2398,7 +2398,7 @@ body {
 
 .lapua-temp-btn {
   flex: 0 0 auto;
-  width: 2.5rem;
+  width: 5rem;
   height: 1.05rem;
   border: 1px solid #3a5070;
   background: rgba(0, 0, 0, 0.35);
@@ -2498,12 +2498,13 @@ body {
 
 .lapua-nudge {
   flex: 1;
+  min-width: 2.4rem;
   border: 1px solid #3a5070;
   background: rgba(0, 0, 0, 0.3);
   color: #9aafc8;
   font-size: 0.55rem;
   line-height: 1;
-  padding: 0.15rem 0;
+  padding: 0.15rem 0.45rem;
   cursor: pointer;
   border-radius: 0.15rem;
 }

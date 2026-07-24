@@ -139,18 +139,18 @@ function WheelColumn({
         <button
           type="button"
           className="lapua-nudge"
-          disabled={idx <= 0}
-          onClick={() => onChange(values[idx - 1]!)}
-          aria-label={`${label} ned`}
+          disabled={idx >= values.length - 1}
+          onClick={() => onChange(values[idx + 1]!)}
+          aria-label={`${label} opp`}
         >
           ▲
         </button>
         <button
           type="button"
           className="lapua-nudge"
-          disabled={idx >= values.length - 1}
-          onClick={() => onChange(values[idx + 1]!)}
-          aria-label={`${label} opp`}
+          disabled={idx <= 0}
+          onClick={() => onChange(values[idx - 1]!)}
+          aria-label={`${label} ned`}
         >
           ▼
         </button>
@@ -228,7 +228,7 @@ export function LapuaBallisticsApp({
   const [tempC, setTempC] = useState(() =>
     autoPrefill
       ? clampTempC(liveTemperatureC)
-      : POWDER_TEMP_REFERENCE_C,
+      : 0,
   );
   /** Cosmetic only — incline wheel, not used for hold. */
   const [angleDeg, setAngleDeg] = useState(0);
