@@ -470,13 +470,22 @@ export function XxlShop({
                 ) : null}
                 {thermal ? (
                   <span className="shop-row-ballistics">
-                    {thermal.magnification}× · pixel {thermal.pixelFactor}
+                    {thermal.magnification}×
+                    {thermal.minZoom != null && thermal.maxZoom != null
+                      ? ` (${thermal.minZoom}–${thermal.maxZoom}×)`
+                      : ""}{" "}
+                    · pixel {thermal.pixelFactor}
                     {thermal.timeFactor != null
                       ? ` · tid ×${thermal.timeFactor}`
                       : ""}
                     {thermal.hasIntegratedLrf
                       ? ` · LRF ±${thermal.rangeErrorPercent ?? "?"}%`
                       : " · kun termisk"}
+                    {thermal.isThermalBinocular
+                      ? " · binokular (erstatter bino)"
+                      : ""}
+                    {thermal.hasFusionMode ? " · Fusion" : ""}
+                    {thermal.hasOutlineMode ? " · Outline" : ""}
                   </span>
                 ) : null}
                 {scope ? (

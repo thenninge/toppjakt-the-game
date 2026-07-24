@@ -27,6 +27,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   // Thermal
   "thermal-hikmicro-lynx-le10": 420,
   "thermal-hikmicro-condor-cq35-lrf": 890,
+  "thermal-hikmicro-habrok-hq35l": 960,
 
   // Scopes
   "scope-nf-nx8-4-32-moa": 810,

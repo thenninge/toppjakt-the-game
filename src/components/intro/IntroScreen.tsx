@@ -77,7 +77,7 @@ import {
   customsTriggerPullScale,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
-import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem } from "@/lib/shop/types";
+import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isThermalItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 import { isHeadlampMisc } from "@/lib/misc/spec";
 import {
@@ -595,6 +595,14 @@ export function IntroScreen() {
           return item && isMiscItem(item) && isHeadlampMisc(item.misc)
             ? "headlamp"
             : undefined;
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return !!(
+            item &&
+            isThermalItem(item) &&
+            item.thermal.isThermalBinocular
+          );
         },
       ),
     }));

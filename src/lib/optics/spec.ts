@@ -74,21 +74,38 @@ export type LrfSpec = {
 export type ThermalSpec = {
   /**
    * Sensor quality proxy — higher = blockier image (poorer resolution).
-   * Budget handheld ≈ 6; premium scope-class ≈ 3–4.
+   * Budget handheld ≈ 6; premium ≈ 3; Habrok-class ≈ 2.
    */
   pixelFactor: number;
-  /** Digital / optical zoom factor for panning FOV. */
+  /** Digital / optical zoom factor for panning FOV (fixed zoom units). */
   magnification: number;
   /**
    * Real→game time multiplier while spotting in thermal (also drains battery).
-   * Budget ≈ 20×; premium ≈ 30× (burns clock faster — observe efficiently).
+   * Budget ≈ 20×; premium Condor ≈ 30×; Habrok ≈ 36× (20% faster than Condor).
    */
   timeFactor?: number;
-  /** Built-in laser rangefinder (e.g. Condor CQ35 LRF). */
+  /** Built-in laser rangefinder (e.g. Condor CQ35 LRF / Habrok). */
   hasIntegratedLrf?: boolean;
   /** Symmetric LRF error band when {@link hasIntegratedLrf}. */
   rangeErrorPercent?: number;
+  /**
+   * Thermal binocular (Habrok): replaces separate binos + thermal in kit.
+   * Variable zoom + outline / fusion display modes.
+   */
+  isThermalBinocular?: boolean;
+  /** Variable zoom range (Habrok 5–22×). */
+  minZoom?: number;
+  maxZoom?: number;
+  /** Outline mode: red edge around heat signatures. */
+  hasOutlineMode?: boolean;
+  /** Fusion mode: day-optic image + thermal red outline. */
+  hasFusionMode?: boolean;
 };
+
+/** Habrok / thermal-bino: green band needs zoom above this. */
+export const HABROK_GREEN_MIN_ZOOM = 10;
+/** Habrok / thermal-bino: yellow band needs zoom above this. */
+export const HABROK_YELLOW_MIN_ZOOM = 15;
 
 /**
  * Clear circular aperture as % of half the shorter frame edge

@@ -1793,6 +1793,32 @@ body {
   height: 100%;
 }
 
+.spot-thermal-canvas--fusion {
+  z-index: 2;
+  background: transparent;
+  pointer-events: none;
+}
+
+.spot-habrok-zoom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: min(100%, 28rem);
+  margin: 0 auto 0.35rem;
+  padding: 0 0.75rem;
+}
+
+.spot-habrok-zoom-label {
+  font-size: 0.9rem;
+  color: var(--canyon-sand, #e8dcc8);
+}
+
+.spot-habrok-zoom-slider {
+  width: 100%;
+  accent-color: #c45a3a;
+  cursor: pointer;
+}
+
 .spot-thermal-scanlines {
   position: absolute;
   inset: 0;

@@ -590,21 +590,30 @@ export function HuntMapView({
   thermalBatteryGameSecRef.current = thermalBatteryGameSec;
 
   const binoItem = useMemo(() => kitItems.find(isLrfItem) ?? null, [kitItems]);
-  const hasBinos = !!binoItem;
-  const binosLabel = binoItem
-    ? `${binoItem.brand} ${binoItem.name}`
-    : null;
-  const binosMagnification = binoItem
-    ? lrfOpticalMagnification(binoItem)
-    : DEFAULT_BINOS_MAGNIFICATION;
-  /** Same world zoom SpotView uses for binos (mag × aperture), for pan-to-bird. */
-  const binosWorldZoom = Math.max(
-    1,
-    binosMagnification * (opticAperturePercent(binoItem?.priceNok ?? 0) / 100),
-  );
   const thermalItem = useMemo(
     () => kitItems.find(isThermalItem) ?? null,
     [kitItems],
+  );
+  const isHabrok = !!thermalItem?.thermal.isThermalBinocular;
+  const hasBinos = !!binoItem || isHabrok;
+  const binosLabel = binoItem
+    ? `${binoItem.brand} ${binoItem.name}`
+    : isHabrok && thermalItem
+      ? `${thermalItem.brand} ${thermalItem.name}`
+      : null;
+  const binosMagnification = binoItem
+    ? lrfOpticalMagnification(binoItem)
+    : isHabrok
+      ? (thermalItem?.thermal.magnification ?? 10)
+      : DEFAULT_BINOS_MAGNIFICATION;
+  /** Same world zoom SpotView uses for binos (mag × aperture), for pan-to-bird. */
+  const binosWorldZoom = Math.max(
+    1,
+    binosMagnification *
+      (opticAperturePercent(
+        binoItem?.priceNok ?? thermalItem?.priceNok ?? 0,
+      ) /
+        100),
   );
   const hasThermal = !!thermalItem;
   const thermalLabel = thermalItem
@@ -647,12 +656,22 @@ export function HuntMapView({
     binoItem?.lrf.hasOnboardBallistics && abMeterItem
   );
   const lrfSpec = useMemo(() => {
-    if (!binoItem?.lrf) return null;
-    if (hasExactBallistics) {
-      return { ...binoItem.lrf, rangeErrorPercent: 0 };
+    if (binoItem?.lrf) {
+      if (hasExactBallistics) {
+        return { ...binoItem.lrf, rangeErrorPercent: 0 };
+      }
+      return binoItem.lrf;
     }
-    return binoItem.lrf;
-  }, [binoItem, hasExactBallistics]);
+    // Habrok integrated LRF (no separate binos).
+    if (thermalLrfSpec) {
+      return {
+        hasOnboardBallistics: false,
+        rangeErrorPercent: thermalLrfSpec.rangeErrorPercent,
+        magnification: thermalMagnification,
+      };
+    }
+    return null;
+  }, [binoItem, hasExactBallistics, thermalLrfSpec, thermalMagnification]);
   const primaryAmmo = useMemo(
     () => kitItems.find(isAmmoItem) ?? null,
     [kitItems],
@@ -3186,12 +3205,17 @@ export function HuntMapView({
         thermalPixelFactor={thermalPixelFactor}
         thermalTimeFactor={thermalTimeFactor}
         thermalLrfSpec={thermalLrfSpec}
-        binosPriceNok={binoItem?.priceNok ?? 0}
+        isThermalBinocular={isHabrok}
+        thermalMinZoom={thermalItem?.thermal.minZoom ?? 5}
+        thermalMaxZoom={thermalItem?.thermal.maxZoom ?? 22}
+        hasThermalOutline={!!thermalItem?.thermal.hasOutlineMode}
+        hasThermalFusion={!!thermalItem?.thermal.hasFusionMode}
+        binosPriceNok={binoItem?.priceNok ?? (isHabrok ? thermalItem?.priceNok ?? 0 : 0)}
         thermalPriceNok={thermalItem?.priceNok ?? 0}
         clockMinutes={clockMinutes}
         hasBinos={hasBinos}
         hasThermal={hasThermal}
-        hasLrf={hasBinos}
+        hasLrf={!!lrfSpec}
         binosLabel={binosLabel}
         thermalLabel={thermalLabel}
         thermalBatteryGameSec={thermalBatteryGameSec}

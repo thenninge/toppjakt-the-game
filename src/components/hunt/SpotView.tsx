@@ -18,6 +18,8 @@ import {
   measureDistanceWithLrf,
   opticAperturePercent,
   opticApertureRadiusPct,
+  HABROK_GREEN_MIN_ZOOM,
+  HABROK_YELLOW_MIN_ZOOM,
   type LrfSpec,
 } from "@/lib/optics/spec";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
@@ -55,8 +57,14 @@ type SpotViewProps = {
   thermalPixelFactor?: number;
   /** Real→game time while in thermal (battery drains at same rate). */
   thermalTimeFactor?: number;
-  /** Integrated LRF on thermal unit (Condor CQ35). */
+  /** Integrated LRF on thermal unit (Condor CQ35 / Habrok). */
   thermalLrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
+  /** Habrok-class: thermal binocular replaces separate binos. */
+  isThermalBinocular?: boolean;
+  thermalMinZoom?: number;
+  thermalMaxZoom?: number;
+  hasThermalOutline?: boolean;
+  hasThermalFusion?: boolean;
   /** Shop price of equipped binos — drives circular bezel thickness. */
   binosPriceNok?: number;
   /** Shop price of equipped thermal — drives circular bezel thickness. */
@@ -229,6 +237,11 @@ export function SpotView({
   thermalPixelFactor = 10,
   thermalTimeFactor = SPOT_TIME_FACTOR_THERMAL,
   thermalLrfSpec = null,
+  isThermalBinocular = false,
+  thermalMinZoom = 5,
+  thermalMaxZoom = 22,
+  hasThermalOutline = false,
+  hasThermalFusion = false,
   binosPriceNok = 0,
   thermalPriceNok = 0,
   clockMinutes,
@@ -259,9 +272,17 @@ export function SpotView({
         ? "thermal"
         : "eyes";
   const [mode, setMode] = useState<SpotMode>(startMode);
-  /** White-hot (default) / black-hot thermal palette. */
+  /** White-hot (default) / black-hot / outline / fusion. */
   const [thermalPolarity, setThermalPolarity] =
     useState<ThermalPolarity>("wh");
+  const habrokMin = Math.max(1, thermalMinZoom);
+  const habrokMax = Math.max(habrokMin, thermalMaxZoom);
+  const [habrokZoom, setHabrokZoom] = useState(() =>
+    Math.min(
+      habrokMax,
+      Math.max(habrokMin, thermalMagnification || habrokMin),
+    ),
+  );
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
   /** Photo aspect (w/h) so the frame does not squash landscapes into one box. */
@@ -275,8 +296,16 @@ export function SpotView({
     mode === "thermal"
       ? opticAperturePercent(thermalPriceNok)
       : opticAperturePercent(binosPriceNok);
-  const rawMag = mode === "thermal" ? thermalZoom : binoZoom;
+  const rawMag =
+    mode === "thermal"
+      ? isThermalBinocular
+        ? habrokZoom
+        : thermalZoom
+      : binoZoom;
   const zoom = Math.max(1, rawMag * (opticAperture / 100));
+  /** Spec zoom shown on Habrok slider / visibility (not aperture-adjusted). */
+  const opticSpecZoom =
+    mode === "thermal" && isThermalBinocular ? habrokZoom : rawMag;
   const timeFactor = spotTimeFactor(mode, thermalFactor);
   const [lookedGameSec, setLookedGameSec] = useState(0);
   const lookedRef = useRef(0);
@@ -564,6 +593,17 @@ export function SpotView({
 
   function toggleBinos() {
     if (!hasBinos) return;
+    // Habrok replaces binos — open thermal Fusion instead.
+    if (isThermalBinocular) {
+      if (modeRef.current === "thermal" && thermalPolarity === "fusion") {
+        leaveToEyes();
+        return;
+      }
+      if (thermalBatteryRef.current <= 0) return;
+      setThermalPolarity("fusion");
+      enterOpticMode("thermal");
+      return;
+    }
     if (modeRef.current === "binos") {
       leaveToEyes();
       return;
@@ -578,6 +618,9 @@ export function SpotView({
       return;
     }
     if (thermalBatteryRef.current <= 0) return;
+    if (isThermalBinocular) {
+      setThermalPolarity((p) => (p === "fusion" ? "wh" : p));
+    }
     enterOpticMode("thermal");
   }
 
@@ -620,7 +663,10 @@ export function SpotView({
   function fireLrf(activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null) {
     if (!landscapeReady) return;
     const visible = birdPlacements.filter((p) =>
-      visibleInSpotMode(p.distanceM, mode),
+      visibleInSpotMode(p.distanceM, mode, {
+        habrokZoom:
+          isThermalBinocular && mode === "thermal" ? opticSpecZoom : null,
+      }),
     );
     const hit = findBirdUnderLrfReticle(visible, pan, zoom);
     if (hit && activeLrf) {
@@ -652,7 +698,12 @@ export function SpotView({
   const lookedSec = Math.floor(lookedGameSec % 60);
 
   const visibleBirds = birdPlacements
-    .filter((p) => visibleInSpotMode(p.distanceM, mode))
+    .filter((p) =>
+      visibleInSpotMode(p.distanceM, mode, {
+        habrokZoom:
+          isThermalBinocular && mode === "thermal" ? opticSpecZoom : null,
+      }),
+    )
     // Far first → nearer sprites paint on top when perches overlap.
     .slice()
     .sort((a, b) => b.distanceM - a.distanceM);
@@ -693,7 +744,7 @@ export function SpotView({
     mode === "binos"
       ? `Kikkert ${binoZoom}×${binosLabel ? ` — ${binosLabel}` : ""}`
       : mode === "thermal"
-        ? `Termisk ${thermalZoom}×${thermalLabel ? ` — ${thermalLabel}` : ""}`
+        ? `${isThermalBinocular ? "Habrok" : "Termisk"} ${opticSpecZoom.toFixed(isThermalBinocular ? 0 : 1)}×${thermalLabel ? ` — ${thermalLabel}` : ""}`
         : "Spotting med øynene";
 
   const isOpticMode = mode === "binos" || mode === "thermal";
@@ -754,11 +805,6 @@ export function SpotView({
           </p>
         </div>
         <div className="spot-view-actions">
-          {mode === "eyes" && hasBinos ? (
-            <button type="button" className="intro-button" onClick={toggleBinos}>
-              Use binos (B)
-            </button>
-          ) : null}
           {mode === "eyes" && hasThermal ? (
             <button
               type="button"
@@ -771,7 +817,12 @@ export function SpotView({
                   : `Batteri ${battMin} min igjen`
               }
             >
-              Use thermal (T)
+              {isThermalBinocular ? "Use Habrok (T)" : "Use thermal (T)"}
+            </button>
+          ) : null}
+          {mode === "eyes" && hasBinos && !isThermalBinocular ? (
+            <button type="button" className="intro-button" onClick={toggleBinos}>
+              Use binos (B)
             </button>
           ) : null}
           {mode === "binos" && hasThermal ? (
@@ -786,10 +837,66 @@ export function SpotView({
                   : `Batteri ${battMin} min igjen`
               }
             >
-              Use thermal (T)
+              {isThermalBinocular ? "Use Habrok (T)" : "Use thermal (T)"}
             </button>
           ) : null}
-          {mode === "thermal" ? (
+          {mode === "thermal" && hasBinos && !isThermalBinocular ? (
+            <button type="button" className="intro-button" onClick={toggleBinos}>
+              Use binos (B)
+            </button>
+          ) : null}
+          {mode === "thermal" && isThermalBinocular ? (
+            <>
+              <button
+                type="button"
+                className={
+                  thermalPolarity === "wh"
+                    ? "intro-button"
+                    : "intro-button sheriff-secondary"
+                }
+                onClick={() => setThermalPolarity("wh")}
+              >
+                WH
+              </button>
+              <button
+                type="button"
+                className={
+                  thermalPolarity === "bh"
+                    ? "intro-button"
+                    : "intro-button sheriff-secondary"
+                }
+                onClick={() => setThermalPolarity("bh")}
+              >
+                BH
+              </button>
+              {hasThermalOutline ? (
+                <button
+                  type="button"
+                  className={
+                    thermalPolarity === "outline"
+                      ? "intro-button"
+                      : "intro-button sheriff-secondary"
+                  }
+                  onClick={() => setThermalPolarity("outline")}
+                >
+                  Outline
+                </button>
+              ) : null}
+              {hasThermalFusion ? (
+                <button
+                  type="button"
+                  className={
+                    thermalPolarity === "fusion"
+                      ? "intro-button"
+                      : "intro-button sheriff-secondary"
+                  }
+                  onClick={() => setThermalPolarity("fusion")}
+                >
+                  Fusion
+                </button>
+              ) : null}
+            </>
+          ) : mode === "thermal" ? (
             <button
               type="button"
               className="intro-button sheriff-secondary"
@@ -803,11 +910,6 @@ export function SpotView({
               }
             >
               {thermalPolarity === "wh" ? "WH" : "BH"}
-            </button>
-          ) : null}
-          {mode === "thermal" && hasBinos ? (
-            <button type="button" className="intro-button" onClick={toggleBinos}>
-              Use binos (B)
             </button>
           ) : null}
           {isOpticMode ? (
@@ -840,6 +942,29 @@ export function SpotView({
           </button>
         </div>
       </header>
+
+      {mode === "thermal" && isThermalBinocular ? (
+        <div className="spot-habrok-zoom">
+          <label className="spot-habrok-zoom-label" htmlFor="habrok-zoom">
+            Zoom {Math.round(habrokZoom)}×
+            <span className="shop-row-note">
+              {" "}
+              ({habrokMin}–{habrokMax}× · grønn &gt;{HABROK_GREEN_MIN_ZOOM}× · gul
+              &gt;{HABROK_YELLOW_MIN_ZOOM}×)
+            </span>
+          </label>
+          <input
+            id="habrok-zoom"
+            type="range"
+            className="spot-habrok-zoom-slider"
+            min={habrokMin}
+            max={habrokMax}
+            step={1}
+            value={habrokZoom}
+            onChange={(e) => setHabrokZoom(Number(e.target.value))}
+          />
+        </div>
+      ) : null}
 
       <div
         ref={frameRef}
@@ -918,17 +1043,40 @@ export function SpotView({
           </>
         ) : (
           <>
+            {thermalPolarity === "fusion" ? (
+              <div className="spot-binos-world" style={worldStyle}>
+                <img
+                  src={imageSrc}
+                  alt=""
+                  className="spot-binos-world-img"
+                  draggable={false}
+                  onLoad={() => setLandscapeReady(true)}
+                />
+              </div>
+            ) : null}
             <ThermalCanvas
               imageSrc={imageSrc}
               birdPlacements={birdsOnFrame}
               pan={pan}
               zoom={zoom}
               pixelFactor={thermalPixelFactor}
-              polarity={thermalPolarity}
-              className="spot-thermal-canvas"
+              polarity={
+                isThermalBinocular
+                  ? thermalPolarity
+                  : thermalPolarity === "bh"
+                    ? "bh"
+                    : "wh"
+              }
+              className={
+                thermalPolarity === "fusion"
+                  ? "spot-thermal-canvas spot-thermal-canvas--fusion"
+                  : "spot-thermal-canvas"
+              }
               onLandscapeReady={() => setLandscapeReady(true)}
             />
-            <div className="spot-thermal-scanlines" aria-hidden />
+            {thermalPolarity !== "fusion" ? (
+              <div className="spot-thermal-scanlines" aria-hidden />
+            ) : null}
             <div className="spot-optic-vignette" aria-hidden />
             {showLrf ? (
               <span className="spot-lrf-reticle" aria-hidden />
@@ -963,10 +1111,14 @@ export function SpotView({
           Sirkulært termisk syn · piltaster / dra ·{" "}
           {thermalPolarity === "wh"
             ? "WH: varm = hvit"
-            : "BH: varm = svart"}
+            : thermalPolarity === "bh"
+              ? "BH: varm = svart"
+              : thermalPolarity === "outline"
+                ? "Outline: termisk + rød kant"
+                : "Fusion: dagbilde + rød termisk kant"}
           {showLrf ? " · LRF integrert" : ""}
-          {" · T = av termisk"}
-          {hasBinos ? " · B = kikkert" : ""}
+          {" · T = av"}
+          {hasBinos && !isThermalBinocular ? " · B = kikkert" : ""}
           {thermalPriceNok > 0
             ? ` · blender ${opticAperture}% (dyrere = tynnere ramme)`
             : ""}

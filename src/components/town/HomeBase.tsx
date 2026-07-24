@@ -16,6 +16,7 @@ import {
   isCamoItem,
   isFoodItem,
   isSkiItem,
+  isThermalItem,
   inventoryGroupForItem,
   INVENTORY_GROUPS,
   type InventoryGroupId,
@@ -759,7 +760,10 @@ export function HomeBase({
                                   ? ` · ×${qty}`
                                   : ""}
                               {EXCLUSIVE_KIT_CATEGORIES.has(item.category)
-                                ? " · én i kit"
+                                ? isThermalItem(item) &&
+                                  item.thermal.isThermalBinocular
+                                  ? " · erstatter bino+termisk"
+                                  : " · én i kit"
                                 : ""}
                               {finnDeal
                                 ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
@@ -885,30 +889,46 @@ export function toggleKitItem(
   getFoodKind?: (id: string) => string | undefined,
   getCamoSlot?: (id: string) => string | undefined,
   getMiscSlot?: (id: string) => string | undefined,
+  /** Habrok-class thermal binocular — exclusive vs other thermal + LRF. */
+  getIsThermalBinocular?: (id: string) => boolean,
 ): string[] {
   if (kit.includes(itemId)) {
     return kit.filter((id) => id !== itemId);
   }
   const category = getCategory(itemId);
+  const addingHabrok = !!getIsThermalBinocular?.(itemId);
+
+  let next = kit;
+  if (addingHabrok) {
+    // Habrok replaces separate binos (LRF) and any other thermal.
+    next = kit.filter(
+      (id) => getCategory(id) !== "lrf" && getCategory(id) !== "thermal",
+    );
+    return [...next, itemId];
+  }
+  if (category === "lrf" || category === "thermal") {
+    // Adding ordinary bino/thermal removes Habrok if equipped.
+    next = kit.filter((id) => !getIsThermalBinocular?.(id));
+  }
   if (category && EXCLUSIVE_KIT_CATEGORIES.has(category)) {
-    const withoutSame = kit.filter((id) => getCategory(id) !== category);
+    const withoutSame = next.filter((id) => getCategory(id) !== category);
     return [...withoutSame, itemId];
   }
   const foodKind = getFoodKind?.(itemId);
   if (foodKind === "stove" || foodKind === "fuel") {
-    const without = kit.filter((id) => getFoodKind?.(id) !== foodKind);
+    const without = next.filter((id) => getFoodKind?.(id) !== foodKind);
     return [...without, itemId];
   }
   const miscSlot = getMiscSlot?.(itemId);
   if (miscSlot) {
-    const without = kit.filter((id) => getMiscSlot?.(id) !== miscSlot);
+    const without = next.filter((id) => getMiscSlot?.(id) !== miscSlot);
     return [...without, itemId];
   }
   // One per camo/apparel slot (suit, buff, beanie, gloves, boots, ski_boots).
   const slot = getCamoSlot?.(itemId);
   if (slot) {
-    const without = kit.filter((id) => getCamoSlot?.(id) !== slot);
+    const without = next.filter((id) => getCamoSlot?.(id) !== slot);
     return [...without, itemId];
   }
-  return [...kit, itemId];
+  return [...next, itemId];
 }

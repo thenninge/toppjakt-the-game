@@ -52,6 +52,9 @@ export const SHOOT_FLUSH_MIND_HIT = 0.3;
 /** Eyes resolve rød + lilla bands (placement ≤230 m); grønn/gul needs binos/thermal. */
 export const EYES_MAX_DISTANCE_M = 230;
 
+/** Grønn distance band (requires optic; Habrok needs zoom > 10×). */
+export const GREEN_BAND_MAX_M = 300;
+
 export const BIRD_DISTANCE_MIN_M = 150;
 export const BIRD_DISTANCE_MAX_M = 450;
 
@@ -177,12 +180,34 @@ export function visibleWithEyes(distanceM: number): boolean {
   return distanceM <= EYES_MAX_DISTANCE_M;
 }
 
+import {
+  HABROK_GREEN_MIN_ZOOM,
+  HABROK_YELLOW_MIN_ZOOM,
+} from "@/lib/optics/spec";
+
+/**
+ * Habrok thermal-binocular: far birds need enough zoom.
+ * Rød/lilla (≤230 m) always; grønn (≤300 m) needs >10×; gul needs >15×.
+ */
+export function visibleWithHabrokZoom(
+  distanceM: number,
+  opticZoom: number,
+): boolean {
+  if (distanceM <= EYES_MAX_DISTANCE_M) return true;
+  if (distanceM <= GREEN_BAND_MAX_M) return opticZoom > HABROK_GREEN_MIN_ZOOM;
+  return opticZoom > HABROK_YELLOW_MIN_ZOOM;
+}
+
 export function visibleInSpotMode(
   distanceM: number,
   mode: "eyes" | "binos" | "thermal",
+  opts?: { habrokZoom?: number | null },
 ): boolean {
-  if (mode === "binos" || mode === "thermal") return true;
-  return visibleWithEyes(distanceM);
+  if (mode === "eyes") return visibleWithEyes(distanceM);
+  if (opts?.habrokZoom != null && Number.isFinite(opts.habrokZoom)) {
+    return visibleWithHabrokZoom(distanceM, opts.habrokZoom);
+  }
+  return true;
 }
 
 /**

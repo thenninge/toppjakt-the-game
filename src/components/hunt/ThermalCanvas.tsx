@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { BirdVisualPlacement } from "@/lib/hunt/birds";
 import { getBirdSprite } from "@/lib/hunt/birdSprites";
 
-export type ThermalPolarity = "wh" | "bh";
+/** Thermal palette / Habrok display mode. */
+export type ThermalPolarity = "wh" | "bh" | "outline" | "fusion";
 
 type ThermalCanvasProps = {
   imageSrc: string;
@@ -11,7 +12,7 @@ type ThermalCanvasProps = {
   zoom: number;
   /** Higher = blockier (poorer sensor). */
   pixelFactor: number;
-  /** White-hot (default) or black-hot palette. */
+  /** White-hot (default), black-hot, outline, or fusion (outlines only). */
   polarity?: ThermalPolarity;
   className?: string;
   /** Fired once the landscape bitmap is ready (birds may then be drawn). */
@@ -30,15 +31,45 @@ function luminanceToThermal(r: number, g: number, b: number): number {
  */
 const THERMAL_BIRD_GRAY_WH = Math.round(255 * 0.83);
 
+const OUTLINE_RGB = "rgb(220, 40, 40)";
+
+function heatGrayForMode(polarity: ThermalPolarity): number {
+  if (polarity === "bh") return 255 - THERMAL_BIRD_GRAY_WH;
+  // WH + outline use bright heat fill; fusion has no fill.
+  return THERMAL_BIRD_GRAY_WH;
+}
+
 function applyPolarity(gray: number, polarity: ThermalPolarity): number {
   const g = Math.max(0, Math.min(255, gray));
-  return polarity === "bh" ? 255 - g : g;
+  if (polarity === "bh") return 255 - g;
+  return g;
+}
+
+function drawBirdSilhouette(
+  silCtx: CanvasRenderingContext2D,
+  spriteImg: HTMLImageElement,
+  dw: number,
+  dh: number,
+  flip: boolean,
+  fillStyle: string,
+) {
+  silCtx.clearRect(0, 0, dw, dh);
+  silCtx.save();
+  if (flip) {
+    silCtx.translate(dw, 0);
+    silCtx.scale(-1, 1);
+  }
+  silCtx.drawImage(spriteImg, 0, 0, dw, dh);
+  silCtx.restore();
+  silCtx.globalCompositeOperation = "source-in";
+  silCtx.fillStyle = fillStyle;
+  silCtx.fillRect(0, 0, dw, dh);
+  silCtx.globalCompositeOperation = "source-over";
 }
 
 /**
  * Pixelated thermal background + bird silhouettes (same topp shape as binos).
- * Birds are drawn into the same low-res grid as the landscape so they match
- * pixelation; polarity toggles white-hot / black-hot.
+ * Birds share the landscape pixel grid. Outline/Fusion add a thin red edge.
  */
 export function ThermalCanvas({
   imageSrc,
@@ -77,6 +108,8 @@ export function ThermalCanvas({
     const block = Math.max(2, Math.round(pixelFactor * dpr));
     const cols = Math.max(1, Math.ceil(w / block));
     const rows = Math.max(1, Math.ceil(h / block));
+    const fusionOnly = polarity === "fusion";
+    const wantOutline = polarity === "outline" || polarity === "fusion";
 
     if (!sampleRef.current || sampleRef.current.width !== img.naturalWidth) {
       const sampleCanvas = document.createElement("canvas");
@@ -100,49 +133,52 @@ export function ThermalCanvas({
     const offCtx = off.getContext("2d");
     if (!offCtx) return;
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const lensX = ((col + 0.5) / cols) * 100;
-        const lensY = ((row + 0.5) / rows) * 100;
-        const landscapeX = (lensX - (1 - zoom) * pan.x) / zoom;
-        const landscapeY = (lensY - (1 - zoom) * pan.y) / zoom;
+    if (fusionOnly) {
+      offCtx.clearRect(0, 0, cols, rows);
+    } else {
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const lensX = ((col + 0.5) / cols) * 100;
+          const lensY = ((row + 0.5) / rows) * 100;
+          const landscapeX = (lensX - (1 - zoom) * pan.x) / zoom;
+          const landscapeY = (lensY - (1 - zoom) * pan.y) / zoom;
 
-        if (
-          landscapeX < 0 ||
-          landscapeX > 100 ||
-          landscapeY < 0 ||
-          landscapeY > 100
-        ) {
-          const voidG = applyPolarity(8, polarity);
-          offCtx.fillStyle = `rgb(${voidG}, ${voidG}, ${voidG})`;
+          if (
+            landscapeX < 0 ||
+            landscapeX > 100 ||
+            landscapeY < 0 ||
+            landscapeY > 100
+          ) {
+            const voidG = applyPolarity(8, polarity);
+            offCtx.fillStyle = `rgb(${voidG}, ${voidG}, ${voidG})`;
+            offCtx.fillRect(col, row, 1, 1);
+            continue;
+          }
+
+          const sx = Math.min(
+            img.naturalWidth - 1,
+            Math.max(0, Math.floor((landscapeX / 100) * img.naturalWidth)),
+          );
+          const sy = Math.min(
+            img.naturalHeight - 1,
+            Math.max(0, Math.floor((landscapeY / 100) * img.naturalHeight)),
+          );
+          const idx = (sy * img.naturalWidth + sx) * 4;
+          const t = applyPolarity(
+            luminanceToThermal(
+              imgData.data[idx] ?? 0,
+              imgData.data[idx + 1] ?? 0,
+              imgData.data[idx + 2] ?? 0,
+            ),
+            polarity,
+          );
+          offCtx.fillStyle = `rgb(${t | 0}, ${t | 0}, ${t | 0})`;
           offCtx.fillRect(col, row, 1, 1);
-          continue;
         }
-
-        const sx = Math.min(
-          img.naturalWidth - 1,
-          Math.max(0, Math.floor((landscapeX / 100) * img.naturalWidth)),
-        );
-        const sy = Math.min(
-          img.naturalHeight - 1,
-          Math.max(0, Math.floor((landscapeY / 100) * img.naturalHeight)),
-        );
-        const idx = (sy * img.naturalWidth + sx) * 4;
-        const t = applyPolarity(
-          luminanceToThermal(
-            imgData.data[idx] ?? 0,
-            imgData.data[idx + 1] ?? 0,
-            imgData.data[idx + 2] ?? 0,
-          ),
-          polarity,
-        );
-        offCtx.fillStyle = `rgb(${t | 0}, ${t | 0}, ${t | 0})`;
-        offCtx.fillRect(col, row, 1, 1);
       }
     }
 
-    // Birds into the same low-res grid → same pixelation as landscape.
-    const birdG = applyPolarity(THERMAL_BIRD_GRAY_WH, polarity) | 0;
+    const birdG = heatGrayForMode(polarity) | 0;
     for (const p of birdPlacements) {
       const lx = (1 - zoom) * pan.x + p.x * zoom;
       const ly = (1 - zoom) * pan.y + p.y * zoom;
@@ -162,29 +198,48 @@ export function ThermalCanvas({
       const col = Math.round((lx / 100) * cols - dw / 2);
       const row = Math.round((ly / 100) * rows - dh / 2);
 
-      const sil = document.createElement("canvas");
-      sil.width = dw;
-      sil.height = dh;
-      const silCtx = sil.getContext("2d");
-      if (!silCtx) continue;
-      silCtx.imageSmoothingEnabled = false;
-      silCtx.clearRect(0, 0, dw, dh);
-      if (p.flip) {
-        silCtx.translate(dw, 0);
-        silCtx.scale(-1, 1);
+      if (wantOutline) {
+        const odw = Math.max(dw + 2, Math.ceil(dw * 1.12));
+        const odh = Math.max(dh + 2, Math.ceil(dh * 1.12));
+        const oCol = col - Math.floor((odw - dw) / 2);
+        const oRow = row - Math.floor((odh - dh) / 2);
+        const outline = document.createElement("canvas");
+        outline.width = odw;
+        outline.height = odh;
+        const oCtx = outline.getContext("2d");
+        if (oCtx) {
+          oCtx.imageSmoothingEnabled = false;
+          drawBirdSilhouette(oCtx, spriteImg, odw, odh, !!p.flip, OUTLINE_RGB);
+          offCtx.drawImage(outline, oCol, oRow);
+        }
       }
-      silCtx.drawImage(spriteImg, 0, 0, dw, dh);
-      silCtx.setTransform(1, 0, 0, 1, 0, 0);
-      silCtx.globalCompositeOperation = "source-in";
-      silCtx.fillStyle = `rgb(${birdG}, ${birdG}, ${birdG})`;
-      silCtx.fillRect(0, 0, dw, dh);
 
-      offCtx.drawImage(sil, col, row);
+      if (!fusionOnly) {
+        const sil = document.createElement("canvas");
+        sil.width = dw;
+        sil.height = dh;
+        const silCtx = sil.getContext("2d");
+        if (!silCtx) continue;
+        silCtx.imageSmoothingEnabled = false;
+        drawBirdSilhouette(
+          silCtx,
+          spriteImg,
+          dw,
+          dh,
+          !!p.flip,
+          `rgb(${birdG}, ${birdG}, ${birdG})`,
+        );
+        offCtx.drawImage(sil, col, row);
+      }
     }
 
-    const bg = applyPolarity(5, polarity);
-    ctx.fillStyle = `rgb(${bg}, ${bg}, ${bg})`;
-    ctx.fillRect(0, 0, w, h);
+    if (fusionOnly) {
+      ctx.clearRect(0, 0, w, h);
+    } else {
+      const bg = applyPolarity(5, polarity);
+      ctx.fillStyle = `rgb(${bg}, ${bg}, ${bg})`;
+      ctx.fillRect(0, 0, w, h);
+    }
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, 0, 0, cols, rows, 0, 0, w, h);
   }, [birdPlacements, pan, pixelFactor, polarity, zoom]);
@@ -254,7 +309,14 @@ export function ThermalCanvas({
       ref={canvasRef}
       className={className}
       aria-hidden
-      style={{ width: "100%", height: "100%", display: "block" }}
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "block",
+        ...(polarity === "fusion"
+          ? { background: "transparent", pointerEvents: "none" }
+          : null),
+      }}
     />
   );
 }
