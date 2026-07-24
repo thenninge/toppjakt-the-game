@@ -55,7 +55,8 @@ const LOCATIONS: TownLocation[] = [
   {
     id: "how-to-play",
     name: "How to play",
-    blurb: "BODY, MIND, Kestrel, LRF, Habrok, pace — det som faktisk betyr noe.",
+    blurb:
+      "BODY/MIND, Kestrel, Track/ettersøk, zero, dV/dT, DOPE — det som faktisk betyr noe.",
   },
 ];
 
