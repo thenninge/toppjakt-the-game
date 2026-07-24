@@ -74,7 +74,8 @@ export type LrfSpec = {
 export type ThermalSpec = {
   /**
    * Sensor quality proxy — higher = blockier image (poorer resolution).
-   * Budget handheld ≈ 6; premium ≈ 3; Habrok-class ≈ 2.
+   * Budget handheld ≈ 6 (live chunky pixels); premium ≈ 3 / Habrok ≈ 2
+   * (baked thermal landscape + blit for smooth pan).
    */
   pixelFactor: number;
   /** Digital / optical zoom factor for panning FOV (fixed zoom units). */
