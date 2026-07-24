@@ -23,7 +23,8 @@ export type ScopeSpec = {
   clickErrorPercent: number;
   /**
    * Residual aiming error (MOA) after dialing turrets back to mechanical zero.
-   * Lower = better zero retention. Premium ~0.05–0.12; budget ~0.5–1.2+.
+   * Lower = better zero retention. Premium (ZCO/Kahles/NF/SB/Zeiss/Element) ≈ 0.025–0.11;
+   * Leupold Mark 5 keeps ~0.12; budget ~0.5–1.2+.
    */
   zeroRetentionInaccuracy: number;
 };

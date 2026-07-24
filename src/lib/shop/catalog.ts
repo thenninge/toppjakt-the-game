@@ -317,7 +317,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "nf_moa",
       clickUnit: "MOA",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.12,
+      zeroRetentionInaccuracy: 0.06,
     },
   },
   {
@@ -334,7 +334,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "nightforce-mil-r",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.12,
+      zeroRetentionInaccuracy: 0.06,
     },
   },
   {
@@ -348,7 +348,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       maxZoom: 25,
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.08,
+      zeroRetentionInaccuracy: 0.04,
     },
   },
   {
@@ -362,7 +362,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       maxZoom: 35,
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.08,
+      zeroRetentionInaccuracy: 0.04,
     },
   },
   {
@@ -379,7 +379,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "zco-527-mpct",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.05,
+      zeroRetentionInaccuracy: 0.025,
     },
   },
   {
@@ -393,7 +393,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       maxZoom: 20,
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.22,
+      zeroRetentionInaccuracy: 0.11,
     },
   },
   {
@@ -407,7 +407,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       maxZoom: 25,
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.15,
+      zeroRetentionInaccuracy: 0.075,
     },
   },
   {
@@ -438,7 +438,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "kahles",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.1,
+      zeroRetentionInaccuracy: 0.05,
     },
   },
   {
@@ -455,7 +455,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "kahles",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.08,
+      zeroRetentionInaccuracy: 0.04,
     },
   },
   {
@@ -472,7 +472,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "kahles",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.1,
+      zeroRetentionInaccuracy: 0.05,
     },
   },
   {
@@ -488,7 +488,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "kahles",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.15,
+      zeroRetentionInaccuracy: 0.075,
     },
   },
   {
@@ -502,7 +502,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       maxZoom: 36,
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.08,
+      zeroRetentionInaccuracy: 0.04,
     },
   },
   {
@@ -519,7 +519,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "sb",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.06,
+      zeroRetentionInaccuracy: 0.03,
     },
   },
   {
@@ -536,7 +536,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "sb",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.08,
+      zeroRetentionInaccuracy: 0.04,
     },
   },
   {
@@ -553,7 +553,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       reticleId: "sb",
       clickUnit: "MRAD",
       clickErrorPercent: 0,
-      zeroRetentionInaccuracy: 0.05,
+      zeroRetentionInaccuracy: 0.025,
     },
   },
   {
