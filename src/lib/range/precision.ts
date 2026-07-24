@@ -262,12 +262,14 @@ export type WeaponCalmInput = {
   hasBipod: boolean;
   bipod?: BipodSpec | null;
   suppressorWeightGrams?: number;
+  /** Extra calm from customs (e.g. CB Bagrider → 1.15). */
+  customsCalmMult?: number;
 };
 
 /**
  * Calm factor — higher = less wobble.
  * Baseline 1 without bipod; bipod ≈ 3× (tunable), quality adds a bit;
- * can forward-mass softens further.
+ * can forward-mass softens further; customs (bagrider) multiplies last.
  */
 export function computeWeaponCalmFactor(input: WeaponCalmInput): number {
   let calm = 1;
@@ -282,7 +284,11 @@ export function computeWeaponCalmFactor(input: WeaponCalmInput): number {
     const calmMass = suppressorWeaponCalmGrams(input.suppressorWeightGrams);
     calm *= 1 + calmMass / 4000;
   }
-  return calm;
+  const customs =
+    input.customsCalmMult != null && Number.isFinite(input.customsCalmMult)
+      ? Math.max(1, input.customsCalmMult)
+      : 1;
+  return calm * customs;
 }
 
 /** Peak wobble amplitude in mm on target at calm=1 (no bipod). */

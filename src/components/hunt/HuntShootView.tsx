@@ -134,6 +134,8 @@ type HuntShootViewProps = {
   onLogSeries?: (entry: ShotLogEntry) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
+  /** CB Customs calm multiplier (e.g. bagrider 1.15). */
+  customsCalmMult?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
   /** Barrel wear multiplier on rifle MOA (1 = fresh … 2 = worn). */
@@ -242,6 +244,7 @@ export function HuntShootView({
   chronoActive = false,
   onLogSeries,
   customsMoaDelta = 0,
+  customsCalmMult = 1,
   customsTriggerPullScale = 1,
   barrelWearScale = 1,
   onAffinitiesChange,
@@ -487,8 +490,9 @@ export function HuntShootView({
         hasBipod: !!bipod,
         bipod: bipod?.bipod,
         suppressorWeightGrams: suppressor?.weightGrams,
+        customsCalmMult,
       }),
-    [bipod, suppressor],
+    [bipod, suppressor, customsCalmMult],
   );
 
   useEffect(() => {

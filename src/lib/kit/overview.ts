@@ -219,6 +219,11 @@ export function computeKitOverview(input: {
       "Bipod øker våpen-calm (mindre wobble) — ikke katalog-MOA, men treffer lettere på jakt.",
     );
   }
+  if (!customsMods.bagrider) {
+    precisionTips.push(
+      "CB Bagrider (+15% calm, −0.05 MOA) hos CB Customs stabiliserer bakenden.",
+    );
+  }
   precisionTips.push(
     "På jakt: tom Mind-stamina sprer gruppen; hold fokus og rent avtrekk.",
   );

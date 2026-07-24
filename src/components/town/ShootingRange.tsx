@@ -100,6 +100,8 @@ type ShootingRangeProps = {
   weather: DayWeather;
   /** CB Customs bedding MOA delta (negative = tighter). */
   customsMoaDelta?: number;
+  /** CB Customs calm multiplier (e.g. bagrider 1.15). */
+  customsCalmMult?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
   balance: number;
@@ -151,6 +153,7 @@ export function ShootingRange({
   dopeCard,
   weather,
   customsMoaDelta = 0,
+  customsCalmMult = 1,
   customsTriggerPullScale = 1,
   balance,
   onPayCompetitionFee,
@@ -323,8 +326,9 @@ export function ShootingRange({
         hasBipod: !!bipod,
         bipod: bipod?.bipod,
         suppressorWeightGrams: suppressor?.weightGrams,
+        customsCalmMult,
       }),
-    [bipod, suppressor],
+    [bipod, suppressor, customsCalmMult],
   );
 
   useEffect(() => {
@@ -1040,6 +1044,7 @@ export function ShootingRange({
             rifleRoundCounts={rifleRoundCounts}
             weather={weather}
             customsMoaDelta={customsMoaDelta}
+            customsCalmMult={customsCalmMult}
             customsTriggerPullScale={customsTriggerPullScale}
             musicEnabled={musicEnabled}
             onAffinitiesChange={onAffinitiesChange}

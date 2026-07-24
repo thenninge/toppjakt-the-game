@@ -112,6 +112,7 @@ import {
   EMPTY_CUSTOMS_MODS,
   applyCustomCamoBirdSpot,
   customsBeddingMoaDelta,
+  customsCalmMultiplier,
   customsTriggerPullScale,
   type CustomsMods,
 } from "@/lib/customs/spec";
@@ -708,6 +709,7 @@ export function HuntMapView({
     [kitItems, customsMods],
   );
   const customsMoaDelta = customsBeddingMoaDelta(customsMods);
+  const customsCalmMult = customsCalmMultiplier(customsMods);
   const triggerPullScale = customsTriggerPullScale(customsMods);
   const huntBarrelWearScale = useMemo(() => {
     const rifle = kitItems.find(isRifleItem);
@@ -3076,6 +3078,7 @@ export function HuntMapView({
         zeroingProfiles={zeroingProfiles}
         dopeCard={dopeCard}
         customsMoaDelta={customsMoaDelta}
+        customsCalmMult={customsCalmMult}
         customsTriggerPullScale={triggerPullScale}
         barrelWearScale={huntBarrelWearScale}
         musicEnabled={musicEnabled}

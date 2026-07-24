@@ -16,6 +16,8 @@ export type CustomsMods = {
   /** Paid setup — unlocks ordering CB Home Load ammo. */
   homeLoadsSetup: boolean;
   customCamo: boolean;
+  /** Rear bag rider — +calm and a touch of MOA. */
+  bagrider: boolean;
 };
 
 export const EMPTY_CUSTOMS_MODS: CustomsMods = {
@@ -26,6 +28,7 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   triggerTuning: false,
   homeLoadsSetup: false,
   customCamo: false,
+  bagrider: false,
 };
 
 export type CustomsServiceId =
@@ -36,6 +39,7 @@ export type CustomsServiceId =
   | "trigger_tuning"
   | "home_loads_setup"
   | "custom_camo"
+  | "bagrider"
   | "custom_build";
 
 export type CustomsService = {
@@ -65,6 +69,11 @@ export const CUSTOM_CAMO_SPOT_MULT = 0.85;
  * 0.5 = half the miss distance from a bad release vs the trigger-bar mark.
  */
 export const TRIGGER_TUNING_PULL_SCALE = 0.5;
+
+/** MOA cut from a fitted CB Bagrider (rear rest). */
+export const BAGRIDER_MOA = 0.05;
+/** Calm multiplier with CB Bagrider (+15%). */
+export const BAGRIDER_CALM_MULT = 1.15;
 
 export const HOME_LOAD_SETUP_NOK = 5000;
 export const HOME_LOAD_PER_ROUND_NOK = 100;
@@ -116,6 +125,12 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
       "Maling / finish tilpasset jakten — fuglen får litt vanskeligere for å spotte deg.",
   },
   {
+    id: "bagrider",
+    name: "CB Bagrider",
+    priceNok: 4500,
+    effect: `Bakre bag-rider — +${Math.round((BAGRIDER_CALM_MULT - 1) * 100)}% calm og −${BAGRIDER_MOA.toFixed(2)} MOA.`,
+  },
+  {
     id: "custom_build",
     name: "Custom build",
     priceNok: 0,
@@ -135,6 +150,7 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     triggerTuning: o.triggerTuning === true,
     homeLoadsSetup: o.homeLoadsSetup === true,
     customCamo: o.customCamo === true,
+    bagrider: o.bagrider === true,
   };
 }
 
@@ -143,11 +159,18 @@ export function customsTriggerPullScale(mods: CustomsMods): number {
   return mods.triggerTuning ? TRIGGER_TUNING_PULL_SCALE : 1;
 }
 
-/** Negative MOA delta from bedding work (pillar supersedes plain bedding). */
+/** Negative MOA delta from bedding + bagrider (pillar supersedes plain bedding). */
 export function customsBeddingMoaDelta(mods: CustomsMods): number {
-  if (mods.pillarBedding) return -PILLAR_BEDDING_MOA;
-  if (mods.bedding) return -BEDDING_MOA;
-  return 0;
+  let delta = 0;
+  if (mods.pillarBedding) delta -= PILLAR_BEDDING_MOA;
+  else if (mods.bedding) delta -= BEDDING_MOA;
+  if (mods.bagrider) delta -= BAGRIDER_MOA;
+  return delta;
+}
+
+/** Multiplier on weapon calm (1 = stock, 1.15 with CB Bagrider). */
+export function customsCalmMultiplier(mods: CustomsMods): number {
+  return mods.bagrider ? BAGRIDER_CALM_MULT : 1;
 }
 
 /**
@@ -189,6 +212,7 @@ export function serviceOwned(
   if (id === "trigger_tuning") return mods.triggerTuning;
   if (id === "home_loads_setup") return mods.homeLoadsSetup;
   if (id === "custom_camo") return mods.customCamo;
+  if (id === "bagrider") return mods.bagrider;
   return false;
 }
 

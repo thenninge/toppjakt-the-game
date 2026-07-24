@@ -83,6 +83,8 @@ type MoaCompetitionViewProps = {
   rifleRoundCounts?: Record<string, number>;
   weather: DayWeather;
   customsMoaDelta?: number;
+  /** CB Customs calm multiplier (e.g. bagrider 1.15). */
+  customsCalmMult?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
   musicEnabled: boolean;
@@ -189,6 +191,7 @@ export function MoaCompetitionView({
   rifleRoundCounts = {},
   weather,
   customsMoaDelta = 0,
+  customsCalmMult = 1,
   customsTriggerPullScale = 1,
   musicEnabled,
   onAffinitiesChange,
@@ -257,8 +260,9 @@ export function MoaCompetitionView({
         hasBipod: !!bipod,
         bipod: bipod?.bipod,
         suppressorWeightGrams: suppressor?.weightGrams,
+        customsCalmMult,
       }),
-    [bipod, suppressor],
+    [bipod, suppressor, customsCalmMult],
   );
 
   const keysRef = useRef<Keys>({

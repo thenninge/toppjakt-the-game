@@ -186,6 +186,7 @@ export function CbCustoms({
         {weightCut > 0 ? ` · −${formatWeightKg(weightCut)} kitvekt` : ""}
         {customsMods.triggerTuning ? " · trigger tuning" : ""}
         {customsMods.customCamo ? " · custom camo" : ""}
+        {customsMods.bagrider ? " · CB Bagrider" : ""}
       </p>
 
       <div className="cb-customs-card cb-customs-barrel">

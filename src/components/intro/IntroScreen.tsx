@@ -81,6 +81,7 @@ import {
   CUSTOMS_SERVICES,
   HOME_LOAD_PER_ROUND_NOK,
   customsBeddingMoaDelta,
+  customsCalmMultiplier,
   customsTriggerPullScale,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
@@ -606,6 +607,9 @@ export function IntroScreen() {
       } else if (id === "custom_camo") {
         if (mods.customCamo) return prev;
         mods.customCamo = true;
+      } else if (id === "bagrider") {
+        if (mods.bagrider) return prev;
+        mods.bagrider = true;
       } else {
         return prev;
       }
@@ -1223,6 +1227,7 @@ export function IntroScreen() {
             dopeCard={stats.dopeCard}
             weather={weather}
             customsMoaDelta={customsBeddingMoaDelta(stats.customsMods)}
+            customsCalmMult={customsCalmMultiplier(stats.customsMods)}
             customsTriggerPullScale={customsTriggerPullScale(stats.customsMods)}
             balance={stats.balance}
             onPayCompetitionFee={(amountNok) => {
