@@ -51,6 +51,7 @@ import {
   clampAimMm,
 } from "@/lib/range/scopePointerAim";
 import { MOA_RANGE_TARGET_SCALE } from "@/lib/optics/clicks";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
   DEFAULT_ZERO_DISTANCE_M,
   dropBelowLosMm,
@@ -227,6 +228,9 @@ export function ShootingRange({
   const [targetId, setTargetId] = useState<RangeTargetId>(
     DEFAULT_TARGET_BY_DISTANCE[RANGE_DISTANCE_M],
   );
+  /** Paper grid: MOA (×0.727) or MIL (1 cm = 0.1 mil). Default = reticle. */
+  const reticleUnit: ScopeClickUnit = scope?.scope.clickUnit ?? "MRAD";
+  const [paperUnit, setPaperUnit] = useState<ScopeClickUnit>(reticleUnit);
   const target = getRangeTarget(targetId);
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
@@ -341,6 +345,11 @@ export function ShootingRange({
       setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, scope.scope));
     }
   }, [scope]);
+
+  /** New scope → paper grid defaults to that reticle's unit. */
+  useEffect(() => {
+    setPaperUnit(reticleUnit);
+  }, [scope?.id, reticleUnit]);
 
   useEffect(() => {
     if (!ammoId && ammoOptions[0]) setAmmoId(ammoOptions[0].id);
@@ -799,11 +808,9 @@ export function ShootingRange({
     ? scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M)
     : 1;
   /** Target shrinks with distance (angular size). Reticle uses zoom-only
-   * scale so mil/MOA hashes stay true angular — a fixed click error is the
-   * same screen size at every distance. Per-skive visualScale fixes board
-   * size. MOA scopes also get {@link MOA_RANGE_TARGET_SCALE} so 1 cm ≈ ¼ MOA. */
-  const clickUnit = scope?.scope.clickUnit ?? "MRAD";
-  const moaPaperScale = clickUnit === "MOA" ? MOA_RANGE_TARGET_SCALE : 1;
+   * scale so mil/MOA hashes stay true angular. Per-skive visualScale fixes
+   * board size. MOA paper ({@link MOA_RANGE_TARGET_SCALE}) makes 1 cm ≈ ¼ MOA. */
+  const moaPaperScale = paperUnit === "MOA" ? MOA_RANGE_TARGET_SCALE : 1;
   const targetScale = scope
     ? scopeImageScale(zoom, scope.scope, distanceM) *
       target.visualScale *
@@ -972,6 +979,22 @@ export function ShootingRange({
       next === def
         ? `Skive: ${getRangeTarget(next).label} (default for ${distanceM} m).`
         : `Skive: ${getRangeTarget(next).label} (avvik fra ${distanceM} m-default).`,
+    );
+  }
+
+  function changePaperUnit(next: ScopeClickUnit) {
+    if (next === paperUnit) return;
+    setPaperUnit(next);
+    setAimMm({ x: 0, y: 0 });
+    aimRef.current = { x: 0, y: 0 };
+    wobbleRef.current = { x: 0, y: 0 };
+    setShots([]);
+    setMeasurement(null);
+    abortTrigger("");
+    setStatus(
+      next === "MOA"
+        ? `MOA-skive (×${MOA_RANGE_TARGET_SCALE}) — 1 cm ≈ 0,25 MOA.`
+        : "MIL-skive — 1 cm ≈ 0,1 mil.",
     );
   }
 
@@ -1201,11 +1224,15 @@ export function ShootingRange({
         {ballisticHint ? (
           <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
         ) : null}
-        {clickUnit === "MOA" ? (
+        {paperUnit === "MOA" ? (
           <p className="shop-row-note range-moa-paper-hint">
-            MOA-kikkert: skiven er skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1
-            cm-ruten ≈ 7,27 mm ≈ 0,25 MOA (ett klikk) — lettere å stille inn
-            siktet etter rutenettet.
+            MOA-skive: skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1 cm-ruten ≈
+            7,27 mm ≈ 0,25 MOA (ett klikk). Retikkel er {reticleUnit}
+            {paperUnit !== reticleUnit ? " — skive avviker fra default" : ""}.
+          </p>
+        ) : paperUnit !== reticleUnit ? (
+          <p className="shop-row-note range-moa-paper-hint">
+            MIL-skive valgt mens retikkelet er MOA — 1 cm ≈ 0,1 mil.
           </p>
         ) : null}
       </header>
@@ -1237,6 +1264,53 @@ export function ShootingRange({
                 <span className="range-seg-unit">m</span>
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="range-setup-block">
+          <p className="range-setup-label" id="range-paper-label">
+            Rutenett
+            {paperUnit === reticleUnit ? (
+              <span className="range-setup-lock"> · matcher retikkel</span>
+            ) : (
+              <span className="range-setup-lock"> · avvik fra retikkel</span>
+            )}
+          </p>
+          <div
+            className="range-segment"
+            role="group"
+            aria-labelledby="range-paper-label"
+          >
+            <button
+              type="button"
+              className={
+                paperUnit === "MRAD"
+                  ? "range-seg-btn is-active"
+                  : "range-seg-btn"
+              }
+              disabled={setupLocked}
+              aria-pressed={paperUnit === "MRAD"}
+              title="1 cm ≈ 0,1 mil"
+              onClick={() => changePaperUnit("MRAD")}
+            >
+              <span className="range-seg-value">MIL</span>
+              <span className="range-seg-unit">1 cm</span>
+            </button>
+            <button
+              type="button"
+              className={
+                paperUnit === "MOA"
+                  ? "range-seg-btn is-active"
+                  : "range-seg-btn"
+              }
+              disabled={setupLocked}
+              aria-pressed={paperUnit === "MOA"}
+              title={`1 cm ≈ 0,25 MOA (×${MOA_RANGE_TARGET_SCALE})`}
+              onClick={() => changePaperUnit("MOA")}
+            >
+              <span className="range-seg-value">MOA</span>
+              <span className="range-seg-unit">¼</span>
+            </button>
           </div>
         </div>
 

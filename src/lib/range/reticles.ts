@@ -42,18 +42,18 @@ export const RETICLES: Record<string, ReticleDef> = {
     centerTo1MilPx: 43,
   },
   /**
-   * Nightforce MOA tree (nf_moa.png, ~500²).
-   * First major hash = 1 MOA. With MOA paper scale (1 cm ≈ ¼ MOA),
-   * centerTo1 was tuned ×8 smaller so hashes match the grid (was ~4 MOA
-   * per square → now ~0.5 MOA per square; tweak further if needed).
+   * Nightforce MOA tree (nf_moa.png, 1279×1280).
+   * Native: ~15.1 px/MOA (10 MOA label @ 151 px from centre).
+   * Divided by 4 so 1 MOA ≈ 4 squares on MOA-scaled paper
+   * (1 cm ≈ ¼ MOA); diamond-calibration would otherwise put 1 MOA on 1 square.
    */
   nf_moa: {
     id: "nf_moa",
     label: "MOA",
     src: "/range/reticles/nf_moa.png",
-    nativeWidth: 499,
-    nativeHeight: 500,
-    centerTo1MilPx: 29 / 8,
+    nativeWidth: 1279,
+    nativeHeight: 1280,
+    centerTo1MilPx: 151 / 40,
   },
   /**
    * ZCO 5-27 MPCT-style mil tree (zco27.png).
