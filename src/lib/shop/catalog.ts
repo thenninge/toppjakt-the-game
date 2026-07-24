@@ -286,14 +286,14 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     priceNok: 41490,
     note:
       "Termisk binokular m/LRF — erstatter vanlig bino og ekstra termisk i kit. " +
-      "5–22× zoom, WH/BH/Outline/Fusion. Batteri 20% raskere enn Condor. " +
+      "5–22× zoom, WH/BH/Outline/Fusion. Batteri 20% tregere enn Condor. " +
       "Grønn fugl krever >10×, gul >15×.",
     thermal: {
       pixelFactor: 2,
       magnification: 10,
       minZoom: 5,
       maxZoom: 22,
-      timeFactor: 36,
+      timeFactor: 24,
       hasIntegratedLrf: true,
       rangeErrorPercent: 1.2,
       isThermalBinocular: true,
