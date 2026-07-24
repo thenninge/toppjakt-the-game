@@ -10,7 +10,7 @@ import {
 } from "@/lib/hunt/jaktkort";
 
 const STORAGE_KEY = "toppjakt-player-save-v1";
-const SAVE_VERSION = 1 as const;
+export const SAVE_VERSION = 1 as const;
 
 export type PlayerSaveV1 = {
   version: typeof SAVE_VERSION;

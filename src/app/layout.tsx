@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Silkscreen, VT323 } from "next/font/google";
+import { SessionProvider } from "@/components/providers/SessionProvider";
 import "./globals.css";
 
 const silkscreen = Silkscreen({
@@ -26,7 +27,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${silkscreen.variable} ${vt323.variable} h-full`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

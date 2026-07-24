@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { generateNickname } from "@/lib/nickname";
 import {
   addToInventory,
@@ -38,6 +39,7 @@ import type { ShopItem } from "@/lib/shop/types";
 import { StatsFrame } from "@/components/hud/StatsFrame";
 import { StatusBar } from "@/components/hud/StatusBar";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
+import { SaveConflictDialog } from "@/components/ui/SaveConflictDialog";
 import {
   GameMusic,
   readMusicEnabled,
@@ -94,7 +96,12 @@ import {
   clearPlayerSave,
   loadPlayerSave,
   savePlayerStats,
+  type PlayerSaveV1,
 } from "@/lib/playerSave";
+import {
+  fetchCloudSave,
+  putCloudSave,
+} from "@/lib/cloudSave";
 import { clearShotPairsStorage } from "@/lib/aware/shotPairStorage";
 
 type Phase =
@@ -115,12 +122,15 @@ function displayName(raw: string): string {
 }
 
 export function IntroScreen() {
+  const { data: session, status: authStatus } = useSession();
   const [phase, setPhase] = useState<Phase>("loading");
   const [dots, setDots] = useState(".");
   const [name, setName] = useState("");
   const [stats, setStats] = useState<PlayerStats>(createInitialStats);
   const [location, setLocation] = useState<TownLocationId | null>(null);
   const [error, setError] = useState("");
+  const [authNote, setAuthNote] = useState("");
+  const [cloudSyncing, setCloudSyncing] = useState(false);
   const [weather, setWeather] = useState<DayWeather>(() => createDayWeather());
   const [lastPermit, setLastPermit] = useState<SheriffFinishResult | null>(
     null,
@@ -129,23 +139,36 @@ export function IntroScreen() {
   const [hunterStatusEnabled, setHunterStatusEnabled] = useState(true);
   const [huntHud, setHuntHud] = useState<HuntHudStatus | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [saveConflict, setSaveConflict] = useState<{
+    local: PlayerSaveV1;
+    cloud: PlayerSaveV1;
+  } | null>(null);
   const statsRef = useRef(stats);
+  const bootstrappedRef = useRef(false);
 
   const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
   const musicScene = musicSceneFromGame({ phase, location });
   const onHuntHudChange = useCallback((hud: HuntHudStatus) => {
     setHuntHud(hud);
   }, []);
+  const signedIn = authStatus === "authenticated" && !!session?.user;
 
   useEffect(() => {
     statsRef.current = stats;
   }, [stats]);
 
-  /** Persist progress across refresh / new Vercel deploys (same browser). */
+  /** Persist local + debounced cloud when signed in. */
   useEffect(() => {
     if (!stats.name) return;
     savePlayerStats(stats);
-  }, [stats]);
+    if (authStatus !== "authenticated") return;
+    const t = window.setTimeout(() => {
+      void putCloudSave(stats).catch((err) => {
+        console.warn("Cloud save failed", err);
+      });
+    }, 900);
+    return () => window.clearTimeout(t);
+  }, [stats, authStatus]);
 
   useEffect(() => {
     setMusicEnabled(readMusicEnabled());
@@ -153,30 +176,87 @@ export function IntroScreen() {
 
   useEffect(() => {
     if (phase !== "loading") return;
+    if (authStatus === "loading") return;
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
 
     const dotTimer = window.setInterval(() => {
       setDots((d) => (d.length >= 4 ? "." : `${d}.`));
     }, 380);
 
-    const done = window.setTimeout(() => {
-      const saved = loadPlayerSave();
-      if (saved?.stats.name) {
-        // VIP/cheat kit is granted on first «head into town»; older saves (or
-        // reloads) never re-ran that — backfill if profile rifle is missing.
-        const stats = ensureNamedStarterGear(saved.stats);
-        setStats(stats);
-        setName(stats.name);
+    let cancelled = false;
+
+    async function bootstrap() {
+      const started = Date.now();
+      const local = loadPlayerSave();
+      let chosen = local;
+
+      if (authStatus === "authenticated") {
+        setCloudSyncing(true);
+        try {
+          const cloud = await fetchCloudSave();
+          if (cancelled) return;
+
+          const localNamed = !!local?.stats.name;
+          const cloudNamed = !!cloud?.stats.name;
+
+          if (localNamed && cloudNamed && local && cloud) {
+            // Both exist — ask the player; do not auto-overwrite.
+            const wait = Math.max(0, LOADING_MS - (Date.now() - started));
+            if (wait > 0) await new Promise((r) => window.setTimeout(r, wait));
+            if (cancelled) return;
+            setCloudSyncing(false);
+            setSaveConflict({ local, cloud });
+            setAuthNote("Innlogget — velg lokal eller sky-save.");
+            setPhase("name");
+            return;
+          }
+
+          if (cloudNamed && cloud) {
+            chosen = cloud;
+            savePlayerStats(cloud.stats);
+            setAuthNote("Innlogget — save hentet fra sky.");
+          } else if (localNamed && local) {
+            chosen = local;
+            await putCloudSave(local.stats, local.savedAtMs);
+            setAuthNote("Innlogget — lokal save lastet opp til sky.");
+          } else {
+            setAuthNote("Innlogget — opprett jeger.");
+          }
+        } catch (err) {
+          console.warn(err);
+          setAuthNote(
+            "Innlogget, men sky-save feilet — bruker lokal lagring.",
+          );
+        } finally {
+          if (!cancelled) setCloudSyncing(false);
+        }
+      }
+
+      const wait = Math.max(0, LOADING_MS - (Date.now() - started));
+      if (wait > 0) await new Promise((r) => window.setTimeout(r, wait));
+      if (cancelled) return;
+
+      if (chosen?.stats.name) {
+        const next = ensureNamedStarterGear(chosen.stats);
+        setStats(next);
+        setName(next.name);
         setPhase("town");
         return;
       }
+
+      const googleName = session?.user?.name?.trim() ?? "";
+      if (googleName) setName(displayName(googleName));
       setPhase("name");
-    }, LOADING_MS);
+    }
+
+    void bootstrap();
 
     return () => {
+      cancelled = true;
       window.clearInterval(dotTimer);
-      window.clearTimeout(done);
     };
-  }, [phase]);
+  }, [phase, authStatus, session?.user?.name]);
 
   function toggleMusic() {
     setMusicEnabled((prev) => {
@@ -202,11 +282,71 @@ export function IntroScreen() {
     setStats(createInitialStats());
     setName("");
     setError("");
+    setAuthNote("");
     setLocation(null);
     setLastPermit(null);
     setHuntHud(null);
     setWeather(createDayWeather());
     setPhase("name");
+    if (signedIn) void signOut({ redirect: false });
+  }
+
+  function loginWithGoogle() {
+    setError("");
+    void signIn("google", { callbackUrl: "/" });
+  }
+
+  async function logoutGoogle() {
+    setAuthNote("");
+    setSaveConflict(null);
+    await signOut({ redirect: false });
+  }
+
+  function enterWithSave(save: PlayerSaveV1, note: string) {
+    const next = ensureNamedStarterGear(save.stats);
+    savePlayerStats(next);
+    setStats(next);
+    setName(next.name);
+    setAuthNote(note);
+    setSaveConflict(null);
+    setPhase("town");
+  }
+
+  function chooseCloudSave() {
+    if (!saveConflict) return;
+    enterWithSave(saveConflict.cloud, "Lastet inn inventory fra sky.");
+  }
+
+  async function chooseLocalOverwriteCloud() {
+    if (!saveConflict) return;
+    const local = saveConflict.local;
+    try {
+      setCloudSyncing(true);
+      await putCloudSave(local.stats, local.savedAtMs);
+      enterWithSave(local, "Lokal inventory lastet opp — sky overskrevet.");
+    } catch (err) {
+      console.warn(err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Kunne ikke overskrive sky — prøv igjen.",
+      );
+    } finally {
+      setCloudSyncing(false);
+    }
+  }
+
+  async function cancelConflictLogin() {
+    const local = saveConflict?.local ?? loadPlayerSave();
+    setSaveConflict(null);
+    setAuthNote("");
+    await signOut({ redirect: false });
+    if (local?.stats.name) {
+      enterWithSave(local, "Innlogging avbrutt — fortsetter med lokal save.");
+    } else {
+      setAuthNote("Innlogging avbrutt.");
+      setPhase("name");
+    }
   }
 
   /** Rename hunter in place — returns error string or null on success. */
@@ -717,6 +857,9 @@ export function IntroScreen() {
               stats={stats}
               onRename={renameHunter}
               onDeleteUser={requestDeleteUser}
+              authEmail={signedIn ? session?.user?.email ?? "Google" : null}
+              onGoogleLogin={signedIn ? undefined : loginWithGoogle}
+              onGoogleLogout={signedIn ? () => void logoutGoogle() : undefined}
             />
           ) : null}
         </div>
@@ -774,11 +917,47 @@ export function IntroScreen() {
         {phase === "loading" && (
           <p className="intro-prompt intro-loading" role="status">
             Loading {dots} Cold Bore Toppjakt - The Game!
+            {cloudSyncing ? " · synker sky…" : ""}
           </p>
         )}
 
         {phase === "name" && (
           <form className="intro-form" onSubmit={onSubmit}>
+            <div className="intro-auth-block">
+              {signedIn ? (
+                <>
+                  <p className="shop-row-note">
+                    Innlogget som {session?.user?.email ?? "Google"}
+                    {authNote ? ` — ${authNote}` : ""}
+                  </p>
+                  <button
+                    type="button"
+                    className="intro-button sheriff-secondary"
+                    onClick={() => void logoutGoogle()}
+                  >
+                    Logg ut
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="intro-prompt">
+                    Logg inn for å lagre på tvers av enheter (samme konto som
+                    CBAware):
+                  </p>
+                  <button
+                    type="button"
+                    className="intro-button"
+                    onClick={loginWithGoogle}
+                  >
+                    Logg inn med Google
+                  </button>
+                  <p className="shop-row-note">
+                    Eller spill uten konto (kun denne nettleseren):
+                  </p>
+                </>
+              )}
+            </div>
+
             <label className="intro-prompt" htmlFor="player-name">
               Please enter name:
             </label>
@@ -1110,6 +1289,16 @@ export function IntroScreen() {
           danger
           onConfirm={confirmDeleteUserAndRestart}
           onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      ) : null}
+
+      {saveConflict ? (
+        <SaveConflictDialog
+          local={saveConflict.local}
+          cloud={saveConflict.cloud}
+          onChooseCloud={chooseCloudSave}
+          onChooseLocal={() => void chooseLocalOverwriteCloud()}
+          onCancelLogin={() => void cancelConflictLogin()}
         />
       ) : null}
     </div>

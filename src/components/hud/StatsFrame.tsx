@@ -7,6 +7,10 @@ type StatsFrameProps = {
   stats: PlayerStats;
   onRename?: (nextName: string) => string | null;
   onDeleteUser?: () => void;
+  /** Google / CBAware account status. */
+  authEmail?: string | null;
+  onGoogleLogin?: () => void;
+  onGoogleLogout?: () => void;
 };
 
 function formatRange(meters: number): string {
@@ -21,11 +25,19 @@ export function StatsFrame({
   stats,
   onRename,
   onDeleteUser,
+  authEmail,
+  onGoogleLogin,
+  onGoogleLogout,
 }: StatsFrameProps) {
   const [menu, setMenu] = useState<MenuView>("closed");
   const [renameValue, setRenameValue] = useState(stats.name);
   const [renameError, setRenameError] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const hasMenu =
+    !!onRename ||
+    !!onDeleteUser ||
+    !!onGoogleLogin ||
+    !!onGoogleLogout;
 
   useEffect(() => {
     if (menu === "closed") return;
@@ -71,7 +83,7 @@ export function StatsFrame({
     <aside className="stats-frame" aria-label="Player stats">
       <div className="stats-frame-head">
         <div className="stats-frame-title">Hunter Status</div>
-        {onRename || onDeleteUser ? (
+        {hasMenu ? (
           <div className="stats-frame-menu" ref={menuRef}>
             <button
               type="button"
@@ -103,6 +115,37 @@ export function StatsFrame({
                 >
                   Edit
                 </button>
+                {authEmail ? (
+                  <p className="stats-menu-heading stats-menu-auth">
+                    Sky: {authEmail}
+                  </p>
+                ) : null}
+                {!authEmail && onGoogleLogin ? (
+                  <button
+                    type="button"
+                    className="stats-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu("closed");
+                      onGoogleLogin();
+                    }}
+                  >
+                    Logg inn med Google
+                  </button>
+                ) : null}
+                {authEmail && onGoogleLogout ? (
+                  <button
+                    type="button"
+                    className="stats-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu("closed");
+                      onGoogleLogout();
+                    }}
+                  >
+                    Logg ut
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {menu === "edit" ? (
