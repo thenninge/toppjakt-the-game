@@ -27,6 +27,21 @@ import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import { ThermalCanvas, type ThermalPolarity } from "@/components/hunt/ThermalCanvas";
+import {
+  ZeissVictoryLrfHud,
+  ZEISS_VICTORY_ACQUIRE_MS,
+  ZEISS_VICTORY_PHASE_MS,
+  isZeissVictoryLrf,
+  type ZeissVictoryLrfPhase,
+} from "@/components/hunt/lrf/ZeissVictoryLrfHud";
+import {
+  SigSauerKilo3000LrfHud,
+  usesSigStyleBallisticLrfHud,
+  scheduleSigKiloSequence,
+  type SigElevDir,
+  type SigKiloPhase,
+  type SigWindDir,
+} from "@/components/hunt/lrf/SigSauerKilo3000LrfHud";
 
 export type SpotMode = "eyes" | "binos" | "thermal";
 
@@ -36,6 +51,22 @@ export type BirdObservedInfo = {
   gameSeconds: number;
   /** True when distance came from LRF lock (not eyes estimate). */
   rangeSource: "lrf" | "estimated";
+};
+
+/** LRF identity + error model passed into Spot. */
+export type SpotLrfMeta = Pick<LrfSpec, "rangeErrorPercent"> & {
+  hasOnboardBallistics?: boolean;
+  id?: string;
+  brand?: string;
+};
+
+/** Onboard LRF hold for Sig (MRAD) / Zeiss (clicks). */
+export type SpotLrfHoldSolution = {
+  elevClicksAbs: number;
+  elevMrad: number;
+  elevDir: SigElevDir;
+  windMrad: number;
+  windDir: SigWindDir;
 };
 
 type SpotViewProps = {
@@ -51,7 +82,7 @@ type SpotViewProps = {
   /** Optical magnification of equipped binos (e.g. 10). */
   magnification?: number;
   /** LRF error model — required to range a bird. */
-  lrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
+  lrfSpec?: SpotLrfMeta | null;
   /** Thermal zoom when equipped. */
   thermalMagnification?: number;
   /** Thermal sensor block size — higher = poorer resolution. */
@@ -59,7 +90,7 @@ type SpotViewProps = {
   /** Real→game time while in thermal (battery drains at same rate). */
   thermalTimeFactor?: number;
   /** Integrated LRF on thermal unit (Condor CQ35 / Habrok). */
-  thermalLrfSpec?: Pick<LrfSpec, "rangeErrorPercent"> | null;
+  thermalLrfSpec?: SpotLrfMeta | null;
   /** Habrok-class: thermal binocular replaces separate binos. */
   isThermalBinocular?: boolean;
   thermalMinZoom?: number;
@@ -78,6 +109,8 @@ type SpotViewProps = {
   hasThermal?: boolean;
   /** Equipped binos have a laser rangefinder. */
   hasLrf?: boolean;
+  /** Kestrel in kit — enables Sig-style HUD on non-AB LRFs via BDX link. */
+  hasKestrel?: boolean;
   /** Label for HUD, e.g. brand + name. */
   binosLabel?: string | null;
   thermalLabel?: string | null;
@@ -89,7 +122,21 @@ type SpotViewProps = {
   onThermalBatteryDrain?: (gameSeconds: number) => number;
   /** Called with game-seconds elapsed while looking. */
   onGameSeconds: (seconds: number) => void;
-  /** LRF locked a bird — parent enters shoot mode. */
+  /**
+   * Onboard LRF solution (elev/wind). Null when kit cannot solve.
+   */
+  solveLrfHold?: (
+    distanceM: number,
+    shotBearingDeg: number,
+  ) => SpotLrfHoldSolution | null;
+  /**
+   * @deprecated Prefer solveLrfHold — kept for elev-click only callers.
+   */
+  solveElevClicks?: (
+    distanceM: number,
+    shotBearingDeg: number,
+  ) => number | null;
+  /** LRF Engage / eyes lock — parent enters Aware. */
   onBirdObserved: (info: BirdObservedInfo) => void;
   onDone: (info: { mode: SpotMode; gameSeconds: number }) => void;
   /**
@@ -297,12 +344,15 @@ export function SpotView({
   hasBinos,
   hasThermal = false,
   hasLrf = false,
+  hasKestrel = false,
   binosLabel,
   thermalLabel,
   thermalBatteryGameSec = 0,
   thermalBatteryMaxGameSec = 60 * 60,
   onThermalBatteryDrain,
   onGameSeconds,
+  solveLrfHold,
+  solveElevClicks,
   onBirdObserved,
   onDone,
   initialMode = "eyes",
@@ -451,10 +501,93 @@ export function SpotView({
   }, [zoom, opticAperture]);
 
   const [lrfReading, setLrfReading] = useState<string | null>(null);
+  const [zeissPhase, setZeissPhase] = useState<ZeissVictoryLrfPhase>("idle");
+  const [zeissRangeM, setZeissRangeM] = useState<number | null>(null);
+  const [zeissElevClicks, setZeissElevClicks] = useState<number | null>(null);
+  const [sigPhase, setSigPhase] = useState<SigKiloPhase>("idle");
+  const [sigRangeM, setSigRangeM] = useState<number | null>(null);
+  const [sigInclineDeg, setSigInclineDeg] = useState<number | null>(null);
+  const [sigElevMrad, setSigElevMrad] = useState<number | null>(null);
+  const [sigElevDir, setSigElevDir] = useState<SigElevDir | null>(null);
+  const [sigWindMrad, setSigWindMrad] = useState<number | null>(null);
+  const [sigWindDir, setSigWindDir] = useState<SigWindDir | null>(null);
+  const [rangedBird, setRangedBird] = useState<BirdObservedInfo | null>(null);
+  const lrfTimersRef = useRef<number[]>([]);
   const fireLrfRef = useRef<(
-    activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null,
+    activeLrf: SpotLrfMeta | null,
   ) => void>(() => {});
-  const activeLrfRef = useRef<Pick<LrfSpec, "rangeErrorPercent"> | null>(null);
+  const activeLrfRef = useRef<SpotLrfMeta | null>(null);
+
+  function clearLrfTimers() {
+    for (const id of lrfTimersRef.current) window.clearTimeout(id);
+    lrfTimersRef.current = [];
+  }
+
+  function resetLrfHud() {
+    clearLrfTimers();
+    setLrfReading(null);
+    setZeissPhase("idle");
+    setZeissRangeM(null);
+    setZeissElevClicks(null);
+    setSigPhase("idle");
+    setSigRangeM(null);
+    setSigInclineDeg(null);
+    setSigElevMrad(null);
+    setSigElevDir(null);
+    setSigWindMrad(null);
+    setSigWindDir(null);
+  }
+
+  function startZeissSequence(rangeM: number, elevClicks: number | null) {
+    clearLrfTimers();
+    setLrfReading(null);
+    setSigPhase("idle");
+    setZeissRangeM(rangeM);
+    setZeissElevClicks(elevClicks);
+    setZeissPhase("idle");
+    lrfTimersRef.current.push(
+      window.setTimeout(() => {
+        setZeissPhase("range");
+      }, ZEISS_VICTORY_ACQUIRE_MS),
+    );
+    lrfTimersRef.current.push(
+      window.setTimeout(() => {
+        setZeissPhase(elevClicks == null ? "done" : "elev");
+      }, ZEISS_VICTORY_ACQUIRE_MS + ZEISS_VICTORY_PHASE_MS),
+    );
+    if (elevClicks != null) {
+      lrfTimersRef.current.push(
+        window.setTimeout(() => {
+          setZeissPhase("done");
+        }, ZEISS_VICTORY_ACQUIRE_MS + ZEISS_VICTORY_PHASE_MS * 2),
+      );
+    }
+  }
+
+  function startSigSequence(
+    rangeM: number,
+    inclineDeg: number,
+    hold: SpotLrfHoldSolution | null,
+  ) {
+    clearLrfTimers();
+    setLrfReading(null);
+    setZeissPhase("idle");
+    setSigRangeM(rangeM);
+    setSigInclineDeg(inclineDeg);
+    setSigElevMrad(hold?.elevMrad ?? null);
+    setSigElevDir(hold?.elevDir ?? null);
+    setSigWindMrad(hold?.windMrad ?? null);
+    setSigWindDir(hold?.windDir ?? null);
+    scheduleSigKiloSequence(
+      setSigPhase,
+      (id) => {
+        lrfTimersRef.current.push(id);
+      },
+      { skipElev: !hold, skipWind: !hold },
+    );
+  }
+
+  useEffect(() => () => clearLrfTimers(), []);
 
   // Landscape first — bird <img> tags must not decode before the photo, or they flash alone.
   useEffect(() => {
@@ -505,6 +638,11 @@ export function SpotView({
             setMode(modeRef.current);
           }
           setLrfReading(null);
+          setZeissPhase("idle");
+          setZeissRangeM(null);
+          setZeissElevClicks(null);
+          setSigPhase("idle");
+          setRangedBird(null);
         }
       }
       if (!Number.isFinite(gameSec) || gameSec <= 0) return;
@@ -645,13 +783,15 @@ export function SpotView({
     setPan(center);
     modeRef.current = targetMode;
     setMode(targetMode);
-    setLrfReading(null);
+    resetLrfHud();
+    setRangedBird(null);
   }
 
   function leaveToEyes() {
     modeRef.current = "eyes";
     setMode("eyes");
-    setLrfReading(null);
+    resetLrfHud();
+    setRangedBird(null);
   }
 
   /** Habrok: B and T both toggle Fusion thermal ↔ eyes (dead battery → day optic). */
@@ -743,24 +883,84 @@ export function SpotView({
       ? opticSpecZoom
       : null;
 
-  function fireLrf(activeLrf: Pick<LrfSpec, "rangeErrorPercent"> | null) {
+  function fireLrf(activeLrf: SpotLrfMeta | null) {
     if (!landscapeReady) return;
     const visible = birdPlacements.filter((p) =>
       visibleInSpotMode(p.distanceM, mode, { habrokZoom: habrokZoomGate }),
     );
     const hit = findBirdUnderLrfReticle(visible, pan, zoom);
+    const lookX = landscapeAtLensCenter(pan.x, zoom);
+    const lookY = landscapeAtLensCenter(pan.y, zoom);
+    const bearing = ((Math.round(
+      bearingFromSpotFrame(viewBearingDeg, lookX),
+    ) % 360) + 360) % 360;
+    /* Cosmetic incline from look angle (up = positive). */
+    const inclineDeg = Math.max(
+      -25,
+      Math.min(25, Math.round((45 - lookY) * 0.4)),
+    );
+    const zeiss = isZeissVictoryLrf(activeLrf);
+    const sigStyle = usesSigStyleBallisticLrfHud(activeLrf, { hasKestrel });
+
+    function resolveHold(distanceM: number): SpotLrfHoldSolution | null {
+      if (!activeLrf) return null;
+      const canSolve =
+        !!activeLrf.hasOnboardBallistics || hasKestrel;
+      if (!canSolve) return null;
+      if (solveLrfHold) return solveLrfHold(distanceM, bearing);
+      if (solveElevClicks) {
+        const elev = solveElevClicks(distanceM, bearing);
+        if (elev == null) return null;
+        return {
+          elevClicksAbs: elev,
+          elevMrad: elev / 10,
+          elevDir: "up",
+          windMrad: 0,
+          windDir: "right",
+        };
+      }
+      return null;
+    }
+
     if (hit && activeLrf) {
-      observeBird(hit, activeLrf);
+      const measured = Math.round(
+        measureDistanceWithLrf(hit.distanceM, activeLrf),
+      );
+      const hold = resolveHold(measured);
+      const contact: BirdObservedInfo = {
+        placement: hit,
+        measuredDistanceM: measured,
+        gameSeconds: lookedRef.current,
+        rangeSource: "lrf",
+      };
+      setRangedBird(contact);
+      if (zeiss) {
+        startZeissSequence(measured, hold?.elevClicksAbs ?? null);
+      } else if (sigStyle) {
+        startSigSequence(measured, inclineDeg, hold);
+      } else {
+        resetLrfHud();
+        setLrfReading(`${measured} m`);
+      }
       return;
     }
+
     const terrain = 80 + Math.floor(Math.random() * 420);
-    setLrfReading(`${terrain} m`);
+    const hold = resolveHold(terrain);
+    if (zeiss) {
+      startZeissSequence(terrain, hold?.elevClicksAbs ?? null);
+    } else if (sigStyle) {
+      startSigSequence(terrain, inclineDeg, hold);
+    } else {
+      resetLrfHud();
+      setLrfReading(`${terrain} m`);
+    }
   }
 
-  /** Lock a spotted bird → Aware / shoot (same entry as LRF hit). */
+  /** Eyes / non-LRF bird lock → Aware immediately. */
   function observeBird(
     placement: BirdVisualPlacement,
-    ranging: Pick<LrfSpec, "rangeErrorPercent"> | null,
+    ranging: SpotLrfMeta | null,
   ) {
     const measured = ranging
       ? Math.round(measureDistanceWithLrf(placement.distanceM, ranging))
@@ -772,6 +972,11 @@ export function SpotView({
       gameSeconds: lookedRef.current,
       rangeSource: ranging ? "lrf" : "estimated",
     });
+  }
+
+  function engageRangedBird() {
+    if (!rangedBird) return;
+    onBirdObserved(rangedBird);
   }
 
   const lookedClock = formatSpotLookedClock(lookedGameSec);
@@ -795,13 +1000,16 @@ export function SpotView({
         )
       : birdsOnFrame;
 
-  const activeLrf =
+  const activeLrf: SpotLrfMeta | null =
     mode === "thermal" && thermalLrfSpec
       ? thermalLrfSpec
       : mode === "binos" && hasLrf
         ? lrfSpec
         : null;
   const showLrf = !!activeLrf;
+  const showZeissHud = showLrf && isZeissVictoryLrf(activeLrf);
+  const showSigHud =
+    showLrf && usesSigStyleBallisticLrfHud(activeLrf, { hasKestrel });
   fireLrfRef.current = fireLrf;
   activeLrfRef.current = activeLrf;
 
@@ -1057,6 +1265,16 @@ export function SpotView({
                 LRF
               </button>
             ) : null}
+            {rangedBird ? (
+              <button
+                type="button"
+                className="intro-button spot-engage-btn"
+                onClick={engageRangedBird}
+                title="Gå til Aware med ranged fugl"
+              >
+                Engage
+              </button>
+            ) : null}
             <button
               type="button"
               className="intro-button"
@@ -1165,10 +1383,26 @@ export function SpotView({
               ))}
             </div>
             <div className="spot-optic-vignette" aria-hidden />
-            {showLrf ? (
+            {showZeissHud ? (
+              <ZeissVictoryLrfHud
+                phase={zeissPhase}
+                rangeM={zeissRangeM}
+                elevClicks={zeissElevClicks}
+              />
+            ) : showSigHud ? (
+              <SigSauerKilo3000LrfHud
+                phase={sigPhase}
+                rangeM={sigRangeM}
+                inclineDeg={sigInclineDeg}
+                elevMrad={sigElevMrad}
+                elevDir={sigElevDir}
+                windMrad={sigWindMrad}
+                windDir={sigWindDir}
+              />
+            ) : showLrf ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
-            {showLrf && lrfReading ? (
+            {!showZeissHud && !showSigHud && showLrf && lrfReading ? (
               <span className="spot-lrf-readout">{lrfReading}</span>
             ) : null}
           </>
@@ -1220,10 +1454,26 @@ export function SpotView({
               <div className="spot-thermal-scanlines" aria-hidden />
             ) : null}
             <div className="spot-optic-vignette" aria-hidden />
-            {showLrf ? (
+            {showZeissHud ? (
+              <ZeissVictoryLrfHud
+                phase={zeissPhase}
+                rangeM={zeissRangeM}
+                elevClicks={zeissElevClicks}
+              />
+            ) : showSigHud ? (
+              <SigSauerKilo3000LrfHud
+                phase={sigPhase}
+                rangeM={sigRangeM}
+                inclineDeg={sigInclineDeg}
+                elevMrad={sigElevMrad}
+                elevDir={sigElevDir}
+                windMrad={sigWindMrad}
+                windDir={sigWindDir}
+              />
+            ) : showLrf ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
-            {showLrf && lrfReading ? (
+            {!showZeissHud && !showSigHud && showLrf && lrfReading ? (
               <span className="spot-lrf-readout">{lrfReading}</span>
             ) : null}
           </>
@@ -1246,7 +1496,7 @@ export function SpotView({
           {isThermalBinocular && habrokBatteryDead
             ? "Habrok dagoptikk (batteri tomt) — ingen WH/BH/Outline/Fusion · piltaster / dra"
             : showLrf
-              ? "Sirkulært syn · piltaster / dra · sikt med rød sirkel og trykk F / Space / LRF"
+              ? "Sirkulært syn · piltaster / dra · LRF på fugl → Engage · F / Space / LRF"
               : "Sirkulært syn · piltaster / dra · klikk på fuglen for å låse (ingen LRF)"}
           {isThermalBinocular
             ? habrokBatteryDead

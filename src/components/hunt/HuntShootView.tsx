@@ -61,11 +61,13 @@ import { applyScopeClickError } from "@/lib/optics/spec";
 import {
   isAmmoItem,
   isBipodItem,
+  isLrfItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { mmAt100ToScopeClicks } from "@/lib/optics/clicks";
 import {
   birdMmToNativePx,
   birdNativePxPerMm,
@@ -292,6 +294,10 @@ export function HuntShootView({
   );
   const ammoOptions = useMemo(
     () => kitItems.filter(isAmmoItem),
+    [kitItems],
+  );
+  const lrfItem = useMemo(
+    () => kitItems.find(isLrfItem) ?? null,
     [kitItems],
   );
 
@@ -1310,6 +1316,31 @@ export function HuntShootView({
                   : "Ammo"
               }
               clickUnit={scope?.scope.clickUnit ?? "MRAD"}
+              lrfId={lrfItem?.id ?? null}
+              lrfBrand={lrfItem?.brand ?? null}
+              lrfLabel={
+                lrfItem ? `${lrfItem.brand} ${lrfItem.name}` : null
+              }
+              lrfElevClicks={
+                lrfItem?.lrf.hasOnboardBallistics && selectedAmmo
+                  ? Math.abs(
+                      mmAt100ToScopeClicks(
+                        (ballisticHold ??
+                          exactBallisticHold(
+                            selectedAmmo.ammo,
+                            measuredDistanceM,
+                            crosswindMs,
+                            {
+                              densityRatio,
+                              powderTempC: temperatureC,
+                            },
+                          )
+                        ).dialYMmAt100,
+                        scope?.scope.clickUnit ?? "MRAD",
+                      ),
+                    )
+                  : null
+              }
               dopeDialDisabled={!!activeHold || fired}
               onUseDope={(entry) => {
                 if (fired || activeHold) return;

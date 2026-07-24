@@ -689,7 +689,6 @@ export function ScopeTurrets({
             posAria="Windage høyre (ett klikk)"
             negMark="◀ L"
             posMark="R ▶"
-            baseLegend="R →"
           />
         </>
       ) : null}

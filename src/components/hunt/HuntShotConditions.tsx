@@ -13,6 +13,8 @@ import {
 } from "@/lib/player";
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import { LapuaBallisticsApp } from "@/components/hunt/LapuaBallisticsApp";
+import { ZeissVictoryEnviroPanel } from "@/components/hunt/lrf/ZeissVictoryEnviroPanel";
+import { isZeissVictoryLrf } from "@/components/hunt/lrf/ZeissVictoryLrfHud";
 import { POWDER_TEMP_REFERENCE_C } from "@/lib/ballistics/powderTemp";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 
@@ -43,10 +45,16 @@ type HuntShotConditionsProps = {
   dopeDialDisabled?: boolean;
   /** Equipped scope click unit for DOPE / app readouts. */
   clickUnit?: ScopeClickUnit;
+  /** Equipped LRF — Zeiss Victory replaces Lapua with RF emulation. */
+  lrfId?: string | null;
+  lrfBrand?: string | null;
+  lrfLabel?: string | null;
+  /** Absolute elev clicks for current range (Victory display). */
+  lrfElevClicks?: number | null;
 };
 
 /**
- * Enviro/App split: live field + DOPE (left) · ballistics phone app (right).
+ * Enviro/App split: live field + DOPE (left) · LRF emulation or Lapua (right).
  */
 export function HuntShotConditions({
   rangeM,
@@ -64,6 +72,10 @@ export function HuntShotConditions({
   onUseDope,
   dopeDialDisabled = false,
   clickUnit = "MRAD",
+  lrfId = null,
+  lrfBrand = null,
+  lrfLabel = null,
+  lrfElevClicks = null,
 }: HuntShotConditionsProps) {
   const tempC = Number.isFinite(temperatureC)
     ? temperatureC
@@ -72,6 +84,7 @@ export function HuntShotConditions({
   const windFrom = ((Math.round(windFromDeg) % 360) + 360) % 360;
   const shotCompass = compassLabelFromDeg(bearing);
   const windCompass = formatWindCompass(windFrom);
+  const useZeissLrf = isZeissVictoryLrf({ id: lrfId, brand: lrfBrand });
 
   const nearest =
     rifleId && ammoId
@@ -153,8 +166,9 @@ export function HuntShotConditions({
 
         {!hasKestrel ? (
           <p className="hunt-shot-cond-hint">
-            Uten Kestrel: App starter blank — knote range/vind/temp selv.
-            Tid går ×5 her; fuglen blir nervøs.
+            {useZeissLrf
+              ? "Zeiss Victory RF: avstand → elev-klikk i LRF-displayet."
+              : "Uten Kestrel: App starter blank — knote range/vind/temp selv. Tid går ×5 her; fuglen blir nervøs."}
           </p>
         ) : (
           <p className="hunt-shot-cond-hint">
@@ -224,7 +238,13 @@ export function HuntShotConditions({
       </aside>
 
       <div className="hunt-enviro-app-col" aria-label="Ballistics App">
-        {ammo ? (
+        {useZeissLrf ? (
+          <ZeissVictoryEnviroPanel
+            rangeM={rangeM}
+            elevClicks={lrfElevClicks}
+            label={lrfLabel ?? "Zeiss Victory RF"}
+          />
+        ) : ammo ? (
           <LapuaBallisticsApp
             ammo={ammo}
             ammoLabel={ammoLabel}

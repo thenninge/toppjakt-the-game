@@ -6,6 +6,7 @@ import {
   isAmmoItem,
   isBallisticsItem,
   isBipodItem,
+  isLrfItem,
   isMiscItem,
   isRifleItem,
   isScopeItem,
@@ -50,7 +51,10 @@ import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
 } from "@/lib/range/scopePointerAim";
-import { MOA_RANGE_TARGET_SCALE } from "@/lib/optics/clicks";
+import {
+  MOA_RANGE_TARGET_SCALE,
+  mmAt100ToScopeClicks,
+} from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
   DEFAULT_ZERO_DISTANCE_M,
@@ -84,10 +88,13 @@ import {
   type ZeroingProfile,
 } from "@/lib/player";
 import { applyScopeClickError } from "@/lib/optics/spec";
-import { densityRatioFromTempC } from "@/lib/ballistics/solver";
+import {
+  densityRatioFromTempC,
+  exactBallisticHold,
+} from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
-import type { DayWeather } from "@/lib/weather/spec";
+import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
 import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 
 type ShootingRangeProps = {
@@ -203,6 +210,10 @@ export function ShootingRange({
   );
   const ammoOptions = useMemo(
     () => kitItems.filter(isAmmoItem),
+    [kitItems],
+  );
+  const lrfItem = useMemo(
+    () => kitItems.find(isLrfItem) ?? null,
     [kitItems],
   );
   const hasKestrel = useMemo(
@@ -1471,6 +1482,33 @@ export function ShootingRange({
                   : "Ammo"
               }
               clickUnit={scope.scope.clickUnit}
+              lrfId={lrfItem?.id ?? null}
+              lrfBrand={lrfItem?.brand ?? null}
+              lrfLabel={
+                lrfItem ? `${lrfItem.brand} ${lrfItem.name}` : null
+              }
+              lrfElevClicks={
+                lrfItem?.lrf.hasOnboardBallistics && selectedAmmo
+                  ? Math.abs(
+                      mmAt100ToScopeClicks(
+                        exactBallisticHold(
+                          selectedAmmo.ammo,
+                          distanceM,
+                          crosswindMs(
+                            weather.live.windSpeedMs,
+                            weather.live.windFromDeg,
+                            rangeShotBearingDeg,
+                          ),
+                          {
+                            densityRatio,
+                            powderTempC: weather.live.temperatureC,
+                          },
+                        ).dialYMmAt100,
+                        scope.scope.clickUnit,
+                      ),
+                    )
+                  : null
+              }
             />
           }
           actions={

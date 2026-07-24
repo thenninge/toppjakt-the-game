@@ -55,12 +55,14 @@ function randn(random: () => number): number {
 
 /**
  * Direction error σ (degrees) for the flee cue.
- * Values ≈ typical ± error: naked ±30°, Triggercam ±10°, Camcorder ±5°.
+ * Naked ±30°, Triggercam ±10°, Camcorder ±5°,
+ * Camcorder+Triggercam ±2.5° (half camcorder error).
  */
 function directionErrorSigmaDeg(opts: {
   hasTriggercam: boolean;
   hasCamcorder: boolean;
 }): number {
+  if (opts.hasCamcorder && opts.hasTriggercam) return 2.5;
   if (opts.hasCamcorder) return 5;
   if (opts.hasTriggercam) return 10;
   return 30;
@@ -72,8 +74,14 @@ function snapToNearestCompassDeg(deg: number): number {
   return normalizeDeg(Math.round(d / 45) * 45);
 }
 
-function distanceErrorFrac(hasCamcorder: boolean): number {
-  return hasCamcorder ? 0.12 : 0.35;
+/** Fractional land-distance noise. Camcorder ±12%; both cams ±6%. */
+function distanceErrorFrac(opts: {
+  hasCamcorder: boolean;
+  hasTriggercam: boolean;
+}): number {
+  if (opts.hasCamcorder && opts.hasTriggercam) return 0.06;
+  if (opts.hasCamcorder) return 0.12;
+  return 0.35;
 }
 
 /** True fly-out range from the perched bird, by hit zone. */
@@ -107,6 +115,7 @@ export type GeneratedFlee = {
  * Wounded bird flies off and lands somewhere — player gets a noisy cue.
  * Direction + distance are always relative to where the bird sat.
  * Triggercam tightens direction; Camcorder also estimates land distance.
+ * Both together halve camcorder angle/distance error.
  */
 export function generateFleeObservation(
   opts: GenerateFleeObservationOpts,
@@ -143,15 +152,22 @@ export function generateFleeObservation(
   let text: string;
 
   if (opts.hasCamcorder) {
-    const fracErr = distanceErrorFrac(true);
+    const fracErr = distanceErrorFrac({
+      hasCamcorder: true,
+      hasTriggercam: opts.hasTriggercam,
+    });
     const noisy = trueLandDistM * (1 + randn(random) * fracErr);
     const cap = range.max + 20;
     observedLandDistanceM = Math.max(
       10,
       Math.min(cap, Math.round(noisy / 5) * 5),
     );
+    const gearNote =
+      opts.hasTriggercam
+        ? "Camcorder + Triggercam"
+        : "Camcorder";
     text =
-      `Fuglen er truffet men kommer seg på vingene. Camcorder viser at den ` +
+      `Fuglen er truffet men kommer seg på vingene. ${gearNote} viser at den ` +
       `dro omtrent mot ${compass} og så ut til å lande ca. ${observedLandDistanceM} m ` +
       `fra der den satt.`;
   } else if (opts.hasTriggercam) {
@@ -377,6 +393,9 @@ export const SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M = 250;
 /** Auto skuddpar distance noise when gear filmed the shot. */
 export const TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M = 30;
 export const CAMCORDER_SHOT_PAIR_UNCERTAINTY_M = 10;
+/** Camcorder + Triggercam together — half camcorder distance noise. */
+export const CAMCORDER_TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M =
+  CAMCORDER_SHOT_PAIR_UNCERTAINTY_M / 2;
 
 export type VisibleShotPairEstimate = {
   /** Drawn aim point (stand → target). */
@@ -396,7 +415,7 @@ export function canAutoSaveShotPair(opts: {
 
 /**
  * Auto skuddpar from camera gear after a real shot.
- * Camcorder ±10 m, triggercam ±30 m along the true shot bearing.
+ * Camcorder ±10 m, triggercam ±30 m, both ±5 m along the true shot bearing.
  * Returns null without gear — player must have saved skuddpar manually.
  */
 export function estimateVisibleShotPair(opts: {
@@ -413,7 +432,11 @@ export function estimateVisibleShotPair(opts: {
   const trueDist = distanceMBetween(opts.stand, opts.trueAim);
 
   if (opts.hasCamcorder) {
-    const err = (random() * 2 - 1) * CAMCORDER_SHOT_PAIR_UNCERTAINTY_M;
+    const band =
+      opts.hasTriggercam
+        ? CAMCORDER_TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M
+        : CAMCORDER_SHOT_PAIR_UNCERTAINTY_M;
+    const err = (random() * 2 - 1) * band;
     const distanceM = Math.max(
       50,
       Math.min(450, Math.round(trueDist + err)),

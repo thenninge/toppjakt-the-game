@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type CSSProperties } from "react";
 import {
   cellLabel,
   getHuntMap,
@@ -70,9 +70,11 @@ import {
   isLrfItem,
   isMiscItem,
   isRifleItem,
+  isScopeItem,
   isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { mmAt100ToScopeClicks } from "@/lib/optics/clicks";
 import {
   COFFEE_RECOVERY,
   SHORT_REST_RECOVERY,
@@ -92,7 +94,7 @@ import {
 } from "@/lib/hunt/carcass";
 import { computePackLoad } from "@/lib/kit/pack";
 import { formatWeightKg } from "@/lib/shop/weights";
-import { SpotView, type SpotMode } from "@/components/hunt/SpotView";
+import { SpotView, type SpotMode, type SpotLrfHoldSolution } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
 import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 import {
@@ -161,7 +163,7 @@ import {
   birdMarkerOnAwareMap,
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
-import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
+import { crosswindMs, fullValueWindageMs, type DayWeather } from "@/lib/weather/spec";
 import {
   ENCOUNTER_NERVE,
   initialEncounterNerve,
@@ -676,10 +678,14 @@ export function HuntMapView({
   );
   const lrfSpec = useMemo(() => {
     if (binoItem?.lrf) {
-      if (hasExactBallistics) {
-        return { ...binoItem.lrf, rangeErrorPercent: 0 };
-      }
-      return binoItem.lrf;
+      const base = hasExactBallistics
+        ? { ...binoItem.lrf, rangeErrorPercent: 0 }
+        : binoItem.lrf;
+      return {
+        ...base,
+        id: binoItem.id,
+        brand: binoItem.brand,
+      };
     }
     // Habrok integrated LRF (no separate binos).
     if (thermalLrfSpec) {
@@ -689,13 +695,105 @@ export function HuntMapView({
           ? 0
           : thermalLrfSpec.rangeErrorPercent,
         magnification: thermalMagnification,
+        id: thermalItem?.id,
+        brand: thermalItem?.brand,
       };
     }
     return null;
-  }, [binoItem, hasExactBallistics, thermalLrfSpec, thermalMagnification]);
+  }, [
+    binoItem,
+    hasExactBallistics,
+    thermalLrfSpec,
+    thermalMagnification,
+    thermalItem,
+  ]);
+
+  const scopeClickUnit = useMemo(() => {
+    const scope = kitItems.find(isScopeItem);
+    return scope?.scope.clickUnit ?? "MRAD";
+  }, [kitItems]);
+
   const primaryAmmo = useMemo(
     () => kitItems.find(isAmmoItem) ?? null,
     [kitItems],
+  );
+
+  /**
+   * Onboard LRF / Kestrel-linked solution for spotting HUD.
+   * With Kestrel: live crosswind + temp (accurate).
+   * Without: forecast temp + full-value wind (onboard AB only).
+   */
+  const solveLrfHold = useCallback(
+    (distanceM: number, shotBearingDeg: number): SpotLrfHoldSolution | null => {
+      if (!primaryAmmo) return null;
+      const onboard =
+        !!binoItem?.lrf.hasOnboardBallistics ||
+        !!thermalItem?.thermal.isThermalBinocular;
+      const kestrelLink = !!kestrelItem && (!!binoItem?.lrf || !!thermalLrfSpec);
+      if (!onboard && !kestrelLink) return null;
+      if (!Number.isFinite(distanceM) || distanceM < 1) return null;
+
+      const hasKestrel = !!kestrelItem;
+      let cw: number;
+      let tempC: number;
+      if (hasKestrel) {
+        cw = crosswindMs(
+          weather.live.windSpeedMs,
+          weather.live.windFromDeg,
+          shotBearingDeg,
+        );
+        tempC = weather.live.temperatureC;
+      } else {
+        const forecastSigned = crosswindMs(
+          weather.forecast.windSpeedMs,
+          weather.forecast.windFromDeg,
+          shotBearingDeg,
+        );
+        const full = fullValueWindageMs(weather.forecast.windSpeedMs);
+        cw =
+          forecastSigned === 0
+            ? full
+            : Math.sign(forecastSigned) * Math.abs(full);
+        tempC = weather.forecast.temperatureC;
+      }
+
+      const density = densityRatioFromTempC(tempC);
+      const hold = exactBallisticHold(primaryAmmo.ammo, distanceM, cw, {
+        densityRatio: density,
+        powderTempC: tempC,
+      });
+      const elevClicksAbs = Math.abs(
+        mmAt100ToScopeClicks(hold.dialYMmAt100, scopeClickUnit),
+      );
+      return {
+        elevClicksAbs,
+        elevMrad: Math.abs(hold.dialYMmAt100) / 100,
+        elevDir: hold.dialYMmAt100 <= 0 ? "up" : "down",
+        windMrad: Math.abs(hold.dialXMmAt100) / 100,
+        windDir: hold.dialXMmAt100 >= 0 ? "right" : "left",
+      };
+    },
+    [
+      primaryAmmo,
+      binoItem,
+      thermalItem,
+      thermalLrfSpec,
+      kestrelItem,
+      weather.live.windSpeedMs,
+      weather.live.windFromDeg,
+      weather.live.temperatureC,
+      weather.forecast.windSpeedMs,
+      weather.forecast.windFromDeg,
+      weather.forecast.temperatureC,
+      scopeClickUnit,
+    ],
+  );
+
+  const solveElevClicks = useCallback(
+    (distanceM: number, shotBearingDeg: number): number | null => {
+      return solveLrfHold(distanceM, shotBearingDeg)?.elevClicksAbs ?? null;
+    },
+    [solveLrfHold],
   );
   const camoBirdSpot = useMemo(
     () =>
@@ -3246,6 +3344,7 @@ export function HuntMapView({
         hasBinos={hasBinos}
         hasThermal={hasThermal}
         hasLrf={!!lrfSpec}
+        hasKestrel={!!kestrelItem}
         binosLabel={binosLabel}
         thermalLabel={thermalLabel}
         thermalBatteryGameSec={thermalBatteryGameSec}
@@ -3263,6 +3362,8 @@ export function HuntMapView({
           return next;
         }}
         onGameSeconds={addGameSeconds}
+        solveLrfHold={solveLrfHold}
+        solveElevClicks={solveElevClicks}
         onBirdObserved={onBirdObserved}
         onDone={finishSpot}
         initialMode={spotSession.initialMode}

@@ -88,8 +88,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leica",
     name: "Geovid R 10x42",
     priceNok: 22500,
-    soldOut: true,
-    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "EHR / basic ballistic",
@@ -102,8 +100,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leica",
     name: "Geovid R 8x42",
     priceNok: 22500,
-    soldOut: true,
-    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "EHR / basic ballistic",
@@ -116,8 +112,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Leica",
     name: "Geovid Pro 10x42",
     priceNok: 36500,
-    soldOut: true,
-    note: "Applied Ballistics-klasse. — For tiden utsolgt.",
+    note: "Applied Ballistics-klasse.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Applied Ballistics",
@@ -157,8 +152,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zeiss",
     name: "Victory RF 10x42",
     priceNok: 39990,
-    soldOut: true,
-    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Onboard ballistic",
@@ -171,8 +164,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zeiss",
     name: "Victory RF 8x42",
     priceNok: 38990,
-    soldOut: true,
-    note: "For tiden utsolgt.",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Onboard ballistic",
