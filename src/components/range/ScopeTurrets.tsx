@@ -8,7 +8,14 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { ZERO_CLICK_MM } from "@/lib/player";
+import {
+  clickSizeMmAt100,
+  clickUnitLabel,
+  formatClickStepHint,
+  mmAt100ToAngular,
+  mmAt100ToScopeClicks,
+} from "@/lib/optics/clicks";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 
 /** Field HUD tabs — Shooter dials + optional Enviro / Kestrel. */
 export type ScopeHudTab = "shooter" | "enviro" | "kestrel";
@@ -23,6 +30,8 @@ type ScopeTurretsProps = {
   sessionZeroYMm: number;
   onNudge: (axis: "x" | "y", deltaMm: number) => void;
   disabled?: boolean;
+  /** Equipped scope click unit — drives step size and readouts. */
+  clickUnit?: ScopeClickUnit;
   /** Optional actions under/ beside the turrets (save zero, abort, …). */
   actions?: ReactNode;
   /**
@@ -38,14 +47,21 @@ type ScopeTurretsProps = {
   onHudTabChange?: (tab: ScopeHudTab) => void;
 };
 
-function milLabel(clicks: number): string {
-  if (clicks === 0) return "0.0";
-  return Math.abs(clicks / 10).toFixed(1);
+function angularLabel(mmAt100: number, unit: ScopeClickUnit): string {
+  if (Math.abs(mmAt100) < 0.05) return "0.0";
+  const n = mmAt100ToAngular(mmAt100, unit);
+  return unit === "MOA" ? n.toFixed(2) : n.toFixed(1);
 }
 
-function milDir(clicks: number, pos: string, neg: string): string {
-  if (clicks === 0) return "mil";
-  return `mil ${clicks < 0 ? neg : pos}`;
+function angularDir(
+  mmAt100: number,
+  unit: ScopeClickUnit,
+  pos: string,
+  neg: string,
+): string {
+  const u = clickUnitLabel(unit);
+  if (Math.abs(mmAt100) < 0.05) return u;
+  return `${u} ${mmAt100 < 0 ? neg : pos}`;
 }
 
 function clickLabel(clicks: number, pos: string, neg: string): string {
@@ -156,6 +172,8 @@ type TurretDialProps = {
   posMark: string;
   /** Fixed base legend under the index (e.g. UP →). Omit to hide. */
   baseLegend?: string;
+  /** e.g. "0.1 mil / klikk · …" or "0.25 MOA / klikk · …" */
+  stepHint: string;
 };
 
 function OverheadDrum({
@@ -367,6 +385,7 @@ function TurretDial({
   negMark,
   posMark,
   baseLegend,
+  stepHint,
 }: TurretDialProps) {
   const negHold = useHoldRepeat(onNeg, !!disabled);
   const posHold = useHoldRepeat(onPos, !!disabled);
@@ -456,15 +475,15 @@ function TurretDial({
       </p>
       <p className="scope-turret-step">
         {view === "shooter"
-          ? "0.1 mil / klikk · dra trommelen eller hold knapp"
-          : "0.1 mil / klikk · hold for rask dial"}
+          ? stepHint
+          : stepHint.replace("dra trommelen eller hold knapp", "hold for rask dial")}
       </p>
     </div>
   );
 }
 
 /**
- * Scope elevation (top turret) + windage (side turret) — shooter dials with mil readout.
+ * Scope elevation (top turret) + windage (side turret) — dials follow click unit.
  * Tabs: Shooter; optional Enviro / Kestrel for field apps.
  */
 export function ScopeTurrets({
@@ -472,6 +491,7 @@ export function ScopeTurrets({
   sessionZeroYMm,
   onNudge,
   disabled = false,
+  clickUnit = "MRAD",
   actions,
   enviroPanel,
   kestrelPanel,
@@ -486,6 +506,8 @@ export function ScopeTurrets({
   ];
 
   const [tab, setTab] = useState<ScopeHudTab>("shooter");
+  const clickMm = clickSizeMmAt100(clickUnit);
+  const stepHint = formatClickStepHint(clickUnit);
 
   useEffect(() => {
     setTab(readStoredTab(allowedTabs));
@@ -506,8 +528,8 @@ export function ScopeTurrets({
     }
   }
 
-  const windClicks = Math.round(sessionZeroXMm / ZERO_CLICK_MM);
-  const elevClicks = Math.round(sessionZeroYMm / ZERO_CLICK_MM);
+  const windClicks = mmAt100ToScopeClicks(sessionZeroXMm, clickUnit);
+  const elevClicks = mmAt100ToScopeClicks(sessionZeroYMm, clickUnit);
   /* Face: elevation UP-positive, windage R-positive. */
   const elevFace = -elevClicks;
   const windFace = windClicks;
@@ -583,15 +605,16 @@ export function ScopeTurrets({
             view={turretView}
             clicks={elevClicks}
             faceClicks={elevFace}
-            milValue={milLabel(elevClicks)}
-            milSuffix={milDir(elevClicks, "D", "U")}
+            milValue={angularLabel(sessionZeroYMm, clickUnit)}
+            milSuffix={angularDir(sessionZeroYMm, clickUnit, "D", "U")}
             clickText={clickLabel(elevClicks, "ned", "opp")}
             disabled={disabled}
-            onNeg={() => onNudge("y", -ZERO_CLICK_MM)}
-            onPos={() => onNudge("y", ZERO_CLICK_MM)}
+            stepHint={stepHint}
+            onNeg={() => onNudge("y", -clickMm)}
+            onPos={() => onNudge("y", clickMm)}
             onFaceDelta={(d) => {
               /* face UP+ → session y − */
-              if (d !== 0) onNudge("y", -d * ZERO_CLICK_MM);
+              if (d !== 0) onNudge("y", -d * clickMm);
             }}
             negAria="Elevation opp (ett klikk)"
             posAria="Elevation ned (ett klikk)"
@@ -606,19 +629,21 @@ export function ScopeTurrets({
             view={turretView}
             clicks={windClicks}
             faceClicks={windFace}
-            milValue={milLabel(windClicks)}
-            milSuffix={milDir(windClicks, "R", "L")}
+            milValue={angularLabel(sessionZeroXMm, clickUnit)}
+            milSuffix={angularDir(sessionZeroXMm, clickUnit, "R", "L")}
             clickText={clickLabel(windClicks, "høyre", "venstre")}
             disabled={disabled}
-            onNeg={() => onNudge("x", -ZERO_CLICK_MM)}
-            onPos={() => onNudge("x", ZERO_CLICK_MM)}
+            stepHint={stepHint}
+            onNeg={() => onNudge("x", -clickMm)}
+            onPos={() => onNudge("x", clickMm)}
             onFaceDelta={(d) => {
-              if (d !== 0) onNudge("x", d * ZERO_CLICK_MM);
+              if (d !== 0) onNudge("x", d * clickMm);
             }}
             negAria="Windage venstre (ett klikk)"
             posAria="Windage høyre (ett klikk)"
             negMark="◀ L"
             posMark="R ▶"
+            baseLegend="R →"
           />
         </>
       ) : null}
@@ -639,3 +664,4 @@ export function ScopeTurrets({
     </div>
   );
 }
+

@@ -187,6 +187,9 @@ export function CbCustoms({
         {customsMods.triggerTuning ? " · trigger tuning" : ""}
         {customsMods.customCamo ? " · custom camo" : ""}
         {customsMods.bagrider ? " · CB Bagrider" : ""}
+        {customsMods.actionTrueing ? " · action trueing" : ""}
+        {customsMods.cheekRiser ? " · cheek riser" : ""}
+        {customsMods.barrelCrown ? " · barrel crown" : ""}
       </p>
 
       <div className="cb-customs-card cb-customs-barrel">

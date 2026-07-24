@@ -224,6 +224,15 @@ export function computeKitOverview(input: {
       "CB Bagrider (+15% calm, −0.05 MOA) hos CB Customs stabiliserer bakenden.",
     );
   }
+  if (!customsMods.actionTrueing) {
+    precisionTips.push("Action trueing hos CB shaver ~0.04 MOA.");
+  }
+  if (!customsMods.cheekRiser) {
+    precisionTips.push("Cheek riser hos CB gir litt mer calm (kinnfeste).");
+  }
+  if (!customsMods.barrelCrown) {
+    precisionTips.push("Barrel crown hos CB: −0.03 MOA.");
+  }
   precisionTips.push(
     "På jakt: tom Mind-stamina sprer gruppen; hold fokus og rent avtrekk.",
   );

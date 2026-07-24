@@ -42,6 +42,19 @@ export const RETICLES: Record<string, ReticleDef> = {
     centerTo1MilPx: 43,
   },
   /**
+   * Nightforce MOA tree (nf_moa.png, ~500²).
+   * First major hash = 1 MOA; same diamond-calibration as MIL reticles
+   * (readable FOV — first hash ↔ CBA diamond tip).
+   */
+  nf_moa: {
+    id: "nf_moa",
+    label: "MOA",
+    src: "/range/reticles/nf_moa.png",
+    nativeWidth: 499,
+    nativeHeight: 500,
+    centerTo1MilPx: 29,
+  },
+  /**
    * ZCO 5-27 MPCT-style mil tree (zco27.png).
    * Asset measure ≈ 13 px/mil; range fine-tune is the midpoint of
    * ×20/17 and ×20/18 (=×10/9). Crosshair slightly left of geometric center.

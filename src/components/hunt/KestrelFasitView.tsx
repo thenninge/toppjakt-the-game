@@ -5,6 +5,7 @@ import {
   type BallisticHoldSolution,
   type KestrelLcdCopy,
 } from "@/lib/ballistics/solver";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 
 type KestrelFasitViewProps = {
   hold: BallisticHoldSolution;
@@ -13,6 +14,7 @@ type KestrelFasitViewProps = {
   windSpeedMs: number;
   /** Compact = tighter HUD; still shows device + zoom. */
   compact?: boolean;
+  clickUnit?: ScopeClickUnit;
 };
 
 function KestrelLcdLines({ lcd }: { lcd: KestrelLcdCopy }) {
@@ -53,11 +55,13 @@ export function KestrelFasitView({
   windFromDeg,
   windSpeedMs,
   compact = false,
+  clickUnit = "MRAD",
 }: KestrelFasitViewProps) {
   const lcd = formatKestrelLcd(hold, {
     shotBearingDeg,
     windFromDeg,
     windSpeedMs,
+    clickUnit,
   });
 
   return (

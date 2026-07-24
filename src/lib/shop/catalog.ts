@@ -309,10 +309,12 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Nightforce",
     name: "NX8 4-32x50 F2 MOA",
     priceNok: 28990,
-    note: "MOA-klikk / second focal plane-varianter.",
+    note: "SFP · MOA-retikkel · 0.25 MOA klikk.",
     scope: {
       minZoom: 4,
       maxZoom: 32,
+      focalPlane: "SFP",
+      reticleId: "nf_moa",
       clickUnit: "MOA",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.12,

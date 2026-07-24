@@ -15,6 +15,11 @@ import {
   POWDER_TEMP_REFERENCE_C,
 } from "@/lib/ballistics/powderTemp";
 import { ZERO_CLICK_MM } from "@/lib/player";
+import {
+  clickUnitLabel,
+  mmAt100ToAngular,
+} from "@/lib/optics/clicks";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 
 /**
  * Sea-level density ratio from temperature (ICAO-ish).
@@ -167,34 +172,42 @@ export function formatKestrelLcd(
     shotBearingDeg: number;
     windFromDeg: number;
     windSpeedMs: number;
+    /** Equipped scope click unit — default MRAD. */
+    clickUnit?: ScopeClickUnit;
   },
 ): KestrelLcdCopy {
-  const eMil = Math.abs(solution.elevationClicks) / 10;
-  const wMil = Math.abs(solution.windageClicks) / 10;
+  const unit = opts.clickUnit ?? "MRAD";
+  const unitLabel = clickUnitLabel(unit);
+  const eAbs = mmAt100ToAngular(solution.dialYMmAt100, unit);
+  const wAbs = mmAt100ToAngular(solution.dialXMmAt100, unit);
   // Wind1 / Wind2 bracket (±~25% like dual-wind AB display)
-  const w1 = wMil;
-  const w2 = wMil * 1.4;
+  const w1 = wAbs;
+  const w2 = wAbs * 1.4;
   const eDir =
-    Math.abs(solution.elevationClicks) < 0.05
+    Math.abs(solution.dialYMmAt100) < 0.05
       ? ""
-      : solution.elevationClicks < 0
+      : solution.dialYMmAt100 < 0
         ? "U"
         : "D";
   const wDir =
-    Math.abs(solution.windageClicks) < 0.05
+    Math.abs(solution.dialXMmAt100) < 0.05
       ? ""
-      : solution.windageClicks < 0
+      : solution.dialXMmAt100 < 0
         ? "L"
         : "R";
 
+  const eDigits = unit === "MOA" ? eAbs.toFixed(2) : eAbs.toFixed(2);
+  const wDigits = (n: number) =>
+    unit === "MOA" ? n.toFixed(2) : n.toFixed(2);
+
   const elevLine =
-    Math.abs(solution.elevationClicks) < 0.05
-      ? "E  0.00 MIL"
-      : `E  ${eMil.toFixed(2)}${eDir} MIL`;
+    Math.abs(solution.dialYMmAt100) < 0.05
+      ? `E  0.00 ${unitLabel}`
+      : `E  ${eDigits}${eDir} ${unitLabel}`;
   const windLine =
-    Math.abs(solution.windageClicks) < 0.05
+    Math.abs(solution.dialXMmAt100) < 0.05
       ? "W  0.00"
-      : `W  ${w1.toFixed(2)}/${w2.toFixed(2)}${wDir}`;
+      : `W  ${wDigits(w1)}/${wDigits(w2)}${wDir}`;
 
   const bearing = Math.round(((opts.shotBearingDeg % 360) + 360) % 360);
   const distM = Math.round(solution.distanceM);

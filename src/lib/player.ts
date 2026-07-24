@@ -5,6 +5,12 @@ import {
   type CustomsMods,
 } from "@/lib/customs/spec";
 import { applyScopeClickError } from "@/lib/optics/spec";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
+import {
+  clickUnitLabel,
+  milClicksToScopeClicks,
+  mmAt100ToAngular,
+} from "@/lib/optics/clicks";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { isAmmoItem } from "@/lib/shop/types";
@@ -746,29 +752,47 @@ export function dopeClicksToMmAt100(clicks: number): number {
   return Math.round(clicks) * ZERO_CLICK_MM;
 }
 
-export function formatDopeElevationClicks(clicks: number): string {
+export function formatDopeElevationClicks(
+  clicks: number,
+  clickUnit: ScopeClickUnit = "MRAD",
+): string {
   if (clicks === 0) return "0";
-  const mil = Math.abs(clicks / 10).toFixed(1);
-  return `${Math.abs(clicks)} (${mil} mil ${clicks < 0 ? "U" : "D"})`;
+  const scopeClicks = milClicksToScopeClicks(clicks, clickUnit);
+  const mm = clicks * ZERO_CLICK_MM;
+  const ang = mmAt100ToAngular(mm, clickUnit);
+  const digits = clickUnit === "MOA" ? 2 : 1;
+  const u = clickUnitLabel(clickUnit);
+  return `${Math.abs(scopeClicks)} (${ang.toFixed(digits)} ${u} ${clicks < 0 ? "U" : "D"})`;
 }
 
-export function formatDopeWindageClicks(clicks: number): string {
+export function formatDopeWindageClicks(
+  clicks: number,
+  clickUnit: ScopeClickUnit = "MRAD",
+): string {
   if (clicks === 0) return "0";
-  const mil = Math.abs(clicks / 10).toFixed(1);
-  return `${Math.abs(clicks)} (${mil} mil ${clicks < 0 ? "L" : "R"})`;
+  const scopeClicks = milClicksToScopeClicks(clicks, clickUnit);
+  const mm = clicks * ZERO_CLICK_MM;
+  const ang = mmAt100ToAngular(mm, clickUnit);
+  const digits = clickUnit === "MOA" ? 2 : 1;
+  const u = clickUnitLabel(clickUnit);
+  return `${Math.abs(scopeClicks)} (${ang.toFixed(digits)} ${u} ${clicks < 0 ? "L" : "R"})`;
 }
 
 export function formatZeroAxisMm(
   mmAt100: number,
   axis: "windage" | "elevation",
+  clickUnit: ScopeClickUnit = "MRAD",
 ): string {
-  const clicks = Math.round(mmAt100 / ZERO_CLICK_MM);
-  if (clicks === 0) return "0.0 mil";
-  const mil = Math.abs(clicks / 10).toFixed(1);
-  if (axis === "windage") {
-    return `${mil} mil ${clicks < 0 ? "L" : "R"}`;
+  if (Math.abs(mmAt100) < 0.05) {
+    return clickUnit === "MOA" ? "0.00 MOA" : "0.0 mil";
   }
-  return `${mil} mil ${clicks < 0 ? "U" : "D"}`;
+  const ang = mmAt100ToAngular(mmAt100, clickUnit);
+  const digits = clickUnit === "MOA" ? 2 : 1;
+  const u = clickUnit === "MOA" ? "MOA" : "mil";
+  if (axis === "windage") {
+    return `${ang.toFixed(digits)} ${u} ${mmAt100 < 0 ? "L" : "R"}`;
+  }
+  return `${ang.toFixed(digits)} ${u} ${mmAt100 < 0 ? "U" : "D"}`;
 }
 
 export function zeroingKey(

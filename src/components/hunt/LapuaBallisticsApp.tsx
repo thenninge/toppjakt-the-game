@@ -19,6 +19,12 @@ import {
   POWDER_TEMP_REFERENCE_C,
 } from "@/lib/ballistics/powderTemp";
 import { crosswindMs, MAX_WIND_SPEED_MS } from "@/lib/weather/spec";
+import {
+  clickUnitSuffix,
+  mmAt100ToAngular,
+  mmAt100ToScopeClicks,
+} from "@/lib/optics/clicks";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 
 type LapuaBallisticsAppProps = {
   ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel" | "caliber">;
@@ -36,6 +42,8 @@ type LapuaBallisticsAppProps = {
    * Without Kestrel the player must set everything manually.
    */
   autoPrefill?: boolean;
+  /** Equipped scope click unit — MOA scopes show ¼-MOA clicks. */
+  clickUnit?: ScopeClickUnit;
 };
 
 const RANGE_VALUES = Array.from({ length: 41 }, (_, i) => 50 + i * 10); // 50–450
@@ -211,6 +219,7 @@ export function LapuaBallisticsApp({
   liveTemperatureC,
   shotBearingDeg,
   autoPrefill = false,
+  clickUnit = "MRAD",
 }: LapuaBallisticsAppProps) {
   const dialRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -253,23 +262,25 @@ export function LapuaBallisticsApp({
   const dvdt = powderTempDvDtMpsPerC(ammo.caliber);
   const windClock = formatWindClockFacing(windFromDeg, shotBearingDeg);
 
-  const elevMrad = Math.abs(hold.elevationClicks) / 10;
-  const windMrad = Math.abs(hold.windageClicks) / 10;
+  const elevAng = mmAt100ToAngular(hold.dialYMmAt100, clickUnit);
+  const windAng = mmAt100ToAngular(hold.dialXMmAt100, clickUnit);
+  const unitSuffix = clickUnitSuffix(clickUnit);
   const elevDir =
-    Math.abs(hold.elevationClicks) < 0.05
+    Math.abs(hold.dialYMmAt100) < 0.05
       ? "—"
-      : hold.elevationClicks < 0
+      : hold.dialYMmAt100 < 0
         ? "UP"
         : "DOWN";
   const windDir =
-    Math.abs(hold.windageClicks) < 0.05
+    Math.abs(hold.dialXMmAt100) < 0.05
       ? "—"
-      : hold.windageClicks < 0
+      : hold.dialXMmAt100 < 0
         ? "LEFT"
         : "RIGHT";
 
-  const elevClicks = Math.round(Math.abs(hold.elevationClicks));
-  const windClicks = Math.round(Math.abs(hold.windageClicks));
+  const elevClicks = Math.abs(mmAt100ToScopeClicks(hold.dialYMmAt100, clickUnit));
+  const windClicks = Math.abs(mmAt100ToScopeClicks(hold.dialXMmAt100, clickUnit));
+  const angDigits = clickUnit === "MOA" ? 2 : 1;
 
   const setWindFromPointer = useCallback((clientX: number, clientY: number) => {
     const el = dialRef.current;
@@ -405,8 +416,8 @@ export function LapuaBallisticsApp({
       <div className="lapua-app-results">
         <div className="lapua-result lapua-result-elev">
           <span className="lapua-result-value">
-            {elevMrad < 0.05 ? "0" : elevMrad.toFixed(1)}{" "}
-            <small>mrad</small>
+            {elevAng < 0.05 ? "0" : elevAng.toFixed(angDigits)}{" "}
+            <small>{unitSuffix}</small>
           </span>
           <span
             className={
@@ -425,8 +436,8 @@ export function LapuaBallisticsApp({
         </div>
         <div className="lapua-result lapua-result-wind">
           <span className="lapua-result-value">
-            {windMrad < 0.05 ? "0" : windMrad.toFixed(1)}{" "}
-            <small>mrad</small>
+            {windAng < 0.05 ? "0" : windAng.toFixed(angDigits)}{" "}
+            <small>{unitSuffix}</small>
           </span>
           <span
             className={
@@ -452,8 +463,8 @@ export function LapuaBallisticsApp({
 
       <p className="lapua-app-hint">
         {autoPrefill
-          ? "Kestrel-prefill · juster ved behov, dial tårnene etter mrad."
-          : "Ingen auto-data — still Range + Wind + Temp selv, deretter dial tårnene."}
+          ? `Kestrel-prefill · juster ved behov, dial tårnene etter ${unitSuffix}.`
+          : `Ingen auto-data — still Range + Wind + Temp selv, deretter dial tårnene (${unitSuffix}).`}
       </p>
     </div>
   );

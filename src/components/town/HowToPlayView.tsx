@@ -90,6 +90,8 @@ const SECTIONS: GuideSection[] = [
       "Rifle + ammo + stock + affinity bestemmer gruppestørrelse. Test ammo på range — butikken skjuler ammo-MOA.",
       "Bipod / tofot: øker weapon calm (mindre wobble) — ikke det samme som katalog-MOA, men treffer lettere.",
       "CB Bagrider (Customs): +15 % calm og −0.05 MOA — bakre bag-rider for mer stabilt anlegg.",
+      "Flere CB-jobber: action trueing (−0.04 MOA), cheek riser (+8 % calm), barrel crown (−0.03 MOA).",
+      "MOA-kikkert (f.eks. Nightforce MOA): 0.25 MOA/klikk — Enviro/Kestrel/tårn viser MOA i stedet for mil.",
       "Pipe-slitasje: skudd pr rifle telles i Shotlog. Etter 300 skudd stiger rifle-MOA mot 2× ved 400 — bytt pipe hos CB Customs (eller kjøp nytt våpen).",
       "Scope click-error: budsjettglass kan «lyve» litt på klikk; premium (NF/Kahles/…) er eksakt.",
       "Jakt-skudd: POA (wobble/avtrekk) + MOA-spredning + vind + zero + LRF-feil + temp/dV/dT stables — ikke én magisk treffsjanse.",

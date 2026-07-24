@@ -14,6 +14,7 @@ import {
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import { LapuaBallisticsApp } from "@/components/hunt/LapuaBallisticsApp";
 import { POWDER_TEMP_REFERENCE_C } from "@/lib/ballistics/powderTemp";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 
 export type HuntRangeSource = "lrf" | "estimated" | "range";
 
@@ -40,6 +41,8 @@ type HuntShotConditionsProps = {
   onUseDope?: (entry: DopeCardEntry) => void;
   /** When true, Use DOPE is unavailable (Kestrel AB owns the dials). */
   dopeDialDisabled?: boolean;
+  /** Equipped scope click unit for DOPE / app readouts. */
+  clickUnit?: ScopeClickUnit;
 };
 
 /**
@@ -60,6 +63,7 @@ export function HuntShotConditions({
   ammoLabel = "Ammo",
   onUseDope,
   dopeDialDisabled = false,
+  clickUnit = "MRAD",
 }: HuntShotConditionsProps) {
   const tempC = Number.isFinite(temperatureC)
     ? temperatureC
@@ -178,11 +182,11 @@ export function HuntShotConditions({
                 >
                   <span className="hunt-dope-dist">{e.distanceM} m</span>
                   <span className="hunt-dope-elev" title="Elevation">
-                    {formatDopeElevationClicks(e.elevationClicks)}
+                    {formatDopeElevationClicks(e.elevationClicks, clickUnit)}
                   </span>
                   {e.windageClicks !== 0 ? (
                     <span className="hunt-dope-wind" title="Windage">
-                      {formatDopeWindageClicks(e.windageClicks)}
+                      {formatDopeWindageClicks(e.windageClicks, clickUnit)}
                     </span>
                   ) : null}
                 </li>
@@ -230,6 +234,7 @@ export function HuntShotConditions({
             liveTemperatureC={tempC}
             shotBearingDeg={shotBearingDeg}
             autoPrefill={hasKestrel}
+            clickUnit={clickUnit}
           />
         ) : (
           <p className="hunt-dope-empty">Velg ammo for å bruke appen.</p>

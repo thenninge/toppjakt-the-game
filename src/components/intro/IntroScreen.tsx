@@ -610,6 +610,15 @@ export function IntroScreen() {
       } else if (id === "bagrider") {
         if (mods.bagrider) return prev;
         mods.bagrider = true;
+      } else if (id === "action_trueing") {
+        if (mods.actionTrueing) return prev;
+        mods.actionTrueing = true;
+      } else if (id === "cheek_riser") {
+        if (mods.cheekRiser) return prev;
+        mods.cheekRiser = true;
+      } else if (id === "barrel_crown") {
+        if (mods.barrelCrown) return prev;
+        mods.barrelCrown = true;
       } else {
         return prev;
       }

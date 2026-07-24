@@ -1289,6 +1289,7 @@ export function HuntShootView({
           sessionZeroYMm={sessionZeroYMm}
           onNudge={nudgeZero}
           disabled={fired}
+          clickUnit={scope?.scope.clickUnit ?? "MRAD"}
           onHudTabChange={setHudTab}
           enviroPanel={
             <HuntShotConditions
@@ -1308,9 +1309,11 @@ export function HuntShootView({
                   ? `${selectedAmmo.brand} ${selectedAmmo.name}`
                   : "Ammo"
               }
+              clickUnit={scope?.scope.clickUnit ?? "MRAD"}
               dopeDialDisabled={!!activeHold || fired}
               onUseDope={(entry) => {
                 if (fired || activeHold) return;
+                const unit = scope?.scope.clickUnit ?? "MRAD";
                 setSessionZeroXMm(
                   clampTurretMm(dopeClicksToMmAt100(entry.windageClicks)),
                 );
@@ -1318,9 +1321,9 @@ export function HuntShootView({
                   clampTurretMm(dopeClicksToMmAt100(entry.elevationClicks)),
                 );
                 setStatus(
-                  `DOPE @ ${entry.distanceM} m dialt · elev ${formatDopeElevationClicks(entry.elevationClicks)}${
+                  `DOPE @ ${entry.distanceM} m dialt · elev ${formatDopeElevationClicks(entry.elevationClicks, unit)}${
                     entry.windageClicks
-                      ? ` · wind ${formatDopeWindageClicks(entry.windageClicks)}`
+                      ? ` · wind ${formatDopeWindageClicks(entry.windageClicks, unit)}`
                       : ""
                   } · hold F · Space.`,
                 );
@@ -1342,6 +1345,7 @@ export function HuntShootView({
                     shotBearingDeg={shotBearingDeg}
                     windFromDeg={windFromDeg}
                     windSpeedMs={windSpeedMs}
+                    clickUnit={scope?.scope.clickUnit ?? "MRAD"}
                   />
                 </div>
               ) : (

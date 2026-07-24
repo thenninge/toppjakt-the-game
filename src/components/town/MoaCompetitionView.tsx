@@ -1131,6 +1131,7 @@ export function MoaCompetitionView({
         <ScopeTurrets
           sessionZeroXMm={sessionZeroXMm}
           sessionZeroYMm={sessionZeroYMm}
+          clickUnit={scope?.scope.clickUnit ?? "MRAD"}
           onNudge={(axis, deltaMm) => {
             if (axis === "x") {
               setSessionZeroXMm((v) => clampTurretMm(v + deltaMm));

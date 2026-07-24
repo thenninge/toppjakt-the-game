@@ -1364,6 +1364,7 @@ export function ShootingRange({
           sessionZeroXMm={sessionZeroXMm}
           sessionZeroYMm={sessionZeroYMm}
           onNudge={nudgeZero}
+          clickUnit={scope.scope.clickUnit}
           enviroPanel={
             <HuntShotConditions
               rangeM={distanceM}
@@ -1382,6 +1383,7 @@ export function ShootingRange({
                   ? `${selectedAmmo.brand} ${selectedAmmo.name}`
                   : "Ammo"
               }
+              clickUnit={scope.scope.clickUnit}
             />
           }
           actions={

@@ -18,6 +18,12 @@ export type CustomsMods = {
   customCamo: boolean;
   /** Rear bag rider — +calm and a touch of MOA. */
   bagrider: boolean;
+  /** Action trueing / lapping — tighter groups. */
+  actionTrueing: boolean;
+  /** Custom cheek riser / comb — a bit more calm. */
+  cheekRiser: boolean;
+  /** Barrel crown job — small MOA improvement. */
+  barrelCrown: boolean;
 };
 
 export const EMPTY_CUSTOMS_MODS: CustomsMods = {
@@ -29,6 +35,9 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   homeLoadsSetup: false,
   customCamo: false,
   bagrider: false,
+  actionTrueing: false,
+  cheekRiser: false,
+  barrelCrown: false,
 };
 
 export type CustomsServiceId =
@@ -40,6 +49,9 @@ export type CustomsServiceId =
   | "home_loads_setup"
   | "custom_camo"
   | "bagrider"
+  | "action_trueing"
+  | "cheek_riser"
+  | "barrel_crown"
   | "custom_build";
 
 export type CustomsService = {
@@ -74,6 +86,12 @@ export const TRIGGER_TUNING_PULL_SCALE = 0.5;
 export const BAGRIDER_MOA = 0.05;
 /** Calm multiplier with CB Bagrider (+15%). */
 export const BAGRIDER_CALM_MULT = 1.15;
+/** Action trueing / lapping — gunsmith flex MOA. */
+export const ACTION_TRUEING_MOA = 0.04;
+/** Cheek riser — modest calm from better cheek weld. */
+export const CHEEK_RISER_CALM_MULT = 1.08;
+/** Fresh crown — small MOA improvement. */
+export const BARREL_CROWN_MOA = 0.03;
 
 export const HOME_LOAD_SETUP_NOK = 5000;
 export const HOME_LOAD_PER_ROUND_NOK = 100;
@@ -131,6 +149,24 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     effect: `Bakre bag-rider — +${Math.round((BAGRIDER_CALM_MULT - 1) * 100)}% calm og −${BAGRIDER_MOA.toFixed(2)} MOA.`,
   },
   {
+    id: "action_trueing",
+    name: "Action trueing",
+    priceNok: 8000,
+    effect: `Lapping / trueing av action — −${ACTION_TRUEING_MOA.toFixed(2)} MOA.`,
+  },
+  {
+    id: "cheek_riser",
+    name: "Cheek riser",
+    priceNok: 2500,
+    effect: `Custom comb / cheek riser — +${Math.round((CHEEK_RISER_CALM_MULT - 1) * 100)}% calm (bedre kinnfeste).`,
+  },
+  {
+    id: "barrel_crown",
+    name: "Barrel crown",
+    priceNok: 3500,
+    effect: `Ny crown på pipa — −${BARREL_CROWN_MOA.toFixed(2)} MOA.`,
+  },
+  {
     id: "custom_build",
     name: "Custom build",
     priceNok: 0,
@@ -151,6 +187,9 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     homeLoadsSetup: o.homeLoadsSetup === true,
     customCamo: o.customCamo === true,
     bagrider: o.bagrider === true,
+    actionTrueing: o.actionTrueing === true,
+    cheekRiser: o.cheekRiser === true,
+    barrelCrown: o.barrelCrown === true,
   };
 }
 
@@ -159,18 +198,23 @@ export function customsTriggerPullScale(mods: CustomsMods): number {
   return mods.triggerTuning ? TRIGGER_TUNING_PULL_SCALE : 1;
 }
 
-/** Negative MOA delta from bedding + bagrider (pillar supersedes plain bedding). */
+/** Negative MOA delta from bedding, bagrider, trueing, crown. */
 export function customsBeddingMoaDelta(mods: CustomsMods): number {
   let delta = 0;
   if (mods.pillarBedding) delta -= PILLAR_BEDDING_MOA;
   else if (mods.bedding) delta -= BEDDING_MOA;
   if (mods.bagrider) delta -= BAGRIDER_MOA;
+  if (mods.actionTrueing) delta -= ACTION_TRUEING_MOA;
+  if (mods.barrelCrown) delta -= BARREL_CROWN_MOA;
   return delta;
 }
 
-/** Multiplier on weapon calm (1 = stock, 1.15 with CB Bagrider). */
+/** Multiplier on weapon calm (bagrider × cheek riser). */
 export function customsCalmMultiplier(mods: CustomsMods): number {
-  return mods.bagrider ? BAGRIDER_CALM_MULT : 1;
+  let m = 1;
+  if (mods.bagrider) m *= BAGRIDER_CALM_MULT;
+  if (mods.cheekRiser) m *= CHEEK_RISER_CALM_MULT;
+  return m;
 }
 
 /**
@@ -213,6 +257,9 @@ export function serviceOwned(
   if (id === "home_loads_setup") return mods.homeLoadsSetup;
   if (id === "custom_camo") return mods.customCamo;
   if (id === "bagrider") return mods.bagrider;
+  if (id === "action_trueing") return mods.actionTrueing;
+  if (id === "cheek_riser") return mods.cheekRiser;
+  if (id === "barrel_crown") return mods.barrelCrown;
   return false;
 }
 
