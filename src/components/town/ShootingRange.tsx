@@ -50,6 +50,7 @@ import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
 } from "@/lib/range/scopePointerAim";
+import { MOA_RANGE_TARGET_SCALE } from "@/lib/optics/clicks";
 import {
   DEFAULT_ZERO_DISTANCE_M,
   dropBelowLosMm,
@@ -798,10 +799,15 @@ export function ShootingRange({
     ? scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M)
     : 1;
   /** Target shrinks with distance (angular size). Reticle uses zoom-only
-   * scale so mil hashes stay true angular — a fixed mil error is the same
-   * screen size at every distance. Per-skive visualScale fixes board size. */
+   * scale so mil/MOA hashes stay true angular — a fixed click error is the
+   * same screen size at every distance. Per-skive visualScale fixes board
+   * size. MOA scopes also get {@link MOA_RANGE_TARGET_SCALE} so 1 cm ≈ ¼ MOA. */
+  const clickUnit = scope?.scope.clickUnit ?? "MRAD";
+  const moaPaperScale = clickUnit === "MOA" ? MOA_RANGE_TARGET_SCALE : 1;
   const targetScale = scope
-    ? scopeImageScale(zoom, scope.scope, distanceM) * target.visualScale
+    ? scopeImageScale(zoom, scope.scope, distanceM) *
+      target.visualScale *
+      moaPaperScale
     : target.visualScale;
   const bullseyeOff = targetBullseyeOffsetFromImageCenterPx(target);
   targetScaleRef.current = targetScale;
@@ -1194,6 +1200,13 @@ export function ShootingRange({
         </p>
         {ballisticHint ? (
           <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
+        ) : null}
+        {clickUnit === "MOA" ? (
+          <p className="shop-row-note range-moa-paper-hint">
+            MOA-kikkert: skiven er skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1
+            cm-ruten ≈ 7,27 mm ≈ 0,25 MOA (ett klikk) — lettere å stille inn
+            siktet etter rutenettet.
+          </p>
         ) : null}
       </header>
 

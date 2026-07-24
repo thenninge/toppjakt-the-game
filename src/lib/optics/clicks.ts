@@ -14,6 +14,12 @@ export const MRAD_CLICK_MM_AT_100 = 10;
 /** 0.25 MOA @ 100 m (¼-MOA turrets). */
 export const MOA_CLICK_MM_AT_100 = MM_PER_MOA_AT_100M / 4;
 
+/**
+ * Shooting-range paper scale when a MOA scope is equipped.
+ * Printed 1 cm grid → 7.27 mm ≈ ¼ MOA, so one click lines up with one square.
+ */
+export const MOA_RANGE_TARGET_SCALE = 0.727;
+
 /** Angular step per click in the unit's native measure (0.1 mil or 0.25 MOA). */
 export function clickStepNative(unit: ScopeClickUnit): number {
   return unit === "MOA" ? 0.25 : 0.1;
