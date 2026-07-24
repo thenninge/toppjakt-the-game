@@ -67,6 +67,10 @@ import {
   type MoaCompResult,
   type MoaCompShot,
 } from "@/lib/range/moaComp";
+import {
+  aimMmDeltaFromPointerDrag,
+  clampAimMm,
+} from "@/lib/range/scopePointerAim";
 
 type MoaCompetitionViewProps = {
   balance: number;
@@ -253,6 +257,13 @@ export function MoaCompetitionView({
     right: false,
   });
   const aimRef = useRef(aimMm);
+  const aimDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
   const wobbleRef = useRef({ x: 0, y: 0 });
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(calmFactor);
@@ -515,6 +526,42 @@ export function MoaCompetitionView({
     resetTriggerProgress();
     resetFocusProgress();
     setTriggerUi({ pending: false, targetPct: 0 });
+  }
+
+  function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (phase !== "shooting") return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    aimDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: aimRef.current.x,
+      origY: aimRef.current.y,
+    };
+  }
+
+  function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
+    const drag = aimDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const delta = aimMmDeltaFromPointerDrag({
+      dxClientPx: e.clientX - drag.startX,
+      dyClientPx: e.clientY - drag.startY,
+      scale: targetScaleRef.current,
+      pxPerMm: moaCompMmToPx(1),
+    });
+    aimRef.current = clampAimMm(
+      drag.origX + delta.x,
+      drag.origY + delta.y,
+      AIM_LIMIT_MM,
+    );
+  }
+
+  function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (aimDragRef.current?.pointerId === e.pointerId) {
+      aimDragRef.current = null;
+    }
   }
 
   function releaseTrigger(nowMs: number) {
@@ -955,6 +1002,10 @@ export function MoaCompetitionView({
                   ? "scope-viewport is-recoiling"
                   : "scope-viewport"
               }
+              onPointerDown={onAimPointerDown}
+              onPointerMove={onAimPointerMove}
+              onPointerUp={onAimPointerUp}
+              onPointerCancel={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

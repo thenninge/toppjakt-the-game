@@ -4377,6 +4377,14 @@ body {
     inset 0 0 40px rgba(0, 0, 0, 0.55),
     0 12px 32px rgba(0, 0, 0, 0.55);
   background: #0a0806;
+  /* Drag-to-aim (mouse + touch) — same idea as spot binos/thermal. */
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.scope-viewport:active {
+  cursor: grabbing;
 }
 
 /* Zeroing / MOA lane: white paper fills the glass so impacts read clearly. */

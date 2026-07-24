@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   FOCUS_HOLD_MS,
   TRIGGER_BAR_MS,
@@ -82,6 +82,10 @@ import {
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 import { formatHuntClock } from "@/lib/hunt/travel";
+import {
+  aimMmDeltaFromPointerDrag,
+  clampAimMm,
+} from "@/lib/range/scopePointerAim";
 import {
   ENCOUNTER_NERVE,
   ENVIRO_TIME_FACTOR,
@@ -413,6 +417,13 @@ export function HuntShootView({
   });
   const aimRef = useRef({ x: 0, y: 0 });
   const hasPannedRef = useRef(false);
+  const aimDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
   const wobbleRef = useRef({ x: 0, y: 0 });
   const distanceRef = useRef(trueDistanceM);
   const crosswindRef = useRef(crosswindMs);
@@ -789,6 +800,65 @@ export function HuntShootView({
     resetTriggerProgress();
     resetFocusProgress();
     setTriggerUi({ pending: false, targetPct: 0 });
+  }
+
+  function aimLimitsMm(): { limitX: number; limitY: number; pxPerMm: number } {
+    const g = geomRef.current;
+    const seat = birdSeatRef.current;
+    const pxPerMm = birdNativePxPerMm(g);
+    if (landscapeSrcRef.current) {
+      const sceneW = g.nativeW * (100 / seat.widthPct);
+      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+      return {
+        pxPerMm,
+        limitX: (sceneW * 0.55) / pxPerMm,
+        limitY: (sceneH * 0.55) / pxPerMm,
+      };
+    }
+    const distFactor = distanceRef.current / 100;
+    const limit = 120 * distFactor;
+    return { pxPerMm, limitX: limit, limitY: limit };
+  }
+
+  function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (firedRef.current) return;
+    // Ignore non-primary mouse (right-click) and multi-touch extras.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    aimDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: aimRef.current.x,
+      origY: aimRef.current.y,
+    };
+  }
+
+  function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
+    const drag = aimDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const { pxPerMm, limitX, limitY } = aimLimitsMm();
+    const delta = aimMmDeltaFromPointerDrag({
+      dxClientPx: e.clientX - drag.startX,
+      dyClientPx: e.clientY - drag.startY,
+      scale: targetScaleRef.current,
+      pxPerMm,
+      sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
+    });
+    aimRef.current = clampAimMm(
+      drag.origX + delta.x,
+      drag.origY + delta.y,
+      limitX,
+      limitY,
+    );
+    hasPannedRef.current = true;
+  }
+
+  function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (aimDragRef.current?.pointerId === e.pointerId) {
+      aimDragRef.current = null;
+    }
   }
 
   function beginTrigger(nowMs: number) {
@@ -1179,7 +1249,7 @@ export function HuntShootView({
         </label>
         <span className="range-shot-count">Patroner {ammoRemaining}</span>
         <span className="shop-row-note">
-          Zoom {zoom.toFixed(1)}× — dra ringen over kikkerten (kl. 8→12→4)
+          Zoom {zoom.toFixed(1)}× — dra i glasset for å sikte · dra ringen (kl. 8→12→4)
         </span>
       </div>
 
@@ -1293,6 +1363,10 @@ export function HuntShootView({
               className={
                 recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
               }
+              onPointerDown={onAimPointerDown}
+              onPointerMove={onAimPointerMove}
+              onPointerUp={onAimPointerUp}
+              onPointerCancel={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
                 {landscapeSrc ? (

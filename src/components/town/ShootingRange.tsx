@@ -47,6 +47,10 @@ import {
   type RangeTargetId,
 } from "@/lib/range/targets";
 import {
+  aimMmDeltaFromPointerDrag,
+  clampAimMm,
+} from "@/lib/range/scopePointerAim";
+import {
   DEFAULT_ZERO_DISTANCE_M,
   dropBelowLosMm,
 } from "@/lib/ballistics/trajectory";
@@ -253,6 +257,13 @@ export function ShootingRange({
     right: false,
   });
   const aimRef = useRef(aimMm);
+  const aimDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
   const wobbleRef = useRef({ x: 0, y: 0 });
   const measurementRef = useRef(measurement);
   const shotsLenRef = useRef(0);
@@ -512,6 +523,45 @@ export function ShootingRange({
     resetTriggerProgress();
     resetFocusProgress();
     setTriggerUi({ pending: false, targetPct: 0 });
+  }
+
+  function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (measurementRef.current) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    aimDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: aimRef.current.x,
+      origY: aimRef.current.y,
+    };
+  }
+
+  function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
+    const drag = aimDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const distFactor = distanceRef.current / RANGE_DISTANCE_M;
+    const aimLimit = 80 * distFactor;
+    const delta = aimMmDeltaFromPointerDrag({
+      dxClientPx: e.clientX - drag.startX,
+      dyClientPx: e.clientY - drag.startY,
+      scale: targetScaleRef.current,
+      pxPerMm: targetPxPerMmRef.current,
+      sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
+    });
+    aimRef.current = clampAimMm(
+      drag.origX + delta.x,
+      drag.origY + delta.y,
+      aimLimit,
+    );
+  }
+
+  function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (aimDragRef.current?.pointerId === e.pointerId) {
+      aimDragRef.current = null;
+    }
   }
 
   function releaseTrigger(nowMs: number) {
@@ -1107,7 +1157,7 @@ export function ShootingRange({
     <div className="shooting-range">
       <LocationNav
         onBackToTown={onLeave}
-        hint="Velg avstand + ammo · dra zoom-ringen (kl. 8→12→4) · F / Space-avtrekk"
+        hint="Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
       />
 
       {laneTabs}
@@ -1286,7 +1336,7 @@ export function ShootingRange({
         </span>
         <span className="shop-row-note">
           Zoom {zoom.toFixed(1)}× ({scope.scope.minZoom}–{scope.scope.maxZoom}×)
-          — dra ringen over kikkerten (kl. 8→12→4)
+          — dra i glasset for å sikte · dra ringen (kl. 8→12→4)
         </span>
       </div>
 
@@ -1392,6 +1442,10 @@ export function ShootingRange({
                     ? "scope-viewport is-recoiling"
                     : "scope-viewport"
                 }
+                onPointerDown={onAimPointerDown}
+                onPointerMove={onAimPointerMove}
+                onPointerUp={onAimPointerUp}
+                onPointerCancel={onAimPointerUp}
               >
                 <div ref={scopeWorldRef} className="scope-world">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
