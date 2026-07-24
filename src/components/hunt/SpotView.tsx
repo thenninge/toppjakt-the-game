@@ -23,7 +23,7 @@ import {
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
-import { ThermalCanvas } from "@/components/hunt/ThermalCanvas";
+import { ThermalCanvas, type ThermalPolarity } from "@/components/hunt/ThermalCanvas";
 
 export type SpotMode = "eyes" | "binos" | "thermal";
 
@@ -259,6 +259,9 @@ export function SpotView({
         ? "thermal"
         : "eyes";
   const [mode, setMode] = useState<SpotMode>(startMode);
+  /** White-hot (default) / black-hot thermal palette. */
+  const [thermalPolarity, setThermalPolarity] =
+    useState<ThermalPolarity>("wh");
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
   /** Photo aspect (w/h) so the frame does not squash landscapes into one box. */
@@ -786,6 +789,22 @@ export function SpotView({
               Use thermal (T)
             </button>
           ) : null}
+          {mode === "thermal" ? (
+            <button
+              type="button"
+              className="intro-button sheriff-secondary"
+              onClick={() =>
+                setThermalPolarity((p) => (p === "wh" ? "bh" : "wh"))
+              }
+              title={
+                thermalPolarity === "wh"
+                  ? "White-hot — trykk for black-hot"
+                  : "Black-hot — trykk for white-hot"
+              }
+            >
+              {thermalPolarity === "wh" ? "WH" : "BH"}
+            </button>
+          ) : null}
           {mode === "thermal" && hasBinos ? (
             <button type="button" className="intro-button" onClick={toggleBinos}>
               Use binos (B)
@@ -905,6 +924,7 @@ export function SpotView({
               pan={pan}
               zoom={zoom}
               pixelFactor={thermalPixelFactor}
+              polarity={thermalPolarity}
               className="spot-thermal-canvas"
               onLandscapeReady={() => setLandscapeReady(true)}
             />
@@ -940,7 +960,10 @@ export function SpotView({
       ) : null}
       {mode === "thermal" ? (
         <p className="spot-binos-hint">
-          Sirkulært termisk syn · piltaster / dra · grå silhuett = varm fugl
+          Sirkulært termisk syn · piltaster / dra ·{" "}
+          {thermalPolarity === "wh"
+            ? "WH: varm = hvit"
+            : "BH: varm = svart"}
           {showLrf ? " · LRF integrert" : ""}
           {" · T = av termisk"}
           {hasBinos ? " · B = kikkert" : ""}
