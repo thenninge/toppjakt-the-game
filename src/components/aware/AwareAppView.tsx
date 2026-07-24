@@ -5,7 +5,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -41,6 +43,7 @@ import {
   ShotPairOverlay,
   ShotPairPreview,
   SearchTrackOverlay,
+  FleeDirectionCue,
 } from "@/components/aware/ShotPairOverlay";
 import { BirdNerveBar } from "@/components/hunt/BirdNerveBar";
 import {
@@ -69,6 +72,11 @@ import {
   type DayWeather,
 } from "@/lib/weather/spec";
 import type { AmmoSpec } from "@/lib/ammo/spec";
+
+/** Aware Shoot / Track map zoom — not used in stalk (Aware tab). */
+const AWARE_MAP_ZOOM_MIN = 1;
+const AWARE_MAP_ZOOM_MAX = 3;
+const AWARE_MAP_ZOOM_FACTOR = 1.25;
 
 export type AwareShootStance = {
   bearingDeg: number;
@@ -381,6 +389,9 @@ export function AwareAppView({
   const [activePairId, setActivePairId] = useState<string | null>(
     focusPairId,
   );
+  /** Map zoom for Shoot (skuddpar) + Track only. Cap 3×. */
+  const [mapZoom, setMapZoom] = useState(AWARE_MAP_ZOOM_MIN);
+  const [mapPanPx, setMapPanPx] = useState({ x: 0, y: 0 });
 
   const keysRef = useRef<MoveKeys>({
     up: false,
@@ -403,6 +414,16 @@ export function AwareAppView({
   const moveHoldRef = useRef(0);
   const flushedRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const mapFrameRef = useRef<HTMLDivElement>(null);
+  const mapPanDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origPanX: number;
+    origPanY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressMapClickRef = useRef(false);
 
   const onGameSecondsRef = useRef(onGameSeconds);
   onGameSecondsRef.current = onGameSeconds;
@@ -640,9 +661,16 @@ export function AwareAppView({
 
   const activePair =
     shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
-  /** Don't spoil wounded ettersøk — player uses flee cue + track clicks. */
+  /**
+   * Don't spoil wounded ettersøk land position — player uses flee cue + track.
+   * Only while Tracking that ettersøk. Never during the 60 s post-shot
+   * skuddpar window (bird aim must stay visible), even if older pairs exist.
+   */
   const hideTrueLand =
-    !!activePair?.fleeObservation && activePair.resultKind === "ettersok";
+    !postShotSkuddparMode &&
+    mode === "track" &&
+    !!activePair?.fleeObservation &&
+    activePair.resultKind === "ettersok";
   /** Skuddpar on this cell map (stand → aim + søkeradius). */
   const pairsOnCell = shotPairs.filter(
     (p) => p.cell.row === cell.row && p.cell.col === cell.col,
@@ -655,6 +683,50 @@ export function AwareAppView({
       y: ((e.clientY - rect.top) / rect.height) * 100,
     };
   }
+
+  const mapZoomEnabled = mode === "shoot" || mode === "track";
+
+  function clampMapPan(
+    pan: { x: number; y: number },
+    zoom: number,
+  ): { x: number; y: number } {
+    const frame = mapFrameRef.current;
+    if (!frame || zoom <= 1.001) return { x: 0, y: 0 };
+    const w = frame.clientWidth;
+    const h = frame.clientHeight;
+    const maxX = ((zoom - 1) / 2) * w;
+    const maxY = ((zoom - 1) / 2) * h;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, pan.x)),
+      y: Math.max(-maxY, Math.min(maxY, pan.y)),
+    };
+  }
+
+  function bumpMapZoom(dir: 1 | -1) {
+    setMapZoom((z) => {
+      const next =
+        dir > 0
+          ? Math.min(AWARE_MAP_ZOOM_MAX, z * AWARE_MAP_ZOOM_FACTOR)
+          : Math.max(AWARE_MAP_ZOOM_MIN, z / AWARE_MAP_ZOOM_FACTOR);
+      const rounded = Math.round(next * 100) / 100;
+      const clamped = Math.max(
+        AWARE_MAP_ZOOM_MIN,
+        Math.min(AWARE_MAP_ZOOM_MAX, rounded),
+      );
+      setMapPanPx((pan) => clampMapPan(pan, clamped));
+      return clamped;
+    });
+  }
+
+  function resetMapZoom() {
+    setMapZoom(AWARE_MAP_ZOOM_MIN);
+    setMapPanPx({ x: 0, y: 0 });
+  }
+
+  useEffect(() => {
+    if (!mapZoomEnabled) resetMapZoom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset when leaving Shoot/Track
+  }, [mapZoomEnabled]);
 
   function setMapDestination(e: MouseEvent<HTMLDivElement>) {
     if (!stalking || mode !== "aware") return;
@@ -802,6 +874,45 @@ export function AwareAppView({
   function onStageClick(e: MouseEvent<HTMLDivElement>) {
     if (mode === "track") addTrackPoint(e);
     else if (mode === "aware" && stalking) setMapDestination(e);
+  }
+
+  function onMapPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!mapZoomEnabled || mapZoom <= 1.001) return;
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    mapPanDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origPanX: mapPanPx.x,
+      origPanY: mapPanPx.y,
+      moved: false,
+    };
+  }
+
+  function onMapPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = mapPanDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    setMapPanPx(
+      clampMapPan(
+        { x: drag.origPanX + dx, y: drag.origPanY + dy },
+        mapZoom,
+      ),
+    );
+  }
+
+  function onMapPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = mapPanDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (drag.moved) suppressMapClickRef.current = true;
+    mapPanDragRef.current = null;
   }
 
   function runEttersokSearch() {
@@ -1007,119 +1118,177 @@ export function AwareAppView({
           ))}
         </div>
 
-        <div className="aware-map-frame">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            className="aware-map-img"
-            src={map.src}
-            alt={map.label}
-            draggable={false}
-          />
+        <div
+          ref={mapFrameRef}
+          className={
+            mapZoomEnabled && mapZoom > 1.001
+              ? "aware-map-frame is-zoomed"
+              : "aware-map-frame"
+          }
+        >
           <div
-            className="aware-cell-highlight"
-            style={{
-              left: `${(cell.col / map.cols) * 100}%`,
-              bottom: `${(cell.row / map.rows) * 100}%`,
-              width: `${100 / map.cols}%`,
-              height: `${100 / map.rows}%`,
-            }}
-          />
-          <div
-            ref={stageRef}
-            className="aware-cell-stage"
-            tabIndex={stalking ? 0 : undefined}
-            onClick={onStageClick}
+            className="aware-map-zoom-layer"
+            style={
+              {
+                transform: `translate(${mapPanPx.x}px, ${mapPanPx.y}px) scale(${mapZoomEnabled ? mapZoom : 1})`,
+                ["--aware-marker-inv-zoom"]: String(
+                  1 / (mapZoomEnabled ? mapZoom : 1),
+                ),
+              } as CSSProperties
+            }
           >
-            {mode === "aware" ? (
-              <DangerOverlay
-                wedges={dangerWedges}
-                center={planOrigin}
-                hunter={planOrigin}
-                bird={birdWorld}
-                shotSafe={bakgrunnOk}
-              />
-            ) : null}
-            {stalking && destination && mode === "aware" ? (
-              <span
-                className="aware-dest-marker"
-                style={{ left: `${destination.x}%`, top: `${destination.y}%` }}
-                title="Gå hit"
-              />
-            ) : null}
-            {pairsOnCell.map((pair) => (
-              <ShotPairOverlay
-                key={pair.id}
-                pair={pair}
-                active={pair.id === activePair?.id}
-              />
-            ))}
-            {pairsOnCell.map((pair) => (
-              <SearchTrackOverlay
-                key={`track-${pair.id}`}
-                pair={pair}
-                active={pair.id === activePair?.id}
-              />
-            ))}
-            {mode === "shoot" &&
-            shootWizard.phase !== "idle" &&
-            shootPreviewImpact ? (
-              <>
-                <ShotPairPreview
-                  stand={shootWizard.stand}
-                  aim={shootPreviewImpact}
-                />
-                <div
-                  className="aware-bearing-needle aware-shot-bearing"
-                  style={{
-                    left: `${shootWizard.stand.x}%`,
-                    top: `${shootWizard.stand.y}%`,
-                    transform: `translate(-50%, -100%) rotate(${shootWizard.bearingDeg}deg)`,
-                  }}
-                  aria-hidden
-                />
-              </>
-            ) : null}
-            {/* Hunter always shown. Bird/land hidden on wounded ettersøk (use cue). */}
-            <span
-              className="aware-hunter-marker"
-              style={{ left: `${hunter.x}%`, top: `${hunter.y}%` }}
-              title="Deg"
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className="aware-map-img"
+              src={map.src}
+              alt={map.label}
+              draggable={false}
             />
-            {!hideTrueLand ? (
-              <span
-                className="aware-bird-marker"
-                style={{ left: `${birdWorld.x}%`, top: `${birdWorld.y}%` }}
-                title={`Fugl ${Math.round(liveDistanceM)} m`}
-              >
-                <span className="aware-bird-dot" />
-                <span className="aware-bird-label">
-                  {Math.round(liveDistanceM)} m
-                </span>
-              </span>
-            ) : null}
             <div
-              className="aware-wind-arrow"
+              className="aware-cell-highlight"
               style={{
-                transform: `translate(-50%, -50%) rotate(${windSnap.windFromDeg + 180}deg)`,
+                left: `${(cell.col / map.cols) * 100}%`,
+                bottom: `${(cell.row / map.rows) * 100}%`,
+                width: `${100 / map.cols}%`,
+                height: `${100 / map.rows}%`,
               }}
-              title={`Vind fra ${formatWindCompass(windSnap.windFromDeg)}`}
-              aria-hidden
             />
-            {mode === "track" &&
-            activePair?.fleeObservation &&
-            activePair.resultKind === "ettersok" ? (
+            <div
+              ref={stageRef}
+              className="aware-cell-stage"
+              tabIndex={stalking ? 0 : undefined}
+              onPointerDown={onMapPointerDown}
+              onPointerMove={onMapPointerMove}
+              onPointerUp={onMapPointerUp}
+              onPointerCancel={onMapPointerUp}
+              onClick={(e) => {
+                if (suppressMapClickRef.current) {
+                  suppressMapClickRef.current = false;
+                  return;
+                }
+                onStageClick(e);
+              }}
+            >
+              {mode === "aware" ? (
+                <DangerOverlay
+                  wedges={dangerWedges}
+                  center={planOrigin}
+                  hunter={planOrigin}
+                  bird={birdWorld}
+                  shotSafe={bakgrunnOk}
+                />
+              ) : null}
+              {stalking && destination && mode === "aware" ? (
+                <span
+                  className="aware-dest-marker"
+                  style={{ left: `${destination.x}%`, top: `${destination.y}%` }}
+                  title="Gå hit"
+                />
+              ) : null}
+              {pairsOnCell.map((pair) => (
+                <ShotPairOverlay
+                  key={pair.id}
+                  pair={pair}
+                  active={pair.id === activePair?.id}
+                />
+              ))}
+              {pairsOnCell.map((pair) => (
+                <SearchTrackOverlay
+                  key={`track-${pair.id}`}
+                  pair={pair}
+                  active={pair.id === activePair?.id}
+                />
+              ))}
+              {mode === "shoot" &&
+              shootWizard.phase !== "idle" &&
+              shootPreviewImpact ? (
+                <>
+                  <ShotPairPreview
+                    stand={shootWizard.stand}
+                    aim={shootPreviewImpact}
+                  />
+                  <div
+                    className="aware-bearing-needle aware-shot-bearing"
+                    style={{
+                      left: `${shootWizard.stand.x}%`,
+                      top: `${shootWizard.stand.y}%`,
+                      transform: `translate(-50%, -100%) rotate(${shootWizard.bearingDeg}deg) scale(var(--aware-marker-inv-zoom, 1))`,
+                    }}
+                    aria-hidden
+                  />
+                </>
+              ) : null}
+              {/* Hunter always shown. Bird/land hidden on wounded ettersøk (use cue). */}
+              <span
+                className="aware-hunter-marker"
+                style={{ left: `${hunter.x}%`, top: `${hunter.y}%` }}
+                title="Deg"
+              />
+              {!hideTrueLand ? (
+                <span
+                  className="aware-bird-marker"
+                  style={{ left: `${birdWorld.x}%`, top: `${birdWorld.y}%` }}
+                  title={`Fugl ${Math.round(liveDistanceM)} m`}
+                >
+                  <span className="aware-bird-dot" />
+                  <span className="aware-bird-label">
+                    {Math.round(liveDistanceM)} m
+                  </span>
+                </span>
+              ) : null}
               <div
-                className="aware-flee-needle"
+                className="aware-wind-arrow"
                 style={{
-                  left: `${activePair.target.x}%`,
-                  top: `${activePair.target.y}%`,
-                  transform: `translate(-50%, -100%) rotate(${activePair.fleeObservation.observedBearingDeg}deg)`,
+                  transform: `translate(-50%, -50%) rotate(${windSnap.windFromDeg + 180}deg) scale(var(--aware-marker-inv-zoom, 1))`,
                 }}
-                title={`Observert flukt ${activePair.fleeObservation.compassLabel}`}
+                title={`Vind fra ${formatWindCompass(windSnap.windFromDeg)}`}
                 aria-hidden
               />
-            ) : null}
+              {mode === "track" &&
+              activePair?.fleeObservation &&
+              activePair.resultKind === "ettersok" ? (
+                <FleeDirectionCue
+                  origin={activePair.target}
+                  bearingDeg={activePair.fleeObservation.observedBearingDeg}
+                  compassLabel={activePair.fleeObservation.compassLabel}
+                  observedLandDistanceM={
+                    activePair.fleeObservation.observedLandDistanceM
+                  }
+                />
+              ) : null}
+            </div>
           </div>
+
+          {mapZoomEnabled ? (
+            <div className="aware-map-zoom" role="group" aria-label="Kartzoom">
+              <button
+                type="button"
+                className="aware-map-zoom-btn"
+                disabled={mapZoom <= AWARE_MAP_ZOOM_MIN + 0.001}
+                onClick={() => bumpMapZoom(-1)}
+                aria-label="Zoom ut"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className="aware-map-zoom-label"
+                onClick={resetMapZoom}
+                title="Tilbakestill zoom"
+              >
+                {mapZoom.toFixed(2).replace(/\.?0+$/, "")}×
+              </button>
+              <button
+                type="button"
+                className="aware-map-zoom-btn"
+                disabled={mapZoom >= AWARE_MAP_ZOOM_MAX - 0.001}
+                onClick={() => bumpMapZoom(1)}
+                aria-label="Zoom inn"
+              >
+                +
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {stalking && mode === "aware" && destination ? (
@@ -1168,20 +1337,48 @@ export function AwareAppView({
           >
             {abortLabel}
           </button>
-          {focusPairId ? (
+          {mode === "track" &&
+          activePair?.resultKind === "ettersok" &&
+          activePair.found !== true ? (
+            <>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                disabled={activePair.trackPoints.length === 0}
+                onClick={clearDraftTrack}
+              >
+                Fjern spor
+              </button>
+              <button
+                type="button"
+                className="intro-button"
+                disabled={activePair.trackPoints.length === 0}
+                onClick={runEttersokSearch}
+                title={`Utfør ettersøk (${ettersokMinutesForSearch(
+                  activePair.trackPoints.length,
+                  activePair.distanceM,
+                )} min)`}
+              >
+                Søk ·{" "}
+                {ettersokMinutesForSearch(
+                  activePair.trackPoints.length,
+                  activePair.distanceM,
+                )}{" "}
+                min
+              </button>
+            </>
+          ) : focusPairId ? (
             <button
               type="button"
               className="intro-button"
               onClick={proceed}
               title={
                 activePair?.found === true
-                  ? undefined
+                  ? "Ferdig — fugl funnet"
                   : "Gir opp søket — fuglen tapes (mentalt −30 %)"
               }
             >
-              {activePair?.found === true
-                ? "Ferdig — fugl funnet"
-                : "Avslutt ettersøk"}
+              {activePair?.found === true ? "Ferdig" : "Avslutt"}
             </button>
           ) : postShotSkuddparMode ? null : (
             <button
@@ -1199,7 +1396,7 @@ export function AwareAppView({
               }
               onClick={proceed}
             >
-              Klar til skudd
+              Skuddklar
             </button>
           )}
         </div>
@@ -1568,35 +1765,18 @@ export function AwareAppView({
                           : ""}
                         {activePair.found === true ? " · ferdig" : ""}
                       </p>
-                      <div className="aware-ettersok-actions">
-                        <button
-                          type="button"
-                          className="intro-button sheriff-secondary"
-                          disabled={
-                            activePair.found === true ||
-                            activePair.trackPoints.length === 0
-                          }
-                          onClick={clearDraftTrack}
-                        >
-                          Fjern ulagret spor
-                        </button>
-                        <button
-                          type="button"
-                          className="intro-button"
-                          disabled={
-                            activePair.found === true ||
-                            activePair.trackPoints.length === 0
-                          }
-                          onClick={runEttersokSearch}
-                        >
-                          Utfør ettersøk (
-                          {ettersokMinutesForSearch(
-                            activePair.trackPoints.length,
-                            activePair.distanceM,
-                          )}{" "}
-                          min)
-                        </button>
-                      </div>
+                      {focusPairId && activePair.found !== true ? (
+                        <div className="aware-ettersok-actions">
+                          <button
+                            type="button"
+                            className="intro-button sheriff-secondary"
+                            onClick={proceed}
+                            title="Gir opp søket — fuglen tapes (mentalt −30 %)"
+                          >
+                            Avslutt ettersøk
+                          </button>
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <p className="shop-row-note">

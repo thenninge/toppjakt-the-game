@@ -188,3 +188,86 @@ export function ShotPairPreview({ stand, aim }: ShotPairPreviewProps) {
     </div>
   );
 }
+
+function pointAlongBearing(
+  origin: { x: number; y: number },
+  bearingDeg: number,
+  meters: number,
+): { x: number; y: number } {
+  const pct = meters / AWARE_METERS_PER_PCT;
+  const rad = ((bearingDeg - 90) * Math.PI) / 180;
+  return {
+    x: origin.x + Math.cos(rad) * pct,
+    y: origin.y + Math.sin(rad) * pct,
+  };
+}
+
+type FleeDirectionCueProps = {
+  /** Where the bird sat when shot (skuddpar aim / perch). */
+  origin: { x: number; y: number };
+  bearingDeg: number;
+  compassLabel: string;
+  /** Estimated land distance (m) — draws a circle with this radius. */
+  observedLandDistanceM?: number;
+};
+
+/**
+ * Ettersøk flee cue: direction arrow (screen-fixed) + distance as a circle
+ * around the perch with radius = estimated land distance.
+ */
+export function FleeDirectionCue({
+  origin,
+  bearingDeg,
+  compassLabel,
+  observedLandDistanceM,
+}: FleeDirectionCueProps) {
+  const cueDist =
+    observedLandDistanceM != null && Number.isFinite(observedLandDistanceM)
+      ? Math.round(observedLandDistanceM)
+      : null;
+  const ringPct =
+    cueDist != null && cueDist > 0
+      ? (cueDist / AWARE_METERS_PER_PCT) * 2
+      : null;
+  const labelAt =
+    cueDist != null
+      ? pointAlongBearing(origin, bearingDeg, Math.min(cueDist, 90))
+      : null;
+
+  return (
+    <div className="aware-flee-cue" aria-hidden>
+      {ringPct != null && cueDist != null ? (
+        <div
+          className="aware-flee-land-ring"
+          style={{
+            left: `${origin.x}%`,
+            top: `${origin.y}%`,
+            width: `${ringPct}%`,
+            height: `${ringPct}%`,
+          }}
+          title={`Estimert avstand ca. ${cueDist} m`}
+        />
+      ) : null}
+      <div
+        className="aware-flee-needle"
+        style={{
+          left: `${origin.x}%`,
+          top: `${origin.y}%`,
+          transform: `translate(-50%, -100%) rotate(${bearingDeg}deg) scale(var(--aware-marker-inv-zoom, 1))`,
+        }}
+        title={`Observert flukt ${compassLabel}${cueDist != null ? ` · ca. ${cueDist} m` : ""}`}
+      />
+      {cueDist != null && labelAt ? (
+        <span
+          className="aware-flee-dist-label"
+          style={{
+            left: `${labelAt.x}%`,
+            top: `${labelAt.y}%`,
+          }}
+        >
+          ca. {cueDist} m
+        </span>
+      ) : null}
+    </div>
+  );
+}

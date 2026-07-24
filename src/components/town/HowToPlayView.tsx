@@ -61,7 +61,7 @@ const SECTIONS: GuideSection[] = [
   {
     title: "Track, skuddpar & ettersøk",
     bullets: [
-      "Etter treff: Track-modus i Aware — legg søkespor på kartet, deretter «Utfør ettersøk». Tid koster (min per punkt + meter).",
+      "Etter treff: Track-modus i Aware — legg søkespor på kartet, deretter «Utfør ettersøk». Tid: 3 min/punkt + meter.",
       "Uten Triggercam og uten oppsatt camcorder: skuddpar autofylles ikke — still retning og avstand selv. Fluktcue er grov (±~30° σ) og snapper til 8-kompass (N, NØ, …). Ingen landingsavstand.",
       "Triggercam i kit: after-action replay av treffpunkt; autofyll skuddpar med ±~30 m støy; fluktretning ±~10° σ (finere enn nakent øye).",
       "Camcorder: må settes opp før skudd (+20 % nervøsitet). Gir beste cue alene — autofyll ±~10 m, fluktretning ±~5° σ, pluss observert landingsavstand (±~12 %).",

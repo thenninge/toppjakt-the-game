@@ -27,7 +27,7 @@ export const MINUTES_PER_100M = 10;
 export const TREE_RECOVERY_MINUTES_PER_100M = 7;
 
 /** Minutes of search time per søkespor point on the Aware map. */
-export const ETTERSOK_MINUTES_PER_TRACK_POINT = 5;
+export const ETTERSOK_MINUTES_PER_TRACK_POINT = 3;
 
 /**
  * @deprecated Prefer {@link treeRecoveryMinutes}.

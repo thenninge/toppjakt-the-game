@@ -3287,7 +3287,7 @@ export function HuntMapView({
           });
         }}
         abortLabel={
-          awareSession.postShotSkuddpar ? "Tilbake til kart" : "Avbryt"
+          awareSession.postShotSkuddpar ? "Tilbake" : "Avbryt"
         }
         onAbort={
           awareSession.postShotSkuddpar
