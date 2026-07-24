@@ -892,6 +892,7 @@ export function ShootingRange({
           ? {
               chronoV0Mps,
               chronoTemperatureC: weather.live.temperatureC,
+              chronoSource: "range" as const,
             }
           : {}),
       };

@@ -766,6 +766,7 @@ export function HuntShootView({
         sessionZeroYMm,
         chronoV0Mps: [shot.v0],
         chronoTemperatureC: powderTempRef.current,
+        chronoSource: "field",
       };
       onLogSeries(entry);
       chronoNote = ` · Xero ${shot.v0.toFixed(0)} m/s @ ${powderTempRef.current.toFixed(0)}°C`;

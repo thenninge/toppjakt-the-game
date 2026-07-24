@@ -151,12 +151,29 @@ export function IntroScreen() {
   } | null>(null);
   const statsRef = useRef(stats);
   const bootstrappedRef = useRef(false);
+  /** Last hunt HUD distance — used to delta-accumulate into lifetimeDistanceM. */
+  const lastHuntDistanceMRef = useRef(0);
 
   const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
   const musicScene = musicSceneFromGame({ phase, location });
   const onHuntHudChange = useCallback((hud: HuntHudStatus) => {
+    const next = Math.max(0, hud.distanceTravelledM ?? 0);
+    const prev = lastHuntDistanceMRef.current;
+    const delta = next > prev ? next - prev : 0;
+    lastHuntDistanceMRef.current = next;
     setHuntHud(hud);
+    if (delta > 0) {
+      setStats((s) => ({
+        ...s,
+        lifetimeDistanceM: Math.max(0, s.lifetimeDistanceM) + delta,
+      }));
+    }
   }, []);
+
+  function clearHuntHud() {
+    lastHuntDistanceMRef.current = 0;
+    setHuntHud(null);
+  }
   const signedIn = authStatus === "authenticated" && !!session?.user;
 
   useEffect(() => {
@@ -291,7 +308,7 @@ export function IntroScreen() {
     setAuthNote("");
     setLocation(null);
     setLastPermit(null);
-    setHuntHud(null);
+    clearHuntHud();
     setWeather(createDayWeather());
     setPhase("name");
     if (signedIn) void signOut({ redirect: false });
@@ -823,7 +840,7 @@ export function IntroScreen() {
     if (!stats.selectedHuntingTerrainId || !stats.jaktkort) return;
     if (stats.jaktkort.daysRemaining <= 0) return;
     setLocation(null);
-    setHuntHud(null);
+    clearHuntHud();
     setPhase("hunt");
   }
 
@@ -848,7 +865,7 @@ export function IntroScreen() {
         carcasses: [],
       }));
     }
-    setHuntHud(null);
+    clearHuntHud();
     setLocation("home");
     setPhase("location");
   }

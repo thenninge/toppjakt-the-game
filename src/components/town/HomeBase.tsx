@@ -49,7 +49,7 @@ import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import { InaturNo } from "@/components/town/InaturNo";
-import { ShotLogDopeView } from "@/components/town/ShotLogDopeView";
+import { ShotLogDopeView, type ShotLogDopeTab } from "@/components/town/ShotLogDopeView";
 import { LaderommetView } from "@/components/town/LaderommetView";
 import {
   formatJaktkortStatusNb,
@@ -153,7 +153,7 @@ export function HomeBase({
     "main" | "inatur" | "shotlog-dope" | "laderommet"
   >("main");
   /** When opening Shotlog/Dope from a deep link, which tab. */
-  const [shotlogDopeTab, setShotlogDopeTab] = useState<"shotlog" | "dope">(
+  const [shotlogDopeTab, setShotlogDopeTab] = useState<ShotLogDopeTab>(
     "shotlog",
   );
   /** Pending rifle/scope swap that needs re-zero warning. */
@@ -440,7 +440,7 @@ export function HomeBase({
             setView("shotlog-dope");
           }}
         >
-          Shotlog/Dope ({shotLog.length}/{dopeCard.length})
+          Shotlog/Dope/dV/dT ({shotLog.length}/{dopeCard.length})
         </button>
         <button
           type="button"

@@ -2,6 +2,11 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { PlayerStats } from "@/lib/player";
+import {
+  birdsPerKm,
+  formatBirdsPerKm,
+  formatLifetimeDistance,
+} from "@/lib/playerSave";
 
 type StatsFrameProps = {
   stats: PlayerStats;
@@ -243,9 +248,23 @@ export function StatsFrame({
           <dt>Tiur</dt>
           <dd>{stats.lifetimeTiur}</dd>
         </div>
-        <div className="stats-item">
-          <dt>Max Range</dt>
-          <dd>{formatRange(stats.maxRange)}</dd>
+        <div className="stats-item stats-item-metrics" aria-label="Rekkevidde og distanse">
+          <div className="stats-metric">
+            <dt>Max Range</dt>
+            <dd>{formatRange(stats.maxRange)}</dd>
+          </div>
+          <div className="stats-metric">
+            <dt>Gått</dt>
+            <dd title="Akkumulert gangavstand (jakt)">
+              {formatLifetimeDistance(stats.lifetimeDistanceM)}
+            </dd>
+          </div>
+          <div className="stats-metric">
+            <dt>Fugl/km</dt>
+            <dd title="Lifetime tiur + orrhane per km gått">
+              {formatBirdsPerKm(birdsPerKm(stats))}
+            </dd>
+          </div>
         </div>
       </dl>
     </aside>

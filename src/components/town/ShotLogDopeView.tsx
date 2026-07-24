@@ -5,11 +5,13 @@ import {
   type DopeCardEntry,
   type ShotLogEntry,
 } from "@/lib/player";
+import { extractChronoPoints } from "@/lib/shotlog/chronoDvDt";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
+import { ChronoDvDtView } from "@/components/town/ChronoDvDtView";
 
-type Tab = "shotlog" | "dope";
+export type ShotLogDopeTab = "shotlog" | "dope" | "dvdt";
 
 type ShotLogDopeViewProps = {
   shotLog: ShotLogEntry[];
@@ -26,12 +28,12 @@ type ShotLogDopeViewProps = {
   ) => void;
   onRemoveDope: (id: string) => void;
   onBack: () => void;
-  /** Open on DOPE tab when coming from range «Se/edit DOPE». */
-  initialTab?: Tab;
+  /** Open on a specific tab (e.g. DOPE from range). */
+  initialTab?: ShotLogDopeTab;
 };
 
 /**
- * Home — Shotlog and DOPE on one page with tabs.
+ * Home — Shotlog, DOPE and Xero dV/dT on one page with tabs.
  */
 export function ShotLogDopeView({
   shotLog,
@@ -42,28 +44,30 @@ export function ShotLogDopeView({
   onBack,
   initialTab = "shotlog",
 }: ShotLogDopeViewProps) {
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const [tab, setTab] = useState<ShotLogDopeTab>(initialTab);
+  const chronoCount = extractChronoPoints(shotLog).length;
 
   return (
     <div className="shot-log-dope">
       <LocationNav
         onBackToTown={onBack}
         backLabel="← Tilbake til hjem"
-        hint="Målte serier og felt-DOPE — bytt fane under."
+        hint="Målte serier, felt-DOPE og Xero dV/dT — bytt fane under."
       />
 
       <header className="shop-header">
-        <p className="intro-line intro-gift">Shotlog / Dope</p>
+        <p className="intro-line intro-gift">Shotlog / Dope / dV/dT</p>
         <p className="shop-row-note">
           {shotLog.length} serie{shotLog.length === 1 ? "" : "r"} ·{" "}
-          {dopeCard.length} DOPE-linje{dopeCard.length === 1 ? "" : "r"}
+          {dopeCard.length} DOPE-linje{dopeCard.length === 1 ? "" : "r"} ·{" "}
+          {chronoCount} chrono
         </p>
       </header>
 
       <div
         className="home-data-tabs"
         role="tablist"
-        aria-label="Shotlog eller DOPE"
+        aria-label="Shotlog, DOPE eller dV/dT"
       >
         <button
           type="button"
@@ -89,6 +93,17 @@ export function ShotLogDopeView({
         >
           DOPE ({dopeCard.length})
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "dvdt"}
+          className={
+            tab === "dvdt" ? "home-data-tab is-active" : "home-data-tab"
+          }
+          onClick={() => setTab("dvdt")}
+        >
+          dV/dT ({chronoCount})
+        </button>
       </div>
 
       {tab === "shotlog" ? (
@@ -98,7 +113,7 @@ export function ShotLogDopeView({
           onBack={onBack}
           embedded
         />
-      ) : (
+      ) : tab === "dope" ? (
         <DopeCardView
           entries={dopeCard}
           onUpdate={onUpdateDope}
@@ -106,6 +121,8 @@ export function ShotLogDopeView({
           onBack={onBack}
           embedded
         />
+      ) : (
+        <ChronoDvDtView entries={shotLog} embedded />
       )}
     </div>
   );

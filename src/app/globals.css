@@ -1069,7 +1069,8 @@ body {
 }
 
 .shot-log--embedded .shop-header,
-.dope-card-home--embedded .shop-header {
+.dope-card-home--embedded .shop-header,
+.chrono-dvdt--embedded .shop-header {
   margin-top: 0;
 }
 
@@ -3216,7 +3217,7 @@ body {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(13rem, 2.6fr);
   gap: 0.2rem 0.45rem;
   margin: 0;
 }
@@ -3225,14 +3226,29 @@ body {
   min-width: 0;
 }
 
-.stats-item dt {
+.stats-item-metrics {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.55rem 0.75rem;
+  min-width: 0;
+}
+
+.stats-metric {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.stats-item dt,
+.stats-metric dt {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.05;
   color: var(--canyon-dust);
 }
 
-.stats-item dd {
+.stats-item dd,
+.stats-metric dd {
   margin: 0.05rem 0 0;
   font-size: 1.1rem;
   line-height: 1.1;
@@ -3315,6 +3331,10 @@ body {
 @media (max-width: 720px) {
   .stats-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .stats-item-metrics {
+    grid-column: 1 / -1;
   }
 }
 
@@ -5082,6 +5102,210 @@ body {
   color: var(--canyon-sand);
   font-family: var(--font-display), monospace;
   font-size: 0.95rem;
+}
+
+/* --- Chrono dV/dT --- */
+
+.chrono-dvdt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: min(52rem, 100%);
+}
+
+.chrono-dvdt-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 0.55rem 0.6rem 0.45rem;
+}
+
+.chrono-dvdt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+.chrono-dvdt-table-caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 0.45rem;
+  font-size: 0.95rem;
+  color: var(--accent-gold);
+}
+
+.chrono-dvdt-table th,
+.chrono-dvdt-table td {
+  padding: 0.28rem 0.45rem;
+  border-bottom: 1px solid rgba(90, 64, 48, 0.55);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chrono-dvdt-table thead th {
+  color: var(--canyon-dust);
+  font-weight: 600;
+  font-size: 0.78rem;
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chrono-dvdt-table thead th:first-child,
+.chrono-dvdt-table tbody th,
+.chrono-dvdt-table tfoot th {
+  text-align: left;
+  color: var(--canyon-dust);
+  font-weight: 600;
+}
+
+.chrono-dvdt-table tbody td,
+.chrono-dvdt-table tfoot td {
+  color: var(--canyon-sand);
+}
+
+.chrono-dvdt-table tbody tr:last-child th,
+.chrono-dvdt-table tbody tr:last-child td {
+  border-bottom-color: rgba(90, 64, 48, 0.85);
+}
+
+.chrono-dvdt-table tfoot th,
+.chrono-dvdt-table tfoot td {
+  border-bottom: 0;
+  padding-top: 0.4rem;
+  color: var(--accent-gold);
+  font-weight: 650;
+}
+
+.chrono-dvdt-table-src {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--canyon-dust);
+}
+
+.chrono-dvdt-table-note {
+  margin: 0.4rem 0 0;
+}
+
+.chrono-dvdt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chrono-dvdt-list > li {
+  list-style: none;
+}
+
+.chrono-dvdt-card {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.chrono-dvdt-card-top {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chrono-dvdt-ammo {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--accent-gold);
+}
+
+.chrono-dvdt-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+}
+
+.chrono-dvdt-summary div {
+  min-width: 0;
+}
+
+.chrono-dvdt-summary dt {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--canyon-dust);
+}
+
+.chrono-dvdt-summary dd {
+  margin: 0.1rem 0 0;
+  font-size: 0.95rem;
+  color: var(--canyon-sand);
+}
+
+.chrono-dvdt-pending {
+  color: var(--canyon-dust);
+  font-size: 0.85rem;
+}
+
+.chrono-dvdt-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-top: 1px solid rgba(90, 64, 48, 0.65);
+  padding-top: 0.4rem;
+}
+
+.chrono-dvdt-point {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.25rem 0.55rem;
+  align-items: baseline;
+  font-size: 0.88rem;
+}
+
+.chrono-dvdt-when {
+  color: var(--canyon-dust);
+  font-variant-numeric: tabular-nums;
+}
+
+.chrono-dvdt-tag {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid #5a4030;
+  color: var(--canyon-sand);
+}
+
+.chrono-dvdt-tag.is-range {
+  border-color: #6a8a5a;
+  color: #b8d4a8;
+}
+
+.chrono-dvdt-tag.is-field {
+  border-color: #a87830;
+  color: #e8c878;
+}
+
+.chrono-dvdt-rifle {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .chrono-dvdt-point {
+    grid-template-columns: auto 1fr;
+  }
+
+  .chrono-dvdt-tag {
+    justify-self: start;
+  }
 }
 
 .range-touch-controls {

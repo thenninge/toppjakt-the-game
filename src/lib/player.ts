@@ -78,6 +78,8 @@ export type ShotLogEntry = {
   chronoV0Mps?: number[];
   /** Air / powder temperature (°C) logged with chrono series (for later dV/dT). */
   chronoTemperatureC?: number;
+  /** Where the chrono series was logged (range vs field deploy). */
+  chronoSource?: "range" | "field";
 };
 
 /**
@@ -143,6 +145,11 @@ export type PlayerStats = {
   freezerCarcasses: GameCarcass[];
   /** Longest hunting hit distance in meters. */
   maxRange: number;
+  /**
+   * Lifetime walked distance in meters (grid cells + ettersøk/tree recovery).
+   * Same sources as the hunt HUD «Distance travelled».
+   */
+  lifetimeDistanceM: number;
   inventory: InventoryEntry[];
   /** Item ids currently assembled into the hunting kit (at Home). */
   kit: string[];
@@ -625,6 +632,7 @@ export function createInitialStats(): PlayerStats {
     carcasses: [],
     freezerCarcasses: [],
     maxRange: 0,
+    lifetimeDistanceM: 0,
     inventory: [],
     kit: [],
     weaponLicenses: [],

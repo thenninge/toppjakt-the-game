@@ -134,6 +134,11 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       typeof raw.maxRange === "number" && Number.isFinite(raw.maxRange)
         ? Math.max(0, Math.floor(raw.maxRange))
         : base.maxRange,
+    lifetimeDistanceM:
+      typeof raw.lifetimeDistanceM === "number" &&
+      Number.isFinite(raw.lifetimeDistanceM)
+        ? Math.max(0, raw.lifetimeDistanceM)
+        : base.lifetimeDistanceM,
     inventory: inventory as PlayerStats["inventory"],
     kit: kit as PlayerStats["kit"],
     weaponLicenses: weaponLicenses as PlayerStats["weaponLicenses"],
@@ -228,4 +233,34 @@ export function totalBirdsHarvested(
   }
   const s = stats as Pick<PlayerStats, "tiur" | "orrhaner">;
   return Math.max(0, s.tiur) + Math.max(0, s.orrhaner);
+}
+
+/** Lifetime gamebirds per km walked; null until any distance is logged. */
+export function birdsPerKm(
+  stats: Pick<
+    PlayerStats,
+    "lifetimeTiur" | "lifetimeOrrhaner" | "lifetimeDistanceM"
+  >,
+): number | null {
+  const km = Math.max(0, stats.lifetimeDistanceM) / 1000;
+  if (!(km > 0)) return null;
+  return totalBirdsHarvested(stats) / km;
+}
+
+export function formatLifetimeDistance(meters: number): string {
+  const m = Math.max(0, meters);
+  if (!(m > 0)) return "—";
+  if (m >= 1000) {
+    const km = m / 1000;
+    const digits = m % 1000 === 0 ? 0 : km < 10 ? 2 : 1;
+    return `${km.toFixed(digits)} km`;
+  }
+  return `${Math.round(m)} m`;
+}
+
+export function formatBirdsPerKm(rate: number | null): string {
+  if (rate == null || !Number.isFinite(rate)) return "—";
+  if (rate >= 10) return rate.toFixed(1);
+  if (rate >= 1) return rate.toFixed(2);
+  return rate.toFixed(2);
 }

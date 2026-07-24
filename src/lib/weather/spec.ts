@@ -10,6 +10,11 @@
  * - Kestrel (anemometer): measures *local* wind → true crosswind for the shot.
  * - LRF/AB on binoculars: no real crosswind sensor; uses forecast and typically
  *   reports *full-value* windage (assumes wind from 90° to line of fire).
+ *
+ * ## Toppjakt wind climate
+ * Most hunt days are calm–light (0–2 m/s). A minority are breezy (2–3),
+ * and only a few days hit 3–5 m/s. Cap stays at {@link MAX_WIND_SPEED_MS}
+ * (birds rarely sit harder than that).
  */
 
 export type WeatherSnapshot = {
@@ -30,6 +35,11 @@ export type DayWeather = {
   forecast: WeatherSnapshot;
   /** Live conditions — drifts over mission time. */
   live: WeatherSnapshot;
+  /**
+   * Morning truth wind (m/s). Live wander mean-reverts toward this so a calm
+   * day does not random-walk into a gale by afternoon.
+   */
+  morningWindSpeedMs: number;
   /** Minutes since dawn / mission start. */
   missionMinutes: number;
 };
@@ -44,6 +54,14 @@ export const FORECAST_TEMP_ERROR_C = 2;
  * keep the playable band 0–5.
  */
 export const MAX_WIND_SPEED_MS = 5;
+
+/**
+ * Mixture weights for morning wind (toppjakt):
+ * calm 0–2 · light 2–3 · windy 3–5.
+ */
+export const WIND_DAY_P_CALM = 0.78;
+export const WIND_DAY_P_LIGHT = 0.14;
+/** Remaining ≈ 0.08 → windy days. */
 
 const COMPASS = [
   "N",
@@ -112,16 +130,37 @@ function randn(random: () => number): number {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * Sample morning wind for toppjakt: mostly 0–2 m/s (skewed calm),
+ * fewer light days 2–3, rare windy 3–5. Not uniform 0–5.
+ */
+export function sampleToppjaktWindMs(random: () => number = Math.random): number {
+  const roll = random();
+  let ms: number;
+  if (roll < WIND_DAY_P_CALM) {
+    // 0–2 m/s, bias toward the low end (power > 1).
+    ms = 2 * Math.pow(random(), 1.35);
+  } else if (roll < WIND_DAY_P_CALM + WIND_DAY_P_LIGHT) {
+    ms = 2 + random() * 1;
+  } else {
+    ms = 3 + random() * (MAX_WIND_SPEED_MS - 3);
+  }
+  return round1(clamp(ms, 0, MAX_WIND_SPEED_MS));
+}
+
 /** Build a Norwegian autumn-mountain style day (tunable). */
 export function createDayWeather(
   opts?: { dayLabel?: string; random?: () => number },
 ): DayWeather {
   const random = opts?.random ?? Math.random;
+  const morningWind = sampleToppjaktWindMs(random);
   const truthMorning: WeatherSnapshot = {
     temperatureC: Math.round((-2 + random() * 12) * 10) / 10,
-    // Calm–moderate mountain wind; capped so birds still sit.
-    windSpeedMs:
-      Math.round((0.4 + random() * (MAX_WIND_SPEED_MS - 0.4)) * 10) / 10,
+    windSpeedMs: morningWind,
     windFromDeg: Math.round(random() * 360),
   };
 
@@ -134,12 +173,11 @@ export function createDayWeather(
           10,
       ) / 10,
     windSpeedMs: clamp(
-      Math.round(
+      round1(
         truthMorning.windSpeedMs *
           (1 +
-            ((random() * 2 - 1) * FORECAST_WIND_SPEED_ERROR_PERCENT) / 100) *
-          10,
-      ) / 10,
+            ((random() * 2 - 1) * FORECAST_WIND_SPEED_ERROR_PERCENT) / 100),
+      ),
       0,
       MAX_WIND_SPEED_MS,
     ),
@@ -153,12 +191,14 @@ export function createDayWeather(
     dayLabel: opts?.dayLabel ?? "Dag 1 — fjellvær",
     forecast,
     live: { ...truthMorning },
+    morningWindSpeedMs: morningWind,
     missionMinutes: 0,
   };
 }
 
 /**
- * Advance live weather. Wind and temp wander; forecast stays fixed for the day.
+ * Advance live weather. Wind and temp wander with mild mean reversion
+ * toward morning truth so calm days stay mostly calm.
  */
 export function advanceLiveWeather(
   day: DayWeather,
@@ -167,24 +207,28 @@ export function advanceLiveWeather(
 ): DayWeather {
   if (dtMinutes <= 0) return day;
   const steps = Math.max(1, Math.round(dtMinutes));
+  const baseWind =
+    typeof day.morningWindSpeedMs === "number" &&
+    Number.isFinite(day.morningWindSpeedMs)
+      ? day.morningWindSpeedMs
+      : day.live.windSpeedMs;
   let live = { ...day.live };
   for (let i = 0; i < steps; i++) {
+    const towardMorning = (baseWind - live.windSpeedMs) * 0.07;
     live = {
-      temperatureC:
-        Math.round(
-          (live.temperatureC + randn(random) * 0.08) * 10,
-        ) / 10,
+      temperatureC: round1(live.temperatureC + randn(random) * 0.08),
       windSpeedMs: clamp(
-        Math.round((live.windSpeedMs + randn(random) * 0.12) * 10) / 10,
+        round1(live.windSpeedMs + towardMorning + randn(random) * 0.05),
         0,
         MAX_WIND_SPEED_MS,
       ),
-      windFromDeg: normalizeDeg(live.windFromDeg + randn(random) * 4),
+      windFromDeg: normalizeDeg(live.windFromDeg + randn(random) * 3),
     };
   }
   return {
     ...day,
     live,
+    morningWindSpeedMs: baseWind,
     missionMinutes: day.missionMinutes + dtMinutes,
   };
 }
