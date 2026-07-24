@@ -1031,6 +1031,9 @@ export function consumeAmmoRound(
 /** Default Finn.no resale fraction of catalog purchase price. */
 export const FINN_SALE_FRACTION = 0.5;
 
+/** Chance the Finn buyer never shows (sale aborted, item stays). */
+export const FINN_BUYER_NO_SHOW_CHANCE = 0.3;
+
 /** How many inventory units one Finn sale removes (ammo = one eske). */
 export function finnSaleConsumeQty(item: ShopItem): number {
   return isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;

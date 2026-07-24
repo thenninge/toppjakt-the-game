@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  FINN_BUYER_NO_SHOW_CHANCE,
   finnSalePayoutNok,
   formatInventoryQuantity,
   resolvePlayerItem,
@@ -151,6 +152,13 @@ export function HomeBase({
   );
   /** Pending rifle/scope swap that needs re-zero warning. */
   const [kitSwapConfirm, setKitSwapConfirm] = useState<ShopItem | null>(null);
+  /** Pending Finn.no sale confirm (item + payout). */
+  const [finnSaleConfirm, setFinnSaleConfirm] = useState<{
+    item: ShopItem;
+    payout: number;
+  } | null>(null);
+  /** Finn buyer no-show message after a failed sale attempt. */
+  const [finnNoShow, setFinnNoShow] = useState(false);
   const ownedItems = useMemo(() => {
     return inventory
       .map((entry) => {
@@ -326,6 +334,17 @@ export function HomeBase({
     const id = kitSwapConfirm.id;
     setKitSwapConfirm(null);
     onToggleKit(id);
+  }
+
+  function confirmFinnSale() {
+    const pending = finnSaleConfirm;
+    setFinnSaleConfirm(null);
+    if (!pending) return;
+    if (Math.random() < FINN_BUYER_NO_SHOW_CHANCE) {
+      setFinnNoShow(true);
+      return;
+    }
+    onSellOnFinn(pending.item.id);
   }
 
   if (view === "shotlog-dope") {
@@ -798,7 +817,10 @@ export function HomeBase({
                               }
                               onClick={() => {
                                 if (!finnDeal) return;
-                                onSellOnFinn(item.id);
+                                setFinnSaleConfirm({
+                                  item,
+                                  payout: finnDeal.payout,
+                                });
                               }}
                             >
                               Selg på Finn
@@ -828,6 +850,28 @@ export function HomeBase({
           cancelLabel="Avbryt"
           onConfirm={confirmKitSwap}
           onCancel={() => setKitSwapConfirm(null)}
+        />
+      ) : null}
+
+      {finnSaleConfirm ? (
+        <GameConfirmDialog
+          title="Selg på Finn"
+          message={`Selge på finn til ${finnSaleConfirm.payout.toLocaleString("nb-NO")} kr?`}
+          confirmLabel="Ja"
+          cancelLabel="Avbryt"
+          onConfirm={confirmFinnSale}
+          onCancel={() => setFinnSaleConfirm(null)}
+        />
+      ) : null}
+
+      {finnNoShow ? (
+        <GameConfirmDialog
+          title="Finn"
+          message="Finn-kjøperen dukket aldri opp, du må legge den ut på nytt."
+          confirmLabel="OK"
+          cancelLabel="Lukk"
+          onConfirm={() => setFinnNoShow(false)}
+          onCancel={() => setFinnNoShow(false)}
         />
       ) : null}
     </div>
