@@ -432,17 +432,17 @@ export function AwareAppView({
     ? distanceMBetween(hunter, destination)
     : null;
 
-  /** Fixed far hazards for this cell — half-angles never change with movement. */
+  /** Fixed far hazards for this cell — bearing + width frozen for the encounter. */
   const dangerHazards = useMemo(
     () => dangerHazardsForCell(map.id, cell),
     [map.id, cell],
   );
-  /** Cakes from plan apex (click mål, else hunter). Width = hazard halfAngle. */
+  /** Cakes: same frozen angles; only apex follows plan / hunter. */
   const dangerWedges = useMemo(
     () => dangerWedgesFromOrigin(dangerHazards, planOrigin),
     [dangerHazards, planOrigin],
   );
-  /** Klar til skudd — must match wedges from where you actually stand. */
+  /** Klar til skudd — same frozen wedges, apex at where you stand. */
   const liveDangerWedges = useMemo(
     () => dangerWedgesFromOrigin(dangerHazards, hunter),
     [dangerHazards, hunter],
@@ -1257,8 +1257,8 @@ export function AwareAppView({
                 </button>
               ) : null}
               <p className="shop-row-note">
-                Trykk kart → planleggingsmål (kakene tegnes herfra med samme
-                bredde · skuddlinje følger).
+                Trykk kart → planleggingsmål (kakene flytter apex hit, samme
+                retning/bredde · skuddlinje følger).
                 Hold piltaster for å gå. Grønn linje = klar sektor; rød = fare.
                 {hasCamcorder
                   ? camcorderReady

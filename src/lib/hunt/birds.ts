@@ -21,6 +21,10 @@ import {
   type SpotPerch,
 } from "@/lib/hunt/spotPerches";
 import { weightedSpawnCells } from "@/lib/hunt/mapPlacements";
+import {
+  HABROK_GREEN_MIN_ZOOM,
+  HABROK_YELLOW_MIN_ZOOM,
+} from "@/lib/optics/spec";
 
 export type BirdSpecies = "tiur" | "orrhane" | "ugle";
 
@@ -180,14 +184,10 @@ export function visibleWithEyes(distanceM: number): boolean {
   return distanceM <= EYES_MAX_DISTANCE_M;
 }
 
-import {
-  HABROK_GREEN_MIN_ZOOM,
-  HABROK_YELLOW_MIN_ZOOM,
-} from "@/lib/optics/spec";
-
 /**
- * Habrok thermal-binocular: far birds need enough zoom.
+ * Habrok zoom gate for thermal silhouette / Fusion outline.
  * Rød/lilla (≤230 m) always; grønn (≤300 m) needs >10×; gul needs >15×.
+ * Fusion still shows the day-optic bird without this gate — only the outline uses it.
  */
 export function visibleWithHabrokZoom(
   distanceM: number,

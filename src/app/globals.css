@@ -1567,8 +1567,8 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
-  /* Reserve two text lines so timer ticks don't shove the optic frame. */
-  min-height: 3.6rem;
+  /* Title + optional battery status + meta — keep optic frame stable. */
+  min-height: 4.4rem;
 }
 
 .spot-view-hud-text {
@@ -1584,6 +1584,12 @@ body {
   text-overflow: ellipsis;
   max-width: 100%;
   line-height: 1.25;
+}
+
+.spot-view-hud-status {
+  margin: 0.15rem 0 0;
+  line-height: 1.25;
+  color: var(--canyon-sand, #e8dcc8);
 }
 
 .spot-view-hud-meta {

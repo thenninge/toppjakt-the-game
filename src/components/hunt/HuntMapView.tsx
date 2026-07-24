@@ -3490,6 +3490,18 @@ export function HuntMapView({
                   type="button"
                   className="intro-button"
                   onClick={() => {
+                    setPanel("study");
+                    setLog(
+                      "Study map — klikk rundt på ruter. Go back avslutter.",
+                    );
+                  }}
+                >
+                  Study
+                </button>
+                <button
+                  type="button"
+                  className="intro-button"
+                  onClick={() => {
                     setSelected(null);
                     setPanel("arrived");
                   }}

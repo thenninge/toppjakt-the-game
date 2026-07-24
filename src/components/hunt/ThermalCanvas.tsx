@@ -203,6 +203,8 @@ export function ThermalCanvas({
         const odh = Math.max(dh + 2, Math.ceil(dh * 1.12));
         const oCol = col - Math.floor((odw - dw) / 2);
         const oRow = row - Math.floor((odh - dh) / 2);
+        const insetX = Math.floor((odw - dw) / 2);
+        const insetY = Math.floor((odh - dh) / 2);
         const outline = document.createElement("canvas");
         outline.width = odw;
         outline.height = odh;
@@ -210,6 +212,27 @@ export function ThermalCanvas({
         if (oCtx) {
           oCtx.imageSmoothingEnabled = false;
           drawBirdSilhouette(oCtx, spriteImg, odw, odh, !!p.flip, OUTLINE_RGB);
+          if (fusionOnly) {
+            // Punch interior so only a red rim remains (day bird shows through).
+            const punch = document.createElement("canvas");
+            punch.width = dw;
+            punch.height = dh;
+            const pCtx = punch.getContext("2d");
+            if (pCtx) {
+              pCtx.imageSmoothingEnabled = false;
+              drawBirdSilhouette(
+                pCtx,
+                spriteImg,
+                dw,
+                dh,
+                !!p.flip,
+                "rgba(0,0,0,1)",
+              );
+              oCtx.globalCompositeOperation = "destination-out";
+              oCtx.drawImage(punch, insetX, insetY);
+              oCtx.globalCompositeOperation = "source-over";
+            }
+          }
           offCtx.drawImage(outline, oCol, oRow);
         }
       }

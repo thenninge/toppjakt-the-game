@@ -1,17 +1,16 @@
 /**
  * Deterministic bebyggelse + terrengbakgrunn for a hunt grid cell.
  *
- * Hazards are fixed distant points. Kakestykker are drawn from the current
- * stand / plan origin toward those points with a CONSTANT half-angle (no
- * distance-based widening). Apex moves; width does not — so lateral moves
- * open safe shot corridors without the slices “morphing”.
+ * Kakestykker are generated once per cell (seeded bearings + half-angles).
+ * When the hunter / plan apex moves, only the draw origin changes —
+ * compass direction and width stay frozen. That opens safe corridors by
+ * walking without slices swinging toward nearby hazard points.
  *
  * ONE source of truth: drawn wedges === Klar til skudd.
  */
 
 import {
   AWARE_METERS_PER_PCT,
-  bearingDegFromTo,
   type CellPoint,
 } from "@/lib/aware/cellGeometry";
 import { cellLabel, type HuntGridCell, type HuntMapId } from "@/lib/hunt/maps";
@@ -47,28 +46,35 @@ const CATEGORIES: HabitationCategory[] = [
   "village",
 ];
 
-/** Cell-local origin used when anchoring hazards (map centre of the cell). */
+/** Cell-local origin used when anchoring hazard seats (map centre of the cell). */
 const CELL_CENTER: CellPoint = { x: 50, y: 50 };
+
+/**
+ * Slice half-angles are 25% narrower than the previous generation range
+ * (max width × 0.75).
+ */
+const HALF_ANGLE_SCALE = 0.75;
 
 export type DangerKind = "habitation" | "terrain";
 
 /**
- * Fixed far hazard. `halfAngleDeg` is constant for the whole encounter;
- * only the bearing from the current apex → target is recomputed.
+ * Fixed danger sector for the encounter.
+ * `bearingDeg` + `halfAngleDeg` never change after generation.
  */
 export type DangerHazard = {
-  target: CellPoint;
+  /** Frozen compass bearing of the slice (degrees). */
+  bearingDeg: number;
   halfAngleDeg: number;
+  /** Far seat used only for catalog / debug — not for re-aiming the wedge. */
+  target: CellPoint;
   kind: DangerKind;
   label: string;
   category?: HabitationCategory;
   fill: string;
 };
 
-/** Hazard projected from a stand / plan apex (draw + fire permission). */
-export type DangerWedge = DangerHazard & {
-  bearingDeg: number;
-};
+/** Hazard ready to draw from a stand / plan apex (same angles as generation). */
+export type DangerWedge = DangerHazard;
 
 export const TERRAIN_BACKSTOP_FILL = "rgba(90, 70, 160, 0.5)";
 
@@ -103,7 +109,7 @@ export function bearingHitsWedge(
 
 /**
  * Habitation catalog for this cell (seeded).
- * `bearingDeg` / `distanceM` are from cell centre — the fixed hazard seat.
+ * `bearingDeg` / `distanceM` are frozen from cell centre at generation.
  */
 export function habitationSlicesForCell(
   mapId: HuntMapId,
@@ -120,10 +126,9 @@ export function habitationSlicesForCell(
       cat === "village" ? 12 : cat === "hamlet" ? 9 : cat === "farm" ? 7 : 5;
     slices.push({
       bearingDeg,
-      halfAngleDeg: half + rnd() * 3,
+      halfAngleDeg: (half + rnd() * 3) * HALF_ANGLE_SCALE,
       category: cat,
       label: HABITATION_LABELS[cat],
-      // Far enough that lateral moves barely change bearing (width stays fixed).
       distanceM: 900 + Math.floor(rnd() * 2000),
     });
   }
@@ -141,10 +146,11 @@ function terrainHazardsForCell(
   for (let i = 0; i < badCount; i++) {
     const bearingDeg = rnd() * 360;
     const distanceM = 1000 + Math.floor(rnd() * 1800);
-    const halfAngleDeg = 15 + rnd() * 20;
+    const halfAngleDeg = (15 + rnd() * 20) * HALF_ANGLE_SCALE;
     hazards.push({
-      target: cellPointFromBearingDistance(CELL_CENTER, bearingDeg, distanceM),
+      bearingDeg,
       halfAngleDeg,
+      target: cellPointFromBearingDistance(CELL_CENTER, bearingDeg, distanceM),
       kind: "terrain",
       label: "Utrygg terrengbakgrunn",
       fill: TERRAIN_BACKSTOP_FILL,
@@ -160,12 +166,13 @@ export function dangerHazardsForCell(
 ): DangerHazard[] {
   const hab = habitationSlicesForCell(mapId, cell).map(
     (s): DangerHazard => ({
+      bearingDeg: s.bearingDeg,
+      halfAngleDeg: s.halfAngleDeg,
       target: cellPointFromBearingDistance(
         CELL_CENTER,
         s.bearingDeg,
         s.distanceM,
       ),
-      halfAngleDeg: s.halfAngleDeg,
       kind: "habitation",
       label: s.label,
       category: s.category,
@@ -176,17 +183,14 @@ export function dangerHazardsForCell(
 }
 
 /**
- * Project hazards from `origin` (hunter or clicked plan point).
- * Bearing updates with apex; {@link DangerHazard.halfAngleDeg} does not.
+ * Wedges for drawing / Klar til skudd from `origin`.
+ * Apex follows the stand; bearing and half-angle stay frozen from generation.
  */
 export function dangerWedgesFromOrigin(
   hazards: readonly DangerHazard[],
-  origin: CellPoint,
+  _origin: CellPoint,
 ): DangerWedge[] {
-  return hazards.map((h) => ({
-    ...h,
-    bearingDeg: bearingDegFromTo(origin, h.target),
-  }));
+  return hazards.map((h) => ({ ...h }));
 }
 
 /**
