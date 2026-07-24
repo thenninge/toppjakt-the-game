@@ -1459,11 +1459,13 @@ export function AwareAppView({
                     >
                       <strong>Fluktretning</strong>
                       <span>
-                        {activePair.fleeObservation.compassLabel} (
-                        {Math.round(
-                          activePair.fleeObservation.observedBearingDeg,
-                        )}
-                        °)
+                        {activePair.fleeObservation.compassLabel}
+                        {activePair.fleeObservation.hasTriggercam ||
+                        activePair.fleeObservation.hasCamcorder
+                          ? ` (${Math.round(
+                              activePair.fleeObservation.observedBearingDeg,
+                            )}°)`
+                          : ""}
                         {activePair.fleeObservation.observedLandDistanceM !=
                         null
                           ? ` · ca. ${Math.round(activePair.fleeObservation.observedLandDistanceM)} m`

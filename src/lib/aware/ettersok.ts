@@ -54,16 +54,22 @@ function randn(random: () => number): number {
 }
 
 /**
- * Direction error σ (degrees) for the naked-eye / Triggercam / Camcorder cue.
- * Camcorder is tightest; Triggercam still much better than eyeball.
+ * Direction error σ (degrees) for the flee cue.
+ * Values ≈ typical ± error: naked ±30°, Triggercam ±10°, Camcorder ±5°.
  */
 function directionErrorSigmaDeg(opts: {
   hasTriggercam: boolean;
   hasCamcorder: boolean;
 }): number {
-  if (opts.hasCamcorder) return 8;
-  if (opts.hasTriggercam) return 18;
-  return 55;
+  if (opts.hasCamcorder) return 5;
+  if (opts.hasTriggercam) return 10;
+  return 30;
+}
+
+/** Snap bearing to nearest 8-point compass (N, NØ, Ø, …). */
+function snapToNearestCompassDeg(deg: number): number {
+  const d = normalizeDeg(deg);
+  return normalizeDeg(Math.round(d / 45) * 45);
 }
 
 function distanceErrorFrac(hasCamcorder: boolean): number {
@@ -124,9 +130,13 @@ export function generateFleeObservation(
     hasTriggercam: opts.hasTriggercam,
     hasCamcorder: opts.hasCamcorder,
   });
-  const observedBearingDeg = normalizeDeg(
+  let observedBearingDeg = normalizeDeg(
     trueLandBearing + randn(random) * sigma,
   );
+  // Naked eye: only a coarse compass sector (nearest N / NØ / Ø …).
+  if (!opts.hasTriggercam && !opts.hasCamcorder) {
+    observedBearingDeg = snapToNearestCompassDeg(observedBearingDeg);
+  }
   const compass = compassLabelFromDeg(observedBearingDeg);
 
   let observedLandDistanceM: number | undefined;
@@ -150,8 +160,8 @@ export function generateFleeObservation(
       `dro i retning ${compass} fra der den satt — usikkerheten er liten, men ikke null.`;
   } else {
     text =
-      `Fuglen er truffet men kommer seg på vingene. Det så ut som den dro i ` +
-      `retning ${compass} fra der den satt — vanskelig å se skikkelig, så ta høyde for feil.`;
+      `Fuglen er truffet men kommer seg på vingene. Det så ut som den dro mot ` +
+      `${compass} fra der den satt — bare grovt peilet (nærmeste kompassretning), ta høyde for feil.`;
   }
 
   return {
