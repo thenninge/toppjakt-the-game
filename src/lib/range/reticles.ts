@@ -43,8 +43,9 @@ export const RETICLES: Record<string, ReticleDef> = {
   },
   /**
    * Nightforce MOA tree (nf_moa.png, ~500²).
-   * First major hash = 1 MOA; same diamond-calibration as MIL reticles
-   * (readable FOV — first hash ↔ CBA diamond tip).
+   * First major hash = 1 MOA. With MOA paper scale (1 cm ≈ ¼ MOA),
+   * centerTo1 was tuned ×8 smaller so hashes match the grid (was ~4 MOA
+   * per square → now ~0.5 MOA per square; tweak further if needed).
    */
   nf_moa: {
     id: "nf_moa",
@@ -52,7 +53,7 @@ export const RETICLES: Record<string, ReticleDef> = {
     src: "/range/reticles/nf_moa.png",
     nativeWidth: 499,
     nativeHeight: 500,
-    centerTo1MilPx: 29,
+    centerTo1MilPx: 29 / 8,
   },
   /**
    * ZCO 5-27 MPCT-style mil tree (zco27.png).
