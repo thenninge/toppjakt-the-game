@@ -5235,6 +5235,17 @@ body {
   color: #e8f5dc;
 }
 
+.aware-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.aware-map-actions .intro-button {
+  flex: 1 1 8rem;
+}
+
 @media (hover: none), (max-width: 720px) {
   .aware-sneak-touch {
     display: block;

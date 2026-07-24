@@ -45,13 +45,16 @@ export type HuntBird = {
 export const MAX_SPOOKS_BEFORE_GONE = 2;
 
 /** Mental fatigue gain when a bird is spooked away for good (0–1 scale). */
-export const GONE_BIRD_MENTAL_HIT = 0.2;
+export const GONE_BIRD_MENTAL_HIT = 0.15;
 
 /**
  * Mind hit when the bird flushes in Hunt shoot (after «Klar til skudd»),
  * right before the trigger — bitter near-miss.
  */
 export const SHOOT_FLUSH_MIND_HIT = 0.3;
+
+/** Mind hit on a clean miss (frustration). */
+export const MISS_MIND_HIT = 0.1;
 
 /** Eyes resolve rød + lilla bands (placement ≤230 m); grønn/gul needs binos/thermal. */
 export const EYES_MAX_DISTANCE_M = 230;

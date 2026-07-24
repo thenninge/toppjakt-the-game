@@ -29,7 +29,7 @@ export const HUNT_PACES: HuntPace[] = [
     id: "extreme-caution",
     label: "Extreme caution",
     blurb:
-      "Saktere, ser nesten alt. 22 % sjanse for å spotte fugl før den ser deg.",
+      "Saktere, ser nesten alt. 32 % sjanse for å spotte fugl før den ser deg.",
     spottingProbability: 0.95,
     speed: 0.35,
     mentalStrain: 1,
@@ -38,7 +38,8 @@ export const HUNT_PACES: HuntPace[] = [
   {
     id: "caution",
     label: "Caution",
-    blurb: "Forsiktig jaktfart. God spotting, litt mental belastning.",
+    blurb:
+      "Forsiktig jaktfart. 15 % sjanse for å spotte fugl før den ser deg.",
     spottingProbability: 0.75,
     speed: 0.6,
     mentalStrain: 0.8,
@@ -71,7 +72,14 @@ export function getHuntPace(id: HuntPaceId): HuntPace {
 }
 
 /**
- * Chance to auto-spot a bird after arriving on Extreme caution
- * («ser fuglen før den ser deg»).
+ * Chance to auto-spot a bird after arriving («ser fuglen før den ser deg»).
  */
-export const EXTREME_CAUTION_PRESPOT_CHANCE = 0.22;
+export const EXTREME_CAUTION_PRESPOT_CHANCE = 0.32;
+export const CAUTION_PRESPOT_CHANCE = 0.15;
+
+/** Prespot chance for a walk pace, or 0 if that pace never auto-spots. */
+export function prespotChanceForPace(paceId: HuntPaceId): number {
+  if (paceId === "extreme-caution") return EXTREME_CAUTION_PRESPOT_CHANCE;
+  if (paceId === "caution") return CAUTION_PRESPOT_CHANCE;
+  return 0;
+}

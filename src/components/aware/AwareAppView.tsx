@@ -329,7 +329,7 @@ export function AwareAppView({
   onProceedToShoot,
   onBirdFlushed,
   onNerveChange,
-  abortLabel = "Back to Spot",
+  abortLabel = "Avbryt",
   onAbort,
   onPairFound,
   postShotSkuddparMode = false,
@@ -340,7 +340,6 @@ export function AwareAppView({
   const [mode, setMode] = useState<AwareAppMode>(
     focusPairId ? "track" : postShotSkuddparMode ? "shoot" : "aware",
   );
-  const [scanned, setScanned] = useState(true);
   const [camcorderReady, setCamcorderReady] = useState(initialCamcorderReady);
   const [chronoReady, setChronoReady] = useState(initialChronoReady);
   const [hunter, setHunter] = useState<CellPoint>(
@@ -1031,7 +1030,7 @@ export function AwareAppView({
             tabIndex={stalking ? 0 : undefined}
             onClick={onStageClick}
           >
-            {mode === "aware" && scanned ? (
+            {mode === "aware" ? (
               <DangerOverlay
                 wedges={dangerWedges}
                 center={planOrigin}
@@ -1120,17 +1119,6 @@ export function AwareAppView({
                 aria-hidden
               />
             ) : null}
-            {stalking && mode === "aware" && !scanned ? (
-              <div
-                className="aware-bearing-needle"
-                style={{
-                  left: `${hunter.x}%`,
-                  top: `${hunter.y}%`,
-                  transform: `translate(-50%, -100%) rotate(${liveBearing}deg)`,
-                }}
-                aria-hidden
-              />
-            ) : null}
           </div>
         </div>
 
@@ -1171,6 +1159,50 @@ export function AwareAppView({
             </button>
           </div>
         ) : null}
+
+        <div className="aware-map-actions">
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => onAbort({ hunter: { ...hunter } })}
+          >
+            {abortLabel}
+          </button>
+          {focusPairId ? (
+            <button
+              type="button"
+              className="intro-button"
+              onClick={proceed}
+              title={
+                activePair?.found === true
+                  ? undefined
+                  : "Gir opp søket — fuglen tapes (mentalt −30 %)"
+              }
+            >
+              {activePair?.found === true
+                ? "Ferdig — fugl funnet"
+                : "Avslutt ettersøk"}
+            </button>
+          ) : postShotSkuddparMode ? null : (
+            <button
+              type="button"
+              className="intro-button"
+              disabled={!liveBakgrunnOk}
+              title={
+                liveBakgrunnOk
+                  ? planning
+                    ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
+                    : "Bakgrunn OK"
+                  : planning
+                    ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
+                    : "Flytt deg til sone uten farlig bakgrunn"
+              }
+              onClick={proceed}
+            >
+              Klar til skudd
+            </button>
+          )}
+        </div>
 
         <div className="aware-panel">
           <p className="aware-cell-label">Celle {cellLabel(cell)}</p>
@@ -1220,18 +1252,6 @@ export function AwareAppView({
 
           {mode === "aware" ? (
             <div className="aware-actions">
-              <button
-                type="button"
-                className="intro-button sheriff-secondary"
-                onClick={() => {
-                  setScanned(true);
-                  setStatus(
-                    `Scan: ${dangerWedges.length} faresoner (${dangerWedges.filter((w) => w.kind === "habitation").length} bebyggelse · ${dangerWedges.filter((w) => w.kind === "terrain").length} terreng). Kakene = klar-til-skudd.`,
-                  );
-                }}
-              >
-                {scanned ? "Scan på nytt" : "Scan område"}
-              </button>
               {hasCamcorder ? (
                 <button
                   type="button"
@@ -1590,50 +1610,6 @@ export function AwareAppView({
 
           <p className="aware-status">{status}</p>
         </div>
-
-        <footer className="aware-footer">
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            onClick={() => onAbort({ hunter: { ...hunter } })}
-          >
-            {abortLabel}
-          </button>
-          {focusPairId ? (
-            <button
-              type="button"
-              className="intro-button"
-              onClick={proceed}
-              title={
-                activePair?.found === true
-                  ? undefined
-                  : "Gir opp søket — fuglen tapes (mentalt −30 %)"
-              }
-            >
-              {activePair?.found === true
-                ? "Ferdig — fugl funnet"
-                : "Avslutt ettersøk"}
-            </button>
-          ) : postShotSkuddparMode ? null : (
-            <button
-              type="button"
-              className="intro-button"
-              disabled={!liveBakgrunnOk}
-              title={
-                liveBakgrunnOk
-                  ? planning
-                    ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
-                    : "Bakgrunn OK"
-                  : planning
-                    ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
-                    : "Flytt deg til sone uten farlig bakgrunn"
-              }
-              onClick={proceed}
-            >
-              Klar til skudd
-            </button>
-          )}
-        </footer>
       </div>
     </div>
   );

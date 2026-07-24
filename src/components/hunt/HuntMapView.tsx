@@ -14,7 +14,7 @@ import {
   terrainMapSrc,
   tiurSpawnCountForTerrain,
 } from "@/lib/hunt/terrain";
-import { getHuntPace, HUNT_PACES, type HuntPaceId, EXTREME_CAUTION_PRESPOT_CHANCE } from "@/lib/hunt/pace";
+import { getHuntPace, HUNT_PACES, type HuntPaceId, prespotChanceForPace } from "@/lib/hunt/pace";
 import {
   baseMinutesForEffort,
   canHuntAtTime,
@@ -121,6 +121,7 @@ import {
   flushMessage,
   GONE_BIRD_MENTAL_HIT,
   SHOOT_FLUSH_MIND_HIT,
+  MISS_MIND_HIT,
   morphSpotBirdToOwl,
   panToCenterOnBird,
   pickFluktImage,
@@ -1346,11 +1347,12 @@ export function HuntMapView({
     }
 
     setLog(walkLog);
+    const prespotChance = prespotChanceForPace(walkSession.paceId);
     if (
       !nowDark &&
-      walkSession.paceId === "extreme-caution" &&
+      prespotChance > 0 &&
       hasBinos &&
-      Math.random() < EXTREME_CAUTION_PRESPOT_CHANCE
+      Math.random() < prespotChance
     ) {
       // Must use arrivedAt — setPos is async; bare `pos` is still the cell we left.
       const prepared = prepareSpotAtPos({
@@ -2611,6 +2613,7 @@ export function HuntMapView({
     const missLog =
       `Bom på ${dist} m.${stayNote || " Fuglen letter."}` +
       (flush.stayedIds.length > 0 ? " Du kan spotte videre." : "");
+    setMentalFatigue((m) => clampFatigue(m + MISS_MIND_HIT));
     setLog(missLog);
     setShootSession(null);
     setPanel("arrived");
@@ -3155,11 +3158,7 @@ export function HuntMapView({
           });
         }}
         abortLabel={
-          awareSession.postShotSkuddpar
-            ? "Tilbake til kart"
-            : awareSession.ettersokPairId
-              ? "Avbryt"
-              : "Back to Spot"
+          awareSession.postShotSkuddpar ? "Tilbake til kart" : "Avbryt"
         }
         onAbort={
           awareSession.postShotSkuddpar
