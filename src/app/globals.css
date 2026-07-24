@@ -3970,6 +3970,14 @@ body {
   background: rgba(232, 212, 168, 0.85);
 }
 
+.scope-turret-hash--semi {
+  height: 0.52rem;
+  margin-top: -0.26rem;
+  width: 1.75px;
+  margin-left: -0.875px;
+  background: rgba(212, 188, 140, 0.72);
+}
+
 .scope-turret-cap {
   position: absolute;
   width: 3.65rem;

@@ -174,6 +174,7 @@ type TurretDialProps = {
   baseLegend?: string;
   /** e.g. "0.1 mil / klikk · …" or "0.25 MOA / klikk · …" */
   stepHint: string;
+  clickUnit: ScopeClickUnit;
 };
 
 function OverheadDrum({
@@ -181,29 +182,40 @@ function OverheadDrum({
   milValue,
   milSuffix,
   clickText,
+  clickUnit,
 }: {
   clicks: number;
   milValue: string;
   milSuffix: string;
   clickText: string;
+  clickUnit: ScopeClickUnit;
 }) {
   const rot = capRotationDeg(clicks);
+  /* MRAD: major every 5 (0.5 mil). MOA: major every 4 (1 MOA), semi every 2. */
+  const majorEvery = clickUnit === "MOA" ? 4 : 5;
+  const semiEvery = clickUnit === "MOA" ? 2 : 0;
   return (
     <div className="scope-turret-drum" aria-hidden>
       <div className="scope-turret-drum-rim">
-        {Array.from({ length: 20 }, (_, i) => (
-          <span
-            key={i}
-            className={
-              i % 5 === 0
-                ? "scope-turret-hash scope-turret-hash--major"
-                : "scope-turret-hash"
-            }
-            style={{
-              transform: `rotate(${i * 18}deg) translateY(-2.55rem)`,
-            }}
-          />
-        ))}
+        {Array.from({ length: 20 }, (_, i) => {
+          const isMajor = i % majorEvery === 0;
+          const isSemi = !isMajor && semiEvery > 0 && i % semiEvery === 0;
+          return (
+            <span
+              key={i}
+              className={
+                isMajor
+                  ? "scope-turret-hash scope-turret-hash--major"
+                  : isSemi
+                    ? "scope-turret-hash scope-turret-hash--semi"
+                    : "scope-turret-hash"
+              }
+              style={{
+                transform: `rotate(${i * 18}deg) translateY(-2.55rem)`,
+              }}
+            />
+          );
+        })}
       </div>
       <div
         className="scope-turret-cap"
@@ -223,8 +235,42 @@ function OverheadDrum({
   );
 }
 
+/**
+ * Drum face markings by click unit:
+ * - MRAD: semi every 5 (0.5 mil), numbered every 10 (1 mil)
+ * - MOA:  semi every 2 (0.5 MOA), numbered every 4 (1 MOA)
+ */
+function shooterTickMarks(
+  tick: number,
+  unit: ScopeClickUnit,
+): { isMajor: boolean; isSemi: boolean; label: string; rev2: string } {
+  if (unit === "MOA") {
+    const isMajor = tick % 4 === 0;
+    const isSemi = !isMajor && tick % 2 === 0;
+    const moa = tick / 4;
+    let label = "";
+    if (isMajor) {
+      label = Number.isInteger(moa) ? String(moa) : moa.toFixed(2);
+    }
+    const rev2 =
+      isMajor && Math.abs(tick) >= 40 ? String(Math.trunc(moa)) : "";
+    return { isMajor, isSemi, label, rev2 };
+  }
+  const isMajor = tick % 10 === 0;
+  const isSemi = !isMajor && tick % 5 === 0;
+  const mil = tick / 10;
+  let label = "";
+  if (isMajor) {
+    label = Number.isInteger(mil) ? String(mil) : mil.toFixed(1);
+  }
+  const rev2 =
+    isMajor && Math.abs(tick) >= 100 ? String(Math.trunc(mil)) : "";
+  return { isMajor, isSemi, label, rev2 };
+}
+
 function ShooterDrum({
   faceClicks,
+  clickUnit,
   baseLegend,
   disabled,
   onFaceDelta,
@@ -238,6 +284,7 @@ function ShooterDrum({
   scaleDir,
 }: {
   faceClicks: number;
+  clickUnit: ScopeClickUnit;
   baseLegend?: string;
   disabled?: boolean;
   onFaceDelta: (deltaClicks: number) => void;
@@ -284,8 +331,7 @@ function ShooterDrum({
   }
 
   function tickClass(tick: number): string {
-    const isMajor = tick % 10 === 0;
-    const isSemi = !isMajor && tick % 5 === 0;
+    const { isMajor, isSemi } = shooterTickMarks(tick, clickUnit);
     const isCurrent = tick === faceClicks;
     const parts = ["scope-turret-shooter-tick"];
     if (isMajor) parts.push("is-major");
@@ -328,25 +374,20 @@ function ShooterDrum({
           <div className="scope-turret-shooter-shade scope-turret-shooter-shade--b" />
           <div className="scope-turret-shooter-band">
             {ticks.map((tick) => {
-              const isMajor = tick % 10 === 0;
+              const marks = shooterTickMarks(tick, clickUnit);
               const isCurrent = tick === faceClicks;
-              const milWhole = tick / 10;
-              let label = "";
-              if (isMajor) {
-                label = Number.isInteger(milWhole)
-                  ? String(milWhole)
-                  : milWhole.toFixed(1);
-              } else if (isCurrent) {
-                label = milWhole.toFixed(1);
+              let label = marks.label;
+              if (!label && isCurrent) {
+                /* Fractional under the index when not on a numbered mark. */
+                label =
+                  clickUnit === "MOA"
+                    ? (tick * 0.25).toFixed(2)
+                    : (tick / 10).toFixed(1);
               }
-              const rev2 =
-                isMajor && Math.abs(tick) >= 100
-                  ? String(Math.trunc(tick / 10))
-                  : "";
               return (
                 <div key={`${orientation}-${tick}`} className={tickClass(tick)}>
-                  {rev2 ? (
-                    <span className="scope-turret-shooter-rev2">{rev2}</span>
+                  {marks.rev2 ? (
+                    <span className="scope-turret-shooter-rev2">{marks.rev2}</span>
                   ) : null}
                   {label ? (
                     <span className="scope-turret-shooter-num">{label}</span>
@@ -386,6 +427,7 @@ function TurretDial({
   posMark,
   baseLegend,
   stepHint,
+  clickUnit,
 }: TurretDialProps) {
   const negHold = useHoldRepeat(onNeg, !!disabled);
   const posHold = useHoldRepeat(onPos, !!disabled);
@@ -409,6 +451,7 @@ function TurretDial({
           <>
             <ShooterDrum
               faceClicks={faceClicks}
+              clickUnit={clickUnit}
               baseLegend={baseLegend}
               disabled={disabled}
               onFaceDelta={onFaceDelta}
@@ -452,6 +495,7 @@ function TurretDial({
               milValue={milValue}
               milSuffix={milSuffix}
               clickText={clickText}
+              clickUnit={clickUnit}
             />
             <button
               type="button"
@@ -610,6 +654,7 @@ export function ScopeTurrets({
             clickText={clickLabel(elevClicks, "ned", "opp")}
             disabled={disabled}
             stepHint={stepHint}
+            clickUnit={clickUnit}
             onNeg={() => onNudge("y", -clickMm)}
             onPos={() => onNudge("y", clickMm)}
             onFaceDelta={(d) => {
@@ -634,6 +679,7 @@ export function ScopeTurrets({
             clickText={clickLabel(windClicks, "høyre", "venstre")}
             disabled={disabled}
             stepHint={stepHint}
+            clickUnit={clickUnit}
             onNeg={() => onNudge("x", -clickMm)}
             onPos={() => onNudge("x", clickMm)}
             onFaceDelta={(d) => {
