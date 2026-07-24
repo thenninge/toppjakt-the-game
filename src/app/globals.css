@@ -5149,6 +5149,33 @@ body {
   background: #0a0806;
 }
 
+/* Mobile/tablet: hold to sneak toward map mark (hidden on desktop hover). */
+.aware-sneak-touch {
+  display: none;
+  margin-top: 0.55rem;
+  width: 100%;
+}
+
+.aware-sneak-btn {
+  width: 100%;
+  min-height: 3.25rem;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.aware-sneak-btn.is-active {
+  background: #3d5a2e;
+  border-color: #7aab5a;
+  color: #e8f5dc;
+}
+
+@media (hover: none), (max-width: 720px) {
+  .aware-sneak-touch {
+    display: block;
+  }
+}
+
 .aware-map-img {
   display: block;
   width: 100%;

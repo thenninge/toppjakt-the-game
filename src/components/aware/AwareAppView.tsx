@@ -351,6 +351,8 @@ export function AwareAppView({
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, initialBirdNerve)),
   );
   const [moveHoldSec, setMoveHoldSec] = useState(0);
+  /** Mobile: hold «Sneak to Aware-point» — UI active state. */
+  const [sneakToPointHeld, setSneakToPointHeld] = useState(false);
   const [shootWizard, setShootWizard] = useState<ShootWizard>({
     phase: "idle",
   });
@@ -387,6 +389,8 @@ export function AwareAppView({
     left: false,
     right: false,
   });
+  /** Touch: hold button under map to sneak toward destination. */
+  const sneakToPointHeldRef = useRef(false);
   const hunterRef = useRef(hunter);
   hunterRef.current = hunter;
   const destRef = useRef(destination);
@@ -530,6 +534,8 @@ export function AwareAppView({
     }
     function onBlur() {
       keysRef.current = { up: false, down: false, left: false, right: false };
+      sneakToPointHeldRef.current = false;
+      setSneakToPointHeld(false);
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -555,20 +561,26 @@ export function AwareAppView({
 
       if (stalking && !flushedRef.current && !shootWizardActive) {
         const keys = keysRef.current;
-        const moving =
+        const arrowMoving =
           keys.up || keys.down || keys.left || keys.right;
+        const dest = destRef.current;
+        const sneakBtnMoving = sneakToPointHeldRef.current && dest != null;
+        const moving = arrowMoving || sneakBtnMoving;
         if (moving) {
           moveHoldRef.current += dt;
           const step = MOVE_PCT_PER_SEC * dt;
-          const dest = destRef.current;
           let next = hunterRef.current;
-          if (dest) {
+          if (dest && (sneakBtnMoving || arrowMoving)) {
             next = stepToward(next, dest, step);
             if (distanceMBetween(next, dest) < AWARE_METERS_PER_PCT * 0.4) {
               setDestination(null);
               destRef.current = null;
+              if (sneakToPointHeldRef.current) {
+                sneakToPointHeldRef.current = false;
+                setSneakToPointHeld(false);
+              }
             }
-          } else {
+          } else if (arrowMoving) {
             next = stepByKeys(next, keys, step);
           }
           if (next.x !== hunterRef.current.x || next.y !== hunterRef.current.y) {
@@ -652,7 +664,7 @@ export function AwareAppView({
     const walkM = Math.round(distanceMBetween(hunter, point));
     const birdM = Math.round(distanceMBetween(point, birdWorld));
     setStatus(
-      `Planleggingsmål satt (${walkM} m å gå · ${birdM} m til fugl derfra). Hold piltast for å snike dit.`,
+      `Planleggingsmål satt (${walkM} m å gå · ${birdM} m til fugl derfra). Hold piltast — eller «Sneak to Aware-point» på mobil — for å snike dit.`,
     );
     stageRef.current?.focus();
   }
@@ -1121,6 +1133,44 @@ export function AwareAppView({
             ) : null}
           </div>
         </div>
+
+        {stalking && mode === "aware" && destination ? (
+          <div className="aware-sneak-touch" aria-label="Mobilkontroller">
+            <button
+              type="button"
+              className={
+                sneakToPointHeld
+                  ? "intro-button aware-sneak-btn is-active"
+                  : "intro-button aware-sneak-btn"
+              }
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                sneakToPointHeldRef.current = true;
+                setSneakToPointHeld(true);
+                stageRef.current?.focus();
+              }}
+              onPointerUp={(e) => {
+                e.preventDefault();
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+                sneakToPointHeldRef.current = false;
+                setSneakToPointHeld(false);
+              }}
+              onPointerCancel={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+                sneakToPointHeldRef.current = false;
+                setSneakToPointHeld(false);
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              Sneak to Aware-point
+            </button>
+          </div>
+        ) : null}
 
         <div className="aware-panel">
           <p className="aware-cell-label">Celle {cellLabel(cell)}</p>
