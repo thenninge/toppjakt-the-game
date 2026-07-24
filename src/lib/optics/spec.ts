@@ -75,7 +75,7 @@ export type ThermalSpec = {
   /**
    * Sensor quality proxy — higher = blockier image (poorer resolution).
    * Budget handheld ≈ 6 (live chunky pixels); premium ≈ 3 / Habrok ≈ 2
-   * (baked thermal landscape + blit for smooth pan).
+   * (baked thermal landscape for WH/BH/outline only — Fusion stays day+rim).
    */
   pixelFactor: number;
   /** Digital / optical zoom factor for panning FOV (fixed zoom units). */

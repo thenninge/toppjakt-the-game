@@ -22,7 +22,7 @@ type ThermalCanvasProps = {
 /**
  * Sensors at or below this use a baked thermal landscape + cheap blit.
  * Coarser sensors (Lynx = 6) keep the live per-pixel loop for the chunky look.
- * Condor = 3, Habrok = 2 → baked.
+ * Condor = 3, Habrok = 2 → baked for WH/BH/outline only — never Fusion.
  */
 const BAKE_PIXEL_FACTOR_MAX = 3;
 
@@ -99,9 +99,9 @@ function drawBirdSilhouette(
 
 /**
  * Pixelated thermal background + bird silhouettes (same topp shape as binos).
- * Birds share the landscape pixel grid. Outline/Fusion add a thin red edge.
  *
- * High-res sensors (pixelFactor ≤ 3): bake landscape once, blit with pan/zoom.
+ * High-res WH/BH/outline (pixelFactor ≤ 3): bake landscape once, blit on pan.
+ * Fusion and day binos: no bake — Fusion only draws outline rim over the photo.
  * Low-res sensors: live per-pixel sample (chunky fillRect look).
  */
 export function ThermalCanvas({
@@ -118,19 +118,34 @@ export function ThermalCanvas({
   const imgRef = useRef<HTMLImageElement | null>(null);
   /** Raw RGB sample for live (coarse) path. */
   const sampleRef = useRef<ImageData | null>(null);
-  /** Pre-thermalized full landscape for high-res path. */
+  /** Pre-thermalized full landscape for high-res WH/BH/outline. */
   const bakeRef = useRef<HTMLCanvasElement | null>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
   const spriteCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const onLandscapeReadyRef = useRef(onLandscapeReady);
   onLandscapeReadyRef.current = onLandscapeReady;
 
-  const useBake = pixelFactor <= BAKE_PIXEL_FACTOR_MAX;
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  const polarityRef = useRef(polarity);
+  const birdsRef = useRef(birdPlacements);
+  const pixelFactorRef = useRef(pixelFactor);
+  panRef.current = pan;
+  zoomRef.current = zoom;
+  polarityRef.current = polarity;
+  birdsRef.current = birdPlacements;
+  pixelFactorRef.current = pixelFactor;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
     if (!canvas || !img || !img.complete || img.naturalWidth <= 0) return;
+
+    const panNow = panRef.current;
+    const zoomNow = zoomRef.current;
+    const polarityNow = polarityRef.current;
+    const birdPlacementsNow = birdsRef.current;
+    const pixelFactorNow = pixelFactorRef.current;
 
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -144,11 +159,14 @@ export function ThermalCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const block = Math.max(2, Math.round(pixelFactor * dpr));
+    const block = Math.max(2, Math.round(pixelFactorNow * dpr));
     const cols = Math.max(1, Math.ceil(w / block));
     const rows = Math.max(1, Math.ceil(h / block));
-    const fusionOnly = polarity === "fusion";
-    const wantOutline = polarity === "outline" || polarity === "fusion";
+    const fusionOnly = polarityNow === "fusion";
+    const wantOutline = polarityNow === "outline" || polarityNow === "fusion";
+    /** Bake only full thermal frames — never Fusion (day photo + rim). */
+    const useBake =
+      !fusionOnly && pixelFactorNow <= BAKE_PIXEL_FACTOR_MAX;
 
     let off = offRef.current;
     if (!off) {
@@ -166,18 +184,19 @@ export function ThermalCanvas({
     if (fusionOnly) {
       offCtx.clearRect(0, 0, cols, rows);
     } else if (useBake) {
+      if (!bakeRef.current) {
+        bakeRef.current = bakeThermalLandscape(img);
+      }
       const baked = bakeRef.current;
-      if (!baked) return;
 
-      const voidG = applyPolarity(8, polarity);
+      const voidG = applyPolarity(8, polarityNow);
       offCtx.fillStyle = `rgb(${voidG}, ${voidG}, ${voidG})`;
       offCtx.fillRect(0, 0, cols, rows);
 
-      // Same FOV math as the live sampler: visible landscape % = 100/zoom.
-      const leftPct = (0 - (1 - zoom) * pan.x) / zoom;
-      const topPct = (0 - (1 - zoom) * pan.y) / zoom;
-      const widthPct = 100 / zoom;
-      const heightPct = 100 / zoom;
+      const leftPct = (0 - (1 - zoomNow) * panNow.x) / zoomNow;
+      const topPct = (0 - (1 - zoomNow) * panNow.y) / zoomNow;
+      const widthPct = 100 / zoomNow;
+      const heightPct = 100 / zoomNow;
       const srcLeft = Math.max(0, leftPct);
       const srcTop = Math.max(0, topPct);
       const srcRight = Math.min(100, leftPct + widthPct);
@@ -192,8 +211,7 @@ export function ThermalCanvas({
         const destH = ((srcBottom - srcTop) / heightPct) * rows;
 
         offCtx.save();
-        if (polarity === "bh") {
-          // Bake is white-hot; invert for black-hot (void already filled BH).
+        if (polarityNow === "bh") {
           offCtx.filter = "invert(1)";
         }
         offCtx.drawImage(
@@ -230,8 +248,8 @@ export function ThermalCanvas({
         for (let col = 0; col < cols; col++) {
           const lensX = ((col + 0.5) / cols) * 100;
           const lensY = ((row + 0.5) / rows) * 100;
-          const landscapeX = (lensX - (1 - zoom) * pan.x) / zoom;
-          const landscapeY = (lensY - (1 - zoom) * pan.y) / zoom;
+          const landscapeX = (lensX - (1 - zoomNow) * panNow.x) / zoomNow;
+          const landscapeY = (lensY - (1 - zoomNow) * panNow.y) / zoomNow;
 
           if (
             landscapeX < 0 ||
@@ -239,7 +257,7 @@ export function ThermalCanvas({
             landscapeY < 0 ||
             landscapeY > 100
           ) {
-            const voidG = applyPolarity(8, polarity);
+            const voidG = applyPolarity(8, polarityNow);
             offCtx.fillStyle = `rgb(${voidG}, ${voidG}, ${voidG})`;
             offCtx.fillRect(col, row, 1, 1);
             continue;
@@ -260,7 +278,7 @@ export function ThermalCanvas({
               imgData.data[idx + 1] ?? 0,
               imgData.data[idx + 2] ?? 0,
             ),
-            polarity,
+            polarityNow,
           );
           offCtx.fillStyle = `rgb(${t | 0}, ${t | 0}, ${t | 0})`;
           offCtx.fillRect(col, row, 1, 1);
@@ -268,10 +286,10 @@ export function ThermalCanvas({
       }
     }
 
-    const birdG = heatGrayForMode(polarity) | 0;
-    for (const p of birdPlacements) {
-      const lx = (1 - zoom) * pan.x + p.x * zoom;
-      const ly = (1 - zoom) * pan.y + p.y * zoom;
+    const birdG = heatGrayForMode(polarityNow) | 0;
+    for (const p of birdPlacementsNow) {
+      const lx = (1 - zoomNow) * panNow.x + p.x * zoomNow;
+      const ly = (1 - zoomNow) * panNow.y + p.y * zoomNow;
       if (lx < -8 || lx > 108 || ly < -8 || ly > 108) continue;
 
       const spriteImg = spriteCacheRef.current.get(p.imageSrc);
@@ -279,7 +297,7 @@ export function ThermalCanvas({
         continue;
       }
 
-      const birdW = Math.max(6 * dpr, (p.widthPct / 100) * w * zoom);
+      const birdW = Math.max(6 * dpr, (p.widthPct / 100) * w * zoomNow);
       const sprite = getBirdSprite(p.spriteId);
       const aspect = sprite.toppH / Math.max(1, sprite.toppW);
       const birdH = birdW * aspect;
@@ -303,7 +321,6 @@ export function ThermalCanvas({
           oCtx.imageSmoothingEnabled = false;
           drawBirdSilhouette(oCtx, spriteImg, odw, odh, !!p.flip, OUTLINE_RGB);
           if (fusionOnly) {
-            // Punch interior so only a red rim remains (day bird shows through).
             const punch = document.createElement("canvas");
             punch.width = dw;
             punch.height = dh;
@@ -349,14 +366,18 @@ export function ThermalCanvas({
     if (fusionOnly) {
       ctx.clearRect(0, 0, w, h);
     } else {
-      const bg = applyPolarity(5, polarity);
+      const bg = applyPolarity(5, polarityNow);
       ctx.fillStyle = `rgb(${bg}, ${bg}, ${bg})`;
       ctx.fillRect(0, 0, w, h);
     }
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, 0, 0, cols, rows, 0, 0, w, h);
-  }, [birdPlacements, pan, pixelFactor, polarity, useBake, zoom]);
+  }, []);
 
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
+  /** Load landscape once per image — never re-bake on pan. */
   useEffect(() => {
     sampleRef.current = null;
     bakeRef.current = null;
@@ -364,16 +385,13 @@ export function ThermalCanvas({
     img.src = imageSrc;
     imgRef.current = img;
     const onLoad = () => {
-      if (useBake) {
-        bakeRef.current = bakeThermalLandscape(img);
-      }
       onLandscapeReadyRef.current?.();
-      draw();
+      drawRef.current();
     };
     img.addEventListener("load", onLoad);
     if (img.complete && img.naturalWidth > 0) onLoad();
     return () => img.removeEventListener("load", onLoad);
-  }, [imageSrc, draw, useBake]);
+  }, [imageSrc]);
 
   /** Preload topp sprites so thermal silhouettes match binos. */
   useEffect(() => {
@@ -383,7 +401,7 @@ export function ThermalCanvas({
     let pending = 0;
 
     const maybeDraw = () => {
-      if (!cancelled && pending <= 0) draw();
+      if (!cancelled && pending <= 0) drawRef.current();
     };
 
     for (const src of srcs) {
@@ -407,19 +425,19 @@ export function ThermalCanvas({
     return () => {
       cancelled = true;
     };
-  }, [birdPlacements, draw]);
+  }, [birdPlacements]);
 
   useEffect(() => {
     draw();
-  }, [draw]);
+  }, [draw, pan, zoom, polarity, birdPlacements, pixelFactor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ro = new ResizeObserver(() => draw());
+    const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [draw]);
+  }, []);
 
   return (
     <canvas
