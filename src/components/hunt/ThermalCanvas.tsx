@@ -26,9 +26,9 @@ function luminanceToThermal(r: number, g: number, b: number): number {
 
 /**
  * Peak bird heat vs pure white (white-hot).
- * Was 0.66 (~168); +50% relative → 0.99 (~252).
+ * Was 0.66 (~168); halfway toward white → 0.83 (~212).
  */
-const THERMAL_BIRD_GRAY_WH = Math.round(255 * 0.66 * 1.5);
+const THERMAL_BIRD_GRAY_WH = Math.round(255 * 0.83);
 
 function applyPolarity(gray: number, polarity: ThermalPolarity): number {
   const g = Math.max(0, Math.min(255, gray));
