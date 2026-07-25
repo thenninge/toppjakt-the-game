@@ -1197,6 +1197,7 @@ export function HuntShootView({
     scope.scope,
     trueDistanceM,
     shotGeom.nativeW,
+    birdSpriteId,
   );
   const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
   // Flipped sprite mirrors vital X around image centre — keep reticle on chest.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import {
   DEFAULT_BINOS_MAGNIFICATION,
   SPOT_TIME_FACTOR_BINOS,
@@ -145,6 +145,8 @@ type SpotViewProps = {
    */
   initialMode?: SpotMode;
   initialPan?: { x: number; y: number };
+  /** Optional controls rendered under the landscape frame (admin, etc.). */
+  belowFrame?: React.ReactNode;
 };
 
 /** Single arrow tap — landscape % step. */
@@ -357,6 +359,7 @@ export function SpotView({
   onDone,
   initialMode = "eyes",
   initialPan,
+  belowFrame,
 }: SpotViewProps) {
   const binoZoom = Math.max(1, magnification);
   const thermalZoom = Math.max(1, thermalMagnification);
@@ -1479,6 +1482,7 @@ export function SpotView({
           </>
         )}
       </div>
+      {belowFrame}
       {mode === "eyes" ? (
         <p className="spot-binos-hint">
           Kompass øverst viser retning — rød/lilla fugl: klikk for å låse

@@ -204,8 +204,9 @@ export function birdScopeImageScale(
   _scope: Pick<ScopeSpec, "minZoom" | "maxZoom"> | undefined,
   distanceM: number,
   nativeW: number,
+  spriteId?: BirdSpriteId,
 ): number {
-  const widthPct = spriteWidthPctForDistance(distanceM);
+  const widthPct = spriteWidthPctForDistance(distanceM, spriteId);
   const widthFracOfFov = (widthPct * Math.max(1, zoom)) / 100;
   const desiredWidthPx = SCOPE_VIEWPORT_REF_PX * widthFracOfFov;
   return Math.max(0.01, desiredWidthPx / Math.max(1, nativeW));

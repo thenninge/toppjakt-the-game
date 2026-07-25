@@ -577,39 +577,100 @@ body {
   gap: 0.85rem;
 }
 
-.admin-office-form {
+.admin-spot-controls {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.7rem 0.85rem;
+  gap: 0.45rem;
+  width: min(100%, 40rem);
+  margin: 0.45rem auto 0.15rem;
+  padding: 0.55rem 0.65rem;
   border: 1px solid #4a3828;
-  background: rgba(18, 14, 10, 0.72);
+  background: rgba(18, 14, 10, 0.82);
 }
 
-.admin-office-field {
+.admin-spot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.45rem 0.65rem;
+}
+
+.admin-spot-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.85rem;
+  gap: 0.15rem;
+  min-width: 5.5rem;
+  flex: 0 1 auto;
+  font-size: 0.72rem;
   color: #c9b89a;
 }
 
-.admin-office-field select {
+.admin-spot-field-wide {
+  flex: 1 1 8rem;
+  min-width: 7rem;
+}
+
+.admin-spot-field select {
   font: inherit;
+  font-size: 0.8rem;
   color: #f0e6d2;
   background: #120e0a;
   border: 1px solid #6b5238;
-  padding: 0.35rem 0.45rem;
+  padding: 0.28rem 0.35rem;
+  max-width: 100%;
 }
 
-.admin-office-field select:disabled {
+.admin-spot-field select:disabled {
   opacity: 0.45;
 }
 
-.admin-office-meta {
-  margin: 0.15rem 0 0;
+.admin-spot-scale {
+  min-width: 3.8rem;
+  flex: 0 0 auto;
+}
+
+.admin-spot-scale-num {
+  font: inherit;
   font-size: 0.8rem;
+  color: #f0e6d2;
+  background: #120e0a;
+  border: 1px solid #6b5238;
+  padding: 0.28rem 0.35rem;
+  width: 3.6rem;
+}
+
+.admin-spot-allow {
+  min-width: 6.5rem;
+  flex: 0 0 auto;
+}
+
+.admin-spot-allow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.7rem;
+}
+
+.admin-spot-allow-row input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #c4a574;
+}
+
+.admin-spot-allow-hint {
+  font-size: 0.72rem;
   color: #9a8768;
+}
+
+.admin-spot-allow-row input:disabled {
+  opacity: 0.45;
+}
+
+.admin-spot-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #9a8768;
+  white-space: nowrap;
 }
 
 .how-to-play-sections {

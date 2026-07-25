@@ -12,6 +12,7 @@
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
+import { isBirdSpriteAllowedInScene } from "@/lib/hunt/birdSpriteSceneAllow";
 
 export type BirdSpriteId =
   | "tiur-1"
@@ -305,8 +306,14 @@ export function getBirdSprite(id: BirdSpriteId): BirdSpriteDef {
 export function pickBirdSpriteId(
   species: BirdSpecies,
   random: () => number = Math.random,
+  opts?: { spotImageSrc?: string },
 ): BirdSpriteId {
-  const ids = spriteIdsForSpecies(species);
+  const all = spriteIdsForSpecies(species);
+  const spot = opts?.spotImageSrc;
+  const allowed = spot
+    ? all.filter((id) => isBirdSpriteAllowedInScene(spot, id))
+    : all;
+  const ids = allowed.length > 0 ? allowed : all;
   return ids[Math.floor(random() * ids.length)] ?? ids[0]!;
 }
 

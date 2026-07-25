@@ -8,6 +8,7 @@ import {
   pickBirdSpriteId,
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
+import { getBirdSpriteScaleFactor } from "@/lib/hunt/birdSpriteScale";
 import {
   cellLabel,
   clampCell,
@@ -225,13 +226,19 @@ export function visibleInSpotMode(
 /**
  * Apparent size scales with 1/range.
  * Sized so rød/lilla birds (≤230 m) are findable with naked eye.
+ * Optional `spriteId` applies per-image scale (admin-calibrated, 1–200 %).
  */
 export const TIUR_TOPP_WIDTH_PCT_AT_100M = 2.25;
 export const SPRITE_SIZE_REF_DISTANCE_M = 100;
 
-export function spriteWidthPctForDistance(distanceM: number): number {
+export function spriteWidthPctForDistance(
+  distanceM: number,
+  spriteId?: BirdSpriteId,
+): number {
   const d = Math.max(1, distanceM);
-  return TIUR_TOPP_WIDTH_PCT_AT_100M * (SPRITE_SIZE_REF_DISTANCE_M / d);
+  const base = TIUR_TOPP_WIDTH_PCT_AT_100M * (SPRITE_SIZE_REF_DISTANCE_M / d);
+  if (!spriteId) return base;
+  return base * getBirdSpriteScaleFactor(spriteId);
 }
 
 /**
@@ -445,8 +452,11 @@ function placementFromPerch(
   distanceM: number,
   flip: boolean,
   random: () => number,
+  spotImageSrc: string,
 ): BirdVisualPlacement {
-  const spriteId = pickBirdSpriteId(perch.species, random);
+  const spriteId = pickBirdSpriteId(perch.species, random, {
+    spotImageSrc,
+  });
   const sprite = getBirdSprite(spriteId);
   return {
     birdId: bird.id,
@@ -456,7 +466,7 @@ function placementFromPerch(
     distanceM,
     x: perch.x,
     y: perch.y,
-    widthPct: spriteWidthPctForDistance(distanceM),
+    widthPct: spriteWidthPctForDistance(distanceM, spriteId),
     flip,
   };
 }
@@ -517,10 +527,13 @@ function randomCrownPlacement(
   index: number,
   total: number,
   random: () => number,
+  spotImageSrc?: string,
 ): BirdVisualPlacement {
-  const widthPct = spriteWidthPctForDistance(bird.distanceM);
-  const spriteId = pickBirdSpriteId(bird.species, random);
+  const spriteId = pickBirdSpriteId(bird.species, random, {
+    spotImageSrc,
+  });
   const sprite = getBirdSprite(spriteId);
+  const widthPct = spriteWidthPctForDistance(bird.distanceM, spriteId);
   if (bird.id === "tiur-1") {
     return {
       birdId: bird.id,
@@ -631,7 +644,14 @@ export function bindBirdsToSpotImage(
     }
     assignedIds.add(bird.id);
     placements.push(
-      placementFromPerch(bird, perch, distanceM, random() < 0.5, random),
+      placementFromPerch(
+        bird,
+        perch,
+        distanceM,
+        random() < 0.5,
+        random,
+        imageSrc,
+      ),
     );
   }
 
@@ -639,7 +659,7 @@ export function bindBirdsToSpotImage(
   const leftovers = unused.filter((b) => !assignedIds.has(b.id));
   leftovers.forEach((bird, i) => {
     placements.push(
-      randomCrownPlacement(bird, i, leftovers.length, random),
+      randomCrownPlacement(bird, i, leftovers.length, random, imageSrc),
     );
   });
 
@@ -686,7 +706,7 @@ export function adminPlacementsForSpotImage(
       distanceM,
       x: perch.x,
       y: perch.y,
-      widthPct: spriteWidthPctForDistance(distanceM),
+      widthPct: spriteWidthPctForDistance(distanceM, spriteId),
       flip: random() < 0.5,
     };
   });
@@ -708,7 +728,7 @@ export function placementsForBirdsInCell(
   }
   const here = birdsInCell(birds, cell);
   return here.map((bird, i) =>
-    randomCrownPlacement(bird, i, here.length, random),
+    randomCrownPlacement(bird, i, here.length, random, imageSrc),
   );
 }
 
