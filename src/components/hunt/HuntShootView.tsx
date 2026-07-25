@@ -84,8 +84,6 @@ import {
   classifyHuntShot,
   formatHuntImpactOffsetMm,
   SCOPE_VIEWPORT_REF_PX,
-  TIUR_INSTANT_KILL_DIAMETER_MM,
-  TIUR_VITAL_DIAMETER_MM,
   TRIGGERCAM_ITEM_ID,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
@@ -1298,8 +1296,8 @@ export function HuntShootView({
             <> · Estimat {measuredDistanceM} m</>
           )}
           {" · "}
-          vital grønn Ø{TIUR_INSTANT_KILL_DIAMETER_MM} mm / rød Ø
-          {TIUR_VITAL_DIAMETER_MM} mm
+          vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
+          {shotGeom.vitalDiameterMm} mm
           {activeHold ? " · Kestrel AB auto-dial" : hasKestrelInKit ? " · Kestrel i kit (fane)" : null}
         </p>
         <p className="shop-row-note">

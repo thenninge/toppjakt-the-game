@@ -299,6 +299,11 @@ export function spriteIdsForSpecies(species: BirdSpecies): BirdSpriteId[] {
   return TIUR_IDS;
 }
 
+/** All registered bird sprites (admin editors). */
+export function allBirdSpriteIds(): BirdSpriteId[] {
+  return Object.keys(BIRD_SPRITES) as BirdSpriteId[];
+}
+
 export function getBirdSprite(id: BirdSpriteId): BirdSpriteDef {
   return BIRD_SPRITES[id];
 }

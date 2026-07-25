@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SpotView } from "@/components/hunt/SpotView";
 import type { BirdObservedInfo } from "@/components/hunt/SpotView";
+import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
   spriteIdsForSpecies,
@@ -48,6 +49,8 @@ import { lrfOpticalMagnification } from "@/lib/optics/spec";
 type AdminOfficeProps = {
   onLeave: () => void;
 };
+
+type AdminTab = "spotting" | "treff";
 
 function spotLabel(src: string): string {
   const base = src.split("/").pop() ?? src;
@@ -143,6 +146,74 @@ function UseInSceneField({
 
 /** Admin calibration desk — free optics + full perch fill for spotting QA. */
 export function AdminOffice({ onLeave }: AdminOfficeProps) {
+  const [tab, setTab] = useState<AdminTab>("spotting");
+
+  if (tab === "treff") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminHitZonesPanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-office-shell">
+      <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+      <AdminSpottingPanel onLeave={onLeave} />
+    </div>
+  );
+}
+
+function AdminTabBar({
+  tab,
+  onTab,
+  onLeave,
+}: {
+  tab: AdminTab;
+  onTab: (t: AdminTab) => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="admin-tabs" role="tablist" aria-label="Admin">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "spotting"}
+        className={
+          tab === "spotting"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("spotting")}
+      >
+        Spotting
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "treff"}
+        className={
+          tab === "treff"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("treff")}
+      >
+        Treffområde
+      </button>
+      <button
+        type="button"
+        className="intro-button admin-tab admin-tab-leave"
+        onClick={onLeave}
+      >
+        ← Byen
+      </button>
+    </div>
+  );
+}
+
+function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
   const spotImages = useMemo(() => spotImagesWithPerches().sort(), []);
   const lrfItems = useMemo(
     () => getCatalogByCategory("lrf").filter(isLrfItem),

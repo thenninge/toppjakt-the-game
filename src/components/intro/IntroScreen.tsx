@@ -1494,6 +1494,8 @@ export function IntroScreen() {
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             jaktkort={stats.jaktkort}
             unlockedTerrainIds={stats.unlockedTerrainIds}
+            isVip={isVipPlayerName(stats.name)}
+            isAdmin={adminUnlocked}
             zeroingProfiles={stats.zeroingProfiles}
             autoSupplyFood={stats.autoSupplyFood}
             loadBenchRecipe={stats.loadBenchRecipe}

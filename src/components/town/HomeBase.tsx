@@ -114,6 +114,10 @@ type HomeBaseProps = {
   selectedHuntingTerrainId: string | null;
   jaktkort: ActiveJaktkort | null;
   unlockedTerrainIds: string[];
+  /** VIP name package — Finnskogen etc. on Inatur. */
+  isVip?: boolean;
+  /** Admin PIN session — same VIP Inatur listings. */
+  isAdmin?: boolean;
   zeroingProfiles: Record<string, ZeroingProfile>;
   /** Auto-pack mat/snacks from inventory into kit. */
   autoSupplyFood: boolean;
@@ -166,6 +170,8 @@ export function HomeBase({
   selectedHuntingTerrainId,
   jaktkort,
   unlockedTerrainIds,
+  isVip = false,
+  isAdmin = false,
   zeroingProfiles,
   autoSupplyFood,
   loadBenchRecipe,
@@ -453,6 +459,8 @@ export function HomeBase({
         selectedTerrainId={selectedHuntingTerrainId}
         jaktkort={jaktkort}
         unlockedTerrainIds={unlockedTerrainIds}
+        isVip={isVip}
+        isAdmin={isAdmin}
         onPurchaseJaktkort={onPurchaseJaktkort}
         onBack={() => setView("main")}
       />

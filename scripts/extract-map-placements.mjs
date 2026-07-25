@@ -17,6 +17,7 @@ const FILES = {
   inatur1: "public/maps/maps_placement/inatur1_placement.png",
   inatur2: "public/maps/maps_placement/inatur2_placement.png",
   svenskegrensa: "public/maps/maps_placement/svenskegrensa_placement.png",
+  finnskogen: "public/maps/maps_placement/finnskogen_placement.png",
 };
 
 function isGreen(r, g, b) {

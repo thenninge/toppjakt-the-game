@@ -26,6 +26,10 @@ type InaturNoProps = {
   selectedTerrainId: string | null;
   jaktkort: ActiveJaktkort | null;
   unlockedTerrainIds: string[];
+  /** VIP name package (ivar / tomas / jørn). */
+  isVip?: boolean;
+  /** Admin PIN session — same VIP Inatur listings. */
+  isAdmin?: boolean;
   onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
   onBack: () => void;
 };
@@ -50,6 +54,8 @@ export function InaturNo({
   selectedTerrainId,
   jaktkort,
   unlockedTerrainIds,
+  isVip = false,
+  isAdmin = false,
   onPurchaseJaktkort,
   onBack,
 }: InaturNoProps) {
@@ -58,8 +64,12 @@ export function InaturNo({
     null,
   );
   const listings = useMemo(
-    () => terrainsAvailableForPlayer(unlockedTerrainIds),
-    [unlockedTerrainIds],
+    () =>
+      terrainsAvailableForPlayer(unlockedTerrainIds, {
+        isVip,
+        isAdmin,
+      }),
+    [unlockedTerrainIds, isVip, isAdmin],
   );
   const [pendingPurchase, setPendingPurchase] = useState<{
     terrain: HuntingTerrain;
@@ -250,6 +260,11 @@ export function InaturNo({
                 {terrain.access === "rulles" && terrain.landownerName ? (
                   <span className="shop-row-note">
                     Via Rulles — {terrain.landownerName}
+                  </span>
+                ) : null}
+                {terrain.access === "vip" ? (
+                  <span className="shop-row-note">
+                    VIP-package — Ivar / Tomas / Jørn · admin
                   </span>
                 ) : null}
                 <div className="inatur-kort-options">

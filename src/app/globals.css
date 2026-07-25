@@ -571,6 +571,72 @@ body {
   gap: 0.85rem;
 }
 
+.admin-office-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.admin-tab {
+  padding: 0.28rem 0.65rem;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.admin-tab.is-active {
+  opacity: 1;
+  border-color: #c4a574;
+}
+
+.admin-tab-leave {
+  margin-left: auto;
+  opacity: 0.9;
+}
+
+.admin-hit-zones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-hit-preview {
+  position: relative;
+  margin: 0.35rem 0;
+  cursor: crosshair;
+  border: 1px solid #6b5238;
+  background: #0c0a08;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.admin-hit-preview-bird {
+  display: block;
+  image-rendering: pixelated;
+  pointer-events: none;
+  user-select: none;
+}
+
+.admin-hit-cross {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  margin-top: -5px;
+  border: 1px solid #f0e6d2;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #1a120a;
+  pointer-events: none;
+  z-index: 3;
+}
+
 .admin-office {
   display: flex;
   flex-direction: column;

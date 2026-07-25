@@ -9,7 +9,8 @@ export type HuntMapId =
   | "midtnorge1"
   | "inatur1"
   | "inatur2"
-  | "svenskegrensa";
+  | "svenskegrensa"
+  | "finnskogen";
 
 /** Grid cell: row letter A.. from bottom, column number 1.. from left. */
 export type HuntGridCell = {
@@ -100,6 +101,17 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
     rows: 6,
     /** Cyan marker in startingpoint/svenskegrensa_start.png */
     start: { row: 3, col: 2 }, // D3
+    playable: true,
+  },
+  finnskogen: {
+    id: "finnskogen",
+    src: "/maps/finnskogen.png",
+    label: "Finnskogen",
+    regionHint: "Østlandet / Finnskogen",
+    cols: 7,
+    rows: 6,
+    /** No start overlay yet — trailhead mid-bottom. */
+    start: { row: 0, col: 3 }, // A4
     playable: true,
   },
 };

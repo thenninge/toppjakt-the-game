@@ -104,6 +104,7 @@ const EFFORT_BY_MAP: Partial<Record<HuntMapId, EffortScore[][]>> = {
   inatur1: SHARED_HUNT_EFFORT,
   inatur2: SHARED_HUNT_EFFORT,
   svenskegrensa: SHARED_HUNT_EFFORT,
+  finnskogen: SHARED_HUNT_EFFORT,
 };
 
 export function getCellEffort(

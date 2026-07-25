@@ -17,6 +17,7 @@ import {
   type BirdSpriteDef,
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
+import { getBirdHitZone } from "@/lib/hunt/birdHitZoneOverrides";
 
 /** @deprecated Prefer sprite.toppSrc via getBirdSprite. */
 export const TIUR_TARGET_SRC = "/images/birds/tiur/tiurtopp1.png";
@@ -131,10 +132,15 @@ export type BirdShotGeom = {
   targetH: number;
   spriteHeightMm: number;
   spriteWidthMm: number;
+  /** Green instant-kill diameter (mm) — catalog or admin override. */
+  instantDiameterMm: number;
+  /** Red vital-ring diameter (mm) — catalog or admin override. */
+  vitalDiameterMm: number;
 };
 
 export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
   const s = getBirdSprite(spriteId);
+  const zone = getBirdHitZone(spriteId);
   const spriteHeightMm = TIUR_SPRITE_HEIGHT_MM;
   const spriteWidthMm = spriteHeightMm * (s.toppW / s.toppH);
   return {
@@ -143,14 +149,16 @@ export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
     targetGuideSrc: s.targetSrc,
     nativeW: s.toppW,
     nativeH: s.toppH,
-    vitalCxPx: s.vitalCxPx,
-    vitalCyPx: s.vitalCyPx,
+    vitalCxPx: zone.vitalCxPx,
+    vitalCyPx: zone.vitalCyPx,
     targetVitalCxPx: s.targetVitalCxPx,
     targetVitalCyPx: s.targetVitalCyPx,
     targetW: s.targetW,
     targetH: s.targetH,
     spriteHeightMm,
     spriteWidthMm,
+    instantDiameterMm: zone.instantDiameterMm,
+    vitalDiameterMm: zone.vitalDiameterMm,
   };
 }
 
@@ -230,19 +238,32 @@ function inCircleMm(
   return xMm * xMm + yMm * yMm <= r * r;
 }
 
-export function isInstantKillHit(xMm: number, yMm: number): boolean {
-  return inCircleMm(xMm, yMm, TIUR_INSTANT_KILL_DIAMETER_MM);
+export function isInstantKillHit(
+  xMm: number,
+  yMm: number,
+  diameterMm: number = TIUR_INSTANT_KILL_DIAMETER_MM,
+): boolean {
+  return inCircleMm(xMm, yMm, diameterMm);
 }
 
-export function isVitalRingHit(xMm: number, yMm: number): boolean {
+export function isVitalRingHit(
+  xMm: number,
+  yMm: number,
+  vitalDiameterMm: number = TIUR_VITAL_DIAMETER_MM,
+  instantDiameterMm: number = TIUR_INSTANT_KILL_DIAMETER_MM,
+): boolean {
   return (
-    inCircleMm(xMm, yMm, TIUR_VITAL_DIAMETER_MM) &&
-    !isInstantKillHit(xMm, yMm)
+    inCircleMm(xMm, yMm, vitalDiameterMm) &&
+    !isInstantKillHit(xMm, yMm, instantDiameterMm)
   );
 }
 
-export function isVitalAreaHit(xMm: number, yMm: number): boolean {
-  return inCircleMm(xMm, yMm, TIUR_VITAL_DIAMETER_MM);
+export function isVitalAreaHit(
+  xMm: number,
+  yMm: number,
+  diameterMm: number = TIUR_VITAL_DIAMETER_MM,
+): boolean {
+  return inCircleMm(xMm, yMm, diameterMm);
 }
 
 /**
@@ -286,12 +307,20 @@ export function classifyHuntShot(
   yMm: number,
   damageFactor: number,
   random: () => number = Math.random,
-  geom?: Pick<BirdShotGeom, "spriteWidthMm" | "spriteHeightMm">,
+  geom?: Pick<
+    BirdShotGeom,
+    | "spriteWidthMm"
+    | "spriteHeightMm"
+    | "instantDiameterMm"
+    | "vitalDiameterMm"
+  >,
 ): { kind: HuntShotResultKind; zone: HuntShotZone } {
-  if (isInstantKillHit(xMm, yMm)) {
+  const instantD = geom?.instantDiameterMm ?? TIUR_INSTANT_KILL_DIAMETER_MM;
+  const vitalD = geom?.vitalDiameterMm ?? TIUR_VITAL_DIAMETER_MM;
+  if (isInstantKillHit(xMm, yMm, instantD)) {
     return { kind: "instant_kill", zone: "instant" };
   }
-  if (isVitalRingHit(xMm, yMm)) {
+  if (isVitalRingHit(xMm, yMm, vitalD, instantD)) {
     const clean = rollVitalRingKill(damageFactor, random);
     return {
       kind: clean ? "vital_kill" : "ettersok",

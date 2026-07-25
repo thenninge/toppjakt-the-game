@@ -11,6 +11,7 @@ export type HuntingTerrainId =
   | "inatur-hogstflate"
   | "inatur-granskog"
   | "svenskegrensa"
+  | "finnskogen"
   | "rulles-stubb-teig"
   | "rulles-kristian-li"
   | "rulles-lovenskiold";
@@ -30,8 +31,9 @@ export type HuntingTerrain = {
   /**
    * `inatur` = always listed.
    * `rulles` = only after unlocking via Rulles (snøvling + påspandering).
+   * `vip` = VIP-package names + admin PIN session.
    */
-  access: "inatur" | "rulles";
+  access: "inatur" | "rulles" | "vip";
   /** Flavor: who shook your hand. */
   landownerName?: string;
 };
@@ -105,6 +107,18 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     access: "inatur",
   },
   {
+    id: "finnskogen",
+    name: "Finnskogen",
+    region: "Østlandet / Finnskogen",
+    blurb:
+      "VIP-teig — tett skog og gode sitteplasser. Dagskort 1500 kr · tiur 4/5 · orrfugl 4/5.",
+    pricePerDayNok: 1500,
+    tiurRating: 4,
+    orrhaneRating: 4,
+    mapId: "finnskogen",
+    access: "vip",
+  },
+  {
     id: "rulles-stubb-teig",
     name: "Stubbens teig",
     region: "Østlandet",
@@ -168,11 +182,16 @@ export function tiurSpawnCountForTerrain(terrain: HuntingTerrain): number {
 /** Terrains visible on inatur for this player. */
 export function terrainsAvailableForPlayer(
   unlockedTerrainIds: readonly string[],
+  opts?: { isVip?: boolean; isAdmin?: boolean },
 ): HuntingTerrain[] {
   const unlocked = new Set(unlockedTerrainIds);
-  return HUNTING_TERRAINS.filter(
-    (t) => t.access === "inatur" || unlocked.has(t.id),
-  );
+  const vipOk = !!opts?.isVip || !!opts?.isAdmin;
+  return HUNTING_TERRAINS.filter((t) => {
+    if (t.access === "inatur") return true;
+    if (t.access === "rulles") return unlocked.has(t.id);
+    if (t.access === "vip") return vipOk;
+    return false;
+  });
 }
 
 export function formatBirdRating(rating: BirdRating): string {

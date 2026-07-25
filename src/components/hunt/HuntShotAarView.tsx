@@ -5,8 +5,6 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   formatHuntImpactOffsetMm,
-  TIUR_INSTANT_KILL_DIAMETER_MM,
-  TIUR_VITAL_DIAMETER_MM,
   type HuntShotResultKind,
   type HuntShotZone,
 } from "@/lib/hunt/shoot";
@@ -54,8 +52,8 @@ export function HuntShotAarView({
     ? { x: -vitalBase.x, y: vitalBase.y }
     : vitalBase;
 
-  const greenD = mmToPx(TIUR_INSTANT_KILL_DIAMETER_MM) * aarScale;
-  const redD = mmToPx(TIUR_VITAL_DIAMETER_MM) * aarScale;
+  const greenD = mmToPx(geom.instantDiameterMm) * aarScale;
+  const redD = mmToPx(geom.vitalDiameterMm) * aarScale;
   const holeD = Math.max(6, mmToPx(hit.diameterMm) * aarScale);
   const hitX =
     (geom.nativeW / 2 + vitalOff.x + mmToPx(hit.xMm)) * aarScale;
