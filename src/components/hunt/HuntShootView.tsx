@@ -190,6 +190,13 @@ type HuntShootViewProps = {
    * Prefer this over plain abort when returning to the stalk map.
    */
   onBackToAware?: (nerve: number) => void;
+  /**
+   * Turret dial carried across engages in the same hunt (mm @ 100 m).
+   * When set, restores instead of resetting / re-auto-dialing Kestrel.
+   */
+  initialSessionZeroMm?: { x: number; y: number } | null;
+  /** Persist dial changes for the rest of this hunt. */
+  onSessionZeroChange?: (xMm: number, yMm: number) => void;
 };
 
 type Keys = {
@@ -199,11 +206,14 @@ type Keys = {
   right: boolean;
 };
 
-const AIM_SPEED_MM_PER_SEC = 22;
-/** Landscape acquire: fraction of scope FOV panned per second (was 0.5 — too coarse). */
-const LANDSCAPE_AIM_FOV_FRAC = 0.18;
-/** While holding F: extra slow for fine reticle placement. */
-const FOCUS_AIM_SPEED_MULT = 0.28;
+const AIM_SPEED_MM_PER_SEC = 44;
+/** Landscape acquire: fraction of scope FOV panned per second. */
+const LANDSCAPE_AIM_FOV_FRAC = 0.36;
+/**
+ * While holding F: fine reticle placement.
+ * Halved vs base so absolute F-speed stays the same after the 2× arrow bump.
+ */
+const FOCUS_AIM_SPEED_MULT = 0.14;
 const DEFAULT_SCOPE_ZOOM = 12;
 
 /** Aim (mm from vital) that puts landscape centre under the reticle. */
@@ -279,6 +289,8 @@ export function HuntShootView({
   onBirdFlushedFromWait,
   onNerveChange,
   onBackToAware,
+  initialSessionZeroMm = null,
+  onSessionZeroChange,
 }: HuntShootViewProps) {
   const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
   const mmToPx = (mm: number) => birdMmToNativePx(mm, shotGeom);
@@ -315,21 +327,32 @@ export function HuntShootView({
 
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
+  const restoreTurrets = initialSessionZeroMm != null;
   const [sessionZeroXMm, setSessionZeroXMm] = useState(() =>
-    ballisticHold
-      ? clampTurretMm(Math.round(ballisticHold.dialXMmAt100))
-      : 0,
+    initialSessionZeroMm
+      ? clampTurretMm(Math.round(initialSessionZeroMm.x))
+      : ballisticHold
+        ? clampTurretMm(Math.round(ballisticHold.dialXMmAt100))
+        : 0,
   );
   const [sessionZeroYMm, setSessionZeroYMm] = useState(() =>
-    ballisticHold
-      ? clampTurretMm(Math.round(ballisticHold.dialYMmAt100))
-      : 0,
+    initialSessionZeroMm
+      ? clampTurretMm(Math.round(initialSessionZeroMm.y))
+      : ballisticHold
+        ? clampTurretMm(Math.round(ballisticHold.dialYMmAt100))
+        : 0,
   );
   const [status, setStatus] = useState(
-    ballisticHold
-      ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
-      : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
+    restoreTurrets
+      ? "Tårn som sist · F = fokus+merke · slipp Space på merket."
+      : ballisticHold
+        ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
+        : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
   );
+  /** Keep Kestrel from overwriting dials restored from earlier engages. */
+  const skipKestrelAutoDialRef = useRef(restoreTurrets);
+  const onSessionZeroChangeRef = useRef(onSessionZeroChange);
+  onSessionZeroChangeRef.current = onSessionZeroChange;
   const [hudTab, setHudTab] = useState<ScopeHudTab>("shooter");
   const hudTabRef = useRef(hudTab);
   hudTabRef.current = hudTab;
@@ -546,8 +569,9 @@ export function HuntShootView({
     powderTempRef.current = temperatureC;
   }, [temperatureC]);
 
-  /** Kestrel AB auto-dials elev + windage from fasit. */
+  /** Kestrel AB auto-dials elev + windage from fasit (first engage only). */
   useEffect(() => {
+    if (skipKestrelAutoDialRef.current) return;
     if (!ballisticHold || !selectedAmmo || fired) return;
     const hold = exactBallisticHold(
       selectedAmmo.ammo,
@@ -568,6 +592,10 @@ export function HuntShootView({
     ballisticHold,
     fired,
   ]);
+
+  useEffect(() => {
+    onSessionZeroChangeRef.current?.(sessionZeroXMm, sessionZeroYMm);
+  }, [sessionZeroXMm, sessionZeroYMm]);
   useEffect(() => {
     if (!rifle || !scope || !selectedAmmo) return;
     onEnsureZeroing(rifle.id, scope.id, selectedAmmo.id);

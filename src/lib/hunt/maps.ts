@@ -110,8 +110,8 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
     regionHint: "Østlandet / Finnskogen",
     cols: 7,
     rows: 6,
-    /** No start overlay yet — trailhead mid-bottom. */
-    start: { row: 0, col: 3 }, // A4
+    /** No start overlay yet — trailhead at B6. */
+    start: { row: 1, col: 5 }, // B6
     playable: true,
   },
 };

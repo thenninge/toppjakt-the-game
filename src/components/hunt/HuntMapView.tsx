@@ -547,6 +547,11 @@ export function HuntMapView({
   /** Per-bird nerve while spotting (before/without discovery). */
   const latentSpotNerveRef = useRef<Record<string, LatentSpotNerve>>({});
   const [shootSession, setShootSession] = useState<ShootSession | null>(null);
+  /**
+   * Scope turret dial (mm @ 100 m) sticky for the whole hunt across engages.
+   * Null until first shoot view writes a dial.
+   */
+  const huntScopeTurretsRef = useRef<{ x: number; y: number } | null>(null);
   const [awareSession, setAwareSession] = useState<AwareSession | null>(null);
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
   /** Hit fasit overlay after finding a dead bird (with or without Triggercam). */
@@ -913,6 +918,7 @@ export function HuntMapView({
     setSpotSession(null);
     setShootSession(null);
     setAwareSession(null);
+    huntScopeTurretsRef.current = null;
     setPendingPostShot(null);
     setPostShotGhost(null);
     setPostShotGhostSecLeft(0);
@@ -3214,6 +3220,10 @@ export function HuntMapView({
         rangeSource={shootSession.rangeSource}
         ballisticHold={shootSession.ballisticHold}
         hasKestrelInKit={!!kestrelItem}
+        initialSessionZeroMm={huntScopeTurretsRef.current}
+        onSessionZeroChange={(xMm, yMm) => {
+          huntScopeTurretsRef.current = { x: xMm, y: yMm };
+        }}
         crosswindMs={shootSession.crosswindMs}
         densityRatio={shootSession.densityRatio}
         temperatureC={weather.live.temperatureC}
