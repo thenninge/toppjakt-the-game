@@ -49,6 +49,7 @@ export function mirageContinuousFactor(
 /**
  * Live mirage strength: midpoint × continuous(t).
  * Can exceed 1 when the pipe is hot (extended bad-mirage scale).
+ * Affects visuals + per-shot MOA envelope — not weapon calm/wobble.
  */
 export function mirageStrengthAtTime(
   midpoint: number,
@@ -62,21 +63,16 @@ export function mirageStrengthAtTime(
   );
 }
 
-/** Extra aim wobble (mm) from mirage shimmer. */
-export function mirageWobbleMm(strength: number): number {
-  if (strength <= 0) return 0;
-  return strength * 6.4;
-}
-
 /**
  * Max fractional add to base MOA when mirageFactor = 1.
- * effective = base × (1 + mirageFactor × random() × 0.5)
- * e.g. 0.4 MOA @ factor 1 → up to 0.6 MOA.
+ * With max mirage ≈ 2: up to +50 % MOA at full heat
+ * (factor × 0.25). At factor 1: up to +25 %.
+ * effective = base × (1 + mirageFactor × random() × 0.25)
  */
-export const MIRAGE_MOA_RANDOM_MAX = 0.5;
+export const MIRAGE_MOA_RANDOM_MAX = 0.25;
 
 /**
- * Per-shot MOA envelope with mirage: base + base × factor × U(0, 0.5).
+ * Per-shot MOA envelope with mirage: base + base × factor × U(0, 0.25).
  */
 export function applyMirageToDispersionMoa(
   baseMoa: number,

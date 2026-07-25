@@ -22,7 +22,6 @@ import {
   miscKitWeaponCalmGrams,
 } from "@/lib/misc/spec";
 import {
-  mirageWobbleMm,
   mirageStrengthAtTime,
   createMiragePhase,
   type MiragePhase,
@@ -1005,19 +1004,16 @@ export function ShootingRange({
         displace.setAttribute("scale", String(Math.round(mirage * 56)));
       }
 
-      const amp =
-        wobbleAmplitudeMm(calm, distanceRef.current) + mirageWobbleMm(mirage);
+      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
           Math.sin(t * 5.3 + ph.b) * amp * 0.35 +
-          Math.sin(t * 11.0) * amp * 0.15 +
-          (mirage > 0 ? Math.sin(t * 18.0 + ph.a) * mirage * 0.55 : 0),
+          Math.sin(t * 11.0) * amp * 0.15,
         y:
           Math.cos(t * 1.7 + ph.b) * amp * 0.55 +
           Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
-          Math.sin(t * 9.5 + 1) * amp * 0.15 +
-          (mirage > 0 ? Math.cos(t * 16.5 + ph.b) * mirage * 0.55 : 0),
+          Math.sin(t * 9.5 + 1) * amp * 0.15,
       };
 
       paintScopeWorld();

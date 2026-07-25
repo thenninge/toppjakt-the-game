@@ -25,7 +25,7 @@
  *
  * ## Mirage
  * Optional `mirageFactor` widens the per-shot envelope:
- * base × (1 + factor × U(0, 0.5)). At factor 1, up to +50 % MOA.
+ * base × (1 + factor × U(0, 0.25)). At factor 2 (full heat), up to +50 % MOA.
  *
  * ## v0 variation
  * Separate from angular group. Sampled per shot; vertical effect grows with distance
@@ -77,7 +77,7 @@ export type DispersionInput = {
   barrelWearScale?: number;
   /**
    * Live mirage strength (0…~2.4). Per shot, widens envelope by up to
-   * +50 % × factor (see {@link applyMirageToDispersionMoa}).
+   * +25 % × factor (see {@link applyMirageToDispersionMoa}).
    */
   mirageFactor?: number;
 };
