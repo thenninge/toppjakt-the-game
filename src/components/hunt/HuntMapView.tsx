@@ -1795,11 +1795,18 @@ export function HuntMapView({
       : "";
 
     const visible = placements.filter((p) =>
-      visibleInSpotMode(p.distanceM, info.mode),
+      visibleInSpotMode(p.distanceM, info.mode, {
+        eyesVisible: p.eyesVisible,
+      }),
     );
     const hiddenFar =
       info.mode === "eyes"
-        ? placements.filter((p) => !visibleInSpotMode(p.distanceM, "eyes"))
+        ? placements.filter(
+            (p) =>
+              !visibleInSpotMode(p.distanceM, "eyes", {
+                eyesVisible: p.eyesVisible,
+              }),
+          )
         : [];
 
     if (visible.length > 0) {

@@ -22,8 +22,19 @@
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
+import { applyPerchDistanceOverrides } from "@/lib/hunt/perchDistanceOverrides";
+import {
+  defaultEyesVisibleForBracket,
+  spotColorBandFromBracket,
+  type SpotColorBand,
+} from "@/lib/hunt/spotBands";
 
 export type SpotPerch = {
+  /**
+   * Stable id within one spotting image (`p0`, `p1`, …).
+   * Assigned by {@link perchesForSpotImage} when missing from the catalog.
+   */
+  id?: string;
   /** 0–100, left → right */
   x: number;
   /** 0–100, top → bottom */
@@ -33,6 +44,18 @@ export type SpotPerch = {
   /** Inclusive distance band from marker color. */
   distanceMinM: number;
   distanceMaxM: number;
+  /**
+   * Synlig med bare øyne (rød/lilla). Default from color band;
+   * admin may override independently of the meter bracket.
+   */
+  eyesVisible?: boolean;
+  /**
+   * Perch-local size factor (1–200 %, default 100). Multiplies sprite scale
+   * after distance + per-sprite scale.
+   */
+  scalePercent?: number;
+  /** Inferred placement-guide color (from bracket). */
+  colorBand?: SpotColorBand;
   /** Optional human note (which tree / color). */
   note?: string;
 };
@@ -2296,7 +2319,45 @@ export const SPOT_PERCHES: SpotPerchCatalog = {
 };
 
 export function perchesForSpotImage(imageSrc: string): SpotPerch[] {
-  return SPOT_PERCHES[imageSrc] ?? [];
+  const raw = SPOT_PERCHES[imageSrc] ?? [];
+  const withIds = raw.map((p, i) => {
+    const id = p.id ?? `p${i}`;
+    const colorBand = spotColorBandFromBracket(
+      p.distanceMinM,
+      p.distanceMaxM,
+    );
+    return {
+      ...p,
+      id,
+      colorBand,
+      eyesVisible:
+        p.eyesVisible ??
+        defaultEyesVisibleForBracket(p.distanceMinM, p.distanceMaxM),
+      scalePercent: p.scalePercent ?? 100,
+    };
+  });
+  return applyPerchDistanceOverrides(imageSrc, withIds);
+}
+
+/** Catalog bracket before admin overrides (for reset / compare). */
+export function catalogPerchForId(
+  imageSrc: string,
+  perchId: string,
+): SpotPerch | null {
+  const raw = SPOT_PERCHES[imageSrc] ?? [];
+  const idx = raw.findIndex((p, i) => (p.id ?? `p${i}`) === perchId);
+  if (idx < 0) return null;
+  const p = raw[idx]!;
+  const colorBand = spotColorBandFromBracket(p.distanceMinM, p.distanceMaxM);
+  return {
+    ...p,
+    id: p.id ?? `p${idx}`,
+    colorBand,
+    eyesVisible:
+      p.eyesVisible ??
+      defaultEyesVisibleForBracket(p.distanceMinM, p.distanceMaxM),
+    scalePercent: p.scalePercent ?? 100,
+  };
 }
 
 /** Spot landscapes that have hand-authored placement guides. */

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SpotView } from "@/components/hunt/SpotView";
+import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
   spriteIdsForSpecies,
@@ -20,7 +21,23 @@ import {
   setBirdSpriteAllowedInScene,
   subscribeBirdSpriteSceneAllow,
 } from "@/lib/hunt/birdSpriteSceneAllow";
-import { spotImagesWithPerches } from "@/lib/hunt/spotPerches";
+import {
+  clearPerchDistanceOverride,
+  getPerchDistanceOverride,
+  PERCH_DISTANCE_EDIT_MAX_M,
+  PERCH_DISTANCE_EDIT_MIN_M,
+  PERCH_SCALE_DEFAULT,
+  PERCH_SCALE_MAX,
+  PERCH_SCALE_MIN,
+  setPerchDistanceOverride,
+  subscribePerchDistanceOverrides,
+} from "@/lib/hunt/perchDistanceOverrides";
+import {
+  catalogPerchForId,
+  perchesForSpotImage,
+  spotImagesWithPerches,
+} from "@/lib/hunt/spotPerches";
+import { spotColorBandFromBracket } from "@/lib/hunt/spotBands";
 import { getCatalogByCategory } from "@/lib/shop/catalog";
 import {
   isLrfItem,
@@ -146,6 +163,13 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
   const [binoId, setBinoId] = useState(lrfItems[0]?.id ?? "");
   const [thermalId, setThermalId] = useState(thermalItems[0]?.id ?? "");
   const [scaleEpoch, setScaleEpoch] = useState(0);
+  const [distEpoch, setDistEpoch] = useState(0);
+  const [selectedPerchId, setSelectedPerchId] = useState<string | null>(null);
+  const [editMinM, setEditMinM] = useState(200);
+  const [editMaxM, setEditMaxM] = useState(300);
+  const [editEyesVisible, setEditEyesVisible] = useState(true);
+  const [editPerchScale, setEditPerchScale] = useState(PERCH_SCALE_DEFAULT);
+  const [lrfHintM, setLrfHintM] = useState<number | null>(null);
 
   useEffect(() => {
     return subscribeBirdSpriteScales(() => {
@@ -153,15 +177,103 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
     });
   }, []);
 
+  useEffect(() => {
+    return subscribePerchDistanceOverrides(() => {
+      setDistEpoch((n) => n + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    setSelectedPerchId(null);
+    setLrfHintM(null);
+  }, [imageSrc]);
+
+  const scenePerches = useMemo(() => {
+    void distEpoch;
+    if (!imageSrc) return [];
+    return perchesForSpotImage(imageSrc);
+  }, [imageSrc, distEpoch]);
+
+  useEffect(() => {
+    if (!selectedPerchId) return;
+    const live = scenePerches.find((p) => p.id === selectedPerchId);
+    if (!live) {
+      setSelectedPerchId(null);
+      return;
+    }
+    setEditMinM(live.distanceMinM);
+    setEditMaxM(live.distanceMaxM);
+    setEditEyesVisible(live.eyesVisible !== false);
+    setEditPerchScale(live.scalePercent ?? PERCH_SCALE_DEFAULT);
+  }, [selectedPerchId, scenePerches]);
+
   const birdPlacements = useMemo(() => {
     void scaleEpoch;
+    void distEpoch;
     if (!imageSrc) return [];
     return adminPlacementsForSpotImage(imageSrc, {
       speciesMode: "both",
       tiurSpriteId,
       orreSpriteId,
     });
-  }, [imageSrc, tiurSpriteId, orreSpriteId, scaleEpoch]);
+  }, [imageSrc, tiurSpriteId, orreSpriteId, scaleEpoch, distEpoch]);
+
+  function selectPerchFromBird(info: BirdObservedInfo) {
+    const id = info.placement.perchId;
+    if (!id) return;
+    setSelectedPerchId(id);
+    setLrfHintM(info.measuredDistanceM);
+  }
+
+  const catalogSelected = selectedPerchId
+    ? catalogPerchForId(imageSrc, selectedPerchId)
+    : null;
+  const hasOverride =
+    !!selectedPerchId &&
+    !!getPerchDistanceOverride(imageSrc, selectedPerchId);
+
+  function savePerchDistance(next?: {
+    eyesVisible?: boolean;
+    scalePercent?: number;
+    minM?: number;
+    maxM?: number;
+  }) {
+    if (!selectedPerchId) return;
+    const eyes = next?.eyesVisible ?? editEyesVisible;
+    const scale = next?.scalePercent ?? editPerchScale;
+    const minM = next?.minM ?? editMinM;
+    const maxM = next?.maxM ?? editMaxM;
+    setPerchDistanceOverride(
+      imageSrc,
+      selectedPerchId,
+      minM,
+      maxM,
+      eyes,
+      scale,
+    );
+  }
+
+  function onEyesVisibleChange(checked: boolean) {
+    setEditEyesVisible(checked);
+    savePerchDistance({ eyesVisible: checked });
+  }
+
+  function resetPerchDistance() {
+    if (!selectedPerchId) return;
+    clearPerchDistanceOverride(imageSrc, selectedPerchId);
+    const cat = catalogPerchForId(imageSrc, selectedPerchId);
+    if (cat) {
+      setEditMinM(cat.distanceMinM);
+      setEditMaxM(cat.distanceMaxM);
+      setEditEyesVisible(cat.eyesVisible !== false);
+      setEditPerchScale(cat.scalePercent ?? PERCH_SCALE_DEFAULT);
+    }
+  }
+
+  const selectedLive = selectedPerchId
+    ? (scenePerches.find((p) => p.id === selectedPerchId) ?? null)
+    : null;
+  const editBand = spotColorBandFromBracket(editMinM, editMaxM);
 
   const binoItem = useMemo(
     () => lrfItems.find((i) => i.id === binoId) ?? null,
@@ -251,8 +363,11 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
       onThermalBatteryDrain={() => ADMIN_BATTERY_SEC}
       onGameSeconds={() => {}}
       solveLrfHold={() => null}
-      onBirdObserved={() => {}}
+      onBirdObserved={selectPerchFromBird}
+      onBirdRanged={selectPerchFromBird}
       onDone={onLeave}
+      showPerchLabels
+      adminEyesFlagPreview
       belowFrame={
         <div
           className="admin-spot-controls"
@@ -351,9 +466,118 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
             />
           </div>
 
+          <div className="admin-spot-row admin-spot-perch-row">
+            <label className="admin-spot-field">
+              <span>Perch</span>
+              <select
+                value={selectedPerchId ?? ""}
+                onChange={(e) =>
+                  setSelectedPerchId(e.target.value || null)
+                }
+              >
+                <option value="">LRF / klikk fugl…</option>
+                {scenePerches.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.id} · {p.species} · {p.colorBand ?? "?"} ·{" "}
+                    {p.distanceMinM}–{p.distanceMaxM} m
+                    {p.eyesVisible === false ? " · optikk" : " · øyne"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="admin-spot-field admin-spot-scale">
+              <span>Fra m</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={PERCH_DISTANCE_EDIT_MIN_M}
+                max={PERCH_DISTANCE_EDIT_MAX_M}
+                step={1}
+                disabled={!selectedPerchId}
+                value={editMinM}
+                onChange={(e) => setEditMinM(Number(e.target.value))}
+              />
+            </label>
+
+            <label className="admin-spot-field admin-spot-scale">
+              <span>Til m</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={PERCH_DISTANCE_EDIT_MIN_M}
+                max={PERCH_DISTANCE_EDIT_MAX_M}
+                step={1}
+                disabled={!selectedPerchId}
+                value={editMaxM}
+                onChange={(e) => setEditMaxM(Number(e.target.value))}
+              />
+            </label>
+
+            <label className="admin-spot-field admin-spot-scale">
+              <span>Perch %</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={PERCH_SCALE_MIN}
+                max={PERCH_SCALE_MAX}
+                step={1}
+                disabled={!selectedPerchId}
+                value={editPerchScale}
+                onChange={(e) => setEditPerchScale(Number(e.target.value))}
+                aria-label="Perch sprite scale prosent"
+              />
+            </label>
+
+            <label className="admin-spot-field admin-spot-allow">
+              <span>Eyes ({editBand})</span>
+              <span className="admin-spot-allow-row">
+                <input
+                  type="checkbox"
+                  checked={editEyesVisible}
+                  disabled={!selectedPerchId}
+                  onChange={(e) => onEyesVisibleChange(e.target.checked)}
+                  aria-label="Synlig med bare øyne (rød/lilla)"
+                />
+                <span className="admin-spot-allow-hint">
+                  {editEyesVisible ? "øyne" : "optikk"}
+                </span>
+              </span>
+            </label>
+
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={!selectedPerchId}
+              onClick={() => savePerchDistance()}
+            >
+              Lagre brakett
+            </button>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={!selectedPerchId || !hasOverride}
+              onClick={resetPerchDistance}
+            >
+              Reset
+            </button>
+          </div>
+
           <p className="admin-spot-meta">
             {birdPlacements.length} perch · scale default{" "}
             {BIRD_SPRITE_SCALE_DEFAULT}%
+            {selectedPerchId
+              ? ` · valgt ${selectedPerchId}${
+                  catalogSelected
+                    ? ` (katalog ${catalogSelected.distanceMinM}–${catalogSelected.distanceMaxM} m / ${catalogSelected.colorBand ?? "?"})`
+                    : ""
+                }${
+                  selectedLive
+                    ? ` · ${selectedLive.eyesVisible !== false ? "eyes" : "optikk"}`
+                    : ""
+                }${hasOverride ? " · override" : ""}`
+              : " · LRF/klikk for å velge perch"}
+            {lrfHintM != null ? ` · LRF ${lrfHintM} m` : ""}
           </p>
         </div>
       }

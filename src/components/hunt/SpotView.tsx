@@ -138,6 +138,11 @@ type SpotViewProps = {
   ) => number | null;
   /** LRF Engage / eyes lock — parent enters Aware. */
   onBirdObserved: (info: BirdObservedInfo) => void;
+  /**
+   * Optional: called when LRF locks a bird (before Engage).
+   * Admin uses this to select a perch without leaving Spot.
+   */
+  onBirdRanged?: (info: BirdObservedInfo) => void;
   onDone: (info: { mode: SpotMode; gameSeconds: number }) => void;
   /**
    * Extreme-caution auto-spot: open already in binos, pan on the bird,
@@ -147,6 +152,13 @@ type SpotViewProps = {
   initialPan?: { x: number; y: number };
   /** Optional controls rendered under the landscape frame (admin, etc.). */
   belowFrame?: React.ReactNode;
+  /** Admin: paint perch ids on birds. */
+  showPerchLabels?: boolean;
+  /**
+   * Admin: in eyes mode, show/hide by eyesVisible flag only (ignore distance
+   * gate) so calibration of the checkbox is visible immediately.
+   */
+  adminEyesFlagPreview?: boolean;
 };
 
 /** Single arrow tap — landscape % step. */
@@ -230,12 +242,15 @@ function BirdOverlay({
   placement,
   onSelect,
   visualScale = 1,
+  showPerchLabel = false,
 }: {
   placement: BirdVisualPlacement;
   /** Click / activate → same path as a successful LRF lock. */
   onSelect?: (placement: BirdVisualPlacement) => void;
   /** Multiplier on drawn width only (not LRF geometry). */
   visualScale?: number;
+  /** Admin: show stable perch id near the bird. */
+  showPerchLabel?: boolean;
 }) {
   const selectable = !!onSelect;
   const scale = Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1;
@@ -246,21 +261,40 @@ function BirdOverlay({
   const hitPct = Math.max(drawPct, BIRD_HIT_MIN_PCT);
   const spriteScale = (drawPct / hitPct) * 100;
   const flip = placement.flip ? " scaleX(-1)" : "";
+  const perchLabel =
+    showPerchLabel && placement.perchId ? (
+      <span className="spot-perch-id" aria-hidden>
+        {placement.perchId}
+      </span>
+    ) : null;
 
   if (!selectable) {
     return (
-      <img
-        src={placement.imageSrc}
-        alt=""
-        className="spot-bird"
-        draggable={false}
-        style={{
-          left: `${placement.x}%`,
-          top: `${placement.y}%`,
-          width: `${drawPct}%`,
-          transform: `translate(-50%, -50%)${flip}`,
-        }}
-      />
+      <>
+        {perchLabel ? (
+          <span
+            className="spot-perch-id-anchor"
+            style={{
+              left: `${placement.x}%`,
+              top: `${placement.y}%`,
+            }}
+          >
+            {perchLabel}
+          </span>
+        ) : null}
+        <img
+          src={placement.imageSrc}
+          alt=""
+          className="spot-bird"
+          draggable={false}
+          style={{
+            left: `${placement.x}%`,
+            top: `${placement.y}%`,
+            width: `${drawPct}%`,
+            transform: `translate(-50%, -50%)${flip}`,
+          }}
+        />
+      </>
     );
   }
 
@@ -268,13 +302,13 @@ function BirdOverlay({
     <button
       type="button"
       className="spot-bird-hit"
-      aria-label={`Fugl ca. ${placement.distanceM} m — klikk for å låse`}
+      aria-label={`Perch ${placement.perchId ?? "?"} · ca. ${placement.distanceM} m — klikk for å låse`}
       onPointerDown={(e) => {
         e.stopPropagation();
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(placement);
+        onSelect?.(placement);
       }}
       style={{
         left: `${placement.x}%`,
@@ -284,6 +318,7 @@ function BirdOverlay({
         transform: "translate(-50%, -50%)",
       }}
     >
+      {perchLabel}
       <img
         src={placement.imageSrc}
         alt=""
@@ -356,10 +391,13 @@ export function SpotView({
   solveLrfHold,
   solveElevClicks,
   onBirdObserved,
+  onBirdRanged,
   onDone,
   initialMode = "eyes",
   initialPan,
   belowFrame,
+  showPerchLabels = false,
+  adminEyesFlagPreview = false,
 }: SpotViewProps) {
   const binoZoom = Math.max(1, magnification);
   const thermalZoom = Math.max(1, thermalMagnification);
@@ -889,7 +927,11 @@ export function SpotView({
   function fireLrf(activeLrf: SpotLrfMeta | null) {
     if (!landscapeReady) return;
     const visible = birdPlacements.filter((p) =>
-      visibleInSpotMode(p.distanceM, mode, { habrokZoom: habrokZoomGate }),
+      visibleInSpotMode(p.distanceM, mode, {
+        habrokZoom: habrokZoomGate,
+        eyesVisible: p.eyesVisible,
+        adminEyesFlagPreview,
+      }),
     );
     const hit = findBirdUnderLrfReticle(visible, pan, zoom);
     const lookX = landscapeAtLensCenter(pan.x, zoom);
@@ -937,6 +979,7 @@ export function SpotView({
         rangeSource: "lrf",
       };
       setRangedBird(contact);
+      onBirdRanged?.(contact);
       if (zeiss) {
         startZeissSequence(measured, hold?.elevClicksAbs ?? null);
       } else if (sigStyle) {
@@ -988,7 +1031,11 @@ export function SpotView({
 
   const visibleBirds = birdPlacements
     .filter((p) =>
-      visibleInSpotMode(p.distanceM, mode, { habrokZoom: habrokZoomGate }),
+      visibleInSpotMode(p.distanceM, mode, {
+        habrokZoom: habrokZoomGate,
+        eyesVisible: p.eyesVisible,
+        adminEyesFlagPreview,
+      }),
     )
     // Far first → nearer sprites paint on top when perches overlap.
     .slice()
@@ -1361,6 +1408,7 @@ export function SpotView({
                   key={p.birdId}
                   placement={p}
                   visualScale={birdVisualScale}
+                  showPerchLabel={showPerchLabels}
                   onSelect={birdClickEnabled ? onBirdClick : undefined}
                 />
               ))}
@@ -1381,6 +1429,7 @@ export function SpotView({
                   key={p.birdId}
                   placement={p}
                   visualScale={birdVisualScale}
+                  showPerchLabel={showPerchLabels}
                   onSelect={birdClickEnabled ? onBirdClick : undefined}
                 />
               ))}
@@ -1425,6 +1474,7 @@ export function SpotView({
                     key={p.birdId}
                     placement={p}
                     visualScale={birdVisualScale}
+                    showPerchLabel={showPerchLabels}
                     onSelect={undefined}
                   />
                 ))}

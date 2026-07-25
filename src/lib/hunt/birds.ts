@@ -171,6 +171,13 @@ export function toppImageForSpecies(
 export type BirdVisualPlacement = {
   birdId: string;
   species: BirdSpecies;
+  /** Stable perch id within the spotting image (`p0`, …). */
+  perchId?: string;
+  /**
+   * Synlig med bare øyne (rød/lilla kategori). When false, eyes mode hides
+   * the bird even if distance would otherwise allow it.
+   */
+  eyesVisible?: boolean;
   /** Paired topp/target variant. */
   spriteId: BirdSpriteId;
   /** Topp sprite shown while spotting. */
@@ -214,9 +221,23 @@ export function visibleWithHabrokZoom(
 export function visibleInSpotMode(
   distanceM: number,
   mode: "eyes" | "binos" | "thermal",
-  opts?: { habrokZoom?: number | null },
+  opts?: {
+    habrokZoom?: number | null;
+    eyesVisible?: boolean;
+    /**
+     * Admin calibration: eyes mode follows the eyesVisible flag only
+     * (ignore meter gate so you can verify the checkbox on far perches).
+     */
+    adminEyesFlagPreview?: boolean;
+  },
 ): boolean {
-  if (mode === "eyes") return visibleWithEyes(distanceM);
+  if (mode === "eyes") {
+    if (opts?.adminEyesFlagPreview) {
+      return opts.eyesVisible !== false;
+    }
+    if (opts?.eyesVisible === false) return false;
+    return visibleWithEyes(distanceM);
+  }
   if (opts?.habrokZoom != null && Number.isFinite(opts.habrokZoom)) {
     return visibleWithHabrokZoom(distanceM, opts.habrokZoom);
   }
@@ -234,11 +255,15 @@ export const SPRITE_SIZE_REF_DISTANCE_M = 100;
 export function spriteWidthPctForDistance(
   distanceM: number,
   spriteId?: BirdSpriteId,
+  perchScalePercent: number = 100,
 ): number {
   const d = Math.max(1, distanceM);
   const base = TIUR_TOPP_WIDTH_PCT_AT_100M * (SPRITE_SIZE_REF_DISTANCE_M / d);
-  if (!spriteId) return base;
-  return base * getBirdSpriteScaleFactor(spriteId);
+  const spriteFactor = spriteId ? getBirdSpriteScaleFactor(spriteId) : 1;
+  const perchFactor = Number.isFinite(perchScalePercent)
+    ? Math.max(0.01, Math.min(2, perchScalePercent / 100))
+    : 1;
+  return base * spriteFactor * perchFactor;
 }
 
 /**
@@ -461,21 +486,33 @@ function placementFromPerch(
   return {
     birdId: bird.id,
     species: perch.species,
+    perchId: perch.id,
+    eyesVisible: perch.eyesVisible !== false,
     spriteId,
     imageSrc: sprite.toppSrc,
     distanceM,
     x: perch.x,
     y: perch.y,
-    widthPct: spriteWidthPctForDistance(distanceM, spriteId),
+    widthPct: spriteWidthPctForDistance(
+      distanceM,
+      spriteId,
+      perch.scalePercent ?? 100,
+    ),
     flip,
   };
 }
 
-function isEyesBandPerch(perch: Pick<SpotPerch, "distanceMaxM">): boolean {
+function isEyesBandPerch(
+  perch: Pick<SpotPerch, "distanceMaxM" | "eyesVisible">,
+): boolean {
+  if (typeof perch.eyesVisible === "boolean") return perch.eyesVisible;
   return perch.distanceMaxM <= EYES_MAX_DISTANCE_M;
 }
 
-function isFarBandPerch(perch: Pick<SpotPerch, "distanceMinM">): boolean {
+function isFarBandPerch(
+  perch: Pick<SpotPerch, "distanceMinM" | "eyesVisible">,
+): boolean {
+  if (typeof perch.eyesVisible === "boolean") return !perch.eyesVisible;
   return perch.distanceMinM > EYES_MAX_DISTANCE_M;
 }
 
@@ -698,15 +735,22 @@ export function adminPlacementsForSpotImage(
       perch.species === "orrhane" ? opts.orreSpriteId : opts.tiurSpriteId;
     const sprite = getBirdSprite(spriteId);
     const distanceM = rollPerchDistanceM(perch, random);
+    const perchId = perch.id ?? `p${i}`;
     return {
-      birdId: `admin-${imageSrc}-${i}`,
+      birdId: `admin-${perchId}`,
+      perchId,
+      eyesVisible: perch.eyesVisible !== false,
       species: perch.species,
       spriteId,
       imageSrc: sprite.toppSrc,
       distanceM,
       x: perch.x,
       y: perch.y,
-      widthPct: spriteWidthPctForDistance(distanceM, spriteId),
+      widthPct: spriteWidthPctForDistance(
+        distanceM,
+        spriteId,
+        perch.scalePercent ?? 100,
+      ),
       flip: random() < 0.5,
     };
   });

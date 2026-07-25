@@ -670,7 +670,49 @@ body {
   margin: 0;
   font-size: 0.75rem;
   color: #9a8768;
+  white-space: normal;
+}
+
+.admin-spot-perch-row .admin-spot-field {
+  min-width: 9rem;
+}
+
+.admin-spot-btn {
+  padding: 0.28rem 0.55rem;
+  font-size: 0.75rem;
+  align-self: flex-end;
+}
+
+.admin-spot-btn:disabled {
+  opacity: 0.45;
+}
+
+.spot-perch-id-anchor {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, calc(-50% - 0.85rem));
+  pointer-events: none;
+}
+
+.spot-perch-id {
+  display: inline-block;
+  padding: 0.05rem 0.25rem;
+  font-size: 0.62rem;
+  line-height: 1.1;
+  font-family: var(--font-display), monospace;
+  color: #1a120a;
+  background: rgba(232, 220, 200, 0.92);
+  border: 1px solid #6b5238;
   white-space: nowrap;
+}
+
+.spot-bird-hit .spot-perch-id {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 2;
+  transform: translate(-50%, -110%);
+  pointer-events: none;
 }
 
 .how-to-play-sections {
