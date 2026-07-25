@@ -6,6 +6,7 @@ export type TownLocationId =
   | "home"
   | "shooting-range"
   | "how-to-play"
+  | "admin-office"
   | "meat-market"
   | "rulles"
   | "cb-customs";
@@ -58,15 +59,31 @@ const LOCATIONS: TownLocation[] = [
     blurb:
       "BODY/MIND, Kestrel, Track/ettersøk, zero, dV/dT, DOPE — det som faktisk betyr noe.",
   },
+  {
+    id: "admin-office",
+    name: "Admin office",
+    blurb: "Kalibrer spotting-percher og test optikk.",
+  },
 ];
 
 type TownHubProps = {
   playerName: string;
   nickname: string;
   onEnter: (location: TownLocationId) => void;
+  /** When true, show Admin office under How to play. */
+  adminUnlocked?: boolean;
 };
 
-export function TownHub({ playerName, nickname, onEnter }: TownHubProps) {
+export function TownHub({
+  playerName,
+  nickname,
+  onEnter,
+  adminUnlocked = false,
+}: TownHubProps) {
+  const locations = adminUnlocked
+    ? LOCATIONS
+    : LOCATIONS.filter((loc) => loc.id !== "admin-office");
+
   return (
     <div className="town-hub">
       <p className="intro-line">
@@ -74,7 +91,7 @@ export function TownHub({ playerName, nickname, onEnter }: TownHubProps) {
       </p>
 
       <ul className="town-list">
-        {LOCATIONS.map((loc) => (
+        {locations.map((loc) => (
           <li key={loc.id}>
             <button
               type="button"

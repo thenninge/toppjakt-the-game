@@ -91,6 +91,7 @@ import {
 } from "@/lib/weather/spec";
 import { TownHub, type TownLocationId } from "@/components/town/TownHub";
 import { HowToPlayView } from "@/components/town/HowToPlayView";
+import { AdminOffice } from "@/components/town/AdminOffice";
 import {
   SheriffOffice,
   type SheriffFinishResult,
@@ -163,6 +164,8 @@ function displayName(raw: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 }
 
+const ADMIN_SESSION_KEY = "toppjakt-admin-unlocked";
+
 export function IntroScreen() {
   const { data: session, status: authStatus } = useSession();
   const [phase, setPhase] = useState<Phase>("loading");
@@ -182,6 +185,7 @@ export function IntroScreen() {
   const [huntHud, setHuntHud] = useState<HuntHudStatus | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [kaboomNotice, setKaboomNotice] = useState(false);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [saveConflict, setSaveConflict] = useState<{
     local: PlayerSaveV1;
     cloud: PlayerSaveV1;
@@ -212,6 +216,14 @@ export function IntroScreen() {
     setHuntHud(null);
   }
   const signedIn = authStatus === "authenticated" && !!session?.user;
+
+  useEffect(() => {
+    try {
+      setAdminUnlocked(sessionStorage.getItem(ADMIN_SESSION_KEY) === "1");
+    } catch {
+      /* private mode / SSR */
+    }
+  }, []);
 
   useEffect(() => {
     statsRef.current = stats;
@@ -487,6 +499,7 @@ export function IntroScreen() {
   }
 
   function enterLocation(id: TownLocationId) {
+    if (id === "admin-office" && !adminUnlocked) return;
     setLocation(id);
     setPhase("location");
   }
@@ -1195,6 +1208,27 @@ export function IntroScreen() {
               authEmail={signedIn ? session?.user?.email ?? "Google" : null}
               onGoogleLogin={signedIn ? undefined : loginWithGoogle}
               onGoogleLogout={signedIn ? () => void logoutGoogle() : undefined}
+              adminUnlocked={adminUnlocked}
+              onAdminUnlock={() => {
+                try {
+                  sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+                } catch {
+                  /* ignore */
+                }
+                setAdminUnlocked(true);
+              }}
+              onAdminLock={() => {
+                try {
+                  sessionStorage.removeItem(ADMIN_SESSION_KEY);
+                } catch {
+                  /* ignore */
+                }
+                setAdminUnlocked(false);
+                if (location === "admin-office") {
+                  setLocation(null);
+                  setPhase("town");
+                }
+              }}
             />
           ) : null}
         </div>
@@ -1353,6 +1387,7 @@ export function IntroScreen() {
             playerName={stats.name}
             nickname={stats.nickname}
             onEnter={enterLocation}
+            adminUnlocked={adminUnlocked}
           />
         )}
 
@@ -1632,6 +1667,12 @@ export function IntroScreen() {
           <HowToPlayView onLeave={backToTown} />
         )}
 
+        {phase === "location" &&
+          location === "admin-office" &&
+          adminUnlocked && (
+            <AdminOffice onLeave={backToTown} />
+          )}
+
         {phase === "sheriff-applied" && (
           <div className="intro-dialogue">
             {lastPermit?.approved ? (
@@ -1676,7 +1717,8 @@ export function IntroScreen() {
           location !== "meat-market" &&
           location !== "rulles" &&
           location !== "shooting-range" &&
-          location !== "how-to-play" && (
+          location !== "how-to-play" &&
+          location !== "admin-office" && (
           <div className="intro-dialogue">
             <p className="intro-line intro-gift">{location}</p>
             <p className="intro-line">

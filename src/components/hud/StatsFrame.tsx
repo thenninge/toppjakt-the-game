@@ -8,6 +8,8 @@ import {
   formatLifetimeDistance,
 } from "@/lib/playerSave";
 
+const ADMIN_PIN = "9898";
+
 type StatsFrameProps = {
   stats: PlayerStats;
   onRename?: (nextName: string) => string | null;
@@ -16,6 +18,10 @@ type StatsFrameProps = {
   authEmail?: string | null;
   onGoogleLogin?: () => void;
   onGoogleLogout?: () => void;
+  /** Admin mode unlock (PIN) — shows Admin office in town. */
+  adminUnlocked?: boolean;
+  onAdminUnlock?: () => void;
+  onAdminLock?: () => void;
 };
 
 function formatRange(meters: number): string {
@@ -23,7 +29,7 @@ function formatRange(meters: number): string {
   return `${meters} m`;
 }
 
-type MenuView = "closed" | "root" | "edit" | "rename";
+type MenuView = "closed" | "root" | "edit" | "rename" | "admin-pin";
 
 /** Compact sticky hunter strip — keeps main content visible. */
 export function StatsFrame({
@@ -33,16 +39,22 @@ export function StatsFrame({
   authEmail,
   onGoogleLogin,
   onGoogleLogout,
+  adminUnlocked = false,
+  onAdminUnlock,
+  onAdminLock,
 }: StatsFrameProps) {
   const [menu, setMenu] = useState<MenuView>("closed");
   const [renameValue, setRenameValue] = useState(stats.name);
   const [renameError, setRenameError] = useState("");
+  const [adminPin, setAdminPin] = useState("");
+  const [adminPinError, setAdminPinError] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
   const hasMenu =
     !!onRename ||
     !!onDeleteUser ||
     !!onGoogleLogin ||
-    !!onGoogleLogout;
+    !!onGoogleLogout ||
+    !!onAdminUnlock;
 
   useEffect(() => {
     if (menu === "closed") return;
@@ -50,12 +62,16 @@ export function StatsFrame({
       if (!menuRef.current?.contains(e.target as Node)) {
         setMenu("closed");
         setRenameError("");
+        setAdminPin("");
+        setAdminPinError("");
       }
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setMenu("closed");
         setRenameError("");
+        setAdminPin("");
+        setAdminPinError("");
       }
     }
     document.addEventListener("mousedown", onDoc);
@@ -81,6 +97,19 @@ export function StatsFrame({
       return;
     }
     setRenameError("");
+    setMenu("closed");
+  }
+
+  function submitAdminPin(e: FormEvent) {
+    e.preventDefault();
+    if (!onAdminUnlock) return;
+    if (adminPin.trim() !== ADMIN_PIN) {
+      setAdminPinError("Feil pinkode.");
+      return;
+    }
+    onAdminUnlock();
+    setAdminPin("");
+    setAdminPinError("");
     setMenu("closed");
   }
 
@@ -179,6 +208,34 @@ export function StatsFrame({
                     Slett jeger
                   </button>
                 ) : null}
+                {onAdminUnlock ? (
+                  adminUnlocked ? (
+                    <button
+                      type="button"
+                      className="stats-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        onAdminLock?.();
+                        setMenu("closed");
+                      }}
+                    >
+                      Admin av
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="stats-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setAdminPin("");
+                        setAdminPinError("");
+                        setMenu("admin-pin");
+                      }}
+                    >
+                      Admin
+                    </button>
+                  )
+                ) : null}
                 <button
                   type="button"
                   className="stats-menu-item is-muted"
@@ -187,6 +244,45 @@ export function StatsFrame({
                 >
                   ← Tilbake
                 </button>
+              </div>
+            ) : null}
+            {menu === "admin-pin" ? (
+              <div className="stats-menu-panel stats-menu-rename" role="dialog">
+                <p className="stats-menu-heading">Admin</p>
+                <form onSubmit={submitAdminPin}>
+                  <input
+                    className="stats-rename-input"
+                    autoFocus
+                    autoComplete="off"
+                    inputMode="numeric"
+                    spellCheck={false}
+                    maxLength={8}
+                    type="password"
+                    value={adminPin}
+                    onChange={(e) => setAdminPin(e.target.value)}
+                    aria-label="Admin pinkode"
+                    placeholder="Pinkode"
+                  />
+                  {adminPinError ? (
+                    <p className="stats-rename-error">{adminPinError}</p>
+                  ) : null}
+                  <div className="stats-rename-actions">
+                    <button
+                      type="button"
+                      className="stats-menu-item is-muted"
+                      onClick={() => {
+                        setMenu("edit");
+                        setAdminPin("");
+                        setAdminPinError("");
+                      }}
+                    >
+                      Avbryt
+                    </button>
+                    <button type="submit" className="stats-menu-item">
+                      Lås opp
+                    </button>
+                  </div>
+                </form>
               </div>
             ) : null}
             {menu === "rename" ? (

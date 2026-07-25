@@ -571,6 +571,47 @@ body {
   gap: 0.85rem;
 }
 
+.admin-office {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.admin-office-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #4a3828;
+  background: rgba(18, 14, 10, 0.72);
+}
+
+.admin-office-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #c9b89a;
+}
+
+.admin-office-field select {
+  font: inherit;
+  color: #f0e6d2;
+  background: #120e0a;
+  border: 1px solid #6b5238;
+  padding: 0.35rem 0.45rem;
+}
+
+.admin-office-field select:disabled {
+  opacity: 0.45;
+}
+
+.admin-office-meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: #9a8768;
+}
+
 .how-to-play-sections {
   display: flex;
   flex-direction: column;

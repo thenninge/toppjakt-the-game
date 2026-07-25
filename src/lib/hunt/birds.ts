@@ -646,6 +646,52 @@ export function bindBirdsToSpotImage(
   return { birds: next, placements };
 }
 
+export type AdminSpotSpeciesMode = "tiur" | "orrhane" | "both";
+
+/**
+ * Admin calibration: fill every perch on `imageSrc` (optionally filtered by
+ * species) with fixed tiur/orre sprites — ignores kit and hunt bird state.
+ */
+export function adminPlacementsForSpotImage(
+  imageSrc: string,
+  opts: {
+    speciesMode: AdminSpotSpeciesMode;
+    tiurSpriteId: BirdSpriteId;
+    orreSpriteId: BirdSpriteId;
+    random?: () => number;
+  },
+): BirdVisualPlacement[] {
+  const random = opts.random ?? Math.random;
+  let perches = perchesForSpotImage(imageSrc);
+  if (opts.speciesMode === "tiur") {
+    perches = perches.filter((p) => p.species === "tiur");
+  } else if (opts.speciesMode === "orrhane") {
+    perches = perches.filter((p) => p.species === "orrhane");
+  } else {
+    perches = perches.filter(
+      (p) => p.species === "tiur" || p.species === "orrhane",
+    );
+  }
+
+  return perches.map((perch, i) => {
+    const spriteId =
+      perch.species === "orrhane" ? opts.orreSpriteId : opts.tiurSpriteId;
+    const sprite = getBirdSprite(spriteId);
+    const distanceM = rollPerchDistanceM(perch, random);
+    return {
+      birdId: `admin-${imageSrc}-${i}`,
+      species: perch.species,
+      spriteId,
+      imageSrc: sprite.toppSrc,
+      distanceM,
+      x: perch.x,
+      y: perch.y,
+      widthPct: spriteWidthPctForDistance(distanceM),
+      flip: random() < 0.5,
+    };
+  });
+}
+
 /**
  * Place birds that are in `cell` into the spot landscape.
  * When `imageSrc` has a placement guide, uses those perches (x/y/species/range).
