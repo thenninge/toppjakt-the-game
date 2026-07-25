@@ -38,6 +38,11 @@ export type CustomBarrelConfig = {
   stations: BarrelProfileStation[];
   /** Required when material is carbon. */
   carbonContour?: CarbonContourId;
+  /**
+   * CNC fluting (steel only) — faster cool on the range.
+   * Once installed fluted, that pipe cannot be fluted again.
+   */
+  fluted?: boolean;
 };
 
 export type InstalledCustomBarrel = CustomBarrelConfig & {
@@ -139,6 +144,10 @@ export const CARBON_CONTOURS: {
 export const CNC_PROFILE_LABOUR_NOK = 3_500;
 /** Install / headspace / crowning labour (always). */
 export const BARREL_INSTALL_LABOUR_NOK = 2_500;
+/** Fluting labour (steel only) — one-time per pipe. */
+export const FLUTING_LABOUR_NOK = 2_800;
+/** Retrofit fluting on an already-installed unfluted custom steel pipe. */
+export const FLUTING_RETROFIT_NOK = 2_200;
 
 export function barrelMaker(id: BarrelMakerId) {
   return BARREL_MAKERS.find((m) => m.id === id) ?? BARREL_MAKERS[0]!;
@@ -293,6 +302,7 @@ export function quoteCustomBarrelNok(
 ): {
   blankNok: number;
   profileNok: number;
+  flutingNok: number;
   installNok: number;
   sauerNok: number;
   subtotalBeforeStainless: number;
@@ -302,6 +312,7 @@ export function quoteCustomBarrelNok(
   const maker = barrelMaker(config.maker);
   let blankNok = maker.baseBlankNok;
   let profileNok = 0;
+  let flutingNok = 0;
 
   if (config.material === "carbon") {
     const contour =
@@ -311,13 +322,15 @@ export function quoteCustomBarrelNok(
     profileNok = 0;
   } else {
     profileNok = CNC_PROFILE_LABOUR_NOK;
+    if (config.fluted) flutingNok = FLUTING_LABOUR_NOK;
   }
 
   const installNok = BARREL_INSTALL_LABOUR_NOK;
   const sauerNok =
     rifleId === SAUER_200STR_RIFLE_ID ? SAUER_200STR_BARREL_SURCHARGE_NOK : 0;
 
-  const subtotalBeforeStainless = blankNok + profileNok + installNok + sauerNok;
+  const subtotalBeforeStainless =
+    blankNok + profileNok + flutingNok + installNok + sauerNok;
 
   let totalNok = subtotalBeforeStainless;
   let stainlessExtraNok = 0;
@@ -332,6 +345,7 @@ export function quoteCustomBarrelNok(
   return {
     blankNok,
     profileNok,
+    flutingNok,
     installNok,
     sauerNok,
     subtotalBeforeStainless,
@@ -350,6 +364,7 @@ export function createDefaultCustomBarrelConfig(
     lengthIn,
     stations: defaultSteelStations(lengthIn),
     carbonContour: "hunter",
+    fluted: false,
   };
 }
 
@@ -398,6 +413,7 @@ export function normalizeCustomBarrelConfig(
     lengthIn,
     stations,
     carbonContour,
+    fluted: material !== "carbon" && o.fluted === true,
   };
 }
 
@@ -484,6 +500,7 @@ export function buildInstalledCustomBarrel(
       config.material === "carbon"
         ? (config.carbonContour ?? "hunter")
         : config.carbonContour,
+    fluted: config.material !== "carbon" && !!config.fluted,
   };
   return {
     ...normalized,

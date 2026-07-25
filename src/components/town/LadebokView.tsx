@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  formatEstimatedV0Mps,
   formatKaboomChancePct,
 } from "@/lib/reloading/loadPhysics";
 import {
@@ -100,7 +101,7 @@ export function LadebokView({
                   <dt>Est. v₀</dt>
                   <dd>
                     {entry.estimatedV0Mps != null
-                      ? `${entry.estimatedV0Mps} m/s`
+                      ? `${formatEstimatedV0Mps(entry.estimatedV0Mps)} m/s`
                       : "—"}
                   </dd>
                 </div>

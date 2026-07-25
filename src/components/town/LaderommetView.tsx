@@ -38,10 +38,16 @@ import {
 } from "@/lib/reloading/loadBook";
 import {
   estimateLoadPlanFromDevRow,
+  formatEstimatedV0Mps,
   formatKaboomChancePct,
   parseBulletWeightGrains,
   type ArmedLoadPlan,
 } from "@/lib/reloading/loadPhysics";
+import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
+import {
+  formatGrains,
+  snapshotComponentStock,
+} from "@/lib/reloading/componentStock";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { LadebokView } from "@/components/town/LadebokView";
@@ -67,11 +73,13 @@ type LaderommetViewProps = {
   recipe: LoadBenchRecipe;
   loadDevTable: LoadDevTable;
   loadBook: LoadBookEntry[];
+  homeLoadedLots: HomeLoadedLot[];
+  powderOpenGrains: Record<string, number>;
   armedLoadPlan: ArmedLoadPlan | null;
   onChangeRecipe: (next: LoadBenchRecipe) => void;
   onChangeLoadDevTable: (next: LoadDevTable) => void;
   onChangeLoadBook: (next: LoadBookEntry[]) => void;
-  onArmLoadPlan: (plan: ArmedLoadPlan) => void;
+  onLoadHomeAmmo: (rowId: string) => { ok: boolean; error?: string };
   onDisarmLoadPlan: () => void;
   onBack: () => void;
 };
@@ -135,17 +143,20 @@ export function LaderommetView({
   recipe,
   loadDevTable,
   loadBook,
+  homeLoadedLots,
+  powderOpenGrains,
   armedLoadPlan,
   onChangeRecipe,
   onChangeLoadDevTable,
   onChangeLoadBook,
-  onArmLoadPlan,
+  onLoadHomeAmmo,
   onDisarmLoadPlan,
   onBack,
 }: LaderommetViewProps) {
   const [pick, setPick] = useState<PickField>(null);
   const [rowPick, setRowPick] = useState<RowPick>(null);
   const [tab, setTab] = useState<"plan" | "bok">("plan");
+  const [loadMsg, setLoadMsg] = useState<string | null>(null);
 
   const patch = (partial: Partial<LoadBenchRecipe>) => {
     onChangeRecipe({ ...recipe, ...partial, annealing: false });
@@ -299,33 +310,29 @@ export function LaderommetView({
     onChangeLoadBook(upsertLoadBookEntry(loadBook, entry));
   }
 
-  function armRow(row: LoadDevRow) {
-    const powder = row.powderItemId
-      ? getShopItem(row.powderItemId)
-      : null;
-    const bullet = row.bulletItemId
-      ? getShopItem(row.bulletItemId)
-      : null;
-    if (!powder || !bullet) return;
-    const est = estimateLoadPlanFromDevRow(recipe.caliberKey, row, {
-      powder,
-      bullet,
-    });
-    const seating = deriveFromCol(recipe.caliberKey, row.colMm);
-    saveRowToBook(row);
-    onArmLoadPlan({
-      caliberKey: recipe.caliberKey,
-      pressurePct: est.pressurePct,
-      overpressurePct: est.overpressurePct,
-      kaboomChance: est.kaboomChance,
-      v0Mps: est.v0Mps,
-      powderGrains: row.powderGrains,
-      seatingDepthThou: seating.seatingDepthThou,
-      colMm: est.colMm,
-      armedAtMs: Date.now(),
-      loadDevRowId: row.id,
-    });
+  function loadRow(row: LoadDevRow) {
+    const result = onLoadHomeAmmo(row.id);
+    if (result.ok) {
+      setLoadMsg(
+        `Ladet ${row.shotsLoaded} stk · ${row.powderGrains.toFixed(1)} gr — i ladebok og klar for Load test.`,
+      );
+    } else {
+      setLoadMsg(result.error ?? "Klarte ikke å lade.");
+    }
   }
+
+  const stock = useMemo(
+    () => snapshotComponentStock(inventory, powderOpenGrains),
+    [inventory, powderOpenGrains],
+  );
+
+  const loadedForCaliber = useMemo(
+    () =>
+      homeLoadedLots
+        .filter((l) => l.caliberKey === recipe.caliberKey)
+        .sort((a, b) => b.loadedAtMs - a.loadedAtMs),
+    [homeLoadedLots, recipe.caliberKey],
+  );
 
   const pickDialog = (() => {
     if (!pick) return null;
@@ -548,16 +555,120 @@ export function LaderommetView({
       <LocationNav
         onBackToTown={onBack}
         backLabel="← Tilbake til hjem"
-        hint="Fyll ladeplanen, test på banen — v₀ og samling skrives inn etter målt serie."
+        hint="Lag ladeplan → Lad ammo → test på banen (Load test)."
       />
 
       <header className="shop-header">
         <p className="intro-line intro-gift">Laderommet</p>
         <p className="intro-line">
-          Ladeplan for testing · ladebok for gamle oppskrifter. Høy ladning kan
-          sprenge våpenet.
+          Komponentlager, ladeplan og laddede partier. «Lad ammo» bruker hylser,
+          tennhetter, kuler og krutt — skriver til ladebok og gjør ammo klar for
+          Load test.
         </p>
       </header>
+
+      <section className="laderommet-stock" aria-label="Komponentlager">
+        <p className="intro-line intro-gift">Komponentlager</p>
+        <div className="laderommet-stock-grid">
+          <div>
+            <p className="laderommet-stock-label">Hylser</p>
+            {stock.brassPieces.length === 0 ? (
+              <p className="shop-row-note">Ingen</p>
+            ) : (
+              <ul className="laderommet-stock-list">
+                {stock.brassPieces.map((r) => (
+                  <li key={r.itemId}>
+                    {r.label}: <strong>{r.qty}</strong> stk
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="laderommet-stock-label">Tennhetter</p>
+            {stock.primerPieces.length === 0 ? (
+              <p className="shop-row-note">Ingen</p>
+            ) : (
+              <ul className="laderommet-stock-list">
+                {stock.primerPieces.map((r) => (
+                  <li key={r.itemId}>
+                    {r.label}: <strong>{r.qty}</strong> stk
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="laderommet-stock-label">Kuler</p>
+            {stock.bulletPieces.length === 0 ? (
+              <p className="shop-row-note">Ingen</p>
+            ) : (
+              <ul className="laderommet-stock-list">
+                {stock.bulletPieces.map((r) => (
+                  <li key={r.itemId}>
+                    {r.label}: <strong>{r.qty}</strong> stk
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="laderommet-stock-label">Krutt</p>
+            {stock.powder.length === 0 ? (
+              <p className="shop-row-note">Ingen</p>
+            ) : (
+              <ul className="laderommet-stock-list">
+                {stock.powder.map((r) => (
+                  <li key={r.itemId}>
+                    {r.label}:{" "}
+                    <strong>{formatGrains(r.totalGrainsApprox)}</strong>
+                    {r.openGrains > 0 || r.unopenedBoxes > 0 ? (
+                      <span className="shop-row-note">
+                        {" "}
+                        ({r.openGrains > 0
+                          ? `${Math.round(r.openGrains)} gr åpnet`
+                          : "uåpnet"}
+                        {r.unopenedBoxes > 0
+                          ? ` · ${r.unopenedBoxes} boks`
+                          : ""}
+                        )
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {loadedForCaliber.length > 0 ? (
+        <section className="laderommet-lots" aria-label="Laddede partier">
+          <p className="intro-line intro-gift">
+            Laddede partier ({loadedForCaliber.length})
+          </p>
+          <p className="shop-row-note">
+            Igjen = ikke skutt. Skutte hylser kommer tilbake hit. Målte serier
+            ligger i ladebok.
+          </p>
+          <ul className="laderommet-stock-list">
+            {loadedForCaliber.map((lot) => (
+              <li key={lot.id}>
+                {lot.powderGrains.toFixed(1)} gr · {lot.bulletLabel} · COL{" "}
+                {lot.colMm.toFixed(1)} mm —{" "}
+                <strong>
+                  {lot.roundsRemaining}/{lot.roundsLoaded}
+                </strong>{" "}
+                igjen
+                {lot.measuredV0Mps != null
+                  ? ` · målt v₀ ${lot.measuredV0Mps.toFixed(1)}`
+                  : ""}
+                {lot.roundsRemaining <= 0 ? " · tom" : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div
         className="home-data-tabs"
@@ -699,11 +810,13 @@ export function LaderommetView({
       <section className="laderommet-plan" aria-label="Ladeplan">
         <p className="intro-line intro-gift">Ladeplan</p>
         <p className="shop-row-note">
-          Fyll antall skudd, krutt, vekt, kule, tennhette og COL. Seating/friflukt
-          regnes fra COL. Est. v₀ / trykk / spreng oppdateres live. Målt v₀ og
-          samling fylles etter serie på banen. Over 5 % overtrykk: sprengfare pr.
-          skudd mens testladning er aktiv.
+          Sett n, krutt, kule, primer og COL. Deretter «Lad ammo» — planen
+          forbrukes, legges i ladebok, og patronene blir tilgjengelige på Load
+          test. Est. (v₀) og trykk/spreng vises før lading; samling/ES først
+          etter målt serie.
         </p>
+
+        {loadMsg ? <p className="shop-row-note">{loadMsg}</p> : null}
 
         <div className="laderommet-plan-actions">
           <button
@@ -738,7 +851,7 @@ export function LaderommetView({
             Aktiv testladning: {armedLoadPlan.powderGrains.toFixed(1)} gr · COL{" "}
             {armedLoadPlan.colMm.toFixed(1)} mm · trykk{" "}
             {armedLoadPlan.pressurePct.toFixed(1)} % · est. v₀{" "}
-            {armedLoadPlan.v0Mps} m/s · sprengfare{" "}
+            {formatEstimatedV0Mps(armedLoadPlan.v0Mps)} m/s · sprengfare{" "}
             <span
               className={
                 armedLoadPlan.kaboomChance > 0
@@ -771,7 +884,9 @@ export function LaderommetView({
                   <th scope="col">COL</th>
                   <th scope="col">Seat</th>
                   <th scope="col">Friflukt</th>
-                  <th scope="col">Est. v₀</th>
+                  <th scope="col" title="Estimert v₀ — (hele m/s)">
+                    (v₀)
+                  </th>
                   <th scope="col">Trykk</th>
                   <th scope="col">Spreng</th>
                   <th scope="col">Avg v₀</th>
@@ -801,7 +916,11 @@ export function LaderommetView({
                   const isActive =
                     armedLoadPlan?.loadDevRowId === row.id ||
                     loadDevTable.activeRowId === row.id;
-                  const canArm = !!row.powderItemId && !!row.bulletItemId;
+                  const canArm =
+                    !!row.powderItemId &&
+                    !!row.bulletItemId &&
+                    !!row.primerItemId &&
+                    !!recipe.brassItemId;
                   return (
                     <tr
                       key={row.id}
@@ -897,8 +1016,11 @@ export function LaderommetView({
                       <td className="load-dev-derived">
                         {derived.frifluktThou}
                       </td>
-                      <td className="load-dev-derived">
-                        {est ? `${est.v0Mps}` : "—"}
+                      <td
+                        className="load-dev-derived"
+                        title="Estimert v₀ (hele m/s) — måles på banen"
+                      >
+                        {est ? formatEstimatedV0Mps(est.v0Mps) : "—"}
                       </td>
                       <td
                         className={
@@ -954,23 +1076,21 @@ export function LaderommetView({
                         <button
                           type="button"
                           className="intro-button"
-                          disabled={!canArm || isActive}
+                          disabled={!canArm}
                           title={
                             canArm
-                              ? est && est.kaboomChance > 0
-                                ? `Test på banen — sprengfare ${formatKaboomChancePct(est.kaboomChance)} pr. skudd`
-                                : "Test denne laden på skytebanen (lagres i ladebok)"
-                              : "Velg krutt og kule først"
+                              ? "Forbruk komponenter, lagre i ladebok, klar for Load test"
+                              : "Velg krutt, kule og primer først"
                           }
-                          onClick={() => armRow(row)}
+                          onClick={() => loadRow(row)}
                         >
-                          {isActive ? "Aktiv" : "Test"}
+                          Lad ammo
                         </button>
                         <button
                           type="button"
                           className="intro-button sheriff-secondary"
                           disabled={!canArm}
-                          title="Lagre i ladebok uten å aktivere test"
+                          title="Lagre oppskrift i ladebok uten å lade"
                           onClick={() => saveRowToBook(row)}
                         >
                           Bok

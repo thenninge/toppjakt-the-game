@@ -38,6 +38,35 @@ export type MiscSpec = {
    * Gameplay wiring comes later; flag marks the kit item.
    */
   isChronograph?: boolean;
+  /**
+   * Battery desk fan — blows away heat mirage on the shooting range
+   * when packed in kit.
+   */
+  isRangeFan?: boolean;
+  /**
+   * Chamber cooler (e.g. Magnetospeed RifleKuhl) — doubles barrel cool
+   * rate on the shooting range. Does not clear mirage by itself.
+   */
+  isChamberCooler?: boolean;
+  /**
+   * Multiplies barrel-heat mirage when packed in kit (e.g. 0.7 = −30 %).
+   * Stacks with other gear. Baseline mirage assumes a suppressor.
+   */
+  mirageMult?: number;
+  /**
+   * When true, mirageMult only applies if a suppressor is mounted
+   * (suppressor covers). Mirage bands leave this unset.
+   */
+  mirageRequiresSuppressor?: boolean;
+  /**
+   * Extra forward calm mass (grams) toward weapon calm — not kit weight.
+   * Mirage band: 1× weight. Suppressor covers: 2× weight (same as can).
+   */
+  weaponCalmGrams?: number;
+  /**
+   * When true, weaponCalmGrams only applies with a suppressor mounted.
+   */
+  weaponCalmRequiresSuppressor?: boolean;
 };
 
 /** Placeholder net contribution to felt load (can be negative = net help). */
@@ -58,4 +87,42 @@ export function isCamcorderMisc(misc: MiscSpec): boolean {
 
 export function isChronographMisc(misc: MiscSpec): boolean {
   return !!misc.isChronograph;
+}
+
+export function isRangeFanMisc(misc: MiscSpec): boolean {
+  return !!misc.isRangeFan;
+}
+
+export function isChamberCoolerMisc(misc: MiscSpec): boolean {
+  return !!misc.isChamberCooler;
+}
+
+/** Combined mirage multiplier from packed misc (default 1). */
+export function miscKitMirageMult(
+  miscSpecs: MiscSpec[],
+  hasSuppressor: boolean,
+): number {
+  let m = 1;
+  for (const misc of miscSpecs) {
+    const mult = misc.mirageMult;
+    if (mult == null || !(mult > 0) || !Number.isFinite(mult)) continue;
+    if (misc.mirageRequiresSuppressor && !hasSuppressor) continue;
+    m *= mult;
+  }
+  return m;
+}
+
+/** Extra weapon-calm grams from packed misc. */
+export function miscKitWeaponCalmGrams(
+  miscSpecs: MiscSpec[],
+  hasSuppressor: boolean,
+): number {
+  let sum = 0;
+  for (const misc of miscSpecs) {
+    const g = misc.weaponCalmGrams ?? 0;
+    if (!(g > 0) || !Number.isFinite(g)) continue;
+    if (misc.weaponCalmRequiresSuppressor && !hasSuppressor) continue;
+    sum += g;
+  }
+  return sum;
 }

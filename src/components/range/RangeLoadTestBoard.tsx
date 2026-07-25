@@ -2,17 +2,14 @@
 
 import { useMemo } from "react";
 import { getShopItem } from "@/lib/shop/catalog";
+import { deriveFromCol } from "@/lib/reloading/loadDevTable";
 import {
-  deriveFromCol,
-  type LoadDevRow,
-  type LoadDevTable,
-} from "@/lib/reloading/loadDevTable";
-import {
-  estimateLoadPlanFromDevRow,
+  formatEstimatedV0Mps,
   formatKaboomChancePct,
   parseBulletWeightGrains,
   type ArmedLoadPlan,
 } from "@/lib/reloading/loadPhysics";
+import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
 import type { SpentBrassKey } from "@/lib/reloading/brass";
 import { LOAD_CALIBER_OPTIONS } from "@/lib/reloading/components";
 import { computeChronoSeriesStats } from "@/lib/ballistics/kestrelProfile";
@@ -30,12 +27,11 @@ type LiveSeriesStats = {
 
 type RangeLoadTestBoardProps = {
   caliberKey: SpentBrassKey;
-  brassItemId: string | null;
-  loadDevTable: LoadDevTable;
+  homeLoadedLots: HomeLoadedLot[];
   armedLoadPlan: ArmedLoadPlan | null;
   hasChronograph: boolean;
   live: LiveSeriesStats | null;
-  onArmRow: (row: LoadDevRow) => void;
+  onArmLot: (lot: HomeLoadedLot) => void;
   onDisarm: () => void;
 };
 
@@ -57,38 +53,37 @@ function bulletShort(itemId: string | null): string {
 }
 
 /**
- * Load-test lane board — running overview of ladeplan charges + live series.
+ * Load-test lane board — hjemmeladde partier + live serie.
  */
 export function RangeLoadTestBoard({
   caliberKey,
-  brassItemId: _brassItemId,
-  loadDevTable,
+  homeLoadedLots,
   armedLoadPlan,
   hasChronograph,
   live,
-  onArmRow,
+  onArmLot,
   onDisarm,
 }: RangeLoadTestBoardProps) {
-  void _brassItemId;
   const caliberLabel =
     LOAD_CALIBER_OPTIONS.find((o) => o.key === caliberKey)?.label ?? caliberKey;
 
-  const rows = useMemo(
+  const lots = useMemo(
     () =>
-      [...loadDevTable.rows].sort((a, b) => a.powderGrains - b.powderGrains),
-    [loadDevTable.rows],
+      [...homeLoadedLots]
+        .filter((l) => l.caliberKey === caliberKey)
+        .sort((a, b) => a.powderGrains - b.powderGrains || b.loadedAtMs - a.loadedAtMs),
+    [homeLoadedLots, caliberKey],
   );
 
-  const activeId =
-    armedLoadPlan?.loadDevRowId ?? loadDevTable.activeRowId ?? null;
+  const activeId = armedLoadPlan?.homeLotId ?? null;
 
-  if (rows.length === 0) {
+  if (lots.length === 0) {
     return (
       <section className="range-load-test" aria-label="Load test">
         <p className="intro-line intro-gift">Load test</p>
         <p className="shop-row-note">
-          Ingen ladninger i ladeplanen ennå. Gå til Hjem → Laderommet, legg til
-          rader, deretter kom hit for å måle samling og v₀.
+          Ingen hjemmeladd ammo for {caliberLabel}. Gå til Hjem → Laderommet,
+          lag ladeplan og trykk «Lad ammo» — deretter kommer partiene hit.
         </p>
       </section>
     );
@@ -99,8 +94,9 @@ export function RangeLoadTestBoard({
       <header className="range-load-test-head">
         <p className="intro-line intro-gift">Load test · {caliberLabel}</p>
         <p className="shop-row-note">
-          Velg ladning → skyt serie @ 100 m (CBA) → mål. Oversikten oppdateres
-          med samling og v₀ (avg / min / max / SD)
+          Velg parti → skyt serie @ 100 m (CBA) → mål. Tallene (v₀ / samling /
+          ES) lagres på hver linje og blir værende når du bytter ammo. Igjen =
+          uskutt. Skutte hylser går tilbake til laderommet
           {hasChronograph ? "" : " — pakk chrono for v₀"}.
         </p>
       </header>
@@ -150,7 +146,7 @@ export function RangeLoadTestBoard({
         </p>
       ) : (
         <p className="shop-row-note">
-          Velg «Test» på en rad under for å koble målinger til den laden.
+          Velg «Test» på et parti under. Patroner telles ned når du skyter.
         </p>
       )}
 
@@ -158,74 +154,76 @@ export function RangeLoadTestBoard({
         <table className="range-load-test-table">
           <thead>
             <tr>
+              <th scope="col">Igjen</th>
               <th scope="col">gr</th>
               <th scope="col">Krutt</th>
               <th scope="col">Kule</th>
               <th scope="col">COL</th>
-              <th scope="col">Est.</th>
+              <th scope="col" title="Estimert v₀ — (hele m/s)">
+                (v₀)
+              </th>
               <th scope="col">Trykk</th>
               <th scope="col">Avg v₀</th>
               <th scope="col">Min</th>
               <th scope="col">Max</th>
               <th scope="col">SD</th>
-              <th scope="col">Samling</th>
-              <th scope="col">ES</th>
+              <th scope="col" title="Kun etter målt serie">
+                Samling
+              </th>
+              <th scope="col" title="Kun etter målt serie">
+                ES
+              </th>
               <th scope="col"> </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
-              const powder = row.powderItemId
-                ? getShopItem(row.powderItemId)
-                : null;
-              const bullet = row.bulletItemId
-                ? getShopItem(row.bulletItemId)
-                : null;
-              const est =
-                powder && bullet
-                  ? estimateLoadPlanFromDevRow(caliberKey, row, {
-                      powder,
-                      bullet,
-                    })
-                  : null;
-              const derived = deriveFromCol(caliberKey, row.colMm);
-              const isActive = activeId === row.id;
-              const canArm = !!row.powderItemId && !!row.bulletItemId;
+            {lots.map((lot) => {
+              const derived = deriveFromCol(caliberKey, lot.colMm);
+              const isActive = activeId === lot.id;
+              const empty = lot.roundsRemaining <= 0;
               const liveOnRow =
                 isActive && live && live.shotCount > 0 ? live : null;
 
               return (
                 <tr
-                  key={row.id}
+                  key={lot.id}
                   className={isActive ? "is-active-load" : undefined}
                 >
                   <td className="range-load-test-gr">
-                    {row.powderGrains.toFixed(1)}
+                    <strong>{lot.roundsRemaining}</strong>
+                    <span className="range-load-test-sub">
+                      /{lot.roundsLoaded}
+                    </span>
                   </td>
-                  <td>{shortName(row.powderItemId)}</td>
-                  <td>{bulletShort(row.bulletItemId)}</td>
+                  <td className="range-load-test-gr">
+                    {lot.powderGrains.toFixed(1)}
+                  </td>
+                  <td>{shortName(lot.powderItemId)}</td>
+                  <td>{bulletShort(lot.bulletItemId)}</td>
                   <td>
-                    {row.colMm.toFixed(1)}
+                    {lot.colMm.toFixed(1)}
                     <span className="range-load-test-sub">
                       {" "}
                       · {derived.frifluktThou} jump
                     </span>
                   </td>
-                  <td>{est ? `${est.v0Mps}` : "—"}</td>
+                  <td title="Estimert v₀">
+                    {formatEstimatedV0Mps(lot.estimatedV0Mps)}
+                  </td>
                   <td
                     className={
-                      est && est.pressurePct > 105
+                      lot.pressurePct > 105
                         ? "laderommet-plan-danger"
-                        : est && est.isOverpressure
+                        : lot.overpressurePct > 0
                           ? "laderommet-plan-warn"
                           : undefined
                     }
                   >
-                    {est ? `${est.pressurePct.toFixed(0)}%` : "—"}
+                    {lot.pressurePct.toFixed(0)}%
                   </td>
                   <td className="range-load-test-measured">
-                    {row.measuredV0Mps != null ? (
-                      <strong>{row.measuredV0Mps.toFixed(1)}</strong>
+                    {lot.measuredV0Mps != null ? (
+                      <strong>{lot.measuredV0Mps.toFixed(1)}</strong>
                     ) : liveOnRow?.meanV0Mps != null ? (
                       <span className="range-load-test-live">
                         ~{liveOnRow.meanV0Mps.toFixed(1)}
@@ -235,22 +233,22 @@ export function RangeLoadTestBoard({
                     )}
                   </td>
                   <td className="range-load-test-measured">
-                    {row.measuredV0LowMps != null
-                      ? row.measuredV0LowMps.toFixed(1)
+                    {lot.measuredV0LowMps != null
+                      ? lot.measuredV0LowMps.toFixed(1)
                       : liveOnRow?.lowV0Mps != null
                         ? `~${liveOnRow.lowV0Mps.toFixed(0)}`
                         : "—"}
                   </td>
                   <td className="range-load-test-measured">
-                    {row.measuredV0HighMps != null
-                      ? row.measuredV0HighMps.toFixed(1)
+                    {lot.measuredV0HighMps != null
+                      ? lot.measuredV0HighMps.toFixed(1)
                       : liveOnRow?.highV0Mps != null
                         ? `~${liveOnRow.highV0Mps.toFixed(0)}`
                         : "—"}
                   </td>
                   <td className="range-load-test-measured">
-                    {row.measuredV0StdevMps != null ? (
-                      <strong>{row.measuredV0StdevMps.toFixed(2)}</strong>
+                    {lot.measuredV0StdevMps != null ? (
+                      <strong>{lot.measuredV0StdevMps.toFixed(2)}</strong>
                     ) : liveOnRow?.stdevV0Mps != null ? (
                       <span className="range-load-test-live">
                         ~{liveOnRow.stdevV0Mps.toFixed(2)}
@@ -260,8 +258,8 @@ export function RangeLoadTestBoard({
                     )}
                   </td>
                   <td className="range-load-test-measured">
-                    {row.measuredGroupMoa != null ? (
-                      <strong>{row.measuredGroupMoa.toFixed(2)}″</strong>
+                    {lot.measuredGroupMoa != null ? (
+                      <strong>{lot.measuredGroupMoa.toFixed(2)}″</strong>
                     ) : liveOnRow?.groupMoa != null ? (
                       <span className="range-load-test-live">
                         ~{liveOnRow.groupMoa.toFixed(2)}″
@@ -271,18 +269,18 @@ export function RangeLoadTestBoard({
                     )}
                   </td>
                   <td className="range-load-test-measured">
-                    {row.measuredEsMm != null
-                      ? `${row.measuredEsMm.toFixed(1)}`
+                    {lot.measuredEsMm != null
+                      ? `${lot.measuredEsMm.toFixed(1)}`
                       : "—"}
                   </td>
                   <td>
                     <button
                       type="button"
                       className="intro-button"
-                      disabled={!canArm || isActive}
-                      onClick={() => onArmRow(row)}
+                      disabled={empty || isActive}
+                      onClick={() => onArmLot(lot)}
                     >
-                      {isActive ? "Aktiv" : "Test"}
+                      {isActive ? "Aktiv" : empty ? "Tom" : "Test"}
                     </button>
                   </td>
                 </tr>

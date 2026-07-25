@@ -181,6 +181,11 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-hunt-camcorder": 890,
   "misc-garmin-xero-c1-pro": 108,
   "misc-fx-true-ballistic": 820,
+  "misc-bordvifte-batteri": 680,
+  "misc-magnetospeed-riflekuhl": 420,
+  "misc-atec-mirage-band": 50,
+  "misc-caldwell-kevlar-suppressor-cover": 100,
+  "misc-temu-neoprene-suppressor-cover": 50,
 
   // Chestrigs
   "chest-cds-binocular-harness": 380,

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
-import { getShopItem } from "@/lib/shop/catalog";
+import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import {
   isAmmoItem,
   isBallisticsItem,
@@ -14,7 +14,28 @@ import {
   isStockItem,
   type ShopItem,
 } from "@/lib/shop/types";
-import { isChronographMisc } from "@/lib/misc/spec";
+import {
+  isChronographMisc,
+  isRangeFanMisc,
+  isChamberCoolerMisc,
+  miscKitMirageMult,
+  miscKitWeaponCalmGrams,
+} from "@/lib/misc/spec";
+import {
+  mirageWobbleMm,
+  mirageStrengthAtTime,
+  createMiragePhase,
+  type MiragePhase,
+} from "@/lib/range/mirage";
+import {
+  bumpBarrelHeatTarget,
+  createBarrelHeatState,
+  tickBarrelHeat,
+  barrelHeatForRifle,
+  mirageFromBarrelHeat,
+  type BarrelHeatState,
+} from "@/lib/range/barrelHeat";
+import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import {
   FOCUS_HOLD_MS,
   SHOTS_PER_SERIES,
@@ -113,13 +134,9 @@ import {
   RangeLoadTestBoard,
   liveChronoFromShots,
 } from "@/components/range/RangeLoadTestBoard";
-import type { LoadDevTable, LoadDevRow } from "@/lib/reloading/loadDevTable";
-import { deriveFromCol } from "@/lib/reloading/loadDevTable";
 import type { LoadBenchRecipe } from "@/lib/reloading/recipe";
-import {
-  estimateLoadPlanFromDevRow,
-  type ArmedLoadPlan,
-} from "@/lib/reloading/loadPhysics";
+import type { ArmedLoadPlan } from "@/lib/reloading/loadPhysics";
+import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
 
 type ShootingRangeProps = {
   kitItems: ShopItem[];
@@ -161,14 +178,27 @@ type ShootingRangeProps = {
   ) => void;
   onRemoveDope: (id: string) => void;
   onLogSeries: (entry: ShotLogEntry) => void;
+  /** Persist load-test chrono/group onto a hjemmeladd lot (survives ammo switch). */
+  onPersistHomeLotMeasure?: (
+    lotId: string,
+    measure: {
+      meanV0Mps: number | null;
+      highV0Mps: number | null;
+      lowV0Mps: number | null;
+      stdevV0Mps: number | null;
+      groupMoa: number | null;
+      extremeSpreadMm: number | null;
+      seriesId?: string | null;
+    },
+  ) => void;
   /** Calibrated Kestrel AB gun profiles (MV / BC / dV/dT). */
   kestrelProfiles?: Record<string, KestrelGunProfile>;
   onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
-  /** Laderommet ladeplan — load-test lane. */
-  loadDevTable?: LoadDevTable;
+  /** Laderommet — load-test lane. */
   loadBenchRecipe?: LoadBenchRecipe | null;
+  homeLoadedLots?: HomeLoadedLot[];
   armedLoadPlan?: ArmedLoadPlan | null;
-  onArmLoadPlan?: (plan: ArmedLoadPlan) => void;
+  onArmHomeLot?: (lotId: string) => void;
   onDisarmLoadPlan?: () => void;
   musicEnabled: boolean;
   onLeave: () => void;
@@ -210,12 +240,13 @@ export function ShootingRange({
   onUpdateDope,
   onRemoveDope,
   onLogSeries,
+  onPersistHomeLotMeasure,
   kestrelProfiles = {},
   onUpsertKestrelProfile,
-  loadDevTable,
   loadBenchRecipe = null,
+  homeLoadedLots = [],
   armedLoadPlan = null,
-  onArmLoadPlan,
+  onArmHomeLot,
   onDisarmLoadPlan,
   musicEnabled,
   onLeave,
@@ -277,11 +308,76 @@ export function ShootingRange({
     [kitItems],
   );
   const hasChronograph = chronographKind != null;
+  const ownsRangeFan = useMemo(
+    () =>
+      inventory.some(
+        (e) => e.itemId === "misc-bordvifte-batteri" && e.qty > 0,
+      ) || kitItems.some((i) => isMiscItem(i) && isRangeFanMisc(i.misc)),
+    [inventory, kitItems],
+  );
+  const hasChamberCooler = useMemo(
+    () =>
+      inventory.some(
+        (e) => e.itemId === "misc-magnetospeed-riflekuhl" && e.qty > 0,
+      ) ||
+      kitItems.some((i) => isMiscItem(i) && isChamberCoolerMisc(i.misc)),
+    [inventory, kitItems],
+  );
+  const chamberCoolMult = hasChamberCooler ? 2 : 1;
+  const chamberCoolMultRef = useRef(chamberCoolMult);
+  chamberCoolMultRef.current = chamberCoolMult;
+  const kitMiscSpecs = useMemo(
+    () => kitItems.filter(isMiscItem).map((i) => i.misc),
+    [kitItems],
+  );
+  const gearMirageMult = useMemo(
+    () => miscKitMirageMult(kitMiscSpecs, !!suppressor),
+    [kitMiscSpecs, suppressor],
+  );
+  const miscCalmGrams = useMemo(
+    () => miscKitWeaponCalmGrams(kitMiscSpecs, !!suppressor),
+    [kitMiscSpecs, suppressor],
+  );
+  const [fanOn, setFanOn] = useState(false);
+  useEffect(() => {
+    if (!ownsRangeFan && fanOn) setFanOn(false);
+  }, [ownsRangeFan, fanOn]);
+  const [barrelHeat01, setBarrelHeat01] = useState(0);
+  const [mirageStrength, setMirageStrength] = useState(0);
+  const barrelHeatStateRef = useRef<BarrelHeatState>(createBarrelHeatState());
+  const barrelHeatProfile = useMemo(
+    () =>
+      barrelHeatForRifle(
+        rifle?.id,
+        rifle ? customBarrels[rifle.id] : undefined,
+      ),
+    [rifle, customBarrels],
+  );
+  const barrelHeatProfileRef = useRef(barrelHeatProfile);
+  barrelHeatProfileRef.current = barrelHeatProfile;
+  const mirageOptsRef = useRef({
+    fanOn: false,
+    hasSuppressor: false,
+    gearMirageMult: 1,
+  });
+  mirageOptsRef.current = {
+    fanOn: fanOn && ownsRangeFan,
+    hasSuppressor: !!suppressor,
+    gearMirageMult,
+  };
+  const mirageMidpoint = mirageFromBarrelHeat(barrelHeat01, mirageOptsRef.current);
+  const mirageStrengthRef = useRef(0);
+  const miragePhaseRef = useRef<MiragePhase>(createMiragePhase());
+  const weatherTempRef = useRef(weather.live.temperatureC);
+  weatherTempRef.current = weather.live.temperatureC;
   /** Indoor/outdoor range lane — fixed shot bearing for Enviro / App. */
   const rangeShotBearingDeg = 0;
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
 
-  const ready = !!(rifle && scope && ammoOptions.length > 0);
+  /** Rifle + scope keep you on the range; empty ammo is a soft status, not eject. */
+  const gearReady = !!(rifle && scope);
+  const hasAmmo = ammoOptions.length > 0;
+  const ready = gearReady;
 
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
   const [distanceM, setDistanceM] = useState<RangeDistanceM>(RANGE_DISTANCE_M);
@@ -322,6 +418,8 @@ export function ShootingRange({
     resetFocusProgress,
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const mirageSceneRef = useRef<HTMLDivElement>(null);
+  const mirageDisplaceRef = useRef<SVGFEDisplacementMapElement>(null);
   const targetScaleRef = useRef(1);
   const bullseyeOffRef = useRef({ x: 0, y: 0 });
   const imgNaturalWRef = useRef(target.nativeWidth);
@@ -401,9 +499,10 @@ export function ShootingRange({
         hasBipod: !!bipod,
         bipod: bipod?.bipod,
         suppressorWeightGrams: suppressor?.weightGrams,
+        extraCalmGrams: miscCalmGrams,
         customsCalmMult,
       }),
-    [bipod, suppressor, customsCalmMult],
+    [bipod, suppressor, miscCalmGrams, customsCalmMult],
   );
 
   useEffect(() => {
@@ -458,7 +557,11 @@ export function ShootingRange({
   fireShotRef.current = () => {
     if (!ready || !rifle || !selectedAmmo || !scope) return;
     if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
-      setStatus("Tom for ammo — kjøp mer hos XXL.");
+      setStatus(
+        lane === "load-test"
+          ? "Tom for hjemmeladd ammo — lad mer i Laderommet."
+          : "Tom for ammo — kjøp mer hos XXL.",
+      );
       return;
     }
     if (
@@ -473,7 +576,11 @@ export function ShootingRange({
       return;
     }
     if (!consumeAmmoRef.current(selectedAmmo.id, rifle.id)) {
-      setStatus("Tom for ammo — kjøp mer hos XXL.");
+      setStatus(
+        lane === "load-test"
+          ? "Tom for hjemmeladd ammo — lad mer i Laderommet."
+          : "Tom for ammo — kjøp mer hos XXL.",
+      );
       return;
     }
 
@@ -503,6 +610,7 @@ export function ShootingRange({
         affinity,
         customsMoaDelta,
         barrelWearScale,
+        mirageFactor: mirageStrengthRef.current,
       };
       const envelopeMoa = combinedDispersionMoa(dispersionInput);
       const pull = triggerPullOffsetMm(
@@ -581,7 +689,39 @@ export function ShootingRange({
           recoilClearRef.current = null;
         }, 320);
       });
-      return [...prev, impact];
+      const nextShots = [...prev, impact];
+      barrelHeatStateRef.current = bumpBarrelHeatTarget(
+        barrelHeatStateRef.current,
+        barrelHeatProfileRef.current,
+      );
+      // Don't snap the bar — RAF catch-up paints the glide.
+      const lotId = armedLoadPlan?.homeLotId;
+      if (lane === "load-test" && lotId && onPersistHomeLotMeasure) {
+        const chrono = hasChronograph
+          ? liveChronoFromShots(nextShots.map((s) => s.v0Mps))
+          : {
+              meanV0Mps: null as number | null,
+              highV0Mps: null as number | null,
+              lowV0Mps: null as number | null,
+              stdevV0Mps: null as number | null,
+            };
+        const group =
+          nextShots.length >= 2
+            ? measureGroup(nextShots, distanceRef.current)
+            : null;
+        queueMicrotask(() => {
+          onPersistHomeLotMeasure(lotId, {
+            meanV0Mps: chrono.meanV0Mps,
+            highV0Mps: chrono.highV0Mps,
+            lowV0Mps: chrono.lowV0Mps,
+            stdevV0Mps: chrono.stdevV0Mps,
+            groupMoa: group?.groupMoa ?? null,
+            extremeSpreadMm: group?.extremeSpreadMm ?? null,
+            seriesId: `lt-${lotId}-${nextShots.length}`,
+          });
+        });
+      }
+      return nextShots;
     });
   };
 
@@ -822,18 +962,62 @@ export function ShootingRange({
         focusRef.current,
         now,
       );
-      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
+
+      barrelHeatStateRef.current = tickBarrelHeat(
+        barrelHeatStateRef.current,
+        barrelHeatProfileRef.current,
+        weatherTempRef.current,
+        dt,
+        chamberCoolMultRef.current,
+      );
+
+      const mirageMid = mirageFromBarrelHeat(
+        barrelHeatStateRef.current.heat01,
+        mirageOptsRef.current,
+      );
+      const mirage = mirageStrengthAtTime(
+        mirageMid,
+        t,
+        miragePhaseRef.current,
+      );
+      mirageStrengthRef.current = mirage;
+
+      const scene = mirageSceneRef.current;
+      if (scene) {
+        if (mirage > 0.015) {
+          scene.style.setProperty("--mirage", mirage.toFixed(3));
+          scene.classList.add("is-mirage");
+          scene.classList.toggle("is-mirage-heavy", mirage > 1.1);
+          scene.classList.remove("is-mirage-porridge");
+        } else {
+          scene.classList.remove(
+            "is-mirage",
+            "is-mirage-heavy",
+            "is-mirage-porridge",
+          );
+          scene.style.removeProperty("--mirage");
+        }
+      }
+      const displace = mirageDisplaceRef.current;
+      if (displace) {
+        displace.setAttribute("scale", String(Math.round(mirage * 56)));
+      }
+
+      const amp =
+        wobbleAmplitudeMm(calm, distanceRef.current) + mirageWobbleMm(mirage);
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
           Math.sin(t * 5.3 + ph.b) * amp * 0.35 +
-          Math.sin(t * 11.0) * amp * 0.15,
+          Math.sin(t * 11.0) * amp * 0.15 +
+          (mirage > 0 ? Math.sin(t * 18.0 + ph.a) * mirage * 0.55 : 0),
         y:
           Math.cos(t * 1.7 + ph.b) * amp * 0.55 +
           Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
-          Math.sin(t * 9.5 + 1) * amp * 0.15,
+          Math.sin(t * 9.5 + 1) * amp * 0.15 +
+          (mirage > 0 ? Math.cos(t * 16.5 + ph.b) * mirage * 0.55 : 0),
       };
 
       paintScopeWorld();
@@ -869,6 +1053,8 @@ export function ShootingRange({
           phase: fPhase,
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
+        setBarrelHeat01(barrelHeatStateRef.current.heat01);
+        setMirageStrength(mirageStrengthRef.current);
       }
 
       raf = requestAnimationFrame(tick);
@@ -976,6 +1162,37 @@ export function ShootingRange({
     abortTrigger("");
     setStatus("Ny serie — hold Fokus, piltaster, hold Avtrekk.");
     wobblePhase.current = { a: Math.random() * 10, b: Math.random() * 10 };
+    miragePhaseRef.current = createMiragePhase();
+  }
+
+  /**
+   * Write current series stats onto a hjemmeladd lot so the Load test table
+   * keeps values when switching ammo.
+   */
+  function persistLoadTestSeriesToLot(
+    lotId: string,
+    seriesShots: ShotImpact[],
+  ) {
+    if (!lotId || seriesShots.length === 0 || !onPersistHomeLotMeasure) return;
+    const chrono = hasChronograph
+      ? liveChronoFromShots(seriesShots.map((s) => s.v0Mps))
+      : {
+          meanV0Mps: null,
+          highV0Mps: null,
+          lowV0Mps: null,
+          stdevV0Mps: null,
+        };
+    const group =
+      seriesShots.length >= 2 ? measureGroup(seriesShots, distanceM) : null;
+    onPersistHomeLotMeasure(lotId, {
+      meanV0Mps: chrono.meanV0Mps,
+      highV0Mps: chrono.highV0Mps,
+      lowV0Mps: chrono.lowV0Mps,
+      stdevV0Mps: chrono.stdevV0Mps,
+      groupMoa: group?.groupMoa ?? null,
+      extremeSpreadMm: group?.extremeSpreadMm ?? null,
+      seriesId: `lt-${Date.now().toString(36)}`,
+    });
   }
 
   function nudgeZero(axis: "x" | "y", deltaMm: number) {
@@ -1130,8 +1347,17 @@ export function ShootingRange({
         }}
       >
         Load test
-        {loadDevTable && loadDevTable.rows.length > 0
-          ? ` (${loadDevTable.rows.length})`
+        {homeLoadedLots.filter(
+          (l) =>
+            !loadBenchRecipe || l.caliberKey === loadBenchRecipe.caliberKey,
+        ).length > 0
+          ? ` (${
+              homeLoadedLots.filter(
+                (l) =>
+                  !loadBenchRecipe ||
+                  l.caliberKey === loadBenchRecipe.caliberKey,
+              ).length
+            })`
           : ""}
       </button>
       <button
@@ -1150,28 +1376,24 @@ export function ShootingRange({
     </div>
   );
 
-  function armLoadTestRow(row: LoadDevRow) {
-    if (!onArmLoadPlan || !loadBenchRecipe) return;
-    const powder = row.powderItemId ? getShopItem(row.powderItemId) : null;
-    const bullet = row.bulletItemId ? getShopItem(row.bulletItemId) : null;
-    if (!powder || !bullet) return;
-    const caliberKey = loadBenchRecipe.caliberKey;
-    const est = estimateLoadPlanFromDevRow(caliberKey, row, { powder, bullet });
-    const seating = deriveFromCol(caliberKey, row.colMm);
-    onArmLoadPlan({
-      caliberKey,
-      pressurePct: est.pressurePct,
-      overpressurePct: est.overpressurePct,
-      kaboomChance: est.kaboomChance,
-      v0Mps: est.v0Mps,
-      powderGrains: row.powderGrains,
-      seatingDepthThou: seating.seatingDepthThou,
-      colMm: est.colMm,
-      armedAtMs: Date.now(),
-      loadDevRowId: row.id,
-    });
+  function armLoadTestLot(lot: HomeLoadedLot) {
+    if (!onArmHomeLot) return;
+    const prevLotId = armedLoadPlan?.homeLotId ?? null;
+    if (
+      prevLotId &&
+      prevLotId !== lot.id &&
+      shots.length > 0 &&
+      !measurement
+    ) {
+      persistLoadTestSeriesToLot(prevLotId, shots);
+    }
+    onArmHomeLot(lot.id);
+    setAmmoId(lot.id);
+    setShots([]);
+    setMeasurement(null);
+    abortTrigger("");
     setStatus(
-      `Load test aktiv: ${row.powderGrains.toFixed(1)} gr — skyt serie og mål.`,
+      `Load test aktiv: ${lot.powderGrains.toFixed(1)} gr · ${lot.roundsRemaining} igjen — skyt serie og mål.`,
     );
   }
 
@@ -1260,7 +1482,7 @@ export function ShootingRange({
             <button
               type="button"
               className="intro-button"
-              disabled={!ready}
+              disabled={!ready || !hasAmmo}
               onClick={() => setCompId("moa-std")}
             >
               Entre
@@ -1291,14 +1513,11 @@ export function ShootingRange({
         <LocationNav onBackToTown={onLeave} />
         <p className="intro-line intro-gift">Shooting Range</p>
         <p className="intro-line">
-          Du mangler noe i kit. Ta med rifle, kikkert og minst én ammo fra
-          Home — så tester vi.
+          Du mangler rifle eller kikkert i kit. Ta med dem fra Home — så tester
+          vi.
         </p>
         {!rifle ? <p className="shop-row-note">Mangler: rifle</p> : null}
         {!scope ? <p className="shop-row-note">Mangler: scope</p> : null}
-        {ammoOptions.length === 0 ? (
-          <p className="shop-row-note">Mangler: ammo</p>
-        ) : null}
         <div className="range-actions">
           <button
             type="button"
@@ -1363,16 +1582,21 @@ export function ShootingRange({
 
       {laneTabs}
 
-      {lane === "load-test" && loadDevTable && loadBenchRecipe ? (
+      {lane === "load-test" && loadBenchRecipe ? (
         <RangeLoadTestBoard
           caliberKey={loadBenchRecipe.caliberKey}
-          brassItemId={loadBenchRecipe.brassItemId}
-          loadDevTable={loadDevTable}
+          homeLoadedLots={homeLoadedLots}
           armedLoadPlan={armedLoadPlan}
           hasChronograph={hasChronograph}
           live={loadTestLive}
-          onArmRow={armLoadTestRow}
-          onDisarm={() => onDisarmLoadPlan?.()}
+          onArmLot={armLoadTestLot}
+          onDisarm={() => {
+            const lotId = armedLoadPlan?.homeLotId;
+            if (lotId && shots.length > 0 && !measurement) {
+              persistLoadTestSeriesToLot(lotId, shots);
+            }
+            onDisarmLoadPlan?.();
+          }}
         />
       ) : null}
 
@@ -1396,142 +1620,144 @@ export function ShootingRange({
         ) : ballisticHint ? (
           <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
         ) : null}
-        {lane !== "load-test" && paperUnit === "MOA" ? (
-          <p className="shop-row-note range-moa-paper-hint">
-            MOA-skive: skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1 cm-ruten ≈
-            7,27 mm ≈ 0,25 MOA (ett klikk). Retikkel er {reticleUnit}
-            {paperUnit !== reticleUnit ? " — skive avviker fra default" : ""}.
-          </p>
-        ) : lane !== "load-test" && paperUnit !== reticleUnit ? (
-          <p className="shop-row-note range-moa-paper-hint">
-            MIL-skive valgt mens retikkelet er MOA — 1 cm ≈ 0,1 mil.
-          </p>
-        ) : null}
       </header>
 
+      {lane !== "load-test" ? (
       <section className="range-setup" aria-label="Serieoppsett">
-        {lane !== "load-test" ? (
-          <>
-        <div className="range-setup-block">
-          <p className="range-setup-label" id="range-distance-label">
-            Avstand
-          </p>
-          <div
-            className="range-segment"
-            role="group"
-            aria-labelledby="range-distance-label"
-          >
-            {RANGE_DISTANCES_M.map((d) => (
-              <button
-                key={d}
-                type="button"
-                className={
-                  distanceM === d
-                    ? "range-seg-btn is-active"
-                    : "range-seg-btn"
-                }
-                disabled={setupLocked}
-                aria-pressed={distanceM === d}
-                onClick={() => changeDistance(d)}
-              >
-                <span className="range-seg-value">{d}</span>
-                <span className="range-seg-unit">m</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="range-setup-block">
-          <p className="range-setup-label" id="range-paper-label">
-            Rutenett
-            {paperUnit === reticleUnit ? (
-              <span className="range-setup-lock"> · matcher retikkel</span>
-            ) : (
-              <span className="range-setup-lock"> · avvik fra retikkel</span>
-            )}
-          </p>
-          <div
-            className="range-segment"
-            role="group"
-            aria-labelledby="range-paper-label"
-          >
-            <button
-              type="button"
-              className={
-                paperUnit === "MRAD"
-                  ? "range-seg-btn is-active"
-                  : "range-seg-btn"
-              }
-              disabled={setupLocked}
-              aria-pressed={paperUnit === "MRAD"}
-              title="1 cm ≈ 0,1 mil"
-              onClick={() => changePaperUnit("MRAD")}
+        <ExpandableSection
+          title="Baneoppsett"
+          summary={`${distanceM} m · ${paperUnit === "MOA" ? "MOA" : "MIL"} · ${target.shortLabel}`}
+        >
+          <div className="range-setup-block">
+            <p className="range-setup-label" id="range-distance-label">
+              Avstand
+            </p>
+            <div
+              className="range-segment"
+              role="group"
+              aria-labelledby="range-distance-label"
             >
-              <span className="range-seg-value">MIL</span>
-              <span className="range-seg-unit">1 cm</span>
-            </button>
-            <button
-              type="button"
-              className={
-                paperUnit === "MOA"
-                  ? "range-seg-btn is-active"
-                  : "range-seg-btn"
-              }
-              disabled={setupLocked}
-              aria-pressed={paperUnit === "MOA"}
-              title={`1 cm ≈ 0,25 MOA (×${MOA_RANGE_TARGET_SCALE})`}
-              onClick={() => changePaperUnit("MOA")}
-            >
-              <span className="range-seg-value">MOA</span>
-              <span className="range-seg-unit">¼</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="range-setup-block">
-          <p className="range-setup-label" id="range-target-label">
-            Skive
-            {targetId !== DEFAULT_TARGET_BY_DISTANCE[distanceM] ? (
-              <span className="range-setup-lock"> · avvik fra default</span>
-            ) : null}
-          </p>
-          <div
-            className="range-segment"
-            role="group"
-            aria-labelledby="range-target-label"
-          >
-            {RANGE_TARGET_IDS.map((id) => {
-              const t = getRangeTarget(id);
-              const isDefault = id === DEFAULT_TARGET_BY_DISTANCE[distanceM];
-              return (
+              {RANGE_DISTANCES_M.map((d) => (
                 <button
-                  key={id}
+                  key={d}
                   type="button"
                   className={
-                    targetId === id
+                    distanceM === d
                       ? "range-seg-btn is-active"
                       : "range-seg-btn"
                   }
                   disabled={setupLocked}
-                  aria-pressed={targetId === id}
-                  title={
-                    isDefault
-                      ? `Default for ${distanceM} m`
-                      : t.label
-                  }
-                  onClick={() => changeTarget(id)}
+                  aria-pressed={distanceM === d}
+                  onClick={() => changeDistance(d)}
                 >
-                  <span className="range-seg-value">{t.shortLabel}</span>
-                  <span className="range-seg-unit">
-                    {isDefault ? "def" : "m"}
-                  </span>
+                  <span className="range-seg-value">{d}</span>
+                  <span className="range-seg-unit">m</span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
-          </>
-        ) : null}
+
+          <div className="range-setup-block">
+            <p className="range-setup-label" id="range-paper-label">
+              Rutenett
+              {paperUnit === reticleUnit ? (
+                <span className="range-setup-lock"> · matcher retikkel</span>
+              ) : (
+                <span className="range-setup-lock"> · avvik fra retikkel</span>
+              )}
+            </p>
+            <div
+              className="range-segment"
+              role="group"
+              aria-labelledby="range-paper-label"
+            >
+              <button
+                type="button"
+                className={
+                  paperUnit === "MRAD"
+                    ? "range-seg-btn is-active"
+                    : "range-seg-btn"
+                }
+                disabled={setupLocked}
+                aria-pressed={paperUnit === "MRAD"}
+                title="1 cm ≈ 0,1 mil"
+                onClick={() => changePaperUnit("MRAD")}
+              >
+                <span className="range-seg-value">MIL</span>
+                <span className="range-seg-unit">1 cm</span>
+              </button>
+              <button
+                type="button"
+                className={
+                  paperUnit === "MOA"
+                    ? "range-seg-btn is-active"
+                    : "range-seg-btn"
+                }
+                disabled={setupLocked}
+                aria-pressed={paperUnit === "MOA"}
+                title={`1 cm ≈ 0,25 MOA (×${MOA_RANGE_TARGET_SCALE})`}
+                onClick={() => changePaperUnit("MOA")}
+              >
+                <span className="range-seg-value">MOA</span>
+                <span className="range-seg-unit">¼</span>
+              </button>
+            </div>
+            {paperUnit === "MOA" ? (
+              <p className="shop-row-note range-moa-paper-hint">
+                MOA-skive: skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1 cm-ruten ≈
+                7,27 mm ≈ 0,25 MOA (ett klikk). Retikkel er {reticleUnit}
+                {paperUnit !== reticleUnit ? " — skive avviker fra default" : ""}.
+              </p>
+            ) : paperUnit !== reticleUnit ? (
+              <p className="shop-row-note range-moa-paper-hint">
+                MIL-skive valgt mens retikkelet er MOA — 1 cm ≈ 0,1 mil.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="range-setup-block">
+            <p className="range-setup-label" id="range-target-label">
+              Skive
+              {targetId !== DEFAULT_TARGET_BY_DISTANCE[distanceM] ? (
+                <span className="range-setup-lock"> · avvik fra default</span>
+              ) : null}
+            </p>
+            <div
+              className="range-segment"
+              role="group"
+              aria-labelledby="range-target-label"
+            >
+              {RANGE_TARGET_IDS.map((id) => {
+                const t = getRangeTarget(id);
+                const isDefault = id === DEFAULT_TARGET_BY_DISTANCE[distanceM];
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={
+                      targetId === id
+                        ? "range-seg-btn is-active"
+                        : "range-seg-btn"
+                    }
+                    disabled={setupLocked}
+                    aria-pressed={targetId === id}
+                    title={
+                      isDefault
+                        ? `Default for ${distanceM} m`
+                        : t.label
+                    }
+                    onClick={() => changeTarget(id)}
+                  >
+                    <span className="range-seg-value">{t.shortLabel}</span>
+                    <span className="range-seg-unit">
+                      {isDefault ? "def" : "m"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </ExpandableSection>
 
         <div className="range-setup-block">
           <div className="range-setup-label-row">
@@ -1607,6 +1833,7 @@ export function ShootingRange({
           ) : null}
         </div>
       </section>
+      ) : null}
 
       <div className="range-status-strip">
         <span className="range-shot-count">
@@ -1616,6 +1843,34 @@ export function ShootingRange({
           Zero {effectiveZero.xMm.toFixed(0)} mm side /{" "}
           {effectiveZero.yMm.toFixed(0)} mm høyde
         </span>
+        {ownsRangeFan && fanOn ? (
+          <span className="shop-row-note">Vifte på · −70 % mirage</span>
+        ) : mirageMidpoint > 0.01 || mirageStrength > 0.02 ? (
+          <span
+            className={
+              barrelHeat01 >= 0.9
+                ? "shop-row-note range-mirage-warn"
+                : "shop-row-note"
+            }
+          >
+            Mirage · {Math.round(mirageStrength * 100)}%
+            {mirageMidpoint > 0.005
+              ? ` (mid ~${Math.round(mirageMidpoint * 100)}%)`
+              : ""}
+            {suppressor ? " · med can" : " · uten can (×0,6)"}
+            {gearMirageMult < 0.999
+              ? ` · gear ×${gearMirageMult.toFixed(2)}`
+              : ""}
+            {!ownsRangeFan ? " · kjøp bordvifte" : ""}
+          </span>
+        ) : (
+          <span className="shop-row-note">
+            Pipe {barrelHeatProfile.classLabel} ·{" "}
+            {barrelHeatProfile.heatPerShotPct}%/skudd
+            {hasChamberCooler ? " · RifleKuhl ×2 kjøling" : ""}
+            {suppressor ? "" : " · uten can"}
+          </span>
+        )}
         <span className="shop-row-note">
           Zoom {zoom.toFixed(1)}× ({scope.scope.minZoom}–{scope.scope.maxZoom}×)
           — dra i glasset for å sikte · dra ringen (kl. 8→12→4)
@@ -1776,6 +2031,10 @@ export function ShootingRange({
         />
       ) : (
         <div className="scope-stage" tabIndex={0}>
+          <BarrelHeatBar
+            className="range-barrel-heat"
+            heat01={barrelHeat01}
+          />
           <div className="scope-stage-optic-row">
             <div className="range-side-rail range-side-rail--focus">
               <span
@@ -1815,45 +2074,89 @@ export function ShootingRange({
                 onPointerCancel={onAimPointerUp}
               >
                 <div ref={scopeWorldRef} className="scope-world">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    className="scope-target"
-                    src={target.src}
-                    alt={target.label}
-                    draggable={false}
-                    width={target.nativeWidth}
-                    height={target.nativeHeight}
-                    style={{ width: target.nativeWidth }}
-                  />
-                  {shots.map((s, i) => {
-                    const hx =
-                      bullseyeOff.x +
-                      mmToPxOnTarget(s.xMm, target, target.nativeWidth);
-                    const hy =
-                      bullseyeOff.y +
-                      mmToPxOnTarget(s.yMm, target, target.nativeWidth);
-                    const d = mmToPxOnTarget(
-                      s.diameterMm,
-                      target,
-                      target.nativeWidth,
-                    );
-                    return (
-                      <span
-                        key={`hole-${i}`}
-                        className="bullet-hole"
-                        style={{
-                          left: `calc(50% + ${hx}px)`,
-                          top: `calc(50% + ${hy}px)`,
-                          width: `${d}px`,
-                          height: `${d}px`,
-                          marginLeft: `${-d / 2}px`,
-                          marginTop: `${-d / 2}px`,
-                        }}
-                        title={`#${i + 1} · Ø ${s.diameterMm.toFixed(1)} mm`}
-                      />
-                    );
-                  })}
+                  <div ref={mirageSceneRef} className="scope-world-scene">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className="scope-target"
+                      src={target.src}
+                      alt={target.label}
+                      draggable={false}
+                      width={target.nativeWidth}
+                      height={target.nativeHeight}
+                      style={{ width: target.nativeWidth }}
+                    />
+                    {shots.map((s, i) => {
+                      const hx =
+                        bullseyeOff.x +
+                        mmToPxOnTarget(s.xMm, target, target.nativeWidth);
+                      const hy =
+                        bullseyeOff.y +
+                        mmToPxOnTarget(s.yMm, target, target.nativeWidth);
+                      const d = mmToPxOnTarget(
+                        s.diameterMm,
+                        target,
+                        target.nativeWidth,
+                      );
+                      return (
+                        <span
+                          key={`hole-${i}`}
+                          className="bullet-hole"
+                          style={{
+                            left: `calc(50% + ${hx}px)`,
+                            top: `calc(50% + ${hy}px)`,
+                            width: `${d}px`,
+                            height: `${d}px`,
+                            marginLeft: `${-d / 2}px`,
+                            marginTop: `${-d / 2}px`,
+                          }}
+                          title={`#${i + 1} · Ø ${s.diameterMm.toFixed(1)} mm`}
+                        />
+                      );
+                    })}
+                    <div className="scope-mirage-shimmer" aria-hidden />
+                  </div>
                 </div>
+                {/* SVG filter: warps only the world scene (blink), not the reticle. */}
+                <svg
+                  className="scope-mirage-defs"
+                  width="0"
+                  height="0"
+                  aria-hidden
+                >
+                  <defs>
+                    <filter
+                      id="range-mirage-distort"
+                      x="-8%"
+                      y="-8%"
+                      width="116%"
+                      height="116%"
+                      colorInterpolationFilters="sRGB"
+                    >
+                      <feTurbulence
+                        type="fractalNoise"
+                        baseFrequency="0.014 0.045"
+                        numOctaves="2"
+                        seed="3"
+                        result="noise"
+                      >
+                        <animate
+                          attributeName="baseFrequency"
+                          dur="2.8s"
+                          values="0.014 0.045;0.02 0.055;0.012 0.038;0.014 0.045"
+                          repeatCount="indefinite"
+                        />
+                      </feTurbulence>
+                      <feDisplacementMap
+                        ref={mirageDisplaceRef}
+                        in="SourceGraphic"
+                        in2="noise"
+                        scale={0}
+                        xChannelSelector="R"
+                        yChannelSelector="G"
+                      />
+                    </filter>
+                  </defs>
+                </svg>
                 <ScopeReticle
                   scope={scope.scope}
                   zoom={zoom}
@@ -1943,6 +2246,29 @@ export function ShootingRange({
         </button>
         <button type="button" className="intro-button" onClick={newSeries}>
           Ny serie
+        </button>
+        <button
+          type="button"
+          className={
+            fanOn && ownsRangeFan
+              ? "intro-button range-fan-btn is-on"
+              : "intro-button sheriff-secondary range-fan-btn"
+          }
+          disabled={!ownsRangeFan}
+          title={
+            ownsRangeFan
+              ? fanOn
+                ? "Skru av bordvifte"
+                : "Skru på bordvifte (−70 % mirage)"
+              : "Kjøp bordvifte batteridrevet på XXL (299 kr)"
+          }
+          onClick={() => setFanOn((v) => !v)}
+        >
+          {ownsRangeFan
+            ? fanOn
+              ? "Vifte: på"
+              : "Skru på vifte"
+            : "Skru på vifte"}
         </button>
         <button
           type="button"

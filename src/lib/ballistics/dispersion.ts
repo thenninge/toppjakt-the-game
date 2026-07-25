@@ -23,6 +23,10 @@
  * Per player×rifle×ammo factor scales the **ammo** contribution
  * (cheap ammo can still group well in some rifles).
  *
+ * ## Mirage
+ * Optional `mirageFactor` widens the per-shot envelope:
+ * base × (1 + factor × U(0, 0.5)). At factor 1, up to +50 % MOA.
+ *
  * ## v0 variation
  * Separate from angular group. Sampled per shot; vertical effect grows with distance
  * (small at 100 m, critical for hunt P(hit) at long range).
@@ -39,6 +43,7 @@ import {
   DEFAULT_ZERO_DISTANCE_M,
 } from "@/lib/ballistics/trajectory";
 import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
+import { applyMirageToDispersionMoa } from "@/lib/range/mirage";
 
 /** 1 MOA ≈ 29.4 mm at 100 m. */
 export const MM_PER_MOA_AT_100M = 29.4;
@@ -70,6 +75,11 @@ export type DispersionInput = {
    * See `barrelWearMoaScale`.
    */
   barrelWearScale?: number;
+  /**
+   * Live mirage strength (0…~2.4). Per shot, widens envelope by up to
+   * +50 % × factor (see {@link applyMirageToDispersionMoa}).
+   */
+  mirageFactor?: number;
 };
 
 /**
@@ -194,7 +204,14 @@ export function sampleShotFromPoa(
   opts?: { densityRatio?: number; powderTempC?: number },
 ): SampledShot {
   const powderTempC = opts?.powderTempC ?? 15;
-  const envelope = combinedDispersionMoa(input);
+  let envelope = combinedDispersionMoa(input);
+  if (input.mirageFactor != null && input.mirageFactor > 0) {
+    envelope = applyMirageToDispersionMoa(
+      envelope,
+      input.mirageFactor,
+      random,
+    );
+  }
   const { xMoa, yMoa } = sampleAngularOffsetMoa(envelope, random);
   const { v0, deltaV0 } = sampleMuzzleVelocity(
     input.ammo,

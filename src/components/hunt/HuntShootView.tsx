@@ -67,11 +67,13 @@ import {
   isAmmoItem,
   isBipodItem,
   isLrfItem,
+  isMiscItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { miscKitWeaponCalmGrams } from "@/lib/misc/spec";
 import { mmAt100ToScopeClicks } from "@/lib/optics/clicks";
 import {
   birdMmToNativePx,
@@ -506,9 +508,13 @@ export function HuntShootView({
         hasBipod: !!bipod,
         bipod: bipod?.bipod,
         suppressorWeightGrams: suppressor?.weightGrams,
+        extraCalmGrams: miscKitWeaponCalmGrams(
+          kitItems.filter(isMiscItem).map((i) => i.misc),
+          !!suppressor,
+        ),
         customsCalmMult,
       }),
-    [bipod, suppressor, customsCalmMult],
+    [bipod, suppressor, kitItems, customsCalmMult],
   );
 
   useEffect(() => {

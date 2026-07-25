@@ -5,10 +5,8 @@
 
 import type { SpentBrassKey } from "@/lib/reloading/brass";
 import { LOAD_CALIBER_OPTIONS } from "@/lib/reloading/components";
-import {
-  deriveFromCol,
-  type LoadDevRow,
-} from "@/lib/reloading/loadDevTable";
+import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
+import { deriveFromCol, type LoadDevRow } from "@/lib/reloading/loadDevTable";
 import {
   estimateLoadPlanFromDevRow,
   parseBulletWeightGrains,
@@ -25,6 +23,8 @@ export type LoadBookEntry = {
   caliberLabel: string;
   /** Link to current ladeplan-rad when still present. */
   loadDevRowId: string | null;
+  /** Link to hjemmeladd parti when created via «Lad ammo». */
+  homeLotId: string | null;
   shotsLoaded: number;
   powderItemId: string | null;
   powderLabel: string;
@@ -82,6 +82,7 @@ export function buildLoadBookEntry(opts: {
   caliberKey: SpentBrassKey;
   row: LoadDevRow;
   brassItemId?: string | null;
+  homeLotId?: string | null;
   existingId?: string | null;
   existingAtMs?: number | null;
 }): LoadBookEntry {
@@ -101,6 +102,7 @@ export function buildLoadBookEntry(opts: {
     caliberKey,
     caliberLabel: caliberLabel(caliberKey),
     loadDevRowId: row.id,
+    homeLotId: opts.homeLotId ?? null,
     shotsLoaded: row.shotsLoaded,
     powderItemId: row.powderItemId,
     powderLabel: itemLabel(row.powderItemId),
@@ -127,13 +129,56 @@ export function buildLoadBookEntry(opts: {
   };
 }
 
-/** Upsert by loadDevRowId when set; otherwise append. */
+export function buildLoadBookEntryFromLot(
+  lot: HomeLoadedLot,
+  opts?: { existingId?: string | null; existingAtMs?: number | null },
+): LoadBookEntry {
+  const derived = deriveFromCol(lot.caliberKey, lot.colMm);
+  const now = Date.now();
+  return {
+    id: opts?.existingId || newId(),
+    atMs: opts?.existingAtMs ?? lot.loadedAtMs,
+    updatedAtMs: now,
+    caliberKey: lot.caliberKey,
+    caliberLabel: lot.caliberLabel,
+    loadDevRowId: lot.loadDevRowId,
+    homeLotId: lot.id,
+    shotsLoaded: lot.roundsLoaded,
+    powderItemId: lot.powderItemId,
+    powderLabel: lot.powderLabel,
+    powderGrains: lot.powderGrains,
+    bulletItemId: lot.bulletItemId,
+    bulletLabel: lot.bulletLabel,
+    primerItemId: lot.primerItemId,
+    primerLabel: lot.primerLabel,
+    brassItemId: lot.brassItemId,
+    brassLabel: lot.brassLabel,
+    colMm: lot.colMm,
+    seatingDepthThou: lot.seatingDepthThou,
+    frifluktThou: derived.frifluktThou,
+    estimatedV0Mps: lot.estimatedV0Mps,
+    estimatedPressurePct: lot.pressurePct,
+    kaboomChance: lot.kaboomChance,
+    measuredV0Mps: lot.measuredV0Mps,
+    measuredV0HighMps: lot.measuredV0HighMps,
+    measuredV0LowMps: lot.measuredV0LowMps,
+    measuredV0StdevMps: lot.measuredV0StdevMps,
+    measuredGroupMoa: lot.measuredGroupMoa,
+    measuredEsMm: lot.measuredEsMm,
+    measuredSeriesId: lot.measuredSeriesId,
+  };
+}
+
+/** Upsert by homeLotId, then loadDevRowId, then id. */
 export function upsertLoadBookEntry(
   book: LoadBookEntry[],
   entry: LoadBookEntry,
 ): LoadBookEntry[] {
   let idx = -1;
-  if (entry.loadDevRowId) {
+  if (entry.homeLotId) {
+    idx = book.findIndex((e) => e.homeLotId === entry.homeLotId);
+  }
+  if (idx < 0 && entry.loadDevRowId) {
     idx = book.findIndex((e) => e.loadDevRowId === entry.loadDevRowId);
   }
   if (idx < 0) {
@@ -191,6 +236,7 @@ export function normalizeLoadBook(raw: unknown): LoadBookEntry[] {
       caliberKey: o.caliberKey as SpentBrassKey,
       caliberLabel: str(o.caliberLabel, o.caliberKey),
       loadDevRowId: idOrNull(o.loadDevRowId),
+      homeLotId: idOrNull(o.homeLotId),
       shotsLoaded: Math.max(1, Math.round(num(o.shotsLoaded, 5))),
       powderItemId: idOrNull(o.powderItemId),
       powderLabel: str(o.powderLabel),

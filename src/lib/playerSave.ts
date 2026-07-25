@@ -7,6 +7,11 @@ import { normalizeLoadBenchRecipe } from "@/lib/reloading/recipe";
 import { normalizeArmedLoadPlan } from "@/lib/reloading/loadPhysics";
 import { normalizeLoadDevTable } from "@/lib/reloading/loadDevTable";
 import { normalizeLoadBook } from "@/lib/reloading/loadBook";
+import { normalizeHomeLoadedLots } from "@/lib/reloading/homeLoadedAmmo";
+import {
+  migrateReloadingInventoryPieces,
+  normalizePowderOpenGrains,
+} from "@/lib/reloading/componentStock";
 import { normalizeKestrelProfiles } from "@/lib/ballistics/kestrelProfile";
 import { normalizeCustomBarrelsMap } from "@/lib/customs/customBarrel";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
@@ -86,7 +91,13 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
    */
   const freezerCarcasses = (rawFreezer ?? rawPack) as PlayerStats["freezerCarcasses"];
   const carcasses = (rawFreezer != null ? rawPack : []) as PlayerStats["carcasses"];
-  const inventory = Array.isArray(raw.inventory) ? raw.inventory : base.inventory;
+  const inventoryRaw = Array.isArray(raw.inventory)
+    ? (raw.inventory as PlayerStats["inventory"])
+    : base.inventory;
+  const inventory =
+    raw.reloadingPiecesMigrated === true
+      ? inventoryRaw
+      : migrateReloadingInventoryPieces(inventoryRaw);
   const kit = Array.isArray(raw.kit) ? raw.kit : base.kit;
   const weaponLicenses = Array.isArray(raw.weaponLicenses)
     ? raw.weaponLicenses
@@ -183,6 +194,9 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     armedLoadPlan: normalizeArmedLoadPlan(raw.armedLoadPlan),
     loadDevTable: normalizeLoadDevTable(raw.loadDevTable),
     loadBook: normalizeLoadBook(raw.loadBook),
+    homeLoadedLots: normalizeHomeLoadedLots(raw.homeLoadedLots),
+    powderOpenGrains: normalizePowderOpenGrains(raw.powderOpenGrains),
+    reloadingPiecesMigrated: true,
     kestrelProfiles: normalizeKestrelProfiles(raw.kestrelProfiles),
   });
 }

@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   isAmmoItem,
   isBipodItem,
+  isMiscItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { miscKitWeaponCalmGrams } from "@/lib/misc/spec";
 import {
   FOCUS_HOLD_MS,
   TRIGGER_BAR_MS,
@@ -266,9 +268,13 @@ export function MoaCompetitionView({
         hasBipod: !!bipod,
         bipod: bipod?.bipod,
         suppressorWeightGrams: suppressor?.weightGrams,
+        extraCalmGrams: miscKitWeaponCalmGrams(
+          kitItems.filter(isMiscItem).map((i) => i.misc),
+          !!suppressor,
+        ),
         customsCalmMult,
       }),
-    [bipod, suppressor, customsCalmMult],
+    [bipod, suppressor, kitItems, customsCalmMult],
   );
 
   const keysRef = useRef<Keys>({

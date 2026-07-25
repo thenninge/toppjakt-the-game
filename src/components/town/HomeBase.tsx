@@ -56,6 +56,7 @@ import type { LoadBenchRecipe } from "@/lib/reloading/recipe";
 import type { ArmedLoadPlan } from "@/lib/reloading/loadPhysics";
 import type { LoadDevTable } from "@/lib/reloading/loadDevTable";
 import type { LoadBookEntry } from "@/lib/reloading/loadBook";
+import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import {
   formatJaktkortStatusNb,
@@ -119,13 +120,15 @@ type HomeBaseProps = {
   loadBenchRecipe: LoadBenchRecipe;
   loadDevTable: LoadDevTable;
   loadBook: LoadBookEntry[];
+  homeLoadedLots: HomeLoadedLot[];
+  powderOpenGrains: Record<string, number>;
   armedLoadPlan: ArmedLoadPlan | null;
   onToggleKit: (itemId: string) => void;
   onSetAutoSupplyFood: (enabled: boolean) => void;
   onChangeLoadBenchRecipe: (recipe: LoadBenchRecipe) => void;
   onChangeLoadDevTable: (table: LoadDevTable) => void;
   onChangeLoadBook: (book: LoadBookEntry[]) => void;
-  onArmLoadPlan: (plan: ArmedLoadPlan) => void;
+  onLoadHomeAmmo: (rowId: string) => { ok: boolean; error?: string };
   onDisarmLoadPlan: () => void;
   /** Sell one unit (or ammo eske) on Finn at ~50% catalog price. */
   onSellOnFinn: (itemId: string) => void;
@@ -168,13 +171,15 @@ export function HomeBase({
   loadBenchRecipe,
   loadDevTable,
   loadBook,
+  homeLoadedLots,
+  powderOpenGrains,
   armedLoadPlan,
   onToggleKit,
   onSetAutoSupplyFood,
   onChangeLoadBenchRecipe,
   onChangeLoadDevTable,
   onChangeLoadBook,
-  onArmLoadPlan,
+  onLoadHomeAmmo,
   onDisarmLoadPlan,
   onSellOnFinn,
   onPurchaseJaktkort,
@@ -428,11 +433,13 @@ export function HomeBase({
         recipe={loadBenchRecipe}
         loadDevTable={loadDevTable}
         loadBook={loadBook}
+        homeLoadedLots={homeLoadedLots}
+        powderOpenGrains={powderOpenGrains}
         armedLoadPlan={armedLoadPlan}
         onChangeRecipe={onChangeLoadBenchRecipe}
         onChangeLoadDevTable={onChangeLoadDevTable}
         onChangeLoadBook={onChangeLoadBook}
-        onArmLoadPlan={onArmLoadPlan}
+        onLoadHomeAmmo={onLoadHomeAmmo}
         onDisarmLoadPlan={onDisarmLoadPlan}
         onBack={() => setView("main")}
       />
@@ -822,14 +829,18 @@ export function HomeBase({
             {INVENTORY_GROUPS.map((group) => {
               const rows = inventoryByGroup.get(group.id) ?? [];
               if (rows.length === 0) return null;
+              const qtySum = rows.reduce((n, r) => n + r.qty, 0);
+              const summary =
+                qtySum > rows.length
+                  ? `${rows.length} typer · ${qtySum} totalt`
+                  : `${rows.length} ${rows.length === 1 ? "vare" : "varer"}`;
               return (
-                <section key={group.id} className="home-inventory-group">
-                  <h3 className="home-inventory-group-title">
-                    {group.label}
-                    <span className="home-inventory-group-count">
-                      {rows.length}
-                    </span>
-                  </h3>
+                <ExpandableSection
+                  key={group.id}
+                  title={group.label}
+                  summary={summary}
+                  scrollOnExpand={false}
+                >
                   <ul className="shop-list home-kit-list">
                     {rows.map(({ item, qty }) => {
                       const equipped = kit.includes(item.id);
@@ -923,7 +934,7 @@ export function HomeBase({
                       );
                     })}
                   </ul>
-                </section>
+                </ExpandableSection>
               );
             })}
           </div>

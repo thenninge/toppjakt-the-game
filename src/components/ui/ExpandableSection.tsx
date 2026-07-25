@@ -7,6 +7,11 @@ type ExpandableSectionProps = {
   summary: string;
   /** Collapsed by default — keeps Home scannable. */
   defaultExpanded?: boolean;
+  /**
+   * Scroll the panel into view when opened (default true).
+   * Set false for nested groups inside an already-open section.
+   */
+  scrollOnExpand?: boolean;
   children: ReactNode;
 };
 
@@ -14,6 +19,7 @@ export function ExpandableSection({
   title,
   summary,
   defaultExpanded = false,
+  scrollOnExpand = true,
   children,
 }: ExpandableSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -22,13 +28,13 @@ export function ExpandableSection({
   const skipScrollOnMount = useRef(defaultExpanded);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || !scrollOnExpand) return;
     if (skipScrollOnMount.current) {
       skipScrollOnMount.current = false;
       return;
     }
     panelRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [expanded]);
+  }, [expanded, scrollOnExpand]);
 
   return (
     <section className="home-expandable">

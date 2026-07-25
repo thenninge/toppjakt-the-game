@@ -520,6 +520,20 @@ export function XxlShop({
                     {misc.enduranceGrams} · felt{" "}
                     {miscFeltWeightGrams(item.weightGrams, misc)} g
                     {misc.isHeadlamp ? " · hodelykt (nattgåing etter 17:00)" : ""}
+                    {misc.isRangeFan
+                      ? " · bordvifte (blåser bort mirage på banen)"
+                      : ""}
+                    {misc.isChamberCooler
+                      ? " · RifleKuhl (×2 pipekjøling på banen)"
+                      : ""}
+                    {misc.mirageMult != null
+                      ? misc.mirageRequiresSuppressor
+                        ? ` · cover (−${Math.round((1 - misc.mirageMult) * 100)} % mirage med can)`
+                        : ` · mirage-bånd (−${Math.round((1 - misc.mirageMult) * 100)} % mirage)`
+                      : ""}
+                    {misc.weaponCalmGrams != null && misc.weaponCalmGrams > 0
+                      ? ` · calm ${misc.weaponCalmGrams} g`
+                      : ""}
                   </span>
                 ) : null}
                 {lrf ? (

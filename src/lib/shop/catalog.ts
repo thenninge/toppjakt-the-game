@@ -3406,6 +3406,78 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       "Premium kult kit; funksjon kobles inn senere.",
     misc: { enduranceGrams: 0, isChronograph: true },
   },
+  {
+    id: "misc-bordvifte-batteri",
+    category: "misc",
+    brand: "Clas Ohlson",
+    name: "Bordvifte batteridrevet",
+    priceNok: 299,
+    note:
+      "Liten USB/batteri-vifte til skytebanen — blåser bort mirage foran glasset. " +
+      "Pakk i kit på banen; uten den dirrer bildet på varme dager.",
+    misc: { enduranceGrams: 0, isRangeFan: true },
+  },
+  {
+    id: "misc-magnetospeed-riflekuhl",
+    category: "misc",
+    brand: "Magnetospeed",
+    name: "RifleKuhl",
+    priceNok: 799,
+    note:
+      "Kammerkjøler til skytebanen — blåser kald luft inn i kammeret og dobler " +
+      "pipekjøling. Fjerner ikke mirage (bruk bordvifte til det), men pipa " +
+      "kommer raskere ned igjen mellom serier.",
+    misc: { enduranceGrams: 0, isChamberCooler: true },
+  },
+  {
+    id: "misc-atec-mirage-band",
+    category: "misc",
+    brand: "Atec",
+    name: "Mirage bånd",
+    priceNok: 199,
+    note:
+      "Mirage-bånd over pipa — demper varmluftsdirring (−30 % mirage). " +
+      "Kan kombineres med lyddemper-cover; trenger ikke lyddemper for å sitte på.",
+    misc: {
+      enduranceGrams: 0,
+      mirageMult: 0.7,
+      weaponCalmGrams: 50,
+    },
+  },
+  {
+    id: "misc-caldwell-kevlar-suppressor-cover",
+    category: "misc",
+    brand: "Caldwell",
+    name: "Kevlar lyddemper-cover",
+    priceNok: 1099,
+    note:
+      "Kevlar-cover rundt lyddemperen — −30 % mirage når can er montert. " +
+      "Samme calm-leverage som lyddemper (2× vekt).",
+    misc: {
+      enduranceGrams: 0,
+      mirageMult: 0.7,
+      mirageRequiresSuppressor: true,
+      weaponCalmGrams: 200,
+      weaponCalmRequiresSuppressor: true,
+    },
+  },
+  {
+    id: "misc-temu-neoprene-suppressor-cover",
+    category: "misc",
+    brand: "Temu",
+    name: "Neoprene lyddemper-cover",
+    priceNok: 399,
+    note:
+      "Billig neopren-cover rundt lyddemperen — −10 % mirage når can er montert. " +
+      "Lett calm-bidrag (2× vekt).",
+    misc: {
+      enduranceGrams: 0,
+      mirageMult: 0.9,
+      mirageRequiresSuppressor: true,
+      weaponCalmGrams: 100,
+      weaponCalmRequiresSuppressor: true,
+    },
+  },
 
   // --- Camouflage ---
   // birdSpotSnow / birdSpotNoSnow: lower = harder for birds to spot in that condition.

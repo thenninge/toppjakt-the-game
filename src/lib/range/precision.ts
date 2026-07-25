@@ -262,6 +262,11 @@ export type WeaponCalmInput = {
   hasBipod: boolean;
   bipod?: BipodSpec | null;
   suppressorWeightGrams?: number;
+  /**
+   * Extra forward calm mass from misc (mirage band, suppressor covers).
+   * Already in calm-grams (covers use 2× kit weight).
+   */
+  extraCalmGrams?: number;
   /** Extra calm from customs (e.g. CB Bagrider → 1.15). */
   customsCalmMult?: number;
 };
@@ -280,8 +285,14 @@ export function computeWeaponCalmFactor(input: WeaponCalmInput): number {
       calm *= 0.85 + input.bipod.weaponCalm * 0.03;
     }
   }
+  let calmMass = 0;
   if (input.suppressorWeightGrams && input.suppressorWeightGrams > 0) {
-    const calmMass = suppressorWeaponCalmGrams(input.suppressorWeightGrams);
+    calmMass += suppressorWeaponCalmGrams(input.suppressorWeightGrams);
+  }
+  if (input.extraCalmGrams && input.extraCalmGrams > 0) {
+    calmMass += input.extraCalmGrams;
+  }
+  if (calmMass > 0) {
     calm *= 1 + calmMass / 4000;
   }
   const customs =

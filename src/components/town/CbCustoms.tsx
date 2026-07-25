@@ -19,6 +19,8 @@ import {
   BARREL_LENGTH_MIN_IN,
   BARREL_MAKERS,
   CARBON_CONTOURS,
+  FLUTING_LABOUR_NOK,
+  FLUTING_RETROFIT_NOK,
   SAUER_200STR_BARREL_SURCHARGE_NOK,
   SAUER_200STR_RIFLE_ID,
   STAINLESS_MOA_BONUS,
@@ -38,6 +40,10 @@ import {
   type CustomBarrelConfig,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
+import {
+  barrelHeatFromCustomConfig,
+  formatBarrelHeatPreview,
+} from "@/lib/range/barrelHeat";
 import {
   formatPermitFee,
   getRifleRoundCount,
@@ -74,6 +80,8 @@ type CbCustomsProps = {
     config: CustomBarrelConfig,
     priceNok: number,
   ) => void;
+  /** Retrofit fluting on an unfluted custom steel pipe (one-time). */
+  onFluteCustomBarrel?: (rifleId: string, priceNok: number) => void;
   onLeave: () => void;
 };
 
@@ -88,6 +96,7 @@ export function CbCustoms({
   onOrderHomeLoads,
   onReplaceBarrel,
   onInstallCustomBarrel,
+  onFluteCustomBarrel,
   onLeave,
 }: CbCustomsProps) {
   const [status, setStatus] = useState("");
@@ -158,9 +167,18 @@ export function CbCustoms({
     () => estimateCustomBarrelWeightGrams(barrelConfig),
     [barrelConfig],
   );
+  const heatPreview = useMemo(
+    () => barrelHeatFromCustomConfig(barrelConfig),
+    [barrelConfig],
+  );
   const makerMeta = barrelMaker(barrelConfig.maker);
   const profileEnabled = canCustomProfile(barrelConfig.material);
   const isSauer = rifle?.id === SAUER_200STR_RIFLE_ID;
+  const canRetrofitFlute =
+    !!installed &&
+    installed.material !== "carbon" &&
+    !installed.fluted &&
+    !!onFluteCustomBarrel;
 
   function patchBarrel(partial: Partial<CustomBarrelConfig>) {
     setBarrelConfig((prev) => {
@@ -187,6 +205,7 @@ export function CbCustoms({
           next.stations = defaultSteelStations(len);
         }
       }
+      if (next.material === "carbon") next.fluted = false;
       return next;
     });
   }
@@ -590,12 +609,66 @@ export function CbCustoms({
             </p>
           )}
 
+          {profileEnabled ? (
+            <label className="cb-customs-flute">
+              <input
+                type="checkbox"
+                checked={!!barrelConfig.fluted}
+                onChange={(e) => patchBarrel({ fluted: e.target.checked })}
+              />
+              <span>
+                Fluting / rilling (+{formatPermitFee(FLUTING_LABOUR_NOK)}) —
+                kjøler raskere på banen (2 %/s). Merkes permanent på pipa.
+              </span>
+            </label>
+          ) : null}
+
+          {installed?.fluted ? (
+            <p className="shop-row-note">
+              Montert pipe er allerede fluted — den kan ikke rilles på nytt.
+              Ny bestilling kan fortsatt bestilles med fluting.
+            </p>
+          ) : null}
+
+          {canRetrofitFlute ? (
+            <div className="cb-customs-flute-retrofit">
+              <p className="shop-row-note">
+                Eksisterende custom-pipe er ikke fluted. Rill den én gang for{" "}
+                {formatPermitFee(FLUTING_RETROFIT_NOK)}.
+              </p>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                disabled={balance < FLUTING_RETROFIT_NOK}
+                onClick={() => {
+                  if (!rifle || !onFluteCustomBarrel) return;
+                  onFluteCustomBarrel(rifle.id, FLUTING_RETROFIT_NOK);
+                  setStatus("Pipe flutet — bedre kjøling på banen.");
+                }}
+              >
+                Rill eksisterende pipe
+              </button>
+            </div>
+          ) : installed && installed.material !== "carbon" && installed.fluted ? (
+            <p className="shop-row-note">
+              ✓ Montert pipe: fluted
+            </p>
+          ) : null}
+
           <div className="cb-customs-quote">
             <p className="shop-row-note">
               Est. gulv {previewMoa.toFixed(2)} MOA · ~{previewWeight} g
               {barrelConfig.material === "stainless"
                 ? ` · SS −${STAINLESS_MOA_BONUS.toFixed(2)} MOA vs CrMo`
                 : ""}
+            </p>
+            <p className="shop-row-note cb-customs-heat-preview">
+              Barrel heat: {formatBarrelHeatPreview(heatPreview, 10)}
+              {heatPreview.isVarmintClass
+                ? " · min Ø ≥ 19 mm → varmint"
+                : heatPreview.isCarbon
+                  ? ""
+                  : " · tynnere kontur → 10 %/skudd"}
             </p>
             <ul className="cb-customs-quote-list">
               <li>Emne / kammer: {formatPermitFee(quote.blankNok)}</li>
@@ -604,6 +677,9 @@ export function CbCustoms({
               ) : (
                 <li>CNC-profil: — (carbon)</li>
               )}
+              {quote.flutingNok > 0 ? (
+                <li>Fluting: {formatPermitFee(quote.flutingNok)}</li>
+              ) : null}
               <li>Montering: {formatPermitFee(quote.installNok)}</li>
               {quote.sauerNok > 0 ? (
                 <li>Sauer 200 STR: {formatPermitFee(quote.sauerNok)}</li>

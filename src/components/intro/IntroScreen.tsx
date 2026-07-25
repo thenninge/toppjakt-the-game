@@ -38,8 +38,11 @@ import {
   resetRifleBarrel,
   clearCustomBarrel,
   installCustomBarrel,
-  armLoadPlan,
+  fluteInstalledCustomBarrel,
+  armHomeLoadedLot,
   disarmLoadPlan,
+  loadHomeAmmoFromPlanRow,
+  syncHomeLoadedLotCache,
   type PlayerStats,
   type ShotLogEntry,
   type DopeCardEntry,
@@ -53,15 +56,18 @@ import {
 import { applyMeasuredSeriesToLoadDevRow } from "@/lib/reloading/loadDevTable";
 import {
   buildLoadBookEntry,
+  buildLoadBookEntryFromLot,
   upsertLoadBookEntry,
 } from "@/lib/reloading/loadBook";
+import { purchaseQtyForReloadingItem } from "@/lib/reloading/componentStock";
+import { patchHomeLoadedLot, measurePatchForHomeLot, isHomeLoadAmmoId } from "@/lib/reloading/homeLoadedAmmo";
 import { computeChronoSeriesStats } from "@/lib/ballistics/kestrelProfile";
 import type { ShopItem } from "@/lib/shop/types";
 import {
   isReloadStarterKitId,
   type StarterKitSelection,
 } from "@/lib/reloading/starterKit";
-import { resolveStarterKitPurchase } from "@/lib/shop/catalog";
+import { resolveStarterKitPurchase, getShopItem } from "@/lib/shop/catalog";
 import {
   buildInstalledCustomBarrel,
   type CustomBarrelConfig,
@@ -69,6 +75,7 @@ import {
 import { StatsFrame } from "@/components/hud/StatsFrame";
 import { StatusBar } from "@/components/hud/StatusBar";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
+import { KaboomSplash } from "@/components/ui/KaboomSplash";
 import { SaveConflictDialog } from "@/components/ui/SaveConflictDialog";
 import {
   GameMusic,
@@ -206,6 +213,7 @@ export function IntroScreen() {
 
   useEffect(() => {
     statsRef.current = stats;
+    syncHomeLoadedLotCache(stats.homeLoadedLots);
   }, [stats]);
 
   /** Persist local + debounced cloud when signed in. */
@@ -490,7 +498,12 @@ export function IntroScreen() {
         if (prev.balance < purchase.dealPriceNok) return prev;
         let inventory = prev.inventory;
         for (const partId of purchase.contentIds) {
-          inventory = addToInventory(inventory, partId, 1);
+          const part = getShopItem(partId);
+          const qty =
+            part && part.category === "reloading"
+              ? purchaseQtyForReloadingItem(part)
+              : 1;
+          inventory = addToInventory(inventory, partId, qty);
         }
         return {
           ...prev,
@@ -502,7 +515,12 @@ export function IntroScreen() {
         if (prev.balance < item.priceNok) return prev;
         let inventory = prev.inventory;
         for (const partId of item.bundleItemIds) {
-          inventory = addToInventory(inventory, partId, 1);
+          const part = getShopItem(partId);
+          const qty =
+            part && part.category === "reloading"
+              ? purchaseQtyForReloadingItem(part)
+              : 1;
+          inventory = addToInventory(inventory, partId, qty);
         }
         return {
           ...prev,
@@ -510,7 +528,11 @@ export function IntroScreen() {
           inventory,
         };
       }
-      const unitQty = isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
+      const unitQty = isAmmoItem(item)
+        ? ammoRoundsPerPurchase(item)
+        : item.category === "reloading"
+          ? purchaseQtyForReloadingItem(item)
+          : 1;
       const cost = item.priceNok * n;
       if (prev.balance < cost) return prev;
       if (isRifleItem(item) && !canBuyHuntingRifle(prev)) return prev;
@@ -758,6 +780,10 @@ export function IntroScreen() {
     });
   }
 
+  function fluteCustomsBarrel(rifleId: string, priceNok: number) {
+    setStats((prev) => fluteInstalledCustomBarrel(prev, rifleId, priceNok));
+  }
+
   const spendAmmoRound = useCallback(
     (ammoId: string, rifleId?: string): boolean => {
       const result = consumeAmmoRound(statsRef.current, ammoId, { rifleId });
@@ -858,23 +884,50 @@ export function IntroScreen() {
         ...prev,
         shotLog: appendShotLogEntry(prev.shotLog, entry),
       };
+      const chronoStats = entry.chronoV0Mps?.length
+        ? computeChronoSeriesStats(entry.chronoV0Mps)
+        : null;
+      const measure = {
+        meanV0Mps: chronoStats?.meanMps ?? null,
+        highV0Mps: chronoStats?.highMps ?? null,
+        lowV0Mps: chronoStats?.lowMps ?? null,
+        stdevV0Mps: chronoStats?.stdevMps ?? null,
+        groupMoa: entry.groupMoa,
+        extremeSpreadMm: entry.extremeSpreadMm,
+        seriesId: entry.id,
+      };
+
+      const lotId =
+        prev.armedLoadPlan?.homeLotId ??
+        (isHomeLoadAmmoId(entry.ammoId) ? entry.ammoId : null);
+      if (lotId) {
+        const lot = next.homeLoadedLots.find((l) => l.id === lotId);
+        if (lot) {
+          const patched = patchHomeLoadedLot(
+            next.homeLoadedLots,
+            lotId,
+            measurePatchForHomeLot(measure),
+          );
+          const updated = patched.find((l) => l.id === lotId)!;
+          next = {
+            ...next,
+            homeLoadedLots: patched,
+            loadBook: upsertLoadBookEntry(
+              next.loadBook,
+              buildLoadBookEntryFromLot(updated),
+            ),
+          };
+          syncHomeLoadedLotCache(patched);
+        }
+        return next;
+      }
+
       const rowId = prev.armedLoadPlan?.loadDevRowId;
       if (rowId) {
-        const chronoStats = entry.chronoV0Mps?.length
-          ? computeChronoSeriesStats(entry.chronoV0Mps)
-          : null;
         const table = applyMeasuredSeriesToLoadDevRow(
           next.loadDevTable,
           rowId,
-          {
-            meanV0Mps: chronoStats?.meanMps ?? null,
-            highV0Mps: chronoStats?.highMps ?? null,
-            lowV0Mps: chronoStats?.lowMps ?? null,
-            stdevV0Mps: chronoStats?.stdevMps ?? null,
-            groupMoa: entry.groupMoa,
-            extremeSpreadMm: entry.extremeSpreadMm,
-            seriesId: entry.id,
-          },
+          measure,
         );
         const row = table.rows.find((r) => r.id === rowId);
         next = { ...next, loadDevTable: table };
@@ -897,6 +950,45 @@ export function IntroScreen() {
       return next;
     });
   }, []);
+
+  /** Persist load-test measures onto a lot without appending shotlog (switch / auto). */
+  const persistHomeLotMeasure = useCallback(
+    (
+      lotId: string,
+      measure: {
+        meanV0Mps: number | null;
+        highV0Mps: number | null;
+        lowV0Mps: number | null;
+        stdevV0Mps: number | null;
+        groupMoa: number | null;
+        extremeSpreadMm: number | null;
+        seriesId?: string | null;
+      },
+    ) => {
+      setStats((prev) => {
+        if (!prev.homeLoadedLots.some((l) => l.id === lotId)) return prev;
+        const patched = patchHomeLoadedLot(
+          prev.homeLoadedLots,
+          lotId,
+          measurePatchForHomeLot({
+            ...measure,
+            seriesId: measure.seriesId ?? `live-${Date.now().toString(36)}`,
+          }),
+        );
+        const updated = patched.find((l) => l.id === lotId)!;
+        syncHomeLoadedLotCache(patched);
+        return {
+          ...prev,
+          homeLoadedLots: patched,
+          loadBook: upsertLoadBookEntry(
+            prev.loadBook,
+            buildLoadBookEntryFromLot(updated),
+          ),
+        };
+      });
+    },
+    [],
+  );
 
   function toggleKit(itemId: string) {
     setStats((prev) => {
@@ -1272,6 +1364,7 @@ export function IntroScreen() {
             onOrderHomeLoads={orderCustomsHomeLoads}
             onReplaceBarrel={replaceCustomsBarrel}
             onInstallCustomBarrel={installCustomsCustomBarrel}
+            onFluteCustomBarrel={fluteCustomsBarrel}
             onLeave={backToTown}
           />
         )}
@@ -1341,6 +1434,8 @@ export function IntroScreen() {
             loadBenchRecipe={stats.loadBenchRecipe}
             loadDevTable={stats.loadDevTable}
             loadBook={stats.loadBook}
+            homeLoadedLots={stats.homeLoadedLots}
+            powderOpenGrains={stats.powderOpenGrains}
             armedLoadPlan={stats.armedLoadPlan}
             onToggleKit={toggleKit}
             onSetAutoSupplyFood={setAutoSupplyFood}
@@ -1353,9 +1448,11 @@ export function IntroScreen() {
             onChangeLoadBook={(book) =>
               setStats((prev) => ({ ...prev, loadBook: book }))
             }
-            onArmLoadPlan={(plan) =>
-              setStats((prev) => armLoadPlan(prev, plan))
-            }
+            onLoadHomeAmmo={(rowId) => {
+              const result = loadHomeAmmoFromPlanRow(statsRef.current, rowId);
+              if (result.ok) setStats(result.stats);
+              return { ok: result.ok, error: result.error };
+            }}
             onDisarmLoadPlan={() =>
               setStats((prev) => disarmLoadPlan(prev))
             }
@@ -1461,13 +1558,14 @@ export function IntroScreen() {
             onUpdateDope={updateDopeEntry}
             onRemoveDope={removeDopeEntry}
             onLogSeries={logRangeSeries}
+            onPersistHomeLotMeasure={persistHomeLotMeasure}
             kestrelProfiles={stats.kestrelProfiles}
             onUpsertKestrelProfile={upsertKestrelProfile}
-            loadDevTable={stats.loadDevTable}
             loadBenchRecipe={stats.loadBenchRecipe}
+            homeLoadedLots={stats.homeLoadedLots}
             armedLoadPlan={stats.armedLoadPlan}
-            onArmLoadPlan={(plan) =>
-              setStats((prev) => armLoadPlan(prev, plan))
+            onArmHomeLot={(lotId) =>
+              setStats((prev) => armHomeLoadedLot(prev, lotId))
             }
             onDisarmLoadPlan={() =>
               setStats((prev) => disarmLoadPlan(prev))
@@ -1562,20 +1660,10 @@ export function IntroScreen() {
       ) : null}
 
       {kaboomNotice ? (
-        <GameConfirmDialog
-          title="Våpen sprengt"
-          message={
-            "Overtrykk i ladeplanen detonerte våpenet.\n" +
-            "Rifle, pipe, stokk, bedding og all CB Customs-customisering er tapt.\n" +
-            "Du er uskadd — men du må skaffe nytt våpen og starte oppsettet på nytt."
-          }
-          confirmLabel="Forstått"
-          cancelLabel="Lukk"
-          danger
-          onConfirm={() => {
+        <KaboomSplash
+          onDismiss={() => {
             setKaboomNotice(false);
             if (phase === "hunt") {
-              // Drop back to town if still in hunt with no rifle.
               setPhase("town");
               setLocation(null);
               setHuntHud(null);
@@ -1584,7 +1672,6 @@ export function IntroScreen() {
               setPhase("town");
             }
           }}
-          onCancel={() => setKaboomNotice(false)}
         />
       ) : null}
 

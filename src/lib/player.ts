@@ -24,11 +24,33 @@ import {
 import type { LoadDevTable } from "@/lib/reloading/loadDevTable";
 import { createEmptyLoadDevTable } from "@/lib/reloading/loadDevTable";
 import type { LoadBookEntry } from "@/lib/reloading/loadBook";
-import { createEmptyLoadBook } from "@/lib/reloading/loadBook";
+import {
+  createEmptyLoadBook,
+  buildLoadBookEntryFromLot,
+  upsertLoadBookEntry,
+} from "@/lib/reloading/loadBook";
+import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
+import {
+  buildHomeLotFromRow,
+  isHomeLoadAmmoId,
+  patchHomeLoadedLot,
+  resolveHomeLoadItem,
+  spentBrassItemIdForHomeLot,
+} from "@/lib/reloading/homeLoadedAmmo";
+import { removeLoadDevRow } from "@/lib/reloading/loadDevTable";
+import { powderGrainsPerBox } from "@/lib/reloading/componentStock";
+import { isPowderItem } from "@/lib/reloading/components";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { isAmmoItem, isFoodItem, isStockItem } from "@/lib/shop/types";
+
+/** Live home-load lots for resolvePlayerItem (synced from save state). */
+let homeLotCache: readonly HomeLoadedLot[] = [];
+
+export function syncHomeLoadedLotCache(lots: readonly HomeLoadedLot[]): void {
+  homeLotCache = lots;
+}
 
 export type InventoryEntry = {
   itemId: string;
@@ -213,6 +235,12 @@ export type PlayerStats = {
   loadDevTable: LoadDevTable;
   /** Archived home loads for lookup. */
   loadBook: LoadBookEntry[];
+  /** Loaded home ammo batches (shootable). */
+  homeLoadedLots: HomeLoadedLot[];
+  /** Open powder stock in grains (after opening boxes). */
+  powderOpenGrains: Record<string, number>;
+  /** One-shot migration: reloading box qty → pieces. */
+  reloadingPiecesMigrated: boolean;
   /**
    * Kestrel AB gun profiles per ammo id (calibrated MV / BC / dV/dT).
    */
@@ -689,6 +717,9 @@ export function createInitialStats(): PlayerStats {
     armedLoadPlan: null,
     loadDevTable: createEmptyLoadDevTable(),
     loadBook: createEmptyLoadBook(),
+    homeLoadedLots: [],
+    powderOpenGrains: {},
+    reloadingPiecesMigrated: true,
     kestrelProfiles: {},
   };
 }
@@ -1026,7 +1057,7 @@ export function saveZeroing(
 }
 
 export function resolvePlayerItem(id: string): ShopItem | undefined {
-  return getShopItem(id);
+  return getShopItem(id) ?? resolveHomeLoadItem(id, homeLotCache);
 }
 
 /** Physical hunting rifles in inventory (not licenses). */
@@ -1173,6 +1204,7 @@ export function consumeInventoryItem(
 
 /** Spend one round of ammo; drops from kit when empty. Optionally counts a rifle shot.
  * Centerfire rounds also grant one spent brass case for hjemmelading.
+ * Home-loaded lots update roundsRemaining + return brass from the load's brass brand.
  * If an armed ladeplan matches the ammo caliber, rolls overpressure kaboom.
  */
 export function consumeAmmoRound(
@@ -1187,25 +1219,58 @@ export function consumeAmmoRound(
       ? stats.kit.filter((id) => id !== ammoId)
       : stats.kit;
   let nextInventory = inventory;
-  const brassId = spentBrassItemIdForAmmo(ammoId);
-  if (brassId) {
-    nextInventory = addToInventory(nextInventory, brassId, 1);
+  let homeLoadedLots = stats.homeLoadedLots;
+
+  if (isHomeLoadAmmoId(ammoId)) {
+    const lot = homeLoadedLots.find((l) => l.id === ammoId);
+    if (lot) {
+      const remaining = Math.max(0, lot.roundsRemaining - 1);
+      homeLoadedLots = patchHomeLoadedLot(homeLoadedLots, ammoId, {
+        roundsRemaining: remaining,
+      });
+      const brassId = spentBrassItemIdForHomeLot(lot);
+      if (brassId) {
+        nextInventory = addToInventory(nextInventory, brassId, 1);
+      }
+    }
+  } else {
+    const brassId = spentBrassItemIdForAmmo(ammoId);
+    if (brassId) {
+      nextInventory = addToInventory(nextInventory, brassId, 1);
+    }
   }
-  let next: PlayerStats = { ...stats, inventory: nextInventory, kit };
+
+  let next: PlayerStats = {
+    ...stats,
+    inventory: nextInventory,
+    kit,
+    homeLoadedLots,
+  };
+  syncHomeLoadedLotCache(homeLoadedLots);
+
   if (opts?.rifleId) {
     next = recordRifleShot(next, opts.rifleId);
   }
 
-  const armed = next.armedLoadPlan;
-  if (armed && armed.kaboomChance > 0 && opts?.rifleId) {
-    const ammo = getShopItem(ammoId);
+  const lot = homeLoadedLots.find((l) => l.id === ammoId);
+  const kaboomChance =
+    lot && lot.kaboomChance > 0
+      ? lot.kaboomChance
+      : next.armedLoadPlan && next.armedLoadPlan.kaboomChance > 0
+        ? next.armedLoadPlan.kaboomChance
+        : 0;
+  const kaboomCaliber =
+    lot?.caliberKey ?? next.armedLoadPlan?.caliberKey ?? null;
+
+  if (kaboomChance > 0 && opts?.rifleId && kaboomCaliber) {
+    const ammo = resolvePlayerItem(ammoId);
     const ammoKey =
       ammo && isAmmoItem(ammo)
         ? spentBrassKeyForCaliber(ammo.ammo.caliber)
-        : null;
-    if (ammoKey && ammoKey === armed.caliberKey) {
+        : lot?.caliberKey ?? null;
+    if (ammoKey && ammoKey === kaboomCaliber) {
       const roll = (opts.rng ?? Math.random)();
-      if (roll < armed.kaboomChance) {
+      if (roll < kaboomChance) {
         next = applyLoadKaboom(next, opts.rifleId);
         return { stats: next, ok: true, kaboom: true };
       }
@@ -1213,6 +1278,166 @@ export function consumeAmmoRound(
   }
 
   return { stats: next, ok: true };
+}
+
+/**
+ * Open powder boxes into grain stock until `needGrains` is available.
+ */
+function ensurePowderGrains(
+  inventory: InventoryEntry[],
+  powderOpenGrains: Record<string, number>,
+  powderItemId: string,
+  needGrains: number,
+): {
+  inventory: InventoryEntry[];
+  powderOpenGrains: Record<string, number>;
+  ok: boolean;
+} {
+  let inv = inventory;
+  let open = { ...powderOpenGrains };
+  let available = open[powderItemId] ?? 0;
+  const item = getShopItem(powderItemId);
+  if (!item || !isPowderItem(item)) {
+    return { inventory: inv, powderOpenGrains: open, ok: false };
+  }
+  const perBox = powderGrainsPerBox(item);
+  while (available + 1e-6 < needGrains) {
+    const boxes = getInventoryQty(inv, powderItemId);
+    if (boxes <= 0) {
+      return { inventory: inv, powderOpenGrains: open, ok: false };
+    }
+    const consumed = consumeInventoryItem(inv, powderItemId, 1);
+    if (!consumed.ok) {
+      return { inventory: inv, powderOpenGrains: open, ok: false };
+    }
+    inv = consumed.inventory;
+    available += perBox;
+    open[powderItemId] = available;
+  }
+  return { inventory: inv, powderOpenGrains: open, ok: true };
+}
+
+/**
+ * «Lad ammo» — consume components for a ladeplan-rad, create shootable lot,
+ * archive to ladebok, remove row from plan.
+ */
+export function loadHomeAmmoFromPlanRow(
+  stats: PlayerStats,
+  rowId: string,
+): { stats: PlayerStats; ok: boolean; error?: string; lotId?: string } {
+  const row = stats.loadDevTable.rows.find((r) => r.id === rowId);
+  if (!row) return { stats, ok: false, error: "Finner ikke ladeplan-rad." };
+  if (!row.powderItemId || !row.bulletItemId || !row.primerItemId) {
+    return { stats, ok: false, error: "Velg krutt, kule og primer først." };
+  }
+  const brassId = stats.loadBenchRecipe.brassItemId;
+  if (!brassId) {
+    return { stats, ok: false, error: "Velg hylse på benken først." };
+  }
+  const n = Math.max(1, Math.min(50, Math.round(row.shotsLoaded)));
+  const grainsNeeded = n * row.powderGrains;
+
+  let inventory = stats.inventory;
+  if (getInventoryQty(inventory, brassId) < n) {
+    return { stats, ok: false, error: `Trenger ${n} hylser.` };
+  }
+  if (getInventoryQty(inventory, row.primerItemId) < n) {
+    return { stats, ok: false, error: `Trenger ${n} tennhetter.` };
+  }
+  if (getInventoryQty(inventory, row.bulletItemId) < n) {
+    return { stats, ok: false, error: `Trenger ${n} kuler.` };
+  }
+
+  const powderReady = ensurePowderGrains(
+    inventory,
+    stats.powderOpenGrains,
+    row.powderItemId,
+    grainsNeeded,
+  );
+  if (!powderReady.ok) {
+    return {
+      stats,
+      ok: false,
+      error: `Ikke nok krutt (trenger ${grainsNeeded.toFixed(1)} gr).`,
+    };
+  }
+  inventory = powderReady.inventory;
+  const powderOpenGrains = { ...powderReady.powderOpenGrains };
+  powderOpenGrains[row.powderItemId] =
+    (powderOpenGrains[row.powderItemId] ?? 0) - grainsNeeded;
+  if (powderOpenGrains[row.powderItemId]! < 0.05) {
+    delete powderOpenGrains[row.powderItemId];
+  } else {
+    powderOpenGrains[row.powderItemId] =
+      Math.round(powderOpenGrains[row.powderItemId]! * 10) / 10;
+  }
+
+  inventory = consumeInventoryItem(inventory, brassId, n).inventory;
+  inventory = consumeInventoryItem(inventory, row.primerItemId, n).inventory;
+  inventory = consumeInventoryItem(inventory, row.bulletItemId, n).inventory;
+
+  const lot = buildHomeLotFromRow(
+    stats.loadBenchRecipe.caliberKey,
+    { ...row, shotsLoaded: n },
+    brassId,
+  );
+  if (!lot) {
+    return { stats, ok: false, error: "Klarte ikke å bygge ladning." };
+  }
+
+  inventory = addToInventory(inventory, lot.id, n);
+  const kit = stats.kit.includes(lot.id) ? stats.kit : [...stats.kit, lot.id];
+  const homeLoadedLots = [...stats.homeLoadedLots, lot];
+  const loadDevTable = removeLoadDevRow(stats.loadDevTable, rowId);
+  const loadBook = upsertLoadBookEntry(
+    stats.loadBook,
+    buildLoadBookEntryFromLot(lot),
+  );
+
+  const next: PlayerStats = {
+    ...stats,
+    inventory,
+    kit,
+    powderOpenGrains,
+    homeLoadedLots,
+    loadDevTable,
+    loadBook,
+    armedLoadPlan:
+      stats.armedLoadPlan?.loadDevRowId === rowId
+        ? null
+        : stats.armedLoadPlan,
+  };
+  syncHomeLoadedLotCache(homeLoadedLots);
+  return { stats: next, ok: true, lotId: lot.id };
+}
+
+/** Arm a hjemmeladd lot for Load test (kaboom + measurement write-back). */
+export function armHomeLoadedLot(
+  stats: PlayerStats,
+  lotId: string,
+): PlayerStats {
+  const lot = stats.homeLoadedLots.find((l) => l.id === lotId);
+  if (!lot || lot.roundsRemaining <= 0) return stats;
+  const plan: ArmedLoadPlan = {
+    caliberKey: lot.caliberKey,
+    pressurePct: lot.pressurePct,
+    overpressurePct: lot.overpressurePct,
+    kaboomChance: lot.kaboomChance,
+    v0Mps: lot.estimatedV0Mps,
+    powderGrains: lot.powderGrains,
+    seatingDepthThou: lot.seatingDepthThou,
+    colMm: lot.colMm,
+    armedAtMs: Date.now(),
+    loadDevRowId: null,
+    homeLotId: lot.id,
+  };
+  const kit = stats.kit.includes(lot.id) ? stats.kit : [...stats.kit, lot.id];
+  return {
+    ...stats,
+    kit,
+    armedLoadPlan: plan,
+    loadDevTable: { ...stats.loadDevTable, activeRowId: null },
+  };
 }
 
 /**
@@ -1332,6 +1557,27 @@ export function installCustomBarrel(
     },
     rifleId,
   );
+}
+
+/** One-time fluting retrofit on an installed unfluted custom steel barrel. */
+export function fluteInstalledCustomBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+  priceNok: number,
+): PlayerStats {
+  if (!rifleId || priceNok < 0 || stats.balance < priceNok) return stats;
+  const existing = stats.customBarrels[rifleId];
+  if (!existing) return stats;
+  if (existing.material === "carbon") return stats;
+  if (existing.fluted) return stats;
+  return {
+    ...stats,
+    balance: stats.balance - priceNok,
+    customBarrels: {
+      ...stats.customBarrels,
+      [rifleId]: { ...existing, fluted: true },
+    },
+  };
 }
 
 /** Clear custom blank (e.g. standard factory rebarrel). */

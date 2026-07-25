@@ -212,6 +212,7 @@ export function estimateLoadPlan(
   if (bulletGr != null) {
     v0Mps *= Math.sqrt(typicalGr / bulletGr);
   }
+  /** Estimated only — rounded whole m/s; display as (v0). */
   v0Mps = Math.round(v0Mps);
 
   return {
@@ -268,6 +269,11 @@ export function formatKaboomChancePct(chance: number): string {
   return `${(chance * 100).toFixed(1)} %`;
 }
 
+/** Estimated muzzle velocity for UI — whole m/s in parentheses. */
+export function formatEstimatedV0Mps(v0Mps: number): string {
+  return `(${Math.round(v0Mps)})`;
+}
+
 /** Snapshot armed for live fire kaboom checks + load-dev write-back. */
 export type ArmedLoadPlan = {
   caliberKey: SpentBrassKey;
@@ -282,6 +288,8 @@ export type ArmedLoadPlan = {
   armedAtMs: number;
   /** Load-dev table row currently under test (range write-back). */
   loadDevRowId?: string | null;
+  /** Home-loaded lot under test (preferred write-back target). */
+  homeLotId?: string | null;
 };
 
 export function normalizeArmedLoadPlan(raw: unknown): ArmedLoadPlan | null {
@@ -313,5 +321,7 @@ export function normalizeArmedLoadPlan(raw: unknown): ArmedLoadPlan | null {
       typeof o.loadDevRowId === "string" && o.loadDevRowId
         ? o.loadDevRowId
         : null,
+    homeLotId:
+      typeof o.homeLotId === "string" && o.homeLotId ? o.homeLotId : null,
   };
 }
