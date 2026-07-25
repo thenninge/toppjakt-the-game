@@ -1,30 +1,30 @@
 /**
  * Per-sprite hit-zone overrides (vital centre + green/red diameters).
- * Catalog defaults from birdSprites + TIUR_*_DIAMETER_MM. Persisted locally.
+ *
+ * - Catalog defaults: {@link BIRD_HIT_ZONE_CATALOG} (committed, ships to all players)
+ * - Local overrides: browser localStorage (admin drafts only)
+ *
+ * Promote drafts with Admin → Treffområde → «Skriv til repo (dev)».
  */
 
 import {
+  BIRD_HIT_ZONE_CATALOG,
+  type BirdHitZone,
+} from "@/lib/hunt/birdHitZoneCatalog";
+import {
+  allBirdSpriteIds,
   getBirdSprite,
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
 
 const STORAGE_KEY = "toppjakt-bird-hit-zones-v1";
 
-/** Match {@link TIUR_INSTANT_KILL_DIAMETER_MM} / {@link TIUR_VITAL_DIAMETER_MM}. */
-const DEFAULT_INSTANT_DIAMETER_MM = 66;
-const DEFAULT_VITAL_DIAMETER_MM = 114;
-
 export const HIT_ZONE_INSTANT_MM_MIN = 20;
 export const HIT_ZONE_INSTANT_MM_MAX = 150;
 export const HIT_ZONE_VITAL_MM_MIN = 40;
 export const HIT_ZONE_VITAL_MM_MAX = 250;
 
-export type BirdHitZoneOverride = {
-  vitalCxPx: number;
-  vitalCyPx: number;
-  instantDiameterMm: number;
-  vitalDiameterMm: number;
-};
+export type BirdHitZoneOverride = BirdHitZone;
 
 type OverrideMap = Partial<Record<BirdSpriteId, BirdHitZoneOverride>>;
 
@@ -110,18 +110,20 @@ function notify(): void {
   listeners.forEach((fn) => fn());
 }
 
-/** Catalog defaults (code) for a sprite. */
+/** Catalog defaults (committed code) for a sprite. */
 export function catalogHitZone(spriteId: BirdSpriteId): BirdHitZoneOverride {
+  const fromCatalog = BIRD_HIT_ZONE_CATALOG[spriteId];
+  if (fromCatalog) return { ...fromCatalog };
   const s = getBirdSprite(spriteId);
   return {
     vitalCxPx: s.vitalCxPx,
     vitalCyPx: s.vitalCyPx,
-    instantDiameterMm: DEFAULT_INSTANT_DIAMETER_MM,
-    vitalDiameterMm: DEFAULT_VITAL_DIAMETER_MM,
+    instantDiameterMm: 66,
+    vitalDiameterMm: 114,
   };
 }
 
-/** Effective zone after overrides. */
+/** Effective zone after local overrides. */
 export function getBirdHitZone(spriteId: BirdSpriteId): BirdHitZoneOverride {
   const ov = ensureCache()[spriteId];
   if (!ov) return catalogHitZone(spriteId);
@@ -153,6 +155,30 @@ export function clearBirdHitZoneOverride(spriteId: BirdSpriteId): void {
   cache = map;
   writeStorage(map);
   notify();
+}
+
+/** Drop all local overrides (e.g. after baking into the committed catalog). */
+export function clearAllBirdHitZoneOverrides(): void {
+  cache = {};
+  writeStorage({});
+  notify();
+}
+
+/** Snapshot of effective zones for every registered sprite (for repo bake). */
+export function exportEffectiveHitZones(): Record<
+  BirdSpriteId,
+  BirdHitZoneOverride
+> {
+  const out = {} as Record<BirdSpriteId, BirdHitZoneOverride>;
+  for (const id of allBirdSpriteIds()) {
+    out[id] = getBirdHitZone(id);
+  }
+  return out;
+}
+
+/** Local override map only (may be partial). */
+export function exportHitZoneOverrides(): OverrideMap {
+  return { ...ensureCache() };
 }
 
 export function subscribeBirdHitZones(cb: () => void): () => void {

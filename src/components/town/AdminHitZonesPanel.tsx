@@ -8,7 +8,9 @@ import {
 } from "@/lib/hunt/birdSprites";
 import {
   catalogHitZone,
+  clearAllBirdHitZoneOverrides,
   clearBirdHitZoneOverride,
+  exportEffectiveHitZones,
   getBirdHitZone,
   getBirdHitZoneOverride,
   HIT_ZONE_INSTANT_MM_MAX,
@@ -40,6 +42,8 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   const [cy, setCy] = useState(0);
   const [instantMm, setInstantMm] = useState(66);
   const [vitalMm, setVitalMm] = useState(114);
+  const [bakeStatus, setBakeStatus] = useState<string | null>(null);
+  const [baking, setBaking] = useState(false);
 
   useEffect(() => {
     return subscribeBirdHitZones(() => setEpoch((n) => n + 1));
@@ -76,6 +80,9 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
       instantDiameterMm: instantMm,
       vitalDiameterMm: vitalMm,
     });
+    setBakeStatus(
+      "Lagret lokalt. Bruk «Skriv til repo» for å gjøre det til default for alle.",
+    );
   }
 
   function reset() {
@@ -85,6 +92,64 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     setCy(Math.round(z.vitalCyPx * 10) / 10);
     setInstantMm(z.instantDiameterMm);
     setVitalMm(z.vitalDiameterMm);
+    setBakeStatus(null);
+  }
+
+  async function bakeToRepo() {
+    // Persist current editor values first so bake includes this sprite.
+    setBirdHitZoneOverride(spriteId, {
+      vitalCxPx: cx,
+      vitalCyPx: cy,
+      instantDiameterMm: instantMm,
+      vitalDiameterMm: vitalMm,
+    });
+    const payload = exportEffectiveHitZones();
+    setBaking(true);
+    setBakeStatus("Skriver katalog…");
+    try {
+      const res = await fetch("/api/admin/hit-zones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        sprites?: number;
+        path?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      setBakeStatus(
+        `Skrevet ${data.sprites} sprites → ${data.path}. Commit + push for GitHub.`,
+      );
+      clearAllBirdHitZoneOverrides();
+      setEpoch((n) => n + 1);
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBaking(false);
+    }
+  }
+
+  async function copyJson() {
+    setBirdHitZoneOverride(spriteId, {
+      vitalCxPx: cx,
+      vitalCyPx: cy,
+      instantDiameterMm: instantMm,
+      vitalDiameterMm: vitalMm,
+    });
+    const payload = exportEffectiveHitZones();
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setBakeStatus("JSON kopiert til utklippstavlen.");
+    } catch {
+      setBakeStatus("Klarte ikke å kopiere — sjekk nettleser-tillatelser.");
+    }
   }
 
   function onPreviewClick(e: MouseEvent<HTMLDivElement>) {
@@ -99,8 +164,9 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     <div className="admin-hit-zones">
       <p className="intro-line intro-gift">Treffområde</p>
       <p className="intro-line">
-        Klikk på bildet for vital-senter. Grønn = instant, rød = vital. Lagres
-        system-wide.
+        Klikk på bildet for vital-senter. Grønn = instant, rød = vital.{" "}
+        <strong>Lagre</strong> = kun denne nettleseren.{" "}
+        <strong>Skriv til repo</strong> = committed default for alle spillere.
       </p>
 
       <div className="admin-spot-controls">
@@ -169,7 +235,7 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
             className="intro-button admin-spot-btn"
             onClick={save}
           >
-            Lagre
+            Lagre lokalt
           </button>
           <button
             type="button"
@@ -179,13 +245,31 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
           >
             Reset
           </button>
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            disabled={baking}
+            onClick={() => void bakeToRepo()}
+          >
+            Skriv til repo (dev)
+          </button>
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            onClick={() => void copyJson()}
+          >
+            Kopier JSON
+          </button>
         </div>
 
         <p className="admin-spot-meta">
           Katalog: ({catalog.vitalCxPx.toFixed(1)}, {catalog.vitalCyPx.toFixed(1)})
           · grønn Ø{catalog.instantDiameterMm} / rød Ø{catalog.vitalDiameterMm}
-          {hasOverride ? " · override aktiv" : " · katalog"}
+          {hasOverride ? " · lokal override aktiv" : " · katalog"}
         </p>
+        {bakeStatus ? (
+          <p className="admin-spot-meta">{bakeStatus}</p>
+        ) : null}
       </div>
 
       <div
