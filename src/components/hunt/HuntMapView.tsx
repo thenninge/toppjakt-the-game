@@ -187,6 +187,7 @@ import {
   clearShotPairsStorage,
   loadShotPairsForHuntStart,
   saveShotPairsForTerrain,
+  type AwareHuntState,
 } from "@/lib/aware/shotPairStorage";
 import type { CellPoint } from "@/lib/aware/cellGeometry";
 
@@ -260,6 +261,9 @@ type HuntMapViewProps = {
   owlLastOfferedMilestone?: number | null;
   /** Persist that an owl observation slot was consumed (26 / 36 / …). */
   onOwlOffered?: (milestone: number) => void;
+  /** Synced open-hunt skuddpar (cloud + local PlayerStats). */
+  awareHunt?: AwareHuntState | null;
+  onAwareHuntChange?: (next: AwareHuntState | null) => void;
 };
 
 type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
@@ -490,6 +494,8 @@ export function HuntMapView({
   lifetimeUgle = 0,
   owlLastOfferedMilestone = null,
   onOwlOffered,
+  awareHunt = null,
+  onAwareHuntChange,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
@@ -916,7 +922,7 @@ export function HuntMapView({
     setBirdMapContacts({});
     setBirdEncounter(null);
     latentSpotNerveRef.current = {};
-    setShotPairs(loadShotPairsForHuntStart(terrainId));
+    setShotPairs(loadShotPairsForHuntStart(terrainId, awareHunt));
     setFindHitAar(null);
     setEatSession(null);
     setForcedRest(null);
@@ -937,8 +943,16 @@ export function HuntMapView({
     setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.");
   }, [terrainId, map, tiurSpawnCount, terrain?.tiurRating, terrain?.orrhaneRating]);
 
+  const onAwareHuntChangeRef = useRef(onAwareHuntChange);
+  onAwareHuntChangeRef.current = onAwareHuntChange;
+
   useEffect(() => {
     saveShotPairsForTerrain(terrainId, shotPairs);
+    onAwareHuntChangeRef.current?.(
+      shotPairs.length > 0
+        ? { terrainId, savedAtMs: Date.now(), pairs: shotPairs }
+        : null,
+    );
   }, [terrainId, shotPairs]);
 
   const postShotGhostRef = useRef(postShotGhost);
@@ -962,6 +976,7 @@ export function HuntMapView({
       }
     }
     clearShotPairsStorage();
+    onAwareHuntChange?.(null);
     onLeave(opts);
   }
 

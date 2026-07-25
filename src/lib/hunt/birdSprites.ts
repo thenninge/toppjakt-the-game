@@ -5,19 +5,36 @@
  * Target PNGs in `*_target/` are analysis-only: green/red rings define vital
  * centres, which we map into topp pixel space. Never shown in-game.
  *
- * Index pairing: tiurtopp1 ↔ tiurtarget1, orretopp2 ↔ orretarget2, …
+ * Batch A: tiurtoppN ↔ tiurtargetN, orretoppN ↔ orretargetN.
+ * Batch B (`*b.png`): no painted target guides yet — vitals measured on the
+ * topp itself (chest / heart-lung landmark). Same physical zone Ø as A
+ * ({@link TIUR_INSTANT_KILL_DIAMETER_MM} / {@link TIUR_VITAL_DIAMETER_MM}).
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
 
-export type BirdSpriteId = "tiur-1" | "tiur-2" | "orre-1" | "orre-2" | "ugle-1";
+export type BirdSpriteId =
+  | "tiur-1"
+  | "tiur-2"
+  | "tiur-1b"
+  | "tiur-2b"
+  | "tiur-3b"
+  | "tiur-4b"
+  | "orre-1"
+  | "orre-2"
+  | "orre-1b"
+  | "orre-2b"
+  | "orre-3b"
+  | "orre-4b"
+  | "orre-5b"
+  | "ugle-1";
 
 export type BirdSpriteDef = {
   id: BirdSpriteId;
   species: BirdSpecies;
   /** Clean treetop sprite — spotting + scope. */
   toppSrc: string;
-  /** Guide with green (instant) / red (vital) rings. */
+  /** Guide with green (instant) / red (vital) rings — or topp when batch B. */
   targetSrc: string;
   toppW: number;
   toppH: number;
@@ -25,7 +42,7 @@ export type BirdSpriteDef = {
   targetH: number;
   /**
    * Vital centre on the TOPP sprite (px, top-left origin).
-   * Mapped from the matching target guide rings.
+   * Mapped from the matching target guide rings (A) or set on topp (B).
    */
   vitalCxPx: number;
   vitalCyPx: number;
@@ -70,8 +87,38 @@ function def(
 }
 
 /**
- * Vital centres from green-ring pixel clusters on target guides
- * (see `*_target/*targetN.png`).
+ * Batch B: vitals defined directly on the topp (no separate target guide).
+ * Instant/vital ring diameters still come from shoot.ts (physical mm).
+ */
+function defTopp(partial: {
+  id: BirdSpriteId;
+  species: BirdSpecies;
+  toppSrc: string;
+  toppW: number;
+  toppH: number;
+  vitalCxPx: number;
+  vitalCyPx: number;
+}): BirdSpriteDef {
+  return {
+    id: partial.id,
+    species: partial.species,
+    toppSrc: partial.toppSrc,
+    targetSrc: partial.toppSrc,
+    toppW: partial.toppW,
+    toppH: partial.toppH,
+    targetW: partial.toppW,
+    targetH: partial.toppH,
+    vitalCxPx: partial.vitalCxPx,
+    vitalCyPx: partial.vitalCyPx,
+    targetVitalCxPx: partial.vitalCxPx,
+    targetVitalCyPx: partial.vitalCyPx,
+  };
+}
+
+/**
+ * Vital centres:
+ * - Batch A: green-ring pixel clusters on `*_target/*targetN.png`.
+ * - Batch B: chest / heart-lung landmark on the topp silhouette (pose-aware).
  */
 export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
   "tiur-1": def({
@@ -98,6 +145,46 @@ export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
     targetVitalCxPx: 60.2,
     targetVitalCyPx: 62.1,
   }),
+  /** Rear ¾ — vitals through upper back / chest cavity. */
+  "tiur-1b": defTopp({
+    id: "tiur-1b",
+    species: "tiur",
+    toppSrc: "/images/birds/tiur/tiur1b.png",
+    toppW: 196,
+    toppH: 324,
+    vitalCxPx: 100,
+    vitalCyPx: 165,
+  }),
+  /** Side profile facing right — behind white shoulder / green breast. */
+  "tiur-2b": defTopp({
+    id: "tiur-2b",
+    species: "tiur",
+    toppSrc: "/images/birds/tiur/tiur2b.png",
+    toppW: 274,
+    toppH: 352,
+    vitalCxPx: 175,
+    vitalCyPx: 165,
+  }),
+  /** Dark silhouette facing right — upper torso below neck. */
+  "tiur-3b": defTopp({
+    id: "tiur-3b",
+    species: "tiur",
+    toppSrc: "/images/birds/tiur/tiur3b.png",
+    toppW: 124,
+    toppH: 188,
+    vitalCxPx: 65,
+    vitalCyPx: 95,
+  }),
+  /** ¾ view — behind white wing-bend spot. */
+  "tiur-4b": defTopp({
+    id: "tiur-4b",
+    species: "tiur",
+    toppSrc: "/images/birds/tiur/tiur4b.png",
+    toppW: 188,
+    toppH: 190,
+    vitalCxPx: 100,
+    vitalCyPx: 95,
+  }),
   "orre-1": def({
     id: "orre-1",
     species: "orrhane",
@@ -122,6 +209,56 @@ export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
     targetVitalCxPx: 103.8,
     targetVitalCyPx: 77.5,
   }),
+  /** Profile facing left — upper chest behind neck base. */
+  "orre-1b": defTopp({
+    id: "orre-1b",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre1b.png",
+    toppW: 160,
+    toppH: 230,
+    vitalCxPx: 72,
+    vitalCyPx: 105,
+  }),
+  /** Diagonal, head top-right — vitals center-right of torso. */
+  "orre-2b": defTopp({
+    id: "orre-2b",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre2b.png",
+    toppW: 166,
+    toppH: 188,
+    vitalCxPx: 116,
+    vitalCyPx: 94,
+  }),
+  /** Profile facing right — upper chest / white wing patch landmark. */
+  "orre-3b": defTopp({
+    id: "orre-3b",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre3b.png",
+    toppW: 176,
+    toppH: 216,
+    vitalCxPx: 120,
+    vitalCyPx: 125,
+  }),
+  /** Landscape diagonal — vitals just behind neck/shoulder join. */
+  "orre-4b": defTopp({
+    id: "orre-4b",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre4b.png",
+    toppW: 194,
+    toppH: 144,
+    vitalCxPx: 105,
+    vitalCyPx: 68,
+  }),
+  /** Tall lyre-tail silhouette facing left — upper body mass. */
+  "orre-5b": defTopp({
+    id: "orre-5b",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre5b.png",
+    toppW: 146,
+    toppH: 300,
+    vitalCxPx: 72,
+    vitalCyPx: 130,
+  }),
   "ugle-1": def({
     id: "ugle-1",
     species: "ugle",
@@ -136,8 +273,23 @@ export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
   }),
 };
 
-const TIUR_IDS: BirdSpriteId[] = ["tiur-1", "tiur-2"];
-const ORRE_IDS: BirdSpriteId[] = ["orre-1", "orre-2"];
+const TIUR_IDS: BirdSpriteId[] = [
+  "tiur-1",
+  "tiur-2",
+  "tiur-1b",
+  "tiur-2b",
+  "tiur-3b",
+  "tiur-4b",
+];
+const ORRE_IDS: BirdSpriteId[] = [
+  "orre-1",
+  "orre-2",
+  "orre-1b",
+  "orre-2b",
+  "orre-3b",
+  "orre-4b",
+  "orre-5b",
+];
 const UGLE_IDS: BirdSpriteId[] = ["ugle-1"];
 
 export function spriteIdsForSpecies(species: BirdSpecies): BirdSpriteId[] {

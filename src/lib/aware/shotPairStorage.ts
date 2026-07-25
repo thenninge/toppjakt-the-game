@@ -8,6 +8,13 @@ const STORAGE_KEY = "toppjakt-aware-shot-pairs-v1";
 const HUNT_ACTIVE_KEY = "toppjakt-aware-hunt-active";
 const SAVE_VERSION = 1 as const;
 
+/** Cloud/local PlayerStats field — open-hunt skuddpar for one terrain. */
+export type AwareHuntState = {
+  terrainId: string;
+  savedAtMs: number;
+  pairs: ShotPair[];
+};
+
 type ShotPairSaveV1 = {
   version: typeof SAVE_VERSION;
   terrainId: string;
@@ -112,14 +119,44 @@ export function markAwareHuntSessionActive(): void {
 }
 
 /**
- * Load pairs for this terrain when continuing the same tab hunt (e.g. refresh).
- * Fresh hunt starts empty.
+ * Load pairs for this terrain when continuing the same tab hunt (e.g. refresh),
+ * or when cloud/local PlayerStats still has an open hunt for this terrain.
+ * Fresh hunt on another terrain starts empty.
  */
-export function loadShotPairsForHuntStart(terrainId: string): ShotPair[] {
+export function loadShotPairsForHuntStart(
+  terrainId: string,
+  synced?: AwareHuntState | null,
+): ShotPair[] {
   if (isAwareHuntSessionActive()) {
     return loadShotPairsForTerrain(terrainId);
   }
   clearShotPairsStorage();
   markAwareHuntSessionActive();
+  if (synced && synced.terrainId === terrainId && Array.isArray(synced.pairs)) {
+    const pairs = synced.pairs
+      .map(normalizePair)
+      .filter((p): p is ShotPair => p != null);
+    if (pairs.length > 0) {
+      saveShotPairsForTerrain(terrainId, pairs);
+      return pairs;
+    }
+  }
   return [];
+}
+
+export function normalizeAwareHuntState(raw: unknown): AwareHuntState | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.terrainId !== "string" || !raw.terrainId) return null;
+  if (!Array.isArray(raw.pairs)) return null;
+  const pairs = raw.pairs
+    .map(normalizePair)
+    .filter((p): p is ShotPair => p != null);
+  return {
+    terrainId: raw.terrainId,
+    savedAtMs:
+      typeof raw.savedAtMs === "number" && Number.isFinite(raw.savedAtMs)
+        ? raw.savedAtMs
+        : Date.now(),
+    pairs,
+  };
 }

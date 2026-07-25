@@ -42,6 +42,18 @@ export async function putCloudSave(
   return data.save;
 }
 
+/** Delete the signed-in user's cloud save row. */
+export async function deleteCloudSave(): Promise<void> {
+  const res = await fetch("/api/game/save", { method: "DELETE" });
+  if (res.status === 401) {
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error || `Kunne ikke slette sky-save (${res.status})`);
+  }
+}
+
 /**
  * Pick which save wins when both local and cloud exist.
  * Newer `savedAtMs` wins; ties prefer cloud.

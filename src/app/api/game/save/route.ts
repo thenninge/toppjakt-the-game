@@ -182,3 +182,42 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
+/**
+ * DELETE /api/game/save — remove cloud save for the signed-in user.
+ */
+export async function DELETE() {
+  try {
+    if (!hasSupabaseAdminConfig()) {
+      return NextResponse.json(
+        { error: "Supabase er ikke konfigurert" },
+        { status: 503 },
+      );
+    }
+
+    const session = (await getServerSession(authOptions)) as SessionLike;
+    const googleId = sessionGoogleId(session);
+    if (!googleId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from("game_saves")
+      .delete()
+      .eq("google_id", googleId);
+
+    if (error) {
+      console.error("DELETE /api/game/save", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /api/game/save", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 },
+    );
+  }
+}

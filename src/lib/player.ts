@@ -41,6 +41,7 @@ import { removeLoadDevRow } from "@/lib/reloading/loadDevTable";
 import { powderGrainsPerBox } from "@/lib/reloading/componentStock";
 import { isPowderItem } from "@/lib/reloading/components";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
+import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import { isAmmoItem, isFoodItem, isStockItem } from "@/lib/shop/types";
@@ -245,6 +246,11 @@ export type PlayerStats = {
    * Kestrel AB gun profiles per ammo id (calibrated MV / BC / dV/dT).
    */
   kestrelProfiles: Record<string, KestrelGunProfile>;
+  /**
+   * Open hunt Aware skuddpar — synced so unfinished recoveries survive
+   * across devices for the same terrain/jaktkort day.
+   */
+  awareHunt: AwareHuntState | null;
 };
 
 export const STARTING_BALANCE = 10_000;
@@ -721,6 +727,7 @@ export function createInitialStats(): PlayerStats {
     powderOpenGrains: {},
     reloadingPiecesMigrated: true,
     kestrelProfiles: {},
+    awareHunt: null,
   };
 }
 

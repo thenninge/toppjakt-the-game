@@ -3,6 +3,7 @@
  *
  *   /images/spot/     — spotting landscapes
  *   /images/spot/placement/ — marker guides (shape/color → species/range)
+ *   /images/spot/batchB/ — batch B spotting + placementB/ guides
  *   /images/prespotted/ — extreme-caution auto-spot splash
  *   /images/walk/     — travel between cells
  *   /images/eat/      — eat / rest pauses
@@ -53,6 +54,18 @@ const SPOT_IMAGES: string[] = [
   "/images/spot/spot21.png",
   "/images/spot/spot22.png",
   "/images/spot/spot23.png",
+  // Batch B — only images with placementB guides (rest wait for perches).
+  "/images/spot/batchB/spotting1b.png",
+  "/images/spot/batchB/spotting2b.png",
+  "/images/spot/batchB/spotting3b.png",
+  "/images/spot/batchB/spotting4b.png",
+  "/images/spot/batchB/spotting5b.png",
+  "/images/spot/batchB/spotting6b.png",
+  "/images/spot/batchB/spotting7b.png",
+  "/images/spot/batchB/spotting8b.png",
+  "/images/spot/batchB/spotting11b.png",
+  "/images/spot/batchB/spotting24b.png",
+  "/images/spot/batchB/spotting25b.png",
 ];
 
 /**

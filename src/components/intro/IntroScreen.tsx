@@ -135,12 +135,14 @@ import {
 import {
   clearPlayerSave,
   loadPlayerSave,
+  mergeLifetimeProgress,
   savePlayerStats,
   type PlayerSaveV1,
 } from "@/lib/playerSave";
 import {
   fetchCloudSave,
   putCloudSave,
+  deleteCloudSave,
 } from "@/lib/cloudSave";
 import { clearShotPairsStorage } from "@/lib/aware/shotPairStorage";
 
@@ -329,13 +331,20 @@ export function IntroScreen() {
     setHunterStatusEnabled((prev) => !prev);
   }
 
-  /** Wipe local save — log out and create a new hunter. */
+  /** Wipe local + cloud save — log out and create a new hunter. */
   function requestDeleteUser() {
     setDeleteConfirmOpen(true);
   }
 
-  function confirmDeleteUserAndRestart() {
+  async function confirmDeleteUserAndRestart() {
     setDeleteConfirmOpen(false);
+    if (signedIn) {
+      try {
+        await deleteCloudSave();
+      } catch (err) {
+        console.warn("Cloud delete failed", err);
+      }
+    }
     clearPlayerSave();
     clearShotPairsStorage();
     setStats(createInitialStats());
@@ -373,16 +382,37 @@ export function IntroScreen() {
 
   function chooseCloudSave() {
     if (!saveConflict) return;
-    enterWithSave(saveConflict.cloud, "Lastet inn inventory fra sky.");
+    const { local, cloud } = saveConflict;
+    const merged: PlayerSaveV1 = {
+      ...cloud,
+      savedAtMs: Date.now(),
+      stats: mergeLifetimeProgress(cloud.stats, local.stats),
+    };
+    enterWithSave(
+      merged,
+      "Lastet inn save fra sky (livstids-km/fugl/skudd merget fra lokal).",
+    );
+    void putCloudSave(merged.stats, merged.savedAtMs).catch((err) => {
+      console.warn("Cloud save after merge failed", err);
+    });
   }
 
   async function chooseLocalOverwriteCloud() {
     if (!saveConflict) return;
-    const local = saveConflict.local;
+    const { local, cloud } = saveConflict;
+    const mergedStats = mergeLifetimeProgress(local.stats, cloud.stats);
+    const merged: PlayerSaveV1 = {
+      ...local,
+      savedAtMs: Date.now(),
+      stats: mergedStats,
+    };
     try {
       setCloudSyncing(true);
-      await putCloudSave(local.stats, local.savedAtMs);
-      enterWithSave(local, "Lokal inventory lastet opp — sky overskrevet.");
+      await putCloudSave(merged.stats, merged.savedAtMs);
+      enterWithSave(
+        merged,
+        "Lokal save lastet opp — sky overskrevet (livstids-stats merget).",
+      );
     } catch (err) {
       console.warn(err);
       setError(
@@ -1512,6 +1542,29 @@ export function IntroScreen() {
                 owlLastOfferedMilestone: milestone,
               }))
             }
+            awareHunt={stats.awareHunt}
+            onAwareHuntChange={(next) =>
+              setStats((prev) => {
+                const a = prev.awareHunt;
+                if (a == null && next == null) return prev;
+                if (
+                  a &&
+                  next &&
+                  a.terrainId === next.terrainId &&
+                  a.pairs.length === next.pairs.length &&
+                  a.pairs.every(
+                    (p, i) =>
+                      p.id === next.pairs[i]?.id &&
+                      p.found === next.pairs[i]?.found &&
+                      (p.ettersokAttempts ?? 0) ===
+                        (next.pairs[i]?.ettersokAttempts ?? 0),
+                  )
+                ) {
+                  return prev;
+                }
+                return { ...prev, awareHunt: next };
+              })
+            }
           />
         ) : null}
 
@@ -1648,8 +1701,9 @@ export function IntroScreen() {
           title="Slett jeger"
           message={
             `Slette ${stats.name || "jegeren"} for godt?\n` +
-            "Alt lagret (penger, kit, jakt, skuddpar) forsvinner i denne nettleseren. " +
-            "Du kan logge inn på nytt med et nytt navn."
+            "Alt lagret (penger, kit, jakt, skuddpar, km, fugl) slettes lokalt" +
+            (signedIn ? " og i skyen" : "") +
+            ". Du kan logge inn på nytt med et nytt navn."
           }
           confirmLabel="Slett"
           cancelLabel="Avbryt"

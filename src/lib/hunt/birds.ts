@@ -142,12 +142,21 @@ export function companionChanceForSpecies(species: BirdSpecies): number {
 export const TIUR_TOPP_IMAGES = [
   "/images/birds/tiur/tiurtopp1.png",
   "/images/birds/tiur/tiurtopp2.png",
+  "/images/birds/tiur/tiur1b.png",
+  "/images/birds/tiur/tiur2b.png",
+  "/images/birds/tiur/tiur3b.png",
+  "/images/birds/tiur/tiur4b.png",
 ] as const;
 
 /** @deprecated Prefer pickBirdSpriteId + getBirdSprite. */
 export const ORRHANE_TOPP_IMAGES = [
   "/images/birds/orre/orretopp1.png",
   "/images/birds/orre/orretopp2.png",
+  "/images/birds/orre/orre1b.png",
+  "/images/birds/orre/orre2b.png",
+  "/images/birds/orre/orre3b.png",
+  "/images/birds/orre/orre4b.png",
+  "/images/birds/orre/orre5b.png",
 ] as const;
 
 export function toppImageForSpecies(

@@ -13,6 +13,7 @@ import {
   normalizePowderOpenGrains,
 } from "@/lib/reloading/componentStock";
 import { normalizeKestrelProfiles } from "@/lib/ballistics/kestrelProfile";
+import { normalizeAwareHuntState } from "@/lib/aware/shotPairStorage";
 import { normalizeCustomBarrelsMap } from "@/lib/customs/customBarrel";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
 import {
@@ -198,6 +199,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     powderOpenGrains: normalizePowderOpenGrains(raw.powderOpenGrains),
     reloadingPiecesMigrated: true,
     kestrelProfiles: normalizeKestrelProfiles(raw.kestrelProfiles),
+    awareHunt: normalizeAwareHuntState(raw.awareHunt),
   });
 }
 
@@ -251,6 +253,55 @@ export function savePlayerStats(stats: PlayerStats): void {
 export function clearPlayerSave(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
+}
+
+function mergeMaxCountMap(
+  a: Record<string, number>,
+  b: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = { ...a };
+  for (const [key, value] of Object.entries(b)) {
+    if (!(typeof value === "number") || !Number.isFinite(value)) continue;
+    const n = Math.max(0, Math.floor(value));
+    out[key] = Math.max(out[key] ?? 0, n);
+  }
+  return out;
+}
+
+/**
+ * Keep the best lifetime hunter metrics from two saves.
+ * Used when local + cloud both exist so picking one whole save does not
+ * wipe km walked / bagged birds / barrel shots recorded on the other device.
+ */
+export function mergeLifetimeProgress(
+  primary: PlayerStats,
+  secondary: PlayerStats,
+): PlayerStats {
+  const owlA = primary.owlLastOfferedMilestone;
+  const owlB = secondary.owlLastOfferedMilestone;
+  let owlLastOfferedMilestone: number | null = owlA ?? owlB ?? null;
+  if (owlA != null && owlB != null) {
+    owlLastOfferedMilestone = Math.max(owlA, owlB);
+  }
+  return {
+    ...primary,
+    lifetimeTiur: Math.max(primary.lifetimeTiur, secondary.lifetimeTiur),
+    lifetimeOrrhaner: Math.max(
+      primary.lifetimeOrrhaner,
+      secondary.lifetimeOrrhaner,
+    ),
+    lifetimeUgle: Math.max(primary.lifetimeUgle, secondary.lifetimeUgle),
+    lifetimeDistanceM: Math.max(
+      primary.lifetimeDistanceM,
+      secondary.lifetimeDistanceM,
+    ),
+    maxRange: Math.max(primary.maxRange, secondary.maxRange),
+    rifleRoundCounts: mergeMaxCountMap(
+      primary.rifleRoundCounts,
+      secondary.rifleRoundCounts,
+    ),
+    owlLastOfferedMilestone,
+  };
 }
 
 export function totalBirdsHarvested(

@@ -1,6 +1,12 @@
 "use client";
 
-import type { PlayerSaveV1 } from "@/lib/playerSave";
+import {
+  birdsPerKm,
+  formatBirdsPerKm,
+  formatLifetimeDistance,
+  totalBirdsHarvested,
+  type PlayerSaveV1,
+} from "@/lib/playerSave";
 
 type SaveConflictDialogProps = {
   local: PlayerSaveV1;
@@ -10,13 +16,30 @@ type SaveConflictDialogProps = {
   onCancelLogin: () => void;
 };
 
+function totalBarrelShots(save: PlayerSaveV1): number {
+  const counts = save.stats.rifleRoundCounts ?? {};
+  return Object.values(counts).reduce(
+    (sum, n) => sum + (Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0),
+    0,
+  );
+}
+
 function summarize(save: PlayerSaveV1): string {
   const s = save.stats;
   const when = new Date(save.savedAtMs).toLocaleString("nb-NO", {
     dateStyle: "short",
     timeStyle: "short",
   });
-  return `${s.name || "?"} · ${s.balance.toLocaleString("nb-NO")} kr · kit ${s.kit.length} · ${when}`;
+  const birds = totalBirdsHarvested(s);
+  const km = formatLifetimeDistance(s.lifetimeDistanceM);
+  const rate = formatBirdsPerKm(birdsPerKm(s));
+  const shots = totalBarrelShots(save);
+  const maxR = s.maxRange > 0 ? `${s.maxRange} m` : "—";
+  return (
+    `${s.name || "?"} · ${s.balance.toLocaleString("nb-NO")} kr · kit ${s.kit.length}\n` +
+    `${km} gått · ${birds} fugl · ${rate}/km · ${shots} pipeskudd · max ${maxR}\n` +
+    when
+  );
 }
 
 /**
@@ -42,26 +65,31 @@ export function SaveConflictDialog({
         </p>
         <div className="game-confirm-body">
           <p className="shop-row-note">
-            Du har progress både lokalt og i skyen. Velg hvilken som skal gjelde
-            — eller avbryt innloggingen og fortsett uten sky.
+            Du har progress både lokalt og i skyen. Velg hvilken save som skal
+            gjelde for inventar/penger/kit — livstids-km, fugl, max range og
+            pipeskudd merges alltid (høyeste tall vinner).
           </p>
-          <p className="shop-row-note">
-            <strong>Lokal:</strong> {summarize(local)}
+          <p className="shop-row-note" style={{ whiteSpace: "pre-line" }}>
+            <strong>Lokal:</strong>
+            {"\n"}
+            {summarize(local)}
           </p>
-          <p className="shop-row-note">
-            <strong>Sky:</strong> {summarize(cloud)}
+          <p className="shop-row-note" style={{ whiteSpace: "pre-line" }}>
+            <strong>Sky:</strong>
+            {"\n"}
+            {summarize(cloud)}
           </p>
         </div>
         <div className="game-confirm-actions game-confirm-actions-stack">
           <button type="button" className="intro-button" onClick={onChooseCloud}>
-            Last inn inventory fra sky
+            Last inn hele save fra sky
           </button>
           <button
             type="button"
             className="intro-button sheriff-secondary"
             onClick={onChooseLocal}
           >
-            Overskriv sky med lokalt inventory
+            Overskriv sky med lokal save
           </button>
           <button
             type="button"
