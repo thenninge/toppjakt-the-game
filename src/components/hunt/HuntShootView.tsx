@@ -22,6 +22,10 @@ import {
   RANGE_DISTANCE_M,
 } from "@/lib/range/precision";
 import {
+  rifleSpecWithCustomBarrel,
+  type InstalledCustomBarrel,
+} from "@/lib/customs/customBarrel";
+import {
   sampleTrajectory,
 } from "@/lib/ballistics/trajectory";
 import {
@@ -30,6 +34,7 @@ import {
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
 import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
+import { kestrelSolveAmmo, type KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
@@ -126,6 +131,7 @@ type HuntShootViewProps = {
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
   dopeCard?: DopeCardEntry[];
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
   /** Persist DOPE after a hit (rifle×ammo×distance upsert). */
   onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
   /**
@@ -142,6 +148,8 @@ type HuntShootViewProps = {
   customsTriggerPullScale?: number;
   /** Barrel wear multiplier on rifle MOA (1 = fresh … 2 = worn). */
   barrelWearScale?: number;
+  /** Per-rifle CB Customs CNC blanks. */
+  customBarrels?: Record<string, InstalledCustomBarrel>;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -242,6 +250,7 @@ export function HuntShootView({
   ammoAffinities,
   zeroingProfiles,
   dopeCard = [],
+  kestrelProfiles = {},
   onAddDope,
   chronoActive = false,
   onLogSeries,
@@ -249,6 +258,7 @@ export function HuntShootView({
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
   barrelWearScale = 1,
+  customBarrels = {},
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -585,7 +595,7 @@ export function HuntShootView({
 
     const w = wobbleRef.current;
     const dispersionInput = {
-      rifle: rifle.rifle,
+      rifle: rifleSpecWithCustomBarrel(rifle.rifle, customBarrels[rifle.id]),
       ammo: selectedAmmo.ammo,
       stock: stock?.stock,
       affinity,
@@ -1198,23 +1208,45 @@ export function HuntShootView({
 
   const autoDialHold =
     ballisticHold && selectedAmmo
-      ? exactBallisticHold(
-          selectedAmmo.ammo,
-          measuredDistanceM,
-          crosswindMs,
-          { densityRatio, powderTempC: temperatureC },
-        )
+      ? (() => {
+          const solve = kestrelSolveAmmo(
+            selectedAmmo.ammo,
+            selectedAmmo.id,
+            kestrelProfiles,
+          );
+          return exactBallisticHold(
+            solve.ammo,
+            measuredDistanceM,
+            crosswindMs,
+            {
+              densityRatio,
+              powderTempC: temperatureC,
+              dvDtMpsPerC: solve.dvDtMpsPerC,
+            },
+          );
+        })()
       : null;
   /** Kestrel LCD: auto-dial hold, or reference solution when meter is in kit only. */
   const kestrelDisplayHold =
     autoDialHold ??
     (hasKestrelInKit && selectedAmmo
-      ? exactBallisticHold(
-          selectedAmmo.ammo,
-          measuredDistanceM,
-          crosswindMs,
-          { densityRatio, powderTempC: temperatureC },
-        )
+      ? (() => {
+          const solve = kestrelSolveAmmo(
+            selectedAmmo.ammo,
+            selectedAmmo.id,
+            kestrelProfiles,
+          );
+          return exactBallisticHold(
+            solve.ammo,
+            measuredDistanceM,
+            crosswindMs,
+            {
+              densityRatio,
+              powderTempC: temperatureC,
+              dvDtMpsPerC: solve.dvDtMpsPerC,
+            },
+          );
+        })()
       : null);
   const activeHold = autoDialHold;
 
@@ -1310,7 +1342,15 @@ export function HuntShootView({
               dopeCard={dopeCard}
               ammoId={ammoId}
               rifleId={rifle?.id ?? null}
-              ammo={selectedAmmo?.ammo ?? null}
+              ammo={
+                selectedAmmo
+                  ? kestrelSolveAmmo(
+                      selectedAmmo.ammo,
+                      selectedAmmo.id,
+                      kestrelProfiles,
+                    ).ammo
+                  : null
+              }
               ammoLabel={
                 selectedAmmo
                   ? `${selectedAmmo.brand} ${selectedAmmo.name}`
@@ -1327,15 +1367,23 @@ export function HuntShootView({
                   ? Math.abs(
                       mmAt100ToScopeClicks(
                         (ballisticHold ??
-                          exactBallisticHold(
-                            selectedAmmo.ammo,
-                            measuredDistanceM,
-                            crosswindMs,
-                            {
-                              densityRatio,
-                              powderTempC: temperatureC,
-                            },
-                          )
+                          (() => {
+                            const solve = kestrelSolveAmmo(
+                              selectedAmmo.ammo,
+                              selectedAmmo.id,
+                              kestrelProfiles,
+                            );
+                            return exactBallisticHold(
+                              solve.ammo,
+                              measuredDistanceM,
+                              crosswindMs,
+                              {
+                                densityRatio,
+                                powderTempC: temperatureC,
+                                dvDtMpsPerC: solve.dvDtMpsPerC,
+                              },
+                            );
+                          })()
                         ).dialYMmAt100,
                         scope?.scope.clickUnit ?? "MRAD",
                       ),

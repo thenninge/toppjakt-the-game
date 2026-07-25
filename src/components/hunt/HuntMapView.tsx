@@ -118,6 +118,7 @@ import {
   customsTriggerPullScale,
   type CustomsMods,
 } from "@/lib/customs/spec";
+import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import {
   applyPostShotBirdFlush,
   bindBirdsToSpotImage,
@@ -163,6 +164,10 @@ import {
   birdMarkerOnAwareMap,
   type BallisticHoldSolution,
 } from "@/lib/ballistics/solver";
+import {
+  kestrelSolveAmmo,
+  type KestrelGunProfile,
+} from "@/lib/ballistics/kestrelProfile";
 import { crosswindMs, fullValueWindageMs, type DayWeather } from "@/lib/weather/spec";
 import {
   ENCOUNTER_NERVE,
@@ -214,7 +219,10 @@ type HuntMapViewProps = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   /** Lifetime shots per rifle (barrel wear). */
   rifleRoundCounts?: Record<string, number>;
+  customBarrels?: Record<string, InstalledCustomBarrel>;
   dopeCard?: DopeCardEntry[];
+  /** Calibrated Kestrel AB profiles (MV / BC / dV/dT). */
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
   customsMods?: CustomsMods;
   weather: DayWeather;
   musicEnabled: boolean;
@@ -458,7 +466,9 @@ export function HuntMapView({
   ammoAffinities,
   zeroingProfiles,
   rifleRoundCounts = {},
+  customBarrels = {},
   dopeCard = [],
+  kestrelProfiles = {},
   customsMods = EMPTY_CUSTOMS_MODS,
   weather,
   musicEnabled,
@@ -758,9 +768,15 @@ export function HuntMapView({
       }
 
       const density = densityRatioFromTempC(tempC);
-      const hold = exactBallisticHold(primaryAmmo.ammo, distanceM, cw, {
+      const solve = kestrelSolveAmmo(
+        primaryAmmo.ammo,
+        primaryAmmo.id,
+        kestrelProfiles,
+      );
+      const hold = exactBallisticHold(solve.ammo, distanceM, cw, {
         densityRatio: density,
         powderTempC: tempC,
+        dvDtMpsPerC: solve.dvDtMpsPerC,
       });
       const elevClicksAbs = Math.abs(
         mmAt100ToScopeClicks(hold.dialYMmAt100, scopeClickUnit),
@@ -786,6 +802,7 @@ export function HuntMapView({
       weather.forecast.windFromDeg,
       weather.forecast.temperatureC,
       scopeClickUnit,
+      kestrelProfiles,
     ],
   );
 
@@ -1856,9 +1873,15 @@ export function HuntMapView({
     const density = densityRatioFromTempC(weather.live.temperatureC);
     let hold: BallisticHoldSolution | null = null;
     if (hasExactBallistics && primaryAmmo) {
-      hold = exactBallisticHold(primaryAmmo.ammo, measured, cw, {
+      const solve = kestrelSolveAmmo(
+        primaryAmmo.ammo,
+        primaryAmmo.id,
+        kestrelProfiles,
+      );
+      hold = exactBallisticHold(solve.ammo, measured, cw, {
         densityRatio: density,
         powderTempC: weather.live.temperatureC,
+        dvDtMpsPerC: solve.dvDtMpsPerC,
       });
     }
 
@@ -2068,9 +2091,15 @@ export function HuntMapView({
     const density = densityRatioFromTempC(weather.live.temperatureC);
     let hold = session.ballisticHold;
     if (hasExactBallistics && primaryAmmo) {
-      hold = exactBallisticHold(primaryAmmo.ammo, distanceM, cw, {
+      const solve = kestrelSolveAmmo(
+        primaryAmmo.ammo,
+        primaryAmmo.id,
+        kestrelProfiles,
+      );
+      hold = exactBallisticHold(solve.ammo, distanceM, cw, {
         densityRatio: density,
         powderTempC: weather.live.temperatureC,
+        dvDtMpsPerC: solve.dvDtMpsPerC,
       });
     }
     setAwareSession(null);
@@ -3175,10 +3204,12 @@ export function HuntMapView({
         ammoAffinities={ammoAffinities}
         zeroingProfiles={zeroingProfiles}
         dopeCard={dopeCard}
+        kestrelProfiles={kestrelProfiles}
         customsMoaDelta={customsMoaDelta}
         customsCalmMult={customsCalmMult}
         customsTriggerPullScale={triggerPullScale}
         barrelWearScale={huntBarrelWearScale}
+        customBarrels={customBarrels}
         musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={mentalFatigue}

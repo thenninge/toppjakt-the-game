@@ -41,6 +41,11 @@ export type ShopItemBase = {
   unitLabel?: string;
   /** Listed but not buyable (grayed — "Sold out"). */
   soldOut?: boolean;
+  /**
+   * Shop bundle: buying this grants these item ids (not the bundle SKU).
+   * Price is typically a discounted package deal.
+   */
+  bundleItemIds?: string[];
 };
 
 export type AmmoShopItem = ShopItemBase & {
@@ -337,6 +342,8 @@ export type CatalogDraft = {
   caliber?: string;
   unitLabel?: string;
   soldOut?: boolean;
+  /** See {@link ShopItemBase.bundleItemIds}. */
+  bundleItemIds?: string[];
   ammo?: AmmoSpec;
   camo?: CamoSpec;
   carry?: CarrySpec;
@@ -400,6 +407,13 @@ export function isBipodItem(item: ShopItem): item is BipodShopItem {
   return item.category === "bipod";
 }
 
+/** True when buying the SKU grants other catalog items instead of itself. */
+export function isBundleItem(
+  item: ShopItem | CatalogDraft,
+): item is (ShopItem | CatalogDraft) & { bundleItemIds: string[] } {
+  return Array.isArray(item.bundleItemIds) && item.bundleItemIds.length > 0;
+}
+
 export function isFoodItem(item: ShopItem): item is FoodShopItem {
   return item.category === "food";
 }
@@ -443,7 +457,12 @@ export const SHOP_CATEGORIES: ShopCategory[] = [
 ];
 
 /** Home inventory buckets (skap-gruppering). */
-export type InventoryGroupId = "gun_kit" | "kit_kit" | "camo" | "food";
+export type InventoryGroupId =
+  | "gun_kit"
+  | "kit_kit"
+  | "camo"
+  | "food"
+  | "reloading";
 
 export const INVENTORY_GROUPS: readonly {
   id: InventoryGroupId;
@@ -453,11 +472,13 @@ export const INVENTORY_GROUPS: readonly {
   { id: "kit_kit", label: "Kit-kit" },
   { id: "camo", label: "Camo/clothes" },
   { id: "food", label: "Food" },
+  { id: "reloading", label: "Hjemmelading" },
 ] as const;
 
 /**
  * Gun-kit = rifle/optik/ammo/tofoter.
  * Kit-kit = LRF/bino, thermal, Kestrel, chestrig, headlamp, camcorder, …
+ * Hjemmelading = presse, dies, hylser (nye + brukte), krutt, kuler, …
  * Camo/clothes + Food = egne lister.
  */
 export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
@@ -468,8 +489,9 @@ export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
     case "stock":
     case "bipod":
     case "ammo":
-    case "reloading":
       return "gun_kit";
+    case "reloading":
+      return "reloading";
     case "camo":
       return "camo";
     case "food":

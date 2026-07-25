@@ -93,10 +93,14 @@ export function exactBallisticHold(
   ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> & { caliber?: string },
   distanceM: number,
   crosswindMs: number,
-  opts?: TrajectoryOptions & { powderTempC?: number },
+  opts?: TrajectoryOptions & {
+    powderTempC?: number;
+    /** Override catalog dV/dT (e.g. Kestrel-calibrated). */
+    dvDtMpsPerC?: number | null;
+  },
 ): BallisticHoldSolution {
   const powderTempC = opts?.powderTempC ?? POWDER_TEMP_REFERENCE_C;
-  const ammoEff = ammoAtPowderTemp(ammo, powderTempC);
+  const ammoEff = ammoAtPowderTemp(ammo, powderTempC, opts?.dvDtMpsPerC);
   const traj = sampleTrajectory(ammoEff, distanceM, opts);
   const wDrift = windDriftMm(
     crosswindMs,

@@ -3,6 +3,12 @@
  */
 
 import { createInitialStats, type PlayerStats, type ZeroingProfile } from "@/lib/player";
+import { normalizeLoadBenchRecipe } from "@/lib/reloading/recipe";
+import { normalizeArmedLoadPlan } from "@/lib/reloading/loadPhysics";
+import { normalizeLoadDevTable } from "@/lib/reloading/loadDevTable";
+import { normalizeLoadBook } from "@/lib/reloading/loadBook";
+import { normalizeKestrelProfiles } from "@/lib/ballistics/kestrelProfile";
+import { normalizeCustomBarrelsMap } from "@/lib/customs/customBarrel";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
 import {
   createJaktkort,
@@ -151,6 +157,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
         )
       : base.zeroingProfiles,
     rifleRoundCounts: normalizeRifleRoundCounts(raw.rifleRoundCounts),
+    customBarrels: normalizeCustomBarrelsMap(raw.customBarrels),
     shotLog: shotLog as PlayerStats["shotLog"],
     dopeCard: dopeCard as PlayerStats["dopeCard"],
     customsMods: normalizeCustomsMods(raw.customsMods),
@@ -170,6 +177,13 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       return null;
     })(),
     unlockedTerrainIds,
+    autoSupplyFood: raw.autoSupplyFood === true,
+    loadBenchRecipe:
+      normalizeLoadBenchRecipe(raw.loadBenchRecipe) ?? base.loadBenchRecipe,
+    armedLoadPlan: normalizeArmedLoadPlan(raw.armedLoadPlan),
+    loadDevTable: normalizeLoadDevTable(raw.loadDevTable),
+    loadBook: normalizeLoadBook(raw.loadBook),
+    kestrelProfiles: normalizeKestrelProfiles(raw.kestrelProfiles),
   });
 }
 

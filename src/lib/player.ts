@@ -11,9 +11,24 @@ import {
   milClicksToScopeClicks,
   mmAt100ToAngular,
 } from "@/lib/optics/clicks";
+import { isPackableFoodKind } from "@/lib/food/spec";
+import { spentBrassItemIdForAmmo, isSpentBrassItemId, spentBrassKeyForCaliber } from "@/lib/reloading/brass";
+import {
+  createDefaultLoadBenchRecipe,
+  type LoadBenchRecipe,
+} from "@/lib/reloading/recipe";
+import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
+import {
+  type ArmedLoadPlan,
+} from "@/lib/reloading/loadPhysics";
+import type { LoadDevTable } from "@/lib/reloading/loadDevTable";
+import { createEmptyLoadDevTable } from "@/lib/reloading/loadDevTable";
+import type { LoadBookEntry } from "@/lib/reloading/loadBook";
+import { createEmptyLoadBook } from "@/lib/reloading/loadBook";
+import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
-import { isAmmoItem } from "@/lib/shop/types";
+import { isAmmoItem, isFoodItem, isStockItem } from "@/lib/shop/types";
 
 export type InventoryEntry = {
   itemId: string;
@@ -164,9 +179,13 @@ export type PlayerStats = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   /**
    * Lifetime shots through each rifle barrel (keyed by rifle item id).
-   * Drives barrel-wear MOA; reset by CB Customs rebarrel.
+   * Drives barrel-wear MOA; reset by CB Customs rebarrel / custom pipe.
    */
   rifleRoundCounts: Record<string, number>;
+  /**
+   * Per-rifle custom CNC barrel from CB Customs (replaces factory MOA floor).
+   */
+  customBarrels: Record<string, InstalledCustomBarrel>;
   /** Chronological range series log (newest first). */
   shotLog: ShotLogEntry[];
   /** Field DOPE card from range (newest first). */
@@ -179,6 +198,25 @@ export type PlayerStats = {
   jaktkort: ActiveJaktkort | null;
   /** Handshake grounds unlocked at Rulles (terrain ids). */
   unlockedTerrainIds: string[];
+  /**
+   * Home inventory: auto-pack mat/snacks (ready + meal) into kit when owned.
+   */
+  autoSupplyFood: boolean;
+  /** Laderommet — selected components for the current home load. */
+  loadBenchRecipe: LoadBenchRecipe;
+  /**
+   * Armed ladeplan from Laderommet — live-fire uses this for kaboom rolls.
+   * Null = not testing a home load.
+   */
+  armedLoadPlan: ArmedLoadPlan | null;
+  /** Load development ladder (charges + measured v0 / samling). */
+  loadDevTable: LoadDevTable;
+  /** Archived home loads for lookup. */
+  loadBook: LoadBookEntry[];
+  /**
+   * Kestrel AB gun profiles per ammo id (calibrated MV / BC / dV/dT).
+   */
+  kestrelProfiles: Record<string, KestrelGunProfile>;
 };
 
 export const STARTING_BALANCE = 10_000;
@@ -639,12 +677,19 @@ export function createInitialStats(): PlayerStats {
     ammoAffinities: {},
     zeroingProfiles: {},
     rifleRoundCounts: {},
+    customBarrels: {},
     shotLog: [],
     dopeCard: [],
     customsMods: { ...EMPTY_CUSTOMS_MODS },
     selectedHuntingTerrainId: null,
     jaktkort: null,
     unlockedTerrainIds: [],
+    autoSupplyFood: false,
+    loadBenchRecipe: createDefaultLoadBenchRecipe(),
+    armedLoadPlan: null,
+    loadDevTable: createEmptyLoadDevTable(),
+    loadBook: createEmptyLoadBook(),
+    kestrelProfiles: {},
   };
 }
 
@@ -1060,10 +1105,41 @@ export function getInventoryQty(
   return inventory.find((e) => e.itemId === itemId)?.qty ?? 0;
 }
 
+/** Ready meals + snacks that auto-supply packs into the hunt kit. */
+export function isAutoSupplyFoodItem(item: ShopItem): boolean {
+  return isFoodItem(item) && isPackableFoodKind(item.food.kind);
+}
+
+/**
+ * When {@link PlayerStats.autoSupplyFood} is on: put all owned mat/snacks in
+ * kit, and drop empty snacks from kit.
+ */
+export function applyAutoSupplyFood(stats: PlayerStats): PlayerStats {
+  if (!stats.autoSupplyFood) return stats;
+  const keep = new Set(stats.kit);
+  for (const entry of stats.inventory) {
+    if (entry.qty <= 0) continue;
+    const item = getShopItem(entry.itemId) ?? null;
+    if (!item || !isAutoSupplyFoodItem(item)) continue;
+    keep.add(entry.itemId);
+  }
+  const kit = [...keep].filter((id) => {
+    const item = getShopItem(id);
+    if (!item || !isAutoSupplyFoodItem(item)) return true;
+    return getInventoryQty(stats.inventory, id) > 0;
+  });
+  const same =
+    kit.length === stats.kit.length && kit.every((id) => stats.kit.includes(id));
+  return same ? stats : { ...stats, kit };
+}
+
 export function formatInventoryQuantity(itemId: string, qty: number): string {
   const item = getShopItem(itemId);
   if (item && isAmmoItem(item)) {
     return `${qty} patron${qty === 1 ? "" : "er"}`;
+  }
+  if (isSpentBrassItemId(itemId)) {
+    return `${qty} hylse${qty === 1 ? "" : "r"}`;
   }
   return qty > 1 ? `×${qty}` : "";
 }
@@ -1095,23 +1171,118 @@ export function consumeInventoryItem(
   };
 }
 
-/** Spend one round of ammo; drops from kit when empty. Optionally counts a rifle shot. */
+/** Spend one round of ammo; drops from kit when empty. Optionally counts a rifle shot.
+ * Centerfire rounds also grant one spent brass case for hjemmelading.
+ * If an armed ladeplan matches the ammo caliber, rolls overpressure kaboom.
+ */
 export function consumeAmmoRound(
   stats: PlayerStats,
   ammoId: string,
-  opts?: { rifleId?: string },
-): { stats: PlayerStats; ok: boolean } {
+  opts?: { rifleId?: string; rng?: () => number },
+): { stats: PlayerStats; ok: boolean; kaboom?: boolean } {
   const { inventory, ok } = consumeInventoryItem(stats.inventory, ammoId, 1);
   if (!ok) return { stats, ok: false };
   const kit =
     getInventoryQty(inventory, ammoId) === 0
       ? stats.kit.filter((id) => id !== ammoId)
       : stats.kit;
-  let next: PlayerStats = { ...stats, inventory, kit };
+  let nextInventory = inventory;
+  const brassId = spentBrassItemIdForAmmo(ammoId);
+  if (brassId) {
+    nextInventory = addToInventory(nextInventory, brassId, 1);
+  }
+  let next: PlayerStats = { ...stats, inventory: nextInventory, kit };
   if (opts?.rifleId) {
     next = recordRifleShot(next, opts.rifleId);
   }
+
+  const armed = next.armedLoadPlan;
+  if (armed && armed.kaboomChance > 0 && opts?.rifleId) {
+    const ammo = getShopItem(ammoId);
+    const ammoKey =
+      ammo && isAmmoItem(ammo)
+        ? spentBrassKeyForCaliber(ammo.ammo.caliber)
+        : null;
+    if (ammoKey && ammoKey === armed.caliberKey) {
+      const roll = (opts.rng ?? Math.random)();
+      if (roll < armed.kaboomChance) {
+        next = applyLoadKaboom(next, opts.rifleId);
+        return { stats: next, ok: true, kaboom: true };
+      }
+    }
+  }
+
   return { stats: next, ok: true };
+}
+
+/**
+ * Overpressure kaboom — rifle, pipe, stock, bedding and all CB Customs work lost.
+ * No personal injury; hunter walks away. Scope / ammo / bag stay.
+ */
+export function applyLoadKaboom(
+  stats: PlayerStats,
+  rifleId: string,
+): PlayerStats {
+  if (!rifleId) return { ...stats, armedLoadPlan: null };
+
+  const stockId =
+    stats.kit.map((id) => getShopItem(id)).find((i) => i && isStockItem(i))
+      ?.id ?? null;
+
+  let inventory = stats.inventory;
+  let kit = stats.kit.filter((id) => id !== rifleId);
+
+  const rifleQty = getInventoryQty(inventory, rifleId);
+  if (rifleQty > 0) {
+    inventory = consumeInventoryItem(inventory, rifleId, rifleQty).inventory;
+  }
+
+  if (stockId) {
+    kit = kit.filter((id) => id !== stockId);
+    const stockQty = getInventoryQty(inventory, stockId);
+    if (stockQty > 0) {
+      inventory = consumeInventoryItem(inventory, stockId, stockQty).inventory;
+    }
+  }
+
+  const customBarrels = { ...stats.customBarrels };
+  delete customBarrels[rifleId];
+  const rifleRoundCounts = { ...stats.rifleRoundCounts };
+  delete rifleRoundCounts[rifleId];
+
+  return {
+    ...stats,
+    inventory,
+    kit,
+    customBarrels,
+    rifleRoundCounts,
+    zeroingProfiles: clearZeroingForRifle(stats.zeroingProfiles, rifleId),
+    customsMods: { ...EMPTY_CUSTOMS_MODS },
+    armedLoadPlan: null,
+  };
+}
+
+export function armLoadPlan(
+  stats: PlayerStats,
+  plan: ArmedLoadPlan,
+): PlayerStats {
+  const loadDevTable =
+    plan.loadDevRowId != null
+      ? {
+          ...stats.loadDevTable,
+          activeRowId: plan.loadDevRowId,
+        }
+      : stats.loadDevTable;
+  return { ...stats, armedLoadPlan: plan, loadDevTable };
+}
+
+export function disarmLoadPlan(stats: PlayerStats): PlayerStats {
+  if (!stats.armedLoadPlan && !stats.loadDevTable.activeRowId) return stats;
+  return {
+    ...stats,
+    armedLoadPlan: null,
+    loadDevTable: { ...stats.loadDevTable, activeRowId: null },
+  };
 }
 
 /** Increment lifetime shots through a rifle barrel. */
@@ -1131,7 +1302,7 @@ export function recordRifleShot(
   };
 }
 
-/** Reset barrel round count after CB Customs rebarrel. */
+/** Reset barrel round count after CB Customs rebarrel / custom pipe. */
 export function resetRifleBarrel(
   stats: PlayerStats,
   rifleId: string,
@@ -1140,6 +1311,38 @@ export function resetRifleBarrel(
   const next = { ...stats.rifleRoundCounts };
   next[rifleId] = 0;
   return { ...stats, rifleRoundCounts: next };
+}
+
+/** Install a custom CNC barrel and zero wear on that rifle. */
+export function installCustomBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+  barrel: InstalledCustomBarrel,
+  priceNok: number,
+): PlayerStats {
+  if (!rifleId || priceNok < 0 || stats.balance < priceNok) return stats;
+  return resetRifleBarrel(
+    {
+      ...stats,
+      balance: stats.balance - priceNok,
+      customBarrels: {
+        ...stats.customBarrels,
+        [rifleId]: barrel,
+      },
+    },
+    rifleId,
+  );
+}
+
+/** Clear custom blank (e.g. standard factory rebarrel). */
+export function clearCustomBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+): PlayerStats {
+  if (!rifleId || !stats.customBarrels[rifleId]) return stats;
+  const next = { ...stats.customBarrels };
+  delete next[rifleId];
+  return { ...stats, customBarrels: next };
 }
 
 export function getRifleRoundCount(
@@ -1212,13 +1415,19 @@ export function sellInventoryOnFinn(
       ? stats.kit.filter((id) => id !== itemId)
       : stats.kit;
   let rifleRoundCounts = stats.rifleRoundCounts;
+  let customBarrels = stats.customBarrels;
   if (
     item.category === "rifle" &&
-    getInventoryQty(inventory, itemId) === 0 &&
-    rifleRoundCounts[itemId] != null
+    getInventoryQty(inventory, itemId) === 0
   ) {
-    rifleRoundCounts = { ...rifleRoundCounts };
-    delete rifleRoundCounts[itemId];
+    if (rifleRoundCounts[itemId] != null) {
+      rifleRoundCounts = { ...rifleRoundCounts };
+      delete rifleRoundCounts[itemId];
+    }
+    if (customBarrels[itemId] != null) {
+      customBarrels = { ...customBarrels };
+      delete customBarrels[itemId];
+    }
   }
   return {
     stats: {
@@ -1226,6 +1435,7 @@ export function sellInventoryOnFinn(
       inventory,
       kit,
       rifleRoundCounts,
+      customBarrels,
       balance: stats.balance + deal.payout,
     },
     payout: deal.payout,

@@ -78,6 +78,11 @@ export function formatStaminaPct(gain: number): string {
   return `${Math.round(gain * 100)}%`;
 }
 
+/** Consumable food/snacks that can be multi-bought and auto-packed to kit. */
+export function isPackableFoodKind(kind: FoodKind): boolean {
+  return kind === "ready" || kind === "meal";
+}
+
 /** Jula thermos — enables coffee cup on hunt. */
 export const THERMOS_ITEM_ID = "misc-thermos-jula";
 

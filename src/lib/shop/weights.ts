@@ -303,6 +303,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "reload-lapua-scenar-139-308": 890,
   "reload-lapua-scenar-123-65": 920,
   "reload-lapua-scenar-136-65": 980,
+  "reload-lapua-scenar-139-65": 990,
   "reload-lapua-lockbase-155-308": 760,
   "reload-sierra-mk-168-308": 720,
   "reload-sierra-mk-175-308": 780,
@@ -324,6 +325,23 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "reload-hodgdon-h4350": 920,
   "reload-hodgdon-varget": 940,
   "reload-hodgdon-h4895": 900,
+
+  // Hylser
+  "reload-lapua-brass-308": 2100,
+  "reload-lapua-brass-65cm": 2100,
+  "reload-norma-brass-65x55": 2000,
+  "reload-norma-brass-3006": 2100,
+  "reload-lapua-brass-223": 1600,
+  "reload-federal-brass-308": 2000,
+  "reload-federal-brass-65cm": 2000,
+  "reload-hornady-brass-308": 2050,
+  "reload-hornady-brass-65cm": 2050,
+  "reload-spent-brass-308": 12,
+  "reload-spent-brass-65cm": 11,
+  "reload-spent-brass-65x55": 12,
+  "reload-spent-brass-3006": 13,
+  "reload-spent-brass-223": 8,
+  "reload-spent-brass-300blk": 10,
 
   // Tennhetter
   "reload-cci-br2": 420,

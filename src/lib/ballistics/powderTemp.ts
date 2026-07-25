@@ -34,26 +34,36 @@ export function powderTempDvDtMpsPerC(
 /**
  * Realized muzzle velocity at powder temperature `powderTempC`.
  * `catalogV0` is the ammo's listed v0 at 15 °C.
+ * Optional `dvDtMpsPerC` overrides caliber catalog slope (Kestrel profile).
  */
 export function muzzleVelocityAtPowderTempC(
   catalogV0: number,
   powderTempC: number,
   caliber?: string | null,
+  dvDtMpsPerC?: number | null,
 ): number {
   if (!Number.isFinite(catalogV0)) return 50;
   const t = Number.isFinite(powderTempC)
     ? powderTempC
     : POWDER_TEMP_REFERENCE_C;
-  const dvdt = powderTempDvDtMpsPerC(caliber);
+  const dvdt =
+    dvDtMpsPerC != null && Number.isFinite(dvDtMpsPerC)
+      ? dvDtMpsPerC
+      : powderTempDvDtMpsPerC(caliber);
   return Math.max(50, catalogV0 + (t - POWDER_TEMP_REFERENCE_C) * dvdt);
 }
 
 /** Copy ammo with v0 adjusted for powder temperature. */
 export function ammoAtPowderTemp<
   T extends Pick<AmmoSpec, "v0"> & { caliber?: string },
->(ammo: T, powderTempC: number): T {
+>(ammo: T, powderTempC: number, dvDtMpsPerC?: number | null): T {
   return {
     ...ammo,
-    v0: muzzleVelocityAtPowderTempC(ammo.v0, powderTempC, ammo.caliber),
+    v0: muzzleVelocityAtPowderTempC(
+      ammo.v0,
+      powderTempC,
+      ammo.caliber,
+      dvDtMpsPerC,
+    ),
   };
 }

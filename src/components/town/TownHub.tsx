@@ -30,7 +30,7 @@ const LOCATIONS: TownLocation[] = [
   {
     id: "cb-customs",
     name: "CB Customs",
-    blurb: "Børsemaker, bil og 3D-print — custom rifle (kommer).",
+    blurb: "Børsemaker, CNC-pipe, finish og home loads.",
   },
   {
     id: "meat-market",

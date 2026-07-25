@@ -7,6 +7,12 @@ import {
   type DopeCardEntry,
 } from "@/lib/player";
 import { LocationNav } from "@/components/town/LocationNav";
+import { getShopItem } from "@/lib/shop/catalog";
+import { isAmmoItem } from "@/lib/shop/types";
+import {
+  calibrateMvFromDope,
+  type KestrelGunProfile,
+} from "@/lib/ballistics/kestrelProfile";
 
 type DopeCardViewProps = {
   entries: DopeCardEntry[];
@@ -24,6 +30,9 @@ type DopeCardViewProps = {
   backLabel?: string;
   /** Skip LocationNav when nested under Shotlog/Dope tabs. */
   embedded?: boolean;
+  hasKestrel?: boolean;
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
+  onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
 };
 
 function formatWhen(atMs: number): string {
@@ -49,13 +58,41 @@ export function DopeCardView({
   onBack,
   backLabel = "← Tilbake",
   embedded = false,
+  hasKestrel = false,
+  kestrelProfiles = {},
+  onUpsertKestrelProfile,
 }: DopeCardViewProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
   const sorted = [...entries].sort((a, b) => {
     const ammo = a.ammoLabel.localeCompare(b.ammoLabel, "nb");
     if (ammo !== 0) return ammo;
     return a.distanceM - b.distanceM;
   });
+
+  function calibrateEntry(entry: DopeCardEntry) {
+    if (!onUpsertKestrelProfile) return;
+    const item = getShopItem(entry.ammoId);
+    if (!item || !isAmmoItem(item)) {
+      setStatusNote("Finner ikke ammo i katalog for denne DOPE-linjen.");
+      return;
+    }
+    const profile = calibrateMvFromDope({
+      ammoId: entry.ammoId,
+      ammo: item.ammo,
+      distanceM: entry.distanceM,
+      elevationClicks: entry.elevationClicks,
+      existing: kestrelProfiles[entry.ammoId] ?? null,
+    });
+    if (!profile) {
+      setStatusNote("Klarte ikke å kalibrere MV fra DOPE.");
+      return;
+    }
+    onUpsertKestrelProfile(profile);
+    setStatusNote(
+      `Kestrel MV kalibrert: ${profile.mvMps.toFixed(1)} m/s @ 15 °C (${entry.ammoLabel} @ ${entry.distanceM} m)`,
+    );
+  }
 
   return (
     <div
@@ -80,12 +117,14 @@ export function DopeCardView({
             ? "Ingen linjer ennå. Bruk «Add to DOPE» på skytebanen."
             : `${entries.length} linje${entries.length === 1 ? "" : "r"} · synlig i jakt (Enviro/App)`}
         </p>
+        {statusNote ? <p className="shop-row-note">{statusNote}</p> : null}
       </header>
 
       {sorted.length === 0 ? null : (
         <ul className="dope-card-list">
           {sorted.map((entry) => {
             const editing = editingId === entry.id;
+            const existing = kestrelProfiles[entry.ammoId];
             return (
               <li key={entry.id} className="dope-card-row">
                 <div className="dope-card-row-top">
@@ -180,6 +219,9 @@ export function DopeCardView({
                           {formatDopeWindageClicks(entry.windageClicks)}
                         </>
                       ) : null}
+                      {existing
+                        ? ` · Kestrel ${existing.mvMps.toFixed(0)} m/s`
+                        : null}
                     </p>
                     <div className="dope-card-row-actions">
                       <button
@@ -189,6 +231,21 @@ export function DopeCardView({
                       >
                         Rediger
                       </button>
+                      {onUpsertKestrelProfile ? (
+                        <button
+                          type="button"
+                          className="intro-button"
+                          disabled={!hasKestrel}
+                          title={
+                            hasKestrel
+                              ? "Finn MV @ 15 °C som matcher DOPE elev"
+                              : "Kestrel mangler i inventory/kit"
+                          }
+                          onClick={() => calibrateEntry(entry)}
+                        >
+                          Update Kestrel - Calibrate MV
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="intro-button sheriff-secondary"

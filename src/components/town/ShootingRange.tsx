@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
+import { getShopItem } from "@/lib/shop/catalog";
 import {
   isAmmoItem,
   isBallisticsItem,
@@ -66,6 +67,7 @@ import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
+import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
@@ -92,10 +94,32 @@ import {
   densityRatioFromTempC,
   exactBallisticHold,
 } from "@/lib/ballistics/solver";
+import {
+  chronographKindFromKitIds,
+  computeChronoSeriesStats,
+  kestrelSolveAmmo,
+  profileFromChronoSeries,
+  type KestrelGunProfile,
+} from "@/lib/ballistics/kestrelProfile";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
 import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
+import {
+  rifleSpecWithCustomBarrel,
+  type InstalledCustomBarrel,
+} from "@/lib/customs/customBarrel";
+import {
+  RangeLoadTestBoard,
+  liveChronoFromShots,
+} from "@/components/range/RangeLoadTestBoard";
+import type { LoadDevTable, LoadDevRow } from "@/lib/reloading/loadDevTable";
+import { deriveFromCol } from "@/lib/reloading/loadDevTable";
+import type { LoadBenchRecipe } from "@/lib/reloading/recipe";
+import {
+  estimateLoadPlanFromDevRow,
+  type ArmedLoadPlan,
+} from "@/lib/reloading/loadPhysics";
 
 type ShootingRangeProps = {
   kitItems: ShopItem[];
@@ -103,6 +127,7 @@ type ShootingRangeProps = {
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
   rifleRoundCounts?: Record<string, number>;
+  customBarrels?: Record<string, InstalledCustomBarrel>;
   shotLog: ShotLogEntry[];
   dopeCard: DopeCardEntry[];
   /** Live day weather (same as hunt) for Enviro / App. */
@@ -136,6 +161,15 @@ type ShootingRangeProps = {
   ) => void;
   onRemoveDope: (id: string) => void;
   onLogSeries: (entry: ShotLogEntry) => void;
+  /** Calibrated Kestrel AB gun profiles (MV / BC / dV/dT). */
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
+  onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
+  /** Laderommet ladeplan — load-test lane. */
+  loadDevTable?: LoadDevTable;
+  loadBenchRecipe?: LoadBenchRecipe | null;
+  armedLoadPlan?: ArmedLoadPlan | null;
+  onArmLoadPlan?: (plan: ArmedLoadPlan) => void;
+  onDisarmLoadPlan?: () => void;
   musicEnabled: boolean;
   onLeave: () => void;
 };
@@ -158,6 +192,7 @@ export function ShootingRange({
   ammoAffinities,
   zeroingProfiles,
   rifleRoundCounts = {},
+  customBarrels = {},
   shotLog,
   dopeCard,
   weather,
@@ -175,11 +210,20 @@ export function ShootingRange({
   onUpdateDope,
   onRemoveDope,
   onLogSeries,
+  kestrelProfiles = {},
+  onUpsertKestrelProfile,
+  loadDevTable,
+  loadBenchRecipe = null,
+  armedLoadPlan = null,
+  onArmLoadPlan,
+  onDisarmLoadPlan,
   musicEnabled,
   onLeave,
 }: ShootingRangeProps) {
   const [view, setView] = useState<"range" | "shotlog" | "dope">("range");
-  const [lane, setLane] = useState<"zeroing" | "competitions">("zeroing");
+  const [lane, setLane] = useState<"zeroing" | "competitions" | "load-test">(
+    "zeroing",
+  );
   const [compId, setCompId] = useState<"lobby" | "moa-std">("lobby");
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
@@ -223,11 +267,16 @@ export function ShootingRange({
       ),
     [kitItems],
   );
-  const hasChronograph = useMemo(
+  const chronographKind = useMemo(
     () =>
-      kitItems.some((i) => isMiscItem(i) && isChronographMisc(i.misc)),
+      chronographKindFromKitIds(
+        kitItems
+          .filter((i) => isMiscItem(i) && isChronographMisc(i.misc))
+          .map((i) => i.id),
+      ),
     [kitItems],
   );
+  const hasChronograph = chronographKind != null;
   /** Indoor/outdoor range lane — fixed shot bearing for Enviro / App. */
   const rangeShotBearingDeg = 0;
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
@@ -319,6 +368,16 @@ export function ShootingRange({
   const ammoRemaining = selectedAmmo
     ? getInventoryQty(inventory, selectedAmmo.id)
     : 0;
+  const seriesChronoVelocities = useMemo(
+    () =>
+      shots
+        .map((s) => s.v0Mps)
+        .filter((v): v is number => v != null && Number.isFinite(v) && v > 0),
+    [shots],
+  );
+  const kestrelAmmoSolve = selectedAmmo
+    ? kestrelSolveAmmo(selectedAmmo.ammo, selectedAmmo.id, kestrelProfiles)
+    : null;
   const comboKey =
     rifle && scope && selectedAmmo
       ? zeroingKey(rifle.id, scope.id, selectedAmmo.id)
@@ -435,7 +494,10 @@ export function ShootingRange({
 
       const w = wobbleRef.current;
       const dispersionInput = {
-        rifle: rifle.rifle,
+        rifle: rifleSpecWithCustomBarrel(
+          rifle.rifle,
+          customBarrels[rifle.id],
+        ),
         ammo: selectedAmmo.ammo,
         stock: stock?.stock,
         affinity,
@@ -496,9 +558,10 @@ export function ShootingRange({
             : pullFactor < 0.7
               ? "rykk"
               : "elendig avtrekk";
-      const chronoNote = hasChronograph
-        ? ` · Xero ${shot.v0.toFixed(0)} m/s`
-        : "";
+      const chronoNote =
+        hasChronograph && chronographKind
+          ? ` · ${chronographKind === "xero" ? "Xero" : "TB"} ${shot.v0.toFixed(0)} m/s`
+          : "";
       setStatus(
         `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${pullNote}${chronoNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
       );
@@ -1031,6 +1094,9 @@ export function ShootingRange({
         onRemove={onRemoveDope}
         onBack={() => setView("range")}
         backLabel="← Tilbake til skytebanen"
+        hasKestrel={hasKestrel}
+        kestrelProfiles={kestrelProfiles}
+        onUpsertKestrelProfile={onUpsertKestrelProfile}
       />
     );
   }
@@ -1054,6 +1120,23 @@ export function ShootingRange({
       <button
         type="button"
         role="tab"
+        aria-selected={lane === "load-test"}
+        className={
+          lane === "load-test" ? "range-lane-tab is-active" : "range-lane-tab"
+        }
+        onClick={() => {
+          setLane("load-test");
+          setCompId("lobby");
+        }}
+      >
+        Load test
+        {loadDevTable && loadDevTable.rows.length > 0
+          ? ` (${loadDevTable.rows.length})`
+          : ""}
+      </button>
+      <button
+        type="button"
+        role="tab"
         aria-selected={lane === "competitions"}
         className={
           lane === "competitions"
@@ -1066,6 +1149,59 @@ export function ShootingRange({
       </button>
     </div>
   );
+
+  function armLoadTestRow(row: LoadDevRow) {
+    if (!onArmLoadPlan || !loadBenchRecipe) return;
+    const powder = row.powderItemId ? getShopItem(row.powderItemId) : null;
+    const bullet = row.bulletItemId ? getShopItem(row.bulletItemId) : null;
+    if (!powder || !bullet) return;
+    const caliberKey = loadBenchRecipe.caliberKey;
+    const est = estimateLoadPlanFromDevRow(caliberKey, row, { powder, bullet });
+    const seating = deriveFromCol(caliberKey, row.colMm);
+    onArmLoadPlan({
+      caliberKey,
+      pressurePct: est.pressurePct,
+      overpressurePct: est.overpressurePct,
+      kaboomChance: est.kaboomChance,
+      v0Mps: est.v0Mps,
+      powderGrains: row.powderGrains,
+      seatingDepthThou: seating.seatingDepthThou,
+      colMm: est.colMm,
+      armedAtMs: Date.now(),
+      loadDevRowId: row.id,
+    });
+    setStatus(
+      `Load test aktiv: ${row.powderGrains.toFixed(1)} gr — skyt serie og mål.`,
+    );
+  }
+
+  const loadTestLive = useMemo(() => {
+    if (lane !== "load-test" || measurement) return null;
+    const prelim =
+      shots.length >= 2 ? measureGroup(shots, distanceM) : null;
+    const chrono = hasChronograph
+      ? liveChronoFromShots(shots.map((s) => s.v0Mps))
+      : {
+          meanV0Mps: null,
+          highV0Mps: null,
+          lowV0Mps: null,
+          stdevV0Mps: null,
+        };
+    return {
+      shotCount: shots.length,
+      shotsNeeded: SHOTS_PER_SERIES,
+      ...chrono,
+      groupMoa: prelim && shots.length >= 2 ? prelim.groupMoa : null,
+    };
+  }, [lane, measurement, shots, distanceM, hasChronograph]);
+
+  // Load test: always 100 m + standard CBA board.
+  useEffect(() => {
+    if (lane !== "load-test") return;
+    if (distanceM !== 100) setDistanceM(100);
+    if (targetId !== "cba-100") setTargetId("cba-100");
+    if (paperUnit !== "MRAD") setPaperUnit("MRAD");
+  }, [lane, distanceM, targetId, paperUnit]);
 
   if (lane === "competitions") {
     if (compId === "moa-std") {
@@ -1083,6 +1219,7 @@ export function ShootingRange({
             ammoAffinities={ammoAffinities}
             zeroingProfiles={zeroingProfiles}
             rifleRoundCounts={rifleRoundCounts}
+            customBarrels={customBarrels}
             weather={weather}
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
@@ -1217,13 +1354,34 @@ export function ShootingRange({
     <div className="shooting-range">
       <LocationNav
         onBackToTown={onLeave}
-        hint="Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
+        hint={
+          lane === "load-test"
+            ? "Load test @ 100 m CBA · velg ladning · F / Space-avtrekk · mål serie"
+            : "Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
+        }
       />
 
       {laneTabs}
 
+      {lane === "load-test" && loadDevTable && loadBenchRecipe ? (
+        <RangeLoadTestBoard
+          caliberKey={loadBenchRecipe.caliberKey}
+          brassItemId={loadBenchRecipe.brassItemId}
+          loadDevTable={loadDevTable}
+          armedLoadPlan={armedLoadPlan}
+          hasChronograph={hasChronograph}
+          live={loadTestLive}
+          onArmRow={armLoadTestRow}
+          onDisarm={() => onDisarmLoadPlan?.()}
+        />
+      ) : null}
+
       <header className="shop-header">
-        <p className="intro-line intro-gift">Shooting Range — Zeroing</p>
+        <p className="intro-line intro-gift">
+          {lane === "load-test"
+            ? "Shooting Range — Load test"
+            : "Shooting Range — Zeroing"}
+        </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name}
           {" · "}
@@ -1233,16 +1391,18 @@ export function ShootingRange({
           {bipod ? " · bipod" : " · uten bipod"}
           {suppressor ? " · can" : ""}
         </p>
-        {ballisticHint ? (
+        {lane === "load-test" ? (
+          <p className="shop-row-note">100 m · CBA-skive (fast)</p>
+        ) : ballisticHint ? (
           <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
         ) : null}
-        {paperUnit === "MOA" ? (
+        {lane !== "load-test" && paperUnit === "MOA" ? (
           <p className="shop-row-note range-moa-paper-hint">
             MOA-skive: skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1 cm-ruten ≈
             7,27 mm ≈ 0,25 MOA (ett klikk). Retikkel er {reticleUnit}
             {paperUnit !== reticleUnit ? " — skive avviker fra default" : ""}.
           </p>
-        ) : paperUnit !== reticleUnit ? (
+        ) : lane !== "load-test" && paperUnit !== reticleUnit ? (
           <p className="shop-row-note range-moa-paper-hint">
             MIL-skive valgt mens retikkelet er MOA — 1 cm ≈ 0,1 mil.
           </p>
@@ -1250,6 +1410,8 @@ export function ShootingRange({
       </header>
 
       <section className="range-setup" aria-label="Serieoppsett">
+        {lane !== "load-test" ? (
+          <>
         <div className="range-setup-block">
           <p className="range-setup-label" id="range-distance-label">
             Avstand
@@ -1368,6 +1530,8 @@ export function ShootingRange({
             })}
           </div>
         </div>
+          </>
+        ) : null}
 
         <div className="range-setup-block">
           <div className="range-setup-label-row">
@@ -1476,7 +1640,7 @@ export function ShootingRange({
               dopeCard={dopeCard}
               ammoId={ammoId}
               rifleId={rifle?.id ?? null}
-              ammo={selectedAmmo?.ammo ?? null}
+              ammo={kestrelAmmoSolve?.ammo ?? selectedAmmo?.ammo ?? null}
               ammoLabel={
                 selectedAmmo
                   ? `${selectedAmmo.brand} ${selectedAmmo.name}`
@@ -1489,11 +1653,13 @@ export function ShootingRange({
                 lrfItem ? `${lrfItem.brand} ${lrfItem.name}` : null
               }
               lrfElevClicks={
-                lrfItem?.lrf.hasOnboardBallistics && selectedAmmo
+                lrfItem?.lrf.hasOnboardBallistics &&
+                selectedAmmo &&
+                kestrelAmmoSolve
                   ? Math.abs(
                       mmAt100ToScopeClicks(
                         exactBallisticHold(
-                          selectedAmmo.ammo,
+                          kestrelAmmoSolve.ammo,
                           distanceM,
                           crosswindMs(
                             weather.live.windSpeedMs,
@@ -1503,6 +1669,7 @@ export function ShootingRange({
                           {
                             densityRatio,
                             powderTempC: weather.live.temperatureC,
+                            dvDtMpsPerC: kestrelAmmoSolve.dvDtMpsPerC,
                           },
                         ).dialYMmAt100,
                         scope.scope.clickUnit,
@@ -1511,6 +1678,59 @@ export function ShootingRange({
                   : null
               }
             />
+          }
+          chronoPanel={
+            chronographKind ? (
+              <RangeChronoPanel
+                kind={chronographKind}
+                velocitiesMps={seriesChronoVelocities}
+                temperatureC={weather.live.temperatureC}
+                ammoLabel={
+                  selectedAmmo
+                    ? `${selectedAmmo.brand} ${selectedAmmo.name}`
+                    : "Ammo"
+                }
+                ammoId={selectedAmmo?.id ?? null}
+                bc={selectedAmmo?.ammo.bc}
+                bcModel={selectedAmmo?.ammo.bcModel}
+                existingProfile={
+                  selectedAmmo
+                    ? (kestrelProfiles[selectedAmmo.id] ?? null)
+                    : null
+                }
+                hasKestrel={hasKestrel}
+                onUpdateKestrel={() => {
+                  if (
+                    !onUpsertKestrelProfile ||
+                    !selectedAmmo ||
+                    !chronographKind
+                  ) {
+                    return;
+                  }
+                  const stats = computeChronoSeriesStats(
+                    seriesChronoVelocities,
+                  );
+                  if (!stats) return;
+                  const existing = kestrelProfiles[selectedAmmo.id] ?? null;
+                  onUpsertKestrelProfile(
+                    profileFromChronoSeries({
+                      ammoId: selectedAmmo.id,
+                      meanMps: stats.meanMps,
+                      measuredTempC: weather.live.temperatureC,
+                      caliber: selectedAmmo.ammo.caliber,
+                      bc:
+                        chronographKind === "true_ballistic"
+                          ? selectedAmmo.ammo.bc
+                          : existing?.bc,
+                      existing,
+                    }),
+                  );
+                  setStatus(
+                    `Kestrel oppdatert: ${stats.meanMps.toFixed(1)} m/s avg → profil @ 15 °C`,
+                  );
+                }}
+              />
+            ) : undefined
           }
           actions={
             <>

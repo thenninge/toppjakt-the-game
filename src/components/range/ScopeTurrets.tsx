@@ -17,8 +17,8 @@ import {
 } from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 
-/** Field HUD tabs — Shooter dials + optional Enviro / Kestrel. */
-export type ScopeHudTab = "shooter" | "enviro" | "kestrel";
+/** Field HUD tabs — Shooter dials + optional Enviro / Chrono / Kestrel. */
+export type ScopeHudTab = "shooter" | "enviro" | "chrono" | "kestrel";
 
 type TurretView = "overhead" | "shooter";
 
@@ -39,6 +39,10 @@ type ScopeTurretsProps = {
    * — switch away from turrets to read field data.
    */
   enviroPanel?: ReactNode;
+  /**
+   * Chrono tab (Xero / True Ballistic). Pass when a chronograph is in kit.
+   */
+  chronoPanel?: ReactNode;
   /**
    * Kestrel tab content. Only pass when Kestrel is in kit / solution exists.
    */
@@ -85,6 +89,7 @@ function readStoredTab(allowed: ScopeHudTab[]): ScopeHudTab {
     if (
       normalized === "shooter" ||
       normalized === "enviro" ||
+      normalized === "chrono" ||
       normalized === "kestrel"
     ) {
       if (allowed.includes(normalized)) return normalized;
@@ -528,7 +533,7 @@ function TurretDial({
 
 /**
  * Scope elevation (top turret) + windage (side turret) — dials follow click unit.
- * Tabs: Shooter; optional Enviro / Kestrel for field apps.
+ * Tabs: Shooter; optional Enviro / Chrono / Kestrel for field apps.
  */
 export function ScopeTurrets({
   sessionZeroXMm,
@@ -538,14 +543,17 @@ export function ScopeTurrets({
   clickUnit = "MRAD",
   actions,
   enviroPanel,
+  chronoPanel,
   kestrelPanel,
   onHudTabChange,
 }: ScopeTurretsProps) {
   const hasEnviro = enviroPanel != null;
+  const hasChrono = chronoPanel != null;
   const hasKestrel = kestrelPanel != null;
   const allowedTabs: ScopeHudTab[] = [
     "shooter",
     ...(hasEnviro ? (["enviro"] as const) : []),
+    ...(hasChrono ? (["chrono"] as const) : []),
     ...(hasKestrel ? (["kestrel"] as const) : []),
   ];
 
@@ -555,9 +563,8 @@ export function ScopeTurrets({
 
   useEffect(() => {
     setTab(readStoredTab(allowedTabs));
-    // Re-read when kit gains/loses Kestrel or Enviro.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedTabs derived from panels
-  }, [hasEnviro, hasKestrel]);
+  }, [hasEnviro, hasChrono, hasKestrel]);
 
   useEffect(() => {
     onHudTabChange?.(tab);
@@ -581,6 +588,7 @@ export function ScopeTurrets({
   const turretView: TurretView = "shooter";
   const showTurrets = tab === "shooter";
   const showEnviro = tab === "enviro" && hasEnviro;
+  const showChrono = tab === "chrono" && hasChrono;
   const showKestrel = tab === "kestrel" && hasKestrel;
 
   return (
@@ -620,6 +628,22 @@ export function ScopeTurrets({
             onClick={() => setAndStoreTab("enviro")}
           >
             Enviro/App
+          </button>
+        ) : null}
+        {hasChrono ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "chrono"}
+            className={
+              tab === "chrono"
+                ? "scope-turrets-view-btn is-active"
+                : "scope-turrets-view-btn"
+            }
+            disabled={disabled}
+            onClick={() => setAndStoreTab("chrono")}
+          >
+            Chrono
           </button>
         ) : null}
         {hasKestrel ? (
@@ -696,6 +720,15 @@ export function ScopeTurrets({
       {showEnviro ? (
         <div className="scope-turrets-app-panel" role="tabpanel">
           {enviroPanel}
+        </div>
+      ) : null}
+
+      {showChrono ? (
+        <div
+          className="scope-turrets-app-panel scope-turrets-app-panel--chrono"
+          role="tabpanel"
+        >
+          {chronoPanel}
         </div>
       ) : null}
 

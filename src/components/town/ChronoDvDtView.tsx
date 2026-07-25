@@ -11,12 +11,22 @@ import {
   type ChronoDvDtAmmoGroup,
   type ChronoDvDtPoint,
 } from "@/lib/shotlog/chronoDvDt";
+import {
+  POWDER_TEMP_REFERENCE_C,
+} from "@/lib/ballistics/powderTemp";
+import {
+  profileFromDvDt,
+  type KestrelGunProfile,
+} from "@/lib/ballistics/kestrelProfile";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 
 type ChronoDvDtViewProps = {
   entries: ShotLogEntry[];
   /** Skip nested LocationNav when under Shotlog/Dope tabs. */
   embedded?: boolean;
+  hasKestrel?: boolean;
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
+  onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
 };
 
 function formatWhen(atMs: number): string {
@@ -105,8 +115,25 @@ function V0TempTable({ groups }: { groups: ChronoDvDtAmmoGroup[] }) {
   );
 }
 
-function GroupDetail({ group }: { group: ChronoDvDtAmmoGroup }) {
+function GroupDetail({
+  group,
+  hasKestrel,
+  existingProfile,
+  onUpdateKestrel,
+}: {
+  group: ChronoDvDtAmmoGroup;
+  hasKestrel: boolean;
+  existingProfile?: KestrelGunProfile | null;
+  onUpdateKestrel?: () => void;
+}) {
   const needMoreTemps = group.measuredDvDt == null;
+  const mvAt15 = predictV0AtTempC(group, POWDER_TEMP_REFERENCE_C);
+  const canUpdate =
+    hasKestrel &&
+    onUpdateKestrel != null &&
+    mvAt15 != null &&
+    Number.isFinite(mvAt15);
+
   return (
     <div className="chrono-dvdt-card">
       <div className="chrono-dvdt-card-top">
@@ -157,6 +184,33 @@ function GroupDetail({ group }: { group: ChronoDvDtAmmoGroup }) {
         ) : null}
       </dl>
 
+      {existingProfile ? (
+        <p className="shop-row-note">
+          Kestrel: {existingProfile.mvMps.toFixed(1)} m/s @ 15 °C
+          {existingProfile.dvDtMpsPerC != null
+            ? ` · dV/dT ${formatDvDt(existingProfile.dvDtMpsPerC)}`
+            : ""}
+        </p>
+      ) : null}
+
+      {onUpdateKestrel ? (
+        <button
+          type="button"
+          className="intro-button"
+          disabled={!canUpdate}
+          title={
+            !hasKestrel
+              ? "Kestrel mangler i inventory/kit"
+              : mvAt15 == null
+                ? "Trenger chrono-punkter"
+                : "Skriv målt dV/dT + v₀ @ 15 °C inn i Kestrel"
+          }
+          onClick={onUpdateKestrel}
+        >
+          Update Kestrel with dV/dT
+        </button>
+      ) : null}
+
       <ul className="chrono-dvdt-points">
         {group.points.map((p) => (
           <li key={p.entryId} className="chrono-dvdt-point">
@@ -190,6 +244,9 @@ function GroupDetail({ group }: { group: ChronoDvDtAmmoGroup }) {
 export function ChronoDvDtView({
   entries,
   embedded = false,
+  hasKestrel = false,
+  kestrelProfiles = {},
+  onUpsertKestrelProfile,
 }: ChronoDvDtViewProps) {
   const groups = groupChronoDvDtByAmmo(entries);
   const pointCount = groups.reduce((n, g) => n + g.points.length, 0);
@@ -228,7 +285,30 @@ export function ChronoDvDtView({
             <ul className="chrono-dvdt-list">
               {groups.map((g) => (
                 <li key={g.ammoId}>
-                  <GroupDetail group={g} />
+                  <GroupDetail
+                    group={g}
+                    hasKestrel={hasKestrel}
+                    existingProfile={kestrelProfiles[g.ammoId] ?? null}
+                    onUpdateKestrel={
+                      onUpsertKestrelProfile
+                        ? () => {
+                            const mvAt15 = predictV0AtTempC(
+                              g,
+                              POWDER_TEMP_REFERENCE_C,
+                            );
+                            if (mvAt15 == null) return;
+                            onUpsertKestrelProfile(
+                              profileFromDvDt({
+                                ammoId: g.ammoId,
+                                mvAt15C: mvAt15,
+                                dvDtMpsPerC: g.tableDvDt,
+                                bc: kestrelProfiles[g.ammoId]?.bc,
+                              }),
+                            );
+                          }
+                        : undefined
+                    }
+                  />
                 </li>
               ))}
             </ul>

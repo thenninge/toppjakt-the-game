@@ -73,6 +73,10 @@ import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
 } from "@/lib/range/scopePointerAim";
+import {
+  rifleSpecWithCustomBarrel,
+  type InstalledCustomBarrel,
+} from "@/lib/customs/customBarrel";
 
 type MoaCompetitionViewProps = {
   balance: number;
@@ -81,6 +85,7 @@ type MoaCompetitionViewProps = {
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
   rifleRoundCounts?: Record<string, number>;
+  customBarrels?: Record<string, InstalledCustomBarrel>;
   weather: DayWeather;
   customsMoaDelta?: number;
   /** CB Customs calm multiplier (e.g. bagrider 1.15). */
@@ -189,6 +194,7 @@ export function MoaCompetitionView({
   ammoAffinities,
   zeroingProfiles,
   rifleRoundCounts = {},
+  customBarrels = {},
   weather,
   customsMoaDelta = 0,
   customsCalmMult = 1,
@@ -410,7 +416,7 @@ export function MoaCompetitionView({
 
     const w = wobbleRef.current;
     const dispersionInput = {
-      rifle: rifle.rifle,
+      rifle: rifleSpecWithCustomBarrel(rifle.rifle, customBarrels[rifle.id]),
       ammo: selectedAmmo.ammo,
       stock: stock?.stock,
       affinity,

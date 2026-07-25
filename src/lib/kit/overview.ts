@@ -12,6 +12,11 @@ import {
   type CustomsMods,
 } from "@/lib/customs/spec";
 import {
+  applyCustomBarrelMoa,
+  rifleSpecWithCustomBarrel,
+  type InstalledCustomBarrel,
+} from "@/lib/customs/customBarrel";
+import {
   camoSlot,
   kitBirdSpotFactor,
   type CamoSpec,
@@ -114,8 +119,9 @@ export function computeKitOverview(input: {
   kitItems: ShopItem[];
   customsMods: CustomsMods;
   carcasses?: Pick<GameCarcass, "weightKg">[];
+  customBarrels?: Record<string, InstalledCustomBarrel>;
 }): KitOverview {
-  const { kitItems, customsMods, carcasses = [] } = input;
+  const { kitItems, customsMods, carcasses = [], customBarrels = {} } = input;
 
   const rifle = kitItems.find(isRifleItem) ?? null;
   const stock = kitItems.find(isStockItem) ?? null;
@@ -157,7 +163,10 @@ export function computeKitOverview(input: {
   if (rifle && ammoItems.length > 0) {
     for (const ammo of ammoItems) {
       const envelopeMoa = combinedDispersionMoa({
-        rifle: rifle.rifle,
+        rifle: rifleSpecWithCustomBarrel(
+          rifle.rifle,
+          customBarrels[rifle.id],
+        ),
         ammo: ammo.ammo,
         stock: stock?.stock ?? null,
         affinity: 1,
@@ -179,9 +188,14 @@ export function computeKitOverview(input: {
   const precisionTips: string[] = [];
   if (!rifle) {
     precisionTips.push("Ta med en rifle — uten den finnes ingen gruppe.");
-  } else if (rifle.rifle.averageBestAccuracyMoa > 0.7) {
+  } else if (
+    applyCustomBarrelMoa(
+      rifle.rifle.averageBestAccuracyMoa,
+      customBarrels[rifle.id],
+    ) > 0.7
+  ) {
     precisionTips.push(
-      `Rifle-gulvet er ${rifle.rifle.averageBestAccuracyMoa.toFixed(2)} MOA — dyrere/presisere rifle senker bunnen.`,
+      `Rifle-gulvet er ${applyCustomBarrelMoa(rifle.rifle.averageBestAccuracyMoa, customBarrels[rifle.id]).toFixed(2)} MOA — dyrere/presisere rifle eller custom pipe hos CB senker bunnen.`,
     );
   }
   if (ammoItems.length === 0) {

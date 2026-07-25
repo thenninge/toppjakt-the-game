@@ -758,12 +758,75 @@ body {
 }
 
 .cb-customs-homeload {
+  margin: 1rem 0;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
   padding: 0.65rem 0.75rem;
   border: 1px solid rgba(212, 168, 75, 0.45);
   background: rgba(40, 28, 14, 0.45);
+}
+
+.cb-customs-cnc {
+  border-color: color-mix(in srgb, var(--accent-gold) 45%, #5a4030);
+}
+
+.cb-customs-barrel-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.75rem;
+  margin: 0.65rem 0;
+}
+
+.cb-customs-profile {
+  margin: 0.75rem 0;
+  padding-top: 0.35rem;
+  border-top: 1px solid #5a4030;
+}
+
+.cb-customs-stations {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.cb-customs-stations > li {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.45rem 0.55rem;
+  align-items: end;
+}
+
+.cb-customs-station-spacer {
+  width: 4.5rem;
+}
+
+.cb-customs-carbon-lock {
+  color: var(--danger-rust, #c45c3e);
+}
+
+.cb-customs-quote {
+  margin: 0.65rem 0;
+}
+
+.cb-customs-quote-list {
+  margin: 0.25rem 0 0.5rem;
+  padding-left: 1.1rem;
+  color: var(--canyon-dust);
+  font-size: 1.02rem;
+}
+
+@media (max-width: 640px) {
+  .cb-customs-barrel-form {
+    grid-template-columns: 1fr;
+  }
+
+  .cb-customs-stations > li {
+    grid-template-columns: 1fr;
+  }
 }
 
 .shop-footer-nav {
@@ -1076,6 +1139,325 @@ body {
 
 .laderommet code {
   font-size: 0.85em;
+}
+
+.laderommet-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 0.85rem;
+  margin: 0.75rem 0 1rem;
+  max-width: 42rem;
+}
+
+.laderommet-anneal {
+  grid-column: 1 / -1;
+}
+
+.laderommet-anneal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.laderommet-stock-hint {
+  margin: 0 0 0.85rem;
+}
+
+.laderommet-pick {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  white-space: normal;
+  line-height: 1.25;
+  min-height: 2.4rem;
+}
+
+.laderommet-plan {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(212, 168, 75, 0.4);
+  background: rgba(30, 22, 14, 0.45);
+  max-width: min(100%, 56rem);
+}
+
+.laderommet-plan-controls {
+  margin: 0.55rem 0 0.75rem;
+}
+
+.laderommet-plan-stats {
+  display: grid;
+  gap: 0.45rem 1rem;
+  margin: 0 0 0.65rem;
+}
+
+.laderommet-plan-stats > div {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
+.laderommet-plan-stats dt {
+  margin: 0;
+  color: var(--canyon-dust);
+  font-size: 0.95rem;
+}
+
+.laderommet-plan-stats dd {
+  margin: 0;
+  color: var(--canyon-sand);
+  font-variant-numeric: tabular-nums;
+}
+
+.laderommet-plan-sub {
+  font-size: 0.8rem;
+  color: var(--canyon-dust);
+  font-weight: 400;
+}
+
+.laderommet-plan-warn {
+  color: #e8b84a;
+}
+
+.laderommet-plan-danger {
+  color: #e07060;
+}
+
+.laderommet-plan-armed {
+  margin-top: 0.5rem;
+}
+
+.laderommet-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0.75rem;
+}
+
+.load-dev-table-wrap {
+  overflow-x: auto;
+  margin: 0.35rem 0 0.85rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.load-dev-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.load-dev-table th,
+.load-dev-table td {
+  padding: 0.28rem 0.3rem;
+  border-bottom: 1px solid rgba(212, 168, 75, 0.22);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.load-dev-table th {
+  color: var(--canyon-dust);
+  font-weight: 600;
+  font-size: 0.7rem;
+}
+
+.load-dev-table tr.is-active-load {
+  background: rgba(212, 168, 75, 0.12);
+}
+
+.load-dev-input {
+  width: 3.6rem;
+  min-width: 0;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.78rem;
+}
+
+.load-dev-cell-btn {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.35rem;
+  min-height: 0;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.load-dev-derived,
+.load-dev-measured {
+  color: var(--canyon-dust);
+}
+
+.load-dev-measured {
+  font-weight: 600;
+  color: var(--canyon-sand);
+}
+
+.load-dev-row-actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.load-dev-chart-block {
+  margin-top: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(212, 168, 75, 0.25);
+}
+
+.load-dev-v0-chart {
+  margin-top: 0.35rem;
+}
+
+.load-dev-v0-svg {
+  width: 100%;
+  max-width: 28rem;
+  height: auto;
+  display: block;
+  background: rgba(12, 10, 8, 0.35);
+  border-radius: 4px;
+}
+
+.load-dev-v0-axis {
+  stroke: rgba(212, 168, 75, 0.35);
+  stroke-width: 1;
+}
+
+.load-dev-v0-line {
+  stroke: #c4a35a;
+  stroke-width: 1.75;
+}
+
+.load-dev-v0-dot {
+  fill: #e8d5a3;
+  stroke: #1e160e;
+  stroke-width: 1;
+}
+
+.load-dev-v0-dot.is-plateau {
+  fill: #6ecf8a;
+  stroke: #1e160e;
+  stroke-width: 1.25;
+}
+
+.load-dev-v0-label {
+  fill: var(--canyon-dust);
+  font-size: 9px;
+}
+
+.ladebok {
+  margin: 0.75rem 0 1rem;
+  max-width: min(100%, 42rem);
+}
+
+.ladebok-filter {
+  margin: 0.55rem 0 0.75rem;
+  max-width: 16rem;
+}
+
+.ladebok-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ladebok-card {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(212, 168, 75, 0.28);
+  background: rgba(30, 22, 14, 0.4);
+}
+
+.ladebok-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.ladebok-when {
+  font-size: 0.72rem;
+  color: var(--canyon-dust);
+}
+
+.ladebok-caliber {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--canyon-sand);
+}
+
+.ladebok-recipe {
+  margin: 0 0 0.25rem;
+  font-size: 0.88rem;
+  color: var(--canyon-sand);
+}
+
+.ladebok-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  margin: 0.45rem 0;
+}
+
+.ladebok-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ladebok-stats dt {
+  margin: 0;
+  font-size: 0.65rem;
+  color: var(--canyon-dust);
+}
+
+.ladebok-stats dd {
+  margin: 0;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ladebok-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.game-choice-panel {
+  max-height: min(85vh, 36rem);
+  overflow: auto;
+}
+
+.game-choice-list {
+  max-height: min(55vh, 24rem);
+  overflow: auto;
+}
+
+.game-choice-selected {
+  border-color: var(--accent-gold) !important;
+  color: var(--accent-gold) !important;
+}
+
+.game-choice-label {
+  display: block;
+}
+
+.game-choice-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.9em;
+  opacity: 0.8;
+  font-weight: normal;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+@media (max-width: 640px) {
+  .laderommet-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .home-hunt-btn:disabled {
@@ -2152,6 +2534,52 @@ body {
   margin: 0;
 }
 
+.scope-turrets-app-panel--chrono {
+  align-items: stretch;
+}
+
+.range-chrono-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.range-chrono-device {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--pine-deep, #1a2e1f);
+}
+
+.range-chrono-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 0.65rem;
+  margin: 0;
+}
+
+.range-chrono-stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.range-chrono-stats dt {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--canyon-dust, #8a7a68);
+}
+
+.range-chrono-stats dd {
+  margin: 0;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .hunt-dope-empty {
   margin: 0;
   font-size: 0.72rem;
@@ -2845,6 +3273,31 @@ body {
   gap: 1.1rem;
 }
 
+.home-auto-supply {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0 0 0.85rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.92rem;
+  color: var(--canyon-sand);
+  cursor: pointer;
+}
+
+.home-auto-supply input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.home-auto-supply-hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--canyon-dust);
+}
+
 .home-inventory-group-title {
   margin: 0 0 0.35rem;
   display: flex;
@@ -3028,6 +3481,52 @@ body {
   margin-top: 0;
   font-size: 0.7rem;
   padding: 0.35rem 0.7rem;
+}
+
+.shop-row-buy {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  min-width: 7.5rem;
+}
+
+.shop-qty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--canyon-dust);
+}
+
+.shop-qty select {
+  min-height: 1.85rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid #5a4030;
+  border-radius: 0.25rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--canyon-sand);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.shop-row-buy .shop-buy {
+  width: 100%;
+}
+
+.shop-starter-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.15rem;
+}
+
+.shop-starter-price {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--accent-gold);
+  font-weight: 650;
 }
 
 .home-inventory-actions {
@@ -3382,6 +3881,88 @@ body {
   color: var(--accent-gold);
   border-color: #6b5238;
   background: rgba(0, 0, 0, 0.28);
+}
+
+.range-load-test {
+  margin: 0.55rem 0 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(212, 168, 75, 0.4);
+  background: rgba(30, 22, 14, 0.5);
+  max-width: min(100%, 56rem);
+}
+
+.range-load-test-head {
+  margin-bottom: 0.35rem;
+}
+
+.range-load-test-active {
+  margin: 0.35rem 0 0.55rem;
+  font-size: 0.82rem;
+  color: var(--canyon-sand);
+  line-height: 1.4;
+}
+
+.range-load-test-disarm {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  min-height: 0;
+  vertical-align: baseline;
+}
+
+.range-load-test-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.range-load-test-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.range-load-test-table th,
+.range-load-test-table td {
+  padding: 0.3rem 0.35rem;
+  border-bottom: 1px solid rgba(212, 168, 75, 0.22);
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.range-load-test-table th {
+  color: var(--canyon-dust);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.range-load-test-table tr.is-active-load {
+  background: rgba(212, 168, 75, 0.14);
+}
+
+.range-load-test-gr {
+  font-weight: 700;
+  color: var(--canyon-sand);
+}
+
+.range-load-test-sub {
+  font-size: 0.68rem;
+  color: var(--canyon-dust);
+  font-weight: 400;
+}
+
+.range-load-test-measured {
+  color: var(--canyon-sand);
+}
+
+.range-load-test-measured strong {
+  font-weight: 700;
+  color: #e8d5a3;
+}
+
+.range-load-test-live {
+  color: #8ecf9a;
+  font-style: italic;
 }
 
 .moa-comp-event-list {

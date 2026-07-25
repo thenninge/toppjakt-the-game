@@ -31,12 +31,16 @@ export {
   isSkiItem,
   isBipodItem,
   isFoodItem,
+  isBundleItem,
 } from "./types";
 export {
   SHOP_CATALOG,
   getCatalogByCategory,
   getShopItem,
   isPurchasableInShop,
+  starterKitDealPriceNok,
+  starterKitListPriceNok,
+  resolveStarterKitPurchase,
 } from "./catalog";
 export type { AmmoSpec, ProjectileType } from "@/lib/ammo/spec";
 export {

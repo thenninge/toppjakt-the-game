@@ -51,8 +51,7 @@ export type CustomsServiceId =
   | "bagrider"
   | "action_trueing"
   | "cheek_riser"
-  | "barrel_crown"
-  | "custom_build";
+  | "barrel_crown";
 
 export type CustomsService = {
   id: CustomsServiceId;
@@ -165,13 +164,6 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     name: "Barrel crown",
     priceNok: 3500,
     effect: `Ny crown på pipa — −${BARREL_CROWN_MOA.toFixed(2)} MOA.`,
-  },
-  {
-    id: "custom_build",
-    name: "Custom build",
-    priceNok: 0,
-    effect: "Full custom rifle fra blank — CNC, pipe, chassis.",
-    comingSoon: true,
   },
 ];
 

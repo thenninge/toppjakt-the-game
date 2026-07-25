@@ -5,6 +5,8 @@ import {
   getCatalogByCategory,
   getShopItem,
   isPurchasableInShop,
+  resolveStarterKitPurchase,
+  starterKitDealPriceNok,
 } from "@/lib/shop/catalog";
 import {
   SHOP_CATEGORIES,
@@ -22,9 +24,18 @@ import {
   isSkiItem,
   isBipodItem,
   isFoodItem,
+  isBundleItem,
   type ShopCategory,
   type ShopItem,
 } from "@/lib/shop/types";
+import { isPackableFoodKind } from "@/lib/food/spec";
+import {
+  getStarterKitCaliber,
+  isReloadStarterKitId,
+  RELOAD_STARTER_CALIBERS,
+  resolveStarterKitSelection,
+  type StarterKitSelection,
+} from "@/lib/reloading/starterKit";
 import { miscFeltWeightGrams } from "@/lib/misc/spec";
 import {
   SUPPRESSOR_CALM_WEIGHT_FACTOR,
@@ -52,9 +63,19 @@ type XxlShopProps = {
   /** Unused weapon licenses — required to buy hunting rifles. */
   canBuyRifle: boolean;
   unusedLicenses: number;
-  onBuy: (item: ShopItem) => void;
+  onBuy: (
+    item: ShopItem,
+    qty?: number,
+    opts?: { starterKit?: StarterKitSelection },
+  ) => void;
   onLeave: () => void;
 };
+
+const FOOD_BULK_QTY = [1, 2, 5, 10, 20] as const;
+
+function canBulkBuyFood(item: ShopItem): boolean {
+  return isFoodItem(item) && isPackableFoodKind(item.food.kind);
+}
 
 type AmmoSortMode = "caliber-type" | "type-caliber";
 type GlobalSort =
@@ -98,6 +119,11 @@ export function XxlShop({
   const [message, setMessage] = useState("");
   const [globalSort, setGlobalSort] = useState<GlobalSort>("price-asc");
   const [ammoSort, setAmmoSort] = useState<AmmoSortMode>("caliber-type");
+  /** Multi-buy qty for mat/snacks (keyed by item id). */
+  const [foodBuyQty, setFoodBuyQty] = useState<Record<string, number>>({});
+  const [starterSel, setStarterSel] = useState<StarterKitSelection>(() =>
+    resolveStarterKitSelection(null),
+  );
   const [caliberFilter, setCaliberFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<ProjectileType | "all">("all");
   const [scopeSort, setScopeSort] = useState<ScopeSort>("price-asc");
@@ -190,7 +216,7 @@ export function XxlShop({
     return inventory.find((e) => e.itemId === itemId)?.qty ?? 0;
   }
 
-  function tryBuy(item: ShopItem) {
+  function tryBuy(item: ShopItem, qty = 1) {
     if (!isPurchasableInShop(item)) {
       setMessage("Unobtainable — ikke til salgs i XXL.");
       return;
@@ -203,13 +229,50 @@ export function XxlShop({
       );
       return;
     }
-    if (balance < item.priceNok) {
-      setMessage(`Ikke nok på kontoen til ${item.name}.`);
+    const n = Math.max(1, Math.floor(qty));
+
+    if (isReloadStarterKitId(item.id)) {
+      const purchase = resolveStarterKitPurchase(starterSel);
+      if (balance < purchase.dealPriceNok) {
+        setMessage(
+          `Ikke nok på kontoen til kit (${formatPrice(purchase.dealPriceNok)}).`,
+        );
+        return;
+      }
+      onBuy(item, 1, { starterKit: purchase.selection });
+      const cal = getStarterKitCaliber(purchase.selection.caliberId);
+      const bullet = getShopItem(purchase.selection.bulletId);
+      setMessage(
+        `Kjøpt: Fullt hjemmeladingskit · ${cal?.label ?? ""} · ${bullet ? `${bullet.brand} ${bullet.name}` : "kule"} (−${formatPrice(purchase.dealPriceNok)}) · ${purchase.contentIds.length} deler`,
+      );
       return;
     }
-    onBuy(item);
-    setMessage(`Kjøpt: ${item.brand} ${item.name} (−${formatPrice(item.priceNok)})`);
+
+    const cost = item.priceNok * n;
+    if (balance < cost) {
+      setMessage(
+        n > 1
+          ? `Ikke nok på kontoen til ${n}× ${item.name}.`
+          : `Ikke nok på kontoen til ${item.name}.`,
+      );
+      return;
+    }
+    onBuy(item, n);
+    if (isBundleItem(item)) {
+      setMessage(
+        `Kjøpt: ${item.brand} ${item.name} (−${formatPrice(item.priceNok)}) · ${item.bundleItemIds.length} deler i inventory`,
+      );
+      return;
+    }
+    setMessage(
+      n > 1
+        ? `Kjøpt: ${n}× ${item.brand} ${item.name} (−${formatPrice(cost)})`
+        : `Kjøpt: ${item.brand} ${item.name} (−${formatPrice(item.priceNok)})`,
+    );
   }
+
+  const starterCal = getStarterKitCaliber(starterSel.caliberId);
+  const starterDeal = starterKitDealPriceNok(starterSel);
 
   const ownedPreview = inventory
     .map((e) => {
@@ -383,8 +446,10 @@ export function XxlShop({
           const unobtainable = !isPurchasableInShop(item);
           const soldOut = !!item.soldOut;
           const canAfford = !unobtainable && balance >= item.priceNok;
-          const isUniqueGear =
-            !unobtainable && item.category !== "ammo" && qty > 0;
+          const stackable =
+            isAmmoItem(item) ||
+            (isFoodItem(item) && item.food.kind !== "stove");
+          const isUniqueGear = !unobtainable && !stackable && qty > 0;
           const needsLicense = isRifleItem(item) && !canBuyRifle;
           const ammo = isAmmoItem(item) ? item.ammo : null;
           const camo = isCamoItem(item) ? item.camo : null;
@@ -554,27 +619,150 @@ export function XxlShop({
                 {item.note ? (
                   <span className="shop-row-note">{item.note}</span>
                 ) : null}
+                {isReloadStarterKitId(item.id) ? (
+                  <span className="shop-row-ballistics">
+                    Basis: presse, vekt, primer-verktøy, smør, trakt, brett,
+                    skyvelære, tennhetter · pluss dies + hylser + krutt + 100
+                    kuler etter valg under
+                  </span>
+                ) : isBundleItem(item) ? (
+                  <span className="shop-row-ballistics">
+                    Innhold:{" "}
+                    {item.bundleItemIds
+                      .map((id) => {
+                        const part = getShopItem(id);
+                        return part
+                          ? `${part.brand} ${part.name}`
+                          : id;
+                      })
+                      .join(" · ")}
+                  </span>
+                ) : null}
               </div>
-              <button
-                type="button"
-                className="intro-button shop-buy"
-                disabled={
-                  unobtainable || !canAfford || isUniqueGear || needsLicense
-                }
-                onClick={() => tryBuy(item)}
-              >
-                {soldOut
-                  ? "For tiden utsolgt"
-                  : unobtainable
-                    ? "Unobtainable"
-                    : isUniqueGear
-                      ? "Owned"
-                      : needsLicense
-                        ? "Trenger lisens"
-                        : canAfford
-                          ? "Buy"
-                          : "Too poor"}
-              </button>
+              <div className="shop-row-buy">
+                {isReloadStarterKitId(item.id) && !unobtainable ? (
+                  <div className="shop-starter-opts">
+                    <label className="shop-qty">
+                      Kaliber
+                      <select
+                        value={starterSel.caliberId}
+                        onChange={(e) => {
+                          const nextCal = getStarterKitCaliber(e.target.value);
+                          setStarterSel(
+                            resolveStarterKitSelection({
+                              caliberId: e.target.value,
+                              bulletId: nextCal?.defaultBulletId,
+                            }),
+                          );
+                        }}
+                        aria-label="Kaliber for lade-kit"
+                      >
+                        {RELOAD_STARTER_CALIBERS.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="shop-qty">
+                      Kule (100 stk)
+                      <select
+                        value={starterSel.bulletId}
+                        onChange={(e) =>
+                          setStarterSel((prev) =>
+                            resolveStarterKitSelection({
+                              ...prev,
+                              bulletId: e.target.value,
+                            }),
+                          )
+                        }
+                        aria-label="Kule til lade-kit"
+                      >
+                        {(starterCal?.bulletIds ?? []).map((id) => {
+                          const b = getShopItem(id);
+                          return (
+                            <option key={id} value={id}>
+                              {b
+                                ? `${b.brand} ${b.name} · ${b.priceNok} kr`
+                                : id}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    <p className="shop-starter-price">
+                      {formatPrice(starterDeal)} (−30 %)
+                    </p>
+                  </div>
+                ) : null}
+                {canBulkBuyFood(item) && !unobtainable ? (
+                  <label className="shop-qty">
+                    Antall
+                    <select
+                      value={foodBuyQty[item.id] ?? 1}
+                      onChange={(e) =>
+                        setFoodBuyQty((prev) => ({
+                          ...prev,
+                          [item.id]: Number(e.target.value),
+                        }))
+                      }
+                      aria-label={`Antall ${item.name}`}
+                    >
+                      {FOOD_BULK_QTY.map((q) => (
+                        <option key={q} value={q}>
+                          {q}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <button
+                  type="button"
+                  className="intro-button shop-buy"
+                  disabled={
+                    unobtainable ||
+                    isUniqueGear ||
+                    needsLicense ||
+                    (isReloadStarterKitId(item.id)
+                      ? balance < starterDeal
+                      : canBulkBuyFood(item)
+                        ? balance <
+                          item.priceNok * (foodBuyQty[item.id] ?? 1)
+                        : !canAfford)
+                  }
+                  onClick={() =>
+                    tryBuy(
+                      item,
+                      canBulkBuyFood(item) ? (foodBuyQty[item.id] ?? 1) : 1,
+                    )
+                  }
+                >
+                  {soldOut
+                    ? "For tiden utsolgt"
+                    : unobtainable
+                      ? "Unobtainable"
+                      : isUniqueGear
+                        ? "Owned"
+                        : needsLicense
+                          ? "Trenger lisens"
+                          : isReloadStarterKitId(item.id)
+                            ? balance < starterDeal
+                              ? "Too poor"
+                              : `Buy kit (${formatPrice(starterDeal)})`
+                            : canBulkBuyFood(item)
+                            ? (() => {
+                                const q = foodBuyQty[item.id] ?? 1;
+                                const cost = item.priceNok * q;
+                                if (balance < cost) return "Too poor";
+                                return q > 1
+                                  ? `Buy ${q}× (${formatPrice(cost)})`
+                                  : "Buy";
+                              })()
+                            : canAfford
+                              ? "Buy"
+                              : "Too poor"}
+                </button>
+              </div>
             </li>
           );
         })}

@@ -10,6 +10,7 @@ import { LocationNav } from "@/components/town/LocationNav";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
 import { ChronoDvDtView } from "@/components/town/ChronoDvDtView";
+import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 
 export type ShotLogDopeTab = "shotlog" | "dope" | "dvdt";
 
@@ -30,6 +31,9 @@ type ShotLogDopeViewProps = {
   onBack: () => void;
   /** Open on a specific tab (e.g. DOPE from range). */
   initialTab?: ShotLogDopeTab;
+  hasKestrel?: boolean;
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
+  onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
 };
 
 /**
@@ -43,6 +47,9 @@ export function ShotLogDopeView({
   onRemoveDope,
   onBack,
   initialTab = "shotlog",
+  hasKestrel = false,
+  kestrelProfiles = {},
+  onUpsertKestrelProfile,
 }: ShotLogDopeViewProps) {
   const [tab, setTab] = useState<ShotLogDopeTab>(initialTab);
   const chronoCount = extractChronoPoints(shotLog).length;
@@ -120,9 +127,18 @@ export function ShotLogDopeView({
           onRemove={onRemoveDope}
           onBack={onBack}
           embedded
+          hasKestrel={hasKestrel}
+          kestrelProfiles={kestrelProfiles}
+          onUpsertKestrelProfile={onUpsertKestrelProfile}
         />
       ) : (
-        <ChronoDvDtView entries={shotLog} embedded />
+        <ChronoDvDtView
+          entries={shotLog}
+          embedded
+          hasKestrel={hasKestrel}
+          kestrelProfiles={kestrelProfiles}
+          onUpsertKestrelProfile={onUpsertKestrelProfile}
+        />
       )}
     </div>
   );

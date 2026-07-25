@@ -45,12 +45,18 @@ import {
   EMPTY_CUSTOMS_MODS,
   type CustomsMods,
 } from "@/lib/customs/spec";
+import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import { InaturNo } from "@/components/town/InaturNo";
 import { ShotLogDopeView, type ShotLogDopeTab } from "@/components/town/ShotLogDopeView";
 import { LaderommetView } from "@/components/town/LaderommetView";
+import type { LoadBenchRecipe } from "@/lib/reloading/recipe";
+import type { ArmedLoadPlan } from "@/lib/reloading/loadPhysics";
+import type { LoadDevTable } from "@/lib/reloading/loadDevTable";
+import type { LoadBookEntry } from "@/lib/reloading/loadBook";
+import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import {
   formatJaktkortStatusNb,
   type ActiveJaktkort,
@@ -98,6 +104,7 @@ type HomeBaseProps = {
   dopeCard: DopeCardEntry[];
   rifleRoundCounts?: Record<string, number>;
   customsMods?: CustomsMods;
+  customBarrels?: Record<string, InstalledCustomBarrel>;
   /** Harvested birds in the home freezer (until Meat Market). */
   freezerCarcasses?: GameCarcass[];
   licenseCount: number;
@@ -107,7 +114,19 @@ type HomeBaseProps = {
   jaktkort: ActiveJaktkort | null;
   unlockedTerrainIds: string[];
   zeroingProfiles: Record<string, ZeroingProfile>;
+  /** Auto-pack mat/snacks from inventory into kit. */
+  autoSupplyFood: boolean;
+  loadBenchRecipe: LoadBenchRecipe;
+  loadDevTable: LoadDevTable;
+  loadBook: LoadBookEntry[];
+  armedLoadPlan: ArmedLoadPlan | null;
   onToggleKit: (itemId: string) => void;
+  onSetAutoSupplyFood: (enabled: boolean) => void;
+  onChangeLoadBenchRecipe: (recipe: LoadBenchRecipe) => void;
+  onChangeLoadDevTable: (table: LoadDevTable) => void;
+  onChangeLoadBook: (book: LoadBookEntry[]) => void;
+  onArmLoadPlan: (plan: ArmedLoadPlan) => void;
+  onDisarmLoadPlan: () => void;
   /** Sell one unit (or ammo eske) on Finn at ~50% catalog price. */
   onSellOnFinn: (itemId: string) => void;
   onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
@@ -121,6 +140,9 @@ type HomeBaseProps = {
     >,
   ) => void;
   onRemoveDope: (id: string) => void;
+  hasKestrel?: boolean;
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
+  onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
   onStartHunt: () => void;
   onLeave: () => void;
 };
@@ -133,6 +155,7 @@ export function HomeBase({
   dopeCard,
   rifleRoundCounts = {},
   customsMods = EMPTY_CUSTOMS_MODS,
+  customBarrels = {},
   freezerCarcasses = [],
   licenseCount,
   rifleCount,
@@ -141,11 +164,25 @@ export function HomeBase({
   jaktkort,
   unlockedTerrainIds,
   zeroingProfiles,
+  autoSupplyFood,
+  loadBenchRecipe,
+  loadDevTable,
+  loadBook,
+  armedLoadPlan,
   onToggleKit,
+  onSetAutoSupplyFood,
+  onChangeLoadBenchRecipe,
+  onChangeLoadDevTable,
+  onChangeLoadBook,
+  onArmLoadPlan,
+  onDisarmLoadPlan,
   onSellOnFinn,
   onPurchaseJaktkort,
   onUpdateDope,
   onRemoveDope,
+  hasKestrel = false,
+  kestrelProfiles = {},
+  onUpsertKestrelProfile,
   onStartHunt,
   onLeave,
 }: HomeBaseProps) {
@@ -255,8 +292,9 @@ export function HomeBase({
         kitItems,
         customsMods,
         carcasses: [],
+        customBarrels,
       }),
-    [kitItems, customsMods],
+    [kitItems, customsMods, customBarrels],
   );
 
   const freezerSummary = useMemo(() => {
@@ -376,12 +414,29 @@ export function HomeBase({
         onRemoveDope={onRemoveDope}
         onBack={() => setView("main")}
         initialTab={shotlogDopeTab}
+        hasKestrel={hasKestrel}
+        kestrelProfiles={kestrelProfiles}
+        onUpsertKestrelProfile={onUpsertKestrelProfile}
       />
     );
   }
 
   if (view === "laderommet") {
-    return <LaderommetView onBack={() => setView("main")} />;
+    return (
+      <LaderommetView
+        inventory={inventory}
+        recipe={loadBenchRecipe}
+        loadDevTable={loadDevTable}
+        loadBook={loadBook}
+        armedLoadPlan={armedLoadPlan}
+        onChangeRecipe={onChangeLoadBenchRecipe}
+        onChangeLoadDevTable={onChangeLoadDevTable}
+        onChangeLoadBook={onChangeLoadBook}
+        onArmLoadPlan={onArmLoadPlan}
+        onDisarmLoadPlan={onDisarmLoadPlan}
+        onBack={() => setView("main")}
+      />
+    );
   }
 
   if (view === "inatur") {
@@ -440,7 +495,7 @@ export function HomeBase({
             setView("shotlog-dope");
           }}
         >
-          Shotlog/Dope/dV/dT ({shotLog.length}/{dopeCard.length})
+          Shotlog ({shotLog.length}/{dopeCard.length})
         </button>
         <button
           type="button"
@@ -748,6 +803,21 @@ export function HomeBase({
         <p className="intro-line">Tomt skap. XXL venter.</p>
       ) : (
         <ExpandableSection title="Inventory" summary={inventorySummary}>
+          <label className="home-auto-supply">
+            <input
+              type="checkbox"
+              checked={autoSupplyFood}
+              onChange={(e) => onSetAutoSupplyFood(e.target.checked)}
+            />
+            <span>
+              Auto-supply mat og snacks
+              <span className="home-auto-supply-hint">
+                {" "}
+                — pakker brød, boller, baguetter, sjokolade og turmat i kit
+                automatisk
+              </span>
+            </span>
+          </label>
           <div className="home-inventory-groups">
             {INVENTORY_GROUPS.map((group) => {
               const rows = inventoryByGroup.get(group.id) ?? [];

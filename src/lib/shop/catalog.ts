@@ -1,4 +1,5 @@
 import type { CatalogDraft, ShopItem } from "./types";
+import { brandedSpentBrassCatalogDrafts } from "@/lib/reloading/spentBrassData";
 import { isAmmoItem, isCamoItem } from "./types";
 import {
   caliberSortIndex,
@@ -6,6 +7,13 @@ import {
 } from "@/lib/ammo/spec";
 import { resolveWeightGrams } from "./weights";
 import { rifleAverageBestMoa } from "@/lib/rifle/spec";
+import {
+  isReloadStarterKitId,
+  RELOAD_STARTER_DISCOUNT,
+  resolveStarterKitSelection,
+  starterKitContentIds,
+  type StarterKitSelection,
+} from "@/lib/reloading/starterKit";
 
 /**
  * XXL catalog.
@@ -1943,6 +1951,30 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   // Verktøy + komponenter til Laderommet (gameplay kobles senere).
   // unitLabel = salgsenhet (eske / boks / sett).
 
+  // Starterpakke (30 % under stykkpris) — velg kaliber + kule (100 stk) i butikk
+  {
+    id: "reload-xxl-full-kit",
+    category: "reloading",
+    brand: "XXL",
+    name: "Fullt hjemmeladingskit",
+    priceNok: 0, // filled in finalizeCatalog from default .308 choice
+    unitLabel: "pakke",
+    note:
+      "Alt du trenger for å starte: presse, dies, vekt, primer-verktøy, smør, trakt, ladebrett, skyvelære, hylser, tennhetter, krutt og 100 kuler. Velg kaliber og kule ved kjøp. 30 % avslag vs. stykkpris.",
+    // Base tools only — dies/brass/powder/bullet added from caliber choice.
+    bundleItemIds: [
+      "reload-lee-challenger-t2",
+      "reload-lee-safety-scale",
+      "reload-lee-hand-primer",
+      "reload-lee-primer-pocket-cleaner",
+      "reload-lee-powder-funnel",
+      "reload-imperial-sizing-wax",
+      "reload-rcbs-loading-block",
+      "reload-frankford-calipers",
+      "reload-cci-200",
+    ],
+  },
+
   // Presser
   {
     id: "reload-lee-challenger-t2",
@@ -2099,6 +2131,16 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     caliber: "6,5 Creedmoor / 6,5×55",
     unitLabel: "eske 100",
     note: "Tungere Scenar — vindstabil, favoritt på langhold.",
+  },
+  {
+    id: "reload-lapua-scenar-139-65",
+    category: "reloading",
+    brand: "Lapua",
+    name: "Scenar 139 gr",
+    priceNok: 990,
+    caliber: "6,5 Creedmoor / 6,5×55",
+    unitLabel: "eske 100",
+    note: "139 gr Scenar i 6,5 — høy BC, match-kvalitet for Creedmoor og 6,5×55.",
   },
   {
     id: "reload-lapua-lockbase-155-308",
@@ -2282,6 +2324,161 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     priceNok: 900,
     unitLabel: "boks 1 lb",
     note: "Allsidig — .223, .308, og reduserte ladninger der det er trygt.",
+  },
+
+  // Hylser (nye — XXL)
+  {
+    id: "reload-lapua-brass-308",
+    category: "reloading",
+    brand: "Lapua",
+    name: "Brass .308 Win",
+    priceNok: 1290,
+    caliber: ".308 Win",
+    unitLabel: "eske 100",
+    note: "Nye Lapua-hylser — jevn base, lang levetid. God start før felthylser.",
+  },
+  {
+    id: "reload-lapua-brass-65cm",
+    category: "reloading",
+    brand: "Lapua",
+    name: "Brass 6,5 Creedmoor",
+    priceNok: 1350,
+    caliber: "6,5 Creedmoor",
+    unitLabel: "eske 100",
+    note: "Nye Lapua-hylser til 6,5 Creedmoor.",
+  },
+  {
+    id: "reload-norma-brass-65x55",
+    category: "reloading",
+    brand: "Norma",
+    name: "Brass 6,5×55",
+    priceNok: 980,
+    caliber: "6,5×55",
+    unitLabel: "eske 100",
+    note: "Norma-hylser til svensk klassiker.",
+  },
+  {
+    id: "reload-norma-brass-3006",
+    category: "reloading",
+    brand: "Norma",
+    name: "Brass .30-06",
+    priceNok: 1050,
+    caliber: ".30-06",
+    unitLabel: "eske 100",
+    note: "Nye Norma-hylser til .30-06.",
+  },
+  {
+    id: "reload-lapua-brass-223",
+    category: "reloading",
+    brand: "Lapua",
+    name: "Brass .223 Rem",
+    priceNok: 890,
+    caliber: ".223 Rem",
+    unitLabel: "eske 100",
+    note: "Nye Lapua-hylser til .223 Rem.",
+  },
+  {
+    id: "reload-federal-brass-308",
+    category: "reloading",
+    brand: "Federal",
+    name: "Brass .308 Win",
+    priceNok: 790,
+    caliber: ".308 Win",
+    unitLabel: "eske 100",
+    note: "Federal-hylser — rimelig start, litt mer spredning i veggtykkelse.",
+  },
+  {
+    id: "reload-federal-brass-65cm",
+    category: "reloading",
+    brand: "Federal",
+    name: "Brass 6,5 Creedmoor",
+    priceNok: 820,
+    caliber: "6,5 Creedmoor",
+    unitLabel: "eske 100",
+    note: "Federal 6,5 Creedmoor-hylser.",
+  },
+  {
+    id: "reload-hornady-brass-308",
+    category: "reloading",
+    brand: "Hornady",
+    name: "Brass .308 Win",
+    priceNok: 850,
+    caliber: ".308 Win",
+    unitLabel: "eske 100",
+    note: "Hornady-hylser til .308.",
+  },
+  {
+    id: "reload-hornady-brass-65cm",
+    category: "reloading",
+    brand: "Hornady",
+    name: "Brass 6,5 Creedmoor",
+    priceNok: 880,
+    caliber: "6,5 Creedmoor",
+    unitLabel: "eske 100",
+    note: "Hornady-hylser til 6,5 Creedmoor.",
+  },
+
+  // Felthylser (once-fired) — merke følger fabrikkammo / kjent merke
+  // Legacy uten merke (eldre saves) + branded varianter genereres under.
+  {
+    id: "reload-spent-brass-308",
+    category: "reloading",
+    brand: "Felthylse",
+    name: ".308 Win (brukt, ukjent)",
+    priceNok: 0,
+    caliber: ".308 Win",
+    unitLabel: "stk",
+    note: "Once-fired uten kjent merke (eldre samling).",
+  },
+  {
+    id: "reload-spent-brass-65cm",
+    category: "reloading",
+    brand: "Felthylse",
+    name: "6,5 Creedmoor (brukt, ukjent)",
+    priceNok: 0,
+    caliber: "6,5 Creedmoor",
+    unitLabel: "stk",
+    note: "Once-fired uten kjent merke (eldre samling).",
+  },
+  {
+    id: "reload-spent-brass-65x55",
+    category: "reloading",
+    brand: "Felthylse",
+    name: "6,5×55 (brukt, ukjent)",
+    priceNok: 0,
+    caliber: "6,5×55",
+    unitLabel: "stk",
+    note: "Once-fired uten kjent merke (eldre samling).",
+  },
+  {
+    id: "reload-spent-brass-3006",
+    category: "reloading",
+    brand: "Felthylse",
+    name: ".30-06 (brukt, ukjent)",
+    priceNok: 0,
+    caliber: ".30-06",
+    unitLabel: "stk",
+    note: "Once-fired uten kjent merke (eldre samling).",
+  },
+  {
+    id: "reload-spent-brass-223",
+    category: "reloading",
+    brand: "Felthylse",
+    name: ".223 Rem (brukt, ukjent)",
+    priceNok: 0,
+    caliber: ".223 Rem",
+    unitLabel: "stk",
+    note: "Once-fired uten kjent merke (eldre samling).",
+  },
+  {
+    id: "reload-spent-brass-300blk",
+    category: "reloading",
+    brand: "Felthylse",
+    name: ".300 BLK (brukt, ukjent)",
+    priceNok: 0,
+    caliber: ".300 BLK",
+    unitLabel: "stk",
+    note: "Once-fired uten kjent merke (eldre samling).",
   },
 
   // Tennhetter
@@ -3713,23 +3910,63 @@ const CATALOG_DRAFT: CatalogDraft[] = [
 ];
 
 function finalizeCatalog(draft: CatalogDraft[]): ShopItem[] {
-  return draft.map((item) => {
-    const weightGrams = resolveWeightGrams(
+  const withSpent = [...draft, ...brandedSpentBrassCatalogDrafts()];
+  const draftById = new Map(withSpent.map((d) => [d.id, d]));
+
+  function draftPrice(id: string): number {
+    const part = draftById.get(id);
+    if (!part) {
+      throw new Error(`Catalog part missing: ${id}`);
+    }
+    return part.priceNok;
+  }
+
+  function draftWeight(id: string): number {
+    const part = draftById.get(id)!;
+    return resolveWeightGrams(part.id, part.category, part.weightGrams);
+  }
+
+  return withSpent.map((item) => {
+    let priceNok = item.priceNok;
+    let note = item.note;
+    let weightGrams = resolveWeightGrams(
       item.id,
       item.category,
       item.weightGrams,
     );
+
+    if (isReloadStarterKitId(item.id)) {
+      const ids = starterKitContentIds(null);
+      const listPrice = ids.reduce((s, id) => s + draftPrice(id), 0);
+      priceNok = Math.round(listPrice * RELOAD_STARTER_DISCOUNT);
+      weightGrams = ids.reduce((s, id) => s + draftWeight(id), 0);
+      note = `${item.note ?? "Pakkeløsning."} Fra ca. ${priceNok.toLocaleString("nb-NO")} kr (−30 %) avhengig av kaliber/kule.`;
+    } else if (item.bundleItemIds && item.bundleItemIds.length > 0) {
+      let listPrice = 0;
+      let bundleWeight = 0;
+      for (const partId of item.bundleItemIds) {
+        listPrice += draftPrice(partId);
+        bundleWeight += draftWeight(partId);
+      }
+      priceNok = Math.round(listPrice * RELOAD_STARTER_DISCOUNT);
+      weightGrams = bundleWeight;
+      const listFmt = listPrice.toLocaleString("nb-NO");
+      const dealFmt = priceNok.toLocaleString("nb-NO");
+      note = `${item.note ?? "Pakkeløsning."} Listepris ${listFmt} kr → ${dealFmt} kr (−30 %).`;
+    }
+
     if (item.category === "rifle") {
       return {
         ...item,
+        priceNok,
+        note,
         weightGrams,
-        // Source of truth: RIFLE_AVERAGE_BEST_MOA in src/lib/rifle/spec.ts
         rifle: {
           averageBestAccuracyMoa: rifleAverageBestMoa(item.id),
         },
       };
     }
-    return { ...item, weightGrams };
+    return { ...item, priceNok, note, weightGrams };
   }) as ShopItem[];
 }
 
@@ -3738,6 +3975,39 @@ export const SHOP_CATALOG: ShopItem[] = finalizeCatalog(CATALOG_DRAFT);
 /** Full catalog including unobtainable items (for loadouts / gifts). */
 export function getShopItem(id: string): ShopItem | undefined {
   return SHOP_CATALOG.find((item) => item.id === id);
+}
+
+export function starterKitListPriceNok(
+  sel?: Partial<StarterKitSelection> | null,
+): number {
+  return starterKitContentIds(sel).reduce((sum, id) => {
+    const item = getShopItem(id);
+    if (!item) throw new Error(`Starter kit missing part: ${id}`);
+    return sum + item.priceNok;
+  }, 0);
+}
+
+export function starterKitDealPriceNok(
+  sel?: Partial<StarterKitSelection> | null,
+): number {
+  return Math.round(starterKitListPriceNok(sel) * RELOAD_STARTER_DISCOUNT);
+}
+
+export function resolveStarterKitPurchase(sel?: Partial<StarterKitSelection> | null): {
+  selection: StarterKitSelection;
+  contentIds: string[];
+  listPriceNok: number;
+  dealPriceNok: number;
+} {
+  const selection = resolveStarterKitSelection(sel);
+  const contentIds = starterKitContentIds(selection);
+  const listPriceNok = starterKitListPriceNok(selection);
+  return {
+    selection,
+    contentIds,
+    listPriceNok,
+    dealPriceNok: Math.round(listPriceNok * RELOAD_STARTER_DISCOUNT),
+  };
 }
 
 export function isPurchasableInShop(item: ShopItem): boolean {
@@ -3795,6 +4065,14 @@ export function getCatalogByCategory(category: ShopItem["category"]): ShopItem[]
   }
   if (category === "camo") {
     return [...items].sort(compareCamo);
+  }
+  if (category === "reloading") {
+    // Bundles (starter kits) first, then rest in catalog order.
+    return [...items].sort((a, b) => {
+      const aB = a.bundleItemIds?.length ? 1 : 0;
+      const bB = b.bundleItemIds?.length ? 1 : 0;
+      return bB - aB;
+    });
   }
   return items;
 }

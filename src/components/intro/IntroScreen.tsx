@@ -6,6 +6,7 @@ import { generateNickname } from "@/lib/nickname";
 import {
   addToInventory,
   ammoRoundsPerPurchase,
+  applyAutoSupplyFood,
   canApproveNewLicense,
   canBuyHuntingRifle,
   consumeAmmoRound,
@@ -20,6 +21,7 @@ import {
   grantStarterGear,
   grantUncleRifle,
   ensureNamedStarterGear,
+  isAutoSupplyFoodItem,
   isCheatPlayerName,
   isVipPlayerName,
   startingBalanceForName,
@@ -31,14 +33,39 @@ import {
   removeDopeCardEntry,
   unusedLicenseCount,
   consumeInventoryItem,
+  getInventoryQty,
   sellInventoryOnFinn,
   resetRifleBarrel,
+  clearCustomBarrel,
+  installCustomBarrel,
+  armLoadPlan,
+  disarmLoadPlan,
   type PlayerStats,
   type ShotLogEntry,
   type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
+import {
+  ownsKestrelDevice,
+  upsertKestrelProfile as mergeKestrelProfile,
+  type KestrelGunProfile,
+} from "@/lib/ballistics/kestrelProfile";
+import { applyMeasuredSeriesToLoadDevRow } from "@/lib/reloading/loadDevTable";
+import {
+  buildLoadBookEntry,
+  upsertLoadBookEntry,
+} from "@/lib/reloading/loadBook";
+import { computeChronoSeriesStats } from "@/lib/ballistics/kestrelProfile";
 import type { ShopItem } from "@/lib/shop/types";
+import {
+  isReloadStarterKitId,
+  type StarterKitSelection,
+} from "@/lib/reloading/starterKit";
+import { resolveStarterKitPurchase } from "@/lib/shop/catalog";
+import {
+  buildInstalledCustomBarrel,
+  type CustomBarrelConfig,
+} from "@/lib/customs/customBarrel";
 import { StatsFrame } from "@/components/hud/StatsFrame";
 import { StatusBar } from "@/components/hud/StatusBar";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
@@ -145,6 +172,7 @@ export function IntroScreen() {
   const [hunterStatusEnabled, setHunterStatusEnabled] = useState(true);
   const [huntHud, setHuntHud] = useState<HuntHudStatus | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [kaboomNotice, setKaboomNotice] = useState(false);
   const [saveConflict, setSaveConflict] = useState<{
     local: PlayerSaveV1;
     cloud: PlayerSaveV1;
@@ -450,16 +478,51 @@ export function IntroScreen() {
     setPhase("sheriff-applied");
   }
 
-  function buyShopItem(item: ShopItem) {
+  function buyShopItem(
+    item: ShopItem,
+    qty = 1,
+    opts?: { starterKit?: StarterKitSelection },
+  ) {
+    const n = Math.max(1, Math.min(99, Math.floor(qty)));
     setStats((prev) => {
-      if (prev.balance < item.priceNok) return prev;
+      if (isReloadStarterKitId(item.id)) {
+        const purchase = resolveStarterKitPurchase(opts?.starterKit);
+        if (prev.balance < purchase.dealPriceNok) return prev;
+        let inventory = prev.inventory;
+        for (const partId of purchase.contentIds) {
+          inventory = addToInventory(inventory, partId, 1);
+        }
+        return {
+          ...prev,
+          balance: prev.balance - purchase.dealPriceNok,
+          inventory,
+        };
+      }
+      if (item.bundleItemIds && item.bundleItemIds.length > 0) {
+        if (prev.balance < item.priceNok) return prev;
+        let inventory = prev.inventory;
+        for (const partId of item.bundleItemIds) {
+          inventory = addToInventory(inventory, partId, 1);
+        }
+        return {
+          ...prev,
+          balance: prev.balance - item.priceNok,
+          inventory,
+        };
+      }
+      const unitQty = isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
+      const cost = item.priceNok * n;
+      if (prev.balance < cost) return prev;
       if (isRifleItem(item) && !canBuyHuntingRifle(prev)) return prev;
-      const purchaseQty = isAmmoItem(item) ? ammoRoundsPerPurchase(item) : 1;
-      return {
+      let next: PlayerStats = {
         ...prev,
-        balance: prev.balance - item.priceNok,
-        inventory: addToInventory(prev.inventory, item.id, purchaseQty),
+        balance: prev.balance - cost,
+        inventory: addToInventory(prev.inventory, item.id, unitQty * n),
       };
+      if (isAutoSupplyFoodItem(item)) {
+        next = applyAutoSupplyFood(next);
+      }
+      return next;
     });
   }
 
@@ -669,11 +732,29 @@ export function IntroScreen() {
       const item = resolvePlayerItem(rifleId);
       if (!item || item.category !== "rifle") return prev;
       const rounds = prev.rifleRoundCounts[rifleId] ?? 0;
-      if (rounds <= 0) return prev;
+      const hasCustom = prev.customBarrels[rifleId] != null;
+      if (rounds <= 0 && !hasCustom) return prev;
       return resetRifleBarrel(
-        { ...prev, balance: prev.balance - BARREL_REPLACE_NOK },
+        clearCustomBarrel(
+          { ...prev, balance: prev.balance - BARREL_REPLACE_NOK },
+          rifleId,
+        ),
         rifleId,
       );
+    });
+  }
+
+  function installCustomsCustomBarrel(
+    rifleId: string,
+    config: CustomBarrelConfig,
+    priceNok: number,
+  ) {
+    setStats((prev) => {
+      const item = resolvePlayerItem(rifleId);
+      if (!item || item.category !== "rifle") return prev;
+      if (prev.balance < priceNok) return prev;
+      const barrel = buildInstalledCustomBarrel(config, rifleId, priceNok);
+      return installCustomBarrel(prev, rifleId, barrel, priceNok);
     });
   }
 
@@ -682,6 +763,10 @@ export function IntroScreen() {
       const result = consumeAmmoRound(statsRef.current, ammoId, { rifleId });
       if (!result.ok) return false;
       setStats(result.stats);
+      if (result.kaboom) {
+        setKaboomNotice(true);
+        return false;
+      }
       return true;
     },
     [],
@@ -760,11 +845,57 @@ export function IntroScreen() {
     }));
   }, []);
 
-  const logRangeSeries = useCallback((entry: ShotLogEntry) => {
+  const upsertKestrelProfile = useCallback((profile: KestrelGunProfile) => {
     setStats((prev) => ({
       ...prev,
-      shotLog: appendShotLogEntry(prev.shotLog, entry),
+      kestrelProfiles: mergeKestrelProfile(prev.kestrelProfiles, profile),
     }));
+  }, []);
+
+  const logRangeSeries = useCallback((entry: ShotLogEntry) => {
+    setStats((prev) => {
+      let next: PlayerStats = {
+        ...prev,
+        shotLog: appendShotLogEntry(prev.shotLog, entry),
+      };
+      const rowId = prev.armedLoadPlan?.loadDevRowId;
+      if (rowId) {
+        const chronoStats = entry.chronoV0Mps?.length
+          ? computeChronoSeriesStats(entry.chronoV0Mps)
+          : null;
+        const table = applyMeasuredSeriesToLoadDevRow(
+          next.loadDevTable,
+          rowId,
+          {
+            meanV0Mps: chronoStats?.meanMps ?? null,
+            highV0Mps: chronoStats?.highMps ?? null,
+            lowV0Mps: chronoStats?.lowMps ?? null,
+            stdevV0Mps: chronoStats?.stdevMps ?? null,
+            groupMoa: entry.groupMoa,
+            extremeSpreadMm: entry.extremeSpreadMm,
+            seriesId: entry.id,
+          },
+        );
+        const row = table.rows.find((r) => r.id === rowId);
+        next = { ...next, loadDevTable: table };
+        if (row) {
+          next = {
+            ...next,
+            loadBook: upsertLoadBookEntry(
+              next.loadBook,
+              buildLoadBookEntry({
+                caliberKey:
+                  prev.armedLoadPlan?.caliberKey ??
+                  prev.loadBenchRecipe.caliberKey,
+                row,
+                brassItemId: prev.loadBenchRecipe.brassItemId,
+              }),
+            ),
+          };
+        }
+      }
+      return next;
+    });
   }, []);
 
   function toggleKit(itemId: string) {
@@ -839,6 +970,7 @@ export function IntroScreen() {
   function startHunt() {
     if (!stats.selectedHuntingTerrainId || !stats.jaktkort) return;
     if (stats.jaktkort.daysRemaining <= 0) return;
+    setStats((prev) => applyAutoSupplyFood(prev));
     setLocation(null);
     clearHuntHud();
     setPhase("hunt");
@@ -888,10 +1020,24 @@ export function IntroScreen() {
     const prev = statsRef.current;
     const result = consumeInventoryItem(prev.inventory, itemId, 1);
     if (!result.ok) return false;
-    const next = { ...prev, inventory: result.inventory };
+    let kit = prev.kit;
+    if (getInventoryQty(result.inventory, itemId) === 0) {
+      kit = kit.filter((id) => id !== itemId);
+    }
+    const next = applyAutoSupplyFood({
+      ...prev,
+      inventory: result.inventory,
+      kit,
+    });
     statsRef.current = next;
     setStats(next);
     return true;
+  }
+
+  function setAutoSupplyFood(enabled: boolean) {
+    setStats((prev) =>
+      applyAutoSupplyFood({ ...prev, autoSupplyFood: enabled }),
+    );
   }
 
   function headIntoTown() {
@@ -1121,9 +1267,11 @@ export function IntroScreen() {
               .filter((x): x is ShopItem => x != null)}
             inventory={stats.inventory}
             rifleRoundCounts={stats.rifleRoundCounts}
+            customBarrels={stats.customBarrels}
             onBuyService={buyCustomsService}
             onOrderHomeLoads={orderCustomsHomeLoads}
             onReplaceBarrel={replaceCustomsBarrel}
+            onInstallCustomBarrel={installCustomsCustomBarrel}
             onLeave={backToTown}
           />
         )}
@@ -1180,6 +1328,7 @@ export function IntroScreen() {
             dopeCard={stats.dopeCard}
             rifleRoundCounts={stats.rifleRoundCounts}
             customsMods={stats.customsMods}
+            customBarrels={stats.customBarrels}
             freezerCarcasses={stats.freezerCarcasses}
             licenseCount={stats.weaponLicenses.length}
             rifleCount={countHuntingRifles(stats)}
@@ -1188,11 +1337,38 @@ export function IntroScreen() {
             jaktkort={stats.jaktkort}
             unlockedTerrainIds={stats.unlockedTerrainIds}
             zeroingProfiles={stats.zeroingProfiles}
+            autoSupplyFood={stats.autoSupplyFood}
+            loadBenchRecipe={stats.loadBenchRecipe}
+            loadDevTable={stats.loadDevTable}
+            loadBook={stats.loadBook}
+            armedLoadPlan={stats.armedLoadPlan}
             onToggleKit={toggleKit}
+            onSetAutoSupplyFood={setAutoSupplyFood}
+            onChangeLoadBenchRecipe={(recipe) =>
+              setStats((prev) => ({ ...prev, loadBenchRecipe: recipe }))
+            }
+            onChangeLoadDevTable={(table) =>
+              setStats((prev) => ({ ...prev, loadDevTable: table }))
+            }
+            onChangeLoadBook={(book) =>
+              setStats((prev) => ({ ...prev, loadBook: book }))
+            }
+            onArmLoadPlan={(plan) =>
+              setStats((prev) => armLoadPlan(prev, plan))
+            }
+            onDisarmLoadPlan={() =>
+              setStats((prev) => disarmLoadPlan(prev))
+            }
             onSellOnFinn={sellOnFinn}
             onPurchaseJaktkort={selectHuntingTerrain}
             onUpdateDope={updateDopeEntry}
             onRemoveDope={removeDopeEntry}
+            hasKestrel={ownsKestrelDevice(
+              stats.inventory.map((e) => e.itemId),
+              stats.kit,
+            )}
+            kestrelProfiles={stats.kestrelProfiles}
+            onUpsertKestrelProfile={upsertKestrelProfile}
             onStartHunt={startHunt}
             onLeave={backToTown}
           />
@@ -1208,7 +1384,9 @@ export function IntroScreen() {
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
             rifleRoundCounts={stats.rifleRoundCounts}
+            customBarrels={stats.customBarrels}
             dopeCard={stats.dopeCard}
+            kestrelProfiles={stats.kestrelProfiles}
             customsMods={stats.customsMods}
             weather={weather}
             musicEnabled={musicEnabled}
@@ -1249,6 +1427,7 @@ export function IntroScreen() {
             ammoAffinities={stats.ammoAffinities}
             zeroingProfiles={stats.zeroingProfiles}
             rifleRoundCounts={stats.rifleRoundCounts}
+            customBarrels={stats.customBarrels}
             shotLog={stats.shotLog}
             dopeCard={stats.dopeCard}
             weather={weather}
@@ -1282,6 +1461,17 @@ export function IntroScreen() {
             onUpdateDope={updateDopeEntry}
             onRemoveDope={removeDopeEntry}
             onLogSeries={logRangeSeries}
+            kestrelProfiles={stats.kestrelProfiles}
+            onUpsertKestrelProfile={upsertKestrelProfile}
+            loadDevTable={stats.loadDevTable}
+            loadBenchRecipe={stats.loadBenchRecipe}
+            armedLoadPlan={stats.armedLoadPlan}
+            onArmLoadPlan={(plan) =>
+              setStats((prev) => armLoadPlan(prev, plan))
+            }
+            onDisarmLoadPlan={() =>
+              setStats((prev) => disarmLoadPlan(prev))
+            }
             musicEnabled={musicEnabled}
             onLeave={backToTown}
           />
@@ -1368,6 +1558,33 @@ export function IntroScreen() {
           danger
           onConfirm={confirmDeleteUserAndRestart}
           onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      ) : null}
+
+      {kaboomNotice ? (
+        <GameConfirmDialog
+          title="Våpen sprengt"
+          message={
+            "Overtrykk i ladeplanen detonerte våpenet.\n" +
+            "Rifle, pipe, stokk, bedding og all CB Customs-customisering er tapt.\n" +
+            "Du er uskadd — men du må skaffe nytt våpen og starte oppsettet på nytt."
+          }
+          confirmLabel="Forstått"
+          cancelLabel="Lukk"
+          danger
+          onConfirm={() => {
+            setKaboomNotice(false);
+            if (phase === "hunt") {
+              // Drop back to town if still in hunt with no rifle.
+              setPhase("town");
+              setLocation(null);
+              setHuntHud(null);
+            } else if (location === "shooting-range") {
+              setLocation(null);
+              setPhase("town");
+            }
+          }}
+          onCancel={() => setKaboomNotice(false)}
         />
       ) : null}
 
