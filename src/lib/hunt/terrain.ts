@@ -44,7 +44,8 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "ostlandet-budsjett",
     name: "Gammel hogst",
     region: "Østlandet",
-    blurb: "Billig leie, tynt med fugl (10 tiur) — men du kommer deg ut.",
+    blurb:
+      "Billig leie, tynt med fugl (10 tiur) — gamle hogstkanter med litt furu og bjørk. Du kommer deg ut.",
     pricePerDayNok: 250,
     tiurRating: 1,
     orrhaneRating: 2,
@@ -55,7 +56,8 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "ostlandet-standard",
     name: "Bjørkeskog",
     region: "Østlandet",
-    blurb: "Middels pris og middels fugl (15 tiur) — trygg standard.",
+    blurb:
+      "Middels pris og middels fugl (15 tiur) — bjørkekanter der orre beiter, fururrygger for tiur.",
     pricePerDayNok: 500,
     tiurRating: 3,
     orrhaneRating: 3,
@@ -66,7 +68,8 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "trondelag",
     name: "Myrkanter",
     region: "Trøndelag",
-    blurb: "Dyreste inatur-teig — fullt med fugl (20 tiur). Parker i A7.",
+    blurb:
+      "Dyreste inatur-teig — myrkanter og furuhøyder, fullt med fugl (20 tiur). Parker i A7.",
     pricePerDayNok: 1000,
     tiurRating: 4,
     orrhaneRating: 5,
@@ -77,7 +80,8 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "inatur-hogstflate",
     name: "Hogstflate nord",
     region: "Østlandet",
-    blurb: "Nytt inatur-felt med tydelige orrekanter og tiurtopper i tett skog.",
+    blurb:
+      "Frøfurufelt og hogstkanter — orre langs beite og bjørk, tiur på furutoppene.",
     pricePerDayNok: 750,
     tiurRating: 3,
     orrhaneRating: 4,
@@ -85,10 +89,12 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     access: "inatur",
   },
   {
+    /** Legacy id — display name is furuskog (saves keep this key). */
     id: "inatur-granskog",
-    name: "Granskog sør",
+    name: "Furuskog sør",
     region: "Østlandet",
-    blurb: "Klassisk granskog — bra med tiur i mørke bestånd, orre i åpningene.",
+    blurb:
+      "Klassisk furuskog — tiur på myrer og høyder, orre i frøfelt og bjørkekanter.",
     pricePerDayNok: 900,
     tiurRating: 4,
     orrhaneRating: 3,
@@ -99,7 +105,8 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     id: "svenskegrensa",
     name: "Svenskegrensa",
     region: "Østlandet",
-    blurb: "Langs grensa — variert terreng med mange markerte sitteplasser.",
+    blurb:
+      "Langs grensa — fururrygger, myrer og mange markerte sitteplasser.",
     pricePerDayNok: 1100,
     tiurRating: 4,
     orrhaneRating: 4,
@@ -111,7 +118,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Finnskogen",
     region: "Østlandet / Finnskogen",
     blurb:
-      "VIP-teig — tett skog og gode sitteplasser. Dagskort 1500 kr · tiur 4/5 · orrfugl 4/5.",
+      "VIP-teig — furuskog, myrkanter og gode sitteplasser. Dagskort 1500 kr · tiur 4/5 · orrfugl 4/5.",
     pricePerDayNok: 1500,
     tiurRating: 4,
     orrhaneRating: 4,
@@ -123,7 +130,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Stubbens teig",
     region: "Østlandet",
     blurb:
-      "Kari Stubb sitt lille stykke (10 tiur). «Ikke skyt mot hytta. Den er forsikret, men jeg er ikke.»",
+      "Kari Stubb sitt lille stykke (10 tiur) — litt furu, litt bjørk. «Ikke skyt mot hytta. Den er forsikret, men jeg er ikke.»",
     pricePerDayNok: 350,
     tiurRating: 2,
     orrhaneRating: 3,
@@ -136,7 +143,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Kristian Olav sin li",
     region: "Østlandet",
     blurb:
-      "Kristian Olav sin skråning (15 tiur). Bra med orre — hvis du ikke tråkker i potetene.",
+      "Kristian Olav sin skråning (15 tiur) — orre i bjørk og beite, tiur opp mot furua. Ikke tråkk i potetene.",
     pricePerDayNok: 800,
     tiurRating: 3,
     orrhaneRating: 4,
@@ -149,7 +156,7 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     name: "Løvenskiolds finmark",
     region: "Østlandet / «privat»",
     blurb:
-      "Carl Otto Løvenskiolds fineste (20 tiur). Du er gjest — oppfør deg deretter.",
+      "Carl Otto Løvenskiolds fineste (20 tiur) — myr, furuhøyder og orrekanter. Du er gjest — oppfør deg deretter.",
     pricePerDayNok: 6000,
     tiurRating: 5,
     orrhaneRating: 5,

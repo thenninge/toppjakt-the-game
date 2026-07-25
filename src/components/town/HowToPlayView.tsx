@@ -77,6 +77,7 @@ const SECTIONS: GuideSection[] = [
     bullets: [
       "Pace styrer tid, flush-risiko og (ved extreme caution) sjanse for auto-spot.",
       "Extreme caution / caution: færre flush, mer tid. Rush: raskere, mer stress på fugl.",
+      "Habitat: tiur på myrer og furuhøyder; orre i frøfurufelt, beite og bjørk.",
       "Første spook flytter fuglen. Andre spook → borte fra jakten.",
       "Subsonic + demper = stille skudd — fugler flusher ikke av skuddet.",
       "Aware: nervøsitet bygger med nærhet/bevegelse. Camcorder-oppsett gjør dem mer nervøse.",

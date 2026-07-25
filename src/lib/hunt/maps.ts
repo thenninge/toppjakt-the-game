@@ -84,11 +84,11 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
   inatur2: {
     id: "inatur2",
     src: "/maps/inatur2.png",
-    label: "Granskog sør",
+    label: "Furuskog sør",
     regionHint: "Østlandet",
     cols: 7,
     rows: 6,
-    /** Cyan marker in startingpoint/granskog_sør_start.png */
+    /** Cyan marker in startingpoint/granskog_sør_start.png (legacy filename). */
     start: { row: 2, col: 2 }, // C3
     playable: true,
   },
