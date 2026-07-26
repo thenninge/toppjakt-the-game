@@ -18,6 +18,7 @@ import {
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
 import { getBirdHitZone } from "@/lib/hunt/birdHitZoneOverrides";
+import { SCOPE_ZOOM_MAG_CAL } from "@/lib/range/precision";
 
 /** @deprecated Prefer sprite.toppSrc via getBirdSprite. */
 export const TIUR_TARGET_SRC = "/images/birds/tiur/tiurtopp1.png";
@@ -399,7 +400,8 @@ export function birdScopeImageScale(
       ? widthPctOverride
       : spriteWidthPctForDistance(distanceM, spriteId);
   const widthFracOfFov = (widthPct * Math.max(1, zoom)) / 100;
-  const desiredWidthPx = SCOPE_VIEWPORT_REF_PX * widthFracOfFov;
+  const desiredWidthPx =
+    SCOPE_VIEWPORT_REF_PX * widthFracOfFov * SCOPE_ZOOM_MAG_CAL;
   return Math.max(0.01, desiredWidthPx / Math.max(1, nativeW));
 }
 

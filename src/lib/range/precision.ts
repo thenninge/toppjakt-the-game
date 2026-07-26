@@ -75,6 +75,13 @@ const SCOPE_FOV_CAL_RADIUS_PX = (448 / 2) * 1.15;
 export const SCOPE_FOV_DIAMETER_ZOOM_IN = 16 / 14;
 
 /**
+ * Engraved max power vs felt mag (ZCO): @ 27× glass felt ≈25× (too much
+ * reticle in circle). Multiply shared image scale so 27× matches 27×.
+ * Also applied to hunt birds ({@link birdScopeImageScale}) so sprites follow.
+ */
+export const SCOPE_ZOOM_MAG_CAL = 27 / 25;
+
+/**
  * Live hold-over fine-tune vs dialed POI.
  * With angular reticle↔target scale, dial mils already match glass — keep 1.
  * (Old 40/45 shrink made 45 clicks read as ~5 mrad on the reticle.)
@@ -85,7 +92,7 @@ export const RETICLE_SUBTENSION_CAL = 1;
  * Image CSS scale at 1× optical. Base formula targets ±7 mrad at
  * {@link SCOPE_FOV_CAL_ZOOM}×, then × measured/cal so the old
  * {@link SCOPE_FOV_MEASURED_ZOOM}× view lands on 27×, then ×
- * {@link SCOPE_FOV_DIAMETER_ZOOM_IN}.
+ * {@link SCOPE_FOV_DIAMETER_ZOOM_IN}, then × {@link SCOPE_ZOOM_MAG_CAL}.
  */
 export const SCOPE_IMAGE_SCALE_PER_ZOOM =
   (SCOPE_FOV_CAL_RADIUS_PX /
@@ -94,7 +101,8 @@ export const SCOPE_IMAGE_SCALE_PER_ZOOM =
       SCOPE_FOV_CAL_ZOOM *
       RETICLE_SUBTENSION_CAL)) *
   (SCOPE_FOV_MEASURED_ZOOM / SCOPE_FOV_CAL_ZOOM) *
-  SCOPE_FOV_DIAMETER_ZOOM_IN;
+  SCOPE_FOV_DIAMETER_ZOOM_IN *
+  SCOPE_ZOOM_MAG_CAL;
 
 /**
  * Undo the old “readable” 10× paper exaggeration on the zeroing lane.

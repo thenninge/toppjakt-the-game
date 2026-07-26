@@ -45,6 +45,7 @@ Reticle id `zco-527-mpct` · asset `zco527b.png` · scope `scope-zco-527-mct`
 | `opticalCenterX/Y` | `907.615` / `892.75` | −10.7 klikk X, +5 klikk Y from geometric guess |
 | `imageRotationDeg` | `0.02` | CW, around optical centre |
 | FOV at 27× | ±7 mrad (14 mrad edge-to-edge) | `SCOPE_FOV_*` + `SCOPE_FOV_DIAMETER_ZOOM_IN = 16/14` |
+| Felt mag @ 27× | ×`SCOPE_ZOOM_MAG_CAL` (27/25) | shared image scale + hunt birds |
 
 Global FOV constants in `precision.ts` were locked against ZCO max power. Other
 scopes share that world scale; only change globals if the *shared* FOV is wrong.
