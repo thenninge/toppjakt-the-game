@@ -83,6 +83,7 @@ import {
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
   formatHuntImpactOffsetMm,
+  HEADSHOT_AAR_TEXT,
   SCOPE_VIEWPORT_REF_PX,
   TRIGGERCAM_ITEM_ID,
   type HuntShotResult,
@@ -719,6 +720,7 @@ export function HuntShootView({
       selectedAmmo.ammo.damageFactor,
       Math.random,
       shotGeom,
+      birdFlip,
     );
     const ammoLive = ammoAtPowderTemp(
       selectedAmmo.ammo,
@@ -815,7 +817,9 @@ export function HuntShootView({
     }
     setStatus(
       (kind === "instant_kill"
-        ? pullLabel + "Instant kill (grønn sone)!"
+        ? zone === "head"
+          ? pullLabel + "Headshot — Pink Mist!"
+          : pullLabel + "Instant kill (grønn sone)!"
         : kind === "vital_kill"
           ? pullLabel + "Vitalt treff — fuglen faller."
           : kind === "ettersok"
@@ -1218,12 +1222,15 @@ export function HuntShootView({
   }
 
   const reticleScale = scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M);
+  const birdWidthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
   const targetScale = birdScopeImageScale(
     zoom,
     scope.scope,
     trueDistanceM,
     shotGeom.nativeW,
     birdSpriteId,
+    // Landscape hunt: use placement width (perch/sprite scales) not bare 1/d.
+    landscapeSrc ? birdWidthPct : undefined,
   );
   const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
   // Flipped sprite mirrors vital X around image centre — keep reticle on chest.
@@ -1233,7 +1240,6 @@ export function HuntShootView({
   targetScaleRef.current = targetScale;
   vitalOffRef.current = vitalOff;
 
-  const birdWidthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
   const sceneW = landscapeSrc
     ? shotGeom.nativeW * (100 / birdWidthPct)
     : shotGeom.nativeW;
@@ -1296,7 +1302,11 @@ export function HuntShootView({
           zone: replay.zone,
           kind: replay.kind,
         }}
-        subtitle={`${status} · treff ${formatHuntImpactOffsetMm(lastImpact.xMm, lastImpact.yMm)} (fra vital-senter) · sone ${replay.zone}`}
+        subtitle={
+          replay.zone === "head"
+            ? HEADSHOT_AAR_TEXT
+            : `${status} · treff ${formatHuntImpactOffsetMm(lastImpact.xMm, lastImpact.yMm)} (fra vital-senter) · sone ${replay.zone}`
+        }
         onContinue={() => onShotResult(replay)}
       />
     );

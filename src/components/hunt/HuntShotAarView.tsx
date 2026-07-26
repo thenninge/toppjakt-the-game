@@ -5,6 +5,8 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   formatHuntImpactOffsetMm,
+  headOffsetFromVitalMm,
+  HEADSHOT_AAR_TEXT,
   type HuntShotResultKind,
   type HuntShotZone,
 } from "@/lib/hunt/shoot";
@@ -54,6 +56,8 @@ export function HuntShotAarView({
 
   const greenD = mmToPx(geom.instantDiameterMm) * aarScale;
   const redD = mmToPx(geom.vitalDiameterMm) * aarScale;
+  const yellowD = mmToPx(geom.headDiameterMm) * aarScale;
+  const headOff = headOffsetFromVitalMm(geom, birdFlip);
   const holeD = Math.max(6, mmToPx(hit.diameterMm) * aarScale);
   const hitX =
     (geom.nativeW / 2 + vitalOff.x + mmToPx(hit.xMm)) * aarScale;
@@ -61,10 +65,15 @@ export function HuntShotAarView({
     (geom.nativeH / 2 + vitalOff.y + mmToPx(hit.yMm)) * aarScale;
   const zoneCx = (geom.nativeW / 2 + vitalOff.x) * aarScale;
   const zoneCy = (geom.nativeH / 2 + vitalOff.y) * aarScale;
+  const headCx = zoneCx + mmToPx(headOff.xMm) * aarScale;
+  const headCy = zoneCy + mmToPx(headOff.yMm) * aarScale;
 
+  const isHeadshot = hit.zone === "head";
   const detail =
     subtitle ??
-    `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`;
+    (isHeadshot
+      ? HEADSHOT_AAR_TEXT
+      : `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`);
 
   return (
     <div
@@ -117,6 +126,20 @@ export function HuntShotAarView({
               marginTop: -greenD / 2,
             }}
           />
+          {geom.headDiameterMm > 0 ? (
+            <span
+              className="triggercam-zone triggercam-zone--head"
+              style={{
+                width: yellowD,
+                height: yellowD,
+                left: headCx,
+                top: headCy,
+                marginLeft: -yellowD / 2,
+                marginTop: -yellowD / 2,
+              }}
+              title="Headshot"
+            />
+          ) : null}
           <span
             className="bullet-hole triggercam-aar-hole"
             style={{
@@ -130,7 +153,9 @@ export function HuntShotAarView({
           />
         </div>
         <p className="spot-binos-hint">
-          Rød ring = vital · grønn = instant kill · rødt hull = treffpunkt
+          {isHeadshot
+            ? "Gul sone — headshot · instant kill"
+            : "Gul = headshot · grønn = bryst · rød = vital · rødt hull = treffpunkt"}
         </p>
         <button type="button" className="intro-button" onClick={onContinue}>
           {continueLabel}

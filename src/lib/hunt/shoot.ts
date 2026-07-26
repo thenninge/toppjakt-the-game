@@ -28,6 +28,13 @@ export const TIUR_IMAGE_NATIVE_H = 138;
 /** XXL misc — after-action impact replay on hunt shots. */
 export const TRIGGERCAM_ITEM_ID = "misc-triggercam";
 
+/** Headshot reward — player nickname after a yellow-zone kill. */
+export const PINK_MIST_NICKNAME = "Pink Mist";
+
+/** Triggercam / fasit copy when `zone === "head"`. */
+export const HEADSHOT_AAR_TEXT =
+  'Brains is everywhere but in the cranium. Your new nickname is now "Pink Mist"';
+
 /** Tripod camcorder — better ettersøk overview; deploy costs nerve. */
 export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
 
@@ -75,7 +82,7 @@ export type HuntShotResultKind =
   | "ettersok"
   | "miss";
 
-export type HuntShotZone = "instant" | "vital" | "body" | "none";
+export type HuntShotZone = "head" | "instant" | "vital" | "body" | "none";
 
 export type HuntShotResult = {
   kind: HuntShotResultKind;
@@ -136,6 +143,14 @@ export type BirdShotGeom = {
   instantDiameterMm: number;
   /** Red vital-ring diameter (mm) — catalog or admin override. */
   vitalDiameterMm: number;
+  headCxPx: number;
+  headCyPx: number;
+  headDiameterMm: number;
+  bodyRxMm: number;
+  bodyRyMm: number;
+  bodyOffsetXMm: number;
+  bodyOffsetYMm: number;
+  bodyRotationDeg: number;
 };
 
 export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
@@ -159,6 +174,14 @@ export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
     spriteWidthMm,
     instantDiameterMm: zone.instantDiameterMm,
     vitalDiameterMm: zone.vitalDiameterMm,
+    headCxPx: zone.headCxPx,
+    headCyPx: zone.headCyPx,
+    headDiameterMm: zone.headDiameterMm,
+    bodyRxMm: zone.bodyRxMm,
+    bodyRyMm: zone.bodyRyMm,
+    bodyOffsetXMm: zone.bodyOffsetXMm,
+    bodyOffsetYMm: zone.bodyOffsetYMm,
+    bodyRotationDeg: zone.bodyRotationDeg,
   };
 }
 
@@ -206,6 +229,9 @@ export function tiurVitalOffsetFromImageCenterPx(): { x: number; y: number } {
  *
  * Matches spotting binos circular FOV: bird width as fraction of the
  * visible circle ≈ spriteWidthPct(distance) × mag / 100.
+ *
+ * Pass `widthPct` from the placement when available so perch/sprite admin
+ * scales match spotting (recomputing from distance alone drops those).
  */
 export function birdScopeImageScale(
   zoom: number,
@@ -213,8 +239,14 @@ export function birdScopeImageScale(
   distanceM: number,
   nativeW: number,
   spriteId?: BirdSpriteId,
+  widthPctOverride?: number,
 ): number {
-  const widthPct = spriteWidthPctForDistance(distanceM, spriteId);
+  const widthPct =
+    widthPctOverride != null &&
+    Number.isFinite(widthPctOverride) &&
+    widthPctOverride > 0
+      ? widthPctOverride
+      : spriteWidthPctForDistance(distanceM, spriteId);
   const widthFracOfFov = (widthPct * Math.max(1, zoom)) / 100;
   const desiredWidthPx = SCOPE_VIEWPORT_REF_PX * widthFracOfFov;
   return Math.max(0.01, desiredWidthPx / Math.max(1, nativeW));
@@ -267,31 +299,80 @@ export function isVitalAreaHit(
 }
 
 /**
- * Loose body ellipse in mm relative to vital (covers torso/neck of sprite).
- * Outside = clean miss (tree / air).
+ * Body ellipse relative to vital (mm).
+ * Admin-calibrated; outside = clean miss.
+ * When `birdFlip`, offset X and rotation mirror with the sprite.
  */
+export function bodyEllipseFromVitalMm(
+  geom?: Pick<
+    BirdShotGeom,
+    | "spriteWidthMm"
+    | "spriteHeightMm"
+    | "bodyRxMm"
+    | "bodyRyMm"
+    | "bodyOffsetXMm"
+    | "bodyOffsetYMm"
+    | "bodyRotationDeg"
+  >,
+  birdFlip = false,
+): {
+  rxMm: number;
+  ryMm: number;
+  offsetXMm: number;
+  offsetYMm: number;
+  rotationDeg: number;
+} {
+  const w = geom?.spriteWidthMm ?? TIUR_SPRITE_WIDTH_MM;
+  const h = geom?.spriteHeightMm ?? TIUR_SPRITE_HEIGHT_MM;
+  const rxMm = geom?.bodyRxMm ?? w * 0.26;
+  const ryMm = geom?.bodyRyMm ?? h * 0.32;
+  let offsetXMm = geom?.bodyOffsetXMm ?? 0;
+  const offsetYMm = geom?.bodyOffsetYMm ?? h * 0.04;
+  let rotationDeg = geom?.bodyRotationDeg ?? 0;
+  if (birdFlip) {
+    offsetXMm = -offsetXMm;
+    rotationDeg = -rotationDeg;
+  }
+  return { rxMm, ryMm, offsetXMm, offsetYMm, rotationDeg };
+}
+
 export function isBodyHit(
   xMm: number,
   yMm: number,
-  geom?: Pick<BirdShotGeom, "spriteWidthMm" | "spriteHeightMm">,
+  geom?: Pick<
+    BirdShotGeom,
+    | "spriteWidthMm"
+    | "spriteHeightMm"
+    | "bodyRxMm"
+    | "bodyRyMm"
+    | "bodyOffsetXMm"
+    | "bodyOffsetYMm"
+    | "bodyRotationDeg"
+  >,
+  birdFlip = false,
 ): boolean {
-  const w = geom?.spriteWidthMm ?? TIUR_SPRITE_WIDTH_MM;
-  const h = geom?.spriteHeightMm ?? TIUR_SPRITE_HEIGHT_MM;
-  const rx = w * 0.42;
-  const ry = h * 0.48;
-  const cy = 25;
-  const nx = xMm / rx;
-  const ny = (yMm - cy) / ry;
+  const { rxMm, ryMm, offsetXMm, offsetYMm, rotationDeg } =
+    bodyEllipseFromVitalMm(geom, birdFlip);
+  if (rxMm <= 0 || ryMm <= 0) return false;
+  const dx = xMm - offsetXMm;
+  const dy = yMm - offsetYMm;
+  const rad = (-rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  const nx = lx / rxMm;
+  const ny = ly / ryMm;
   return nx * nx + ny * ny <= 1;
 }
 
 /**
  * In the red ring (outside green), higher damageFactor → more often clean kill.
  * Match OTM (~0.18) often needs ettersøk; aggressive SP (~0.8) usually drops.
+ * @deprecated Red ring is always short ettersøk; kept for AAR / legacy callers.
  */
 export function vitalRingCleanKillChance(damageFactor: number): number {
   const d = Math.max(0, Math.min(1, damageFactor));
-  // ~0.22 at 0.18 · ~0.55 at 0.55 · ~0.88 at 0.85
   return 0.1 + d * 0.9;
 }
 
@@ -302,32 +383,95 @@ export function rollVitalRingKill(
   return random() < vitalRingCleanKillChance(damageFactor);
 }
 
+/**
+ * Hit ladder:
+ * - Yellow head: instant kill (headshot)
+ * - Green chest: instant kill (drops)
+ * - Red: vital → short ettersøk
+ * - Body ellipse: wound → long ettersøk (near max fly radius)
+ * - Outside: miss (unharmed)
+ */
+export function headOffsetFromVitalMm(
+  geom: Pick<
+    BirdShotGeom,
+    | "nativeH"
+    | "spriteHeightMm"
+    | "vitalCxPx"
+    | "vitalCyPx"
+    | "headCxPx"
+    | "headCyPx"
+  >,
+  birdFlip = false,
+): { xMm: number; yMm: number } {
+  const pxPerMm = birdNativePxPerMm(geom);
+  let xMm = (geom.headCxPx - geom.vitalCxPx) / pxPerMm;
+  const yMm = (geom.headCyPx - geom.vitalCyPx) / pxPerMm;
+  if (birdFlip) xMm = -xMm;
+  return { xMm, yMm };
+}
+
+export function isHeadshotHit(
+  xMm: number,
+  yMm: number,
+  geom: Pick<
+    BirdShotGeom,
+    | "nativeH"
+    | "spriteHeightMm"
+    | "vitalCxPx"
+    | "vitalCyPx"
+    | "headCxPx"
+    | "headCyPx"
+    | "headDiameterMm"
+  >,
+  birdFlip = false,
+): boolean {
+  const d = geom.headDiameterMm;
+  if (!(d > 0)) return false;
+  const off = headOffsetFromVitalMm(geom, birdFlip);
+  return inCircleMm(xMm - off.xMm, yMm - off.yMm, d);
+}
+
 export function classifyHuntShot(
   xMm: number,
   yMm: number,
-  damageFactor: number,
-  random: () => number = Math.random,
+  _damageFactor: number,
+  _random: () => number = Math.random,
   geom?: Pick<
     BirdShotGeom,
-    | "spriteWidthMm"
+    | "nativeH"
     | "spriteHeightMm"
+    | "spriteWidthMm"
+    | "vitalCxPx"
+    | "vitalCyPx"
     | "instantDiameterMm"
     | "vitalDiameterMm"
+    | "headCxPx"
+    | "headCyPx"
+    | "headDiameterMm"
+    | "bodyRxMm"
+    | "bodyRyMm"
+    | "bodyOffsetXMm"
+    | "bodyOffsetYMm"
+    | "bodyRotationDeg"
   >,
+  birdFlip = false,
 ): { kind: HuntShotResultKind; zone: HuntShotZone } {
   const instantD = geom?.instantDiameterMm ?? TIUR_INSTANT_KILL_DIAMETER_MM;
   const vitalD = geom?.vitalDiameterMm ?? TIUR_VITAL_DIAMETER_MM;
+  if (
+    geom &&
+    geom.headDiameterMm > 0 &&
+    isHeadshotHit(xMm, yMm, geom, birdFlip)
+  ) {
+    return { kind: "instant_kill", zone: "head" };
+  }
   if (isInstantKillHit(xMm, yMm, instantD)) {
     return { kind: "instant_kill", zone: "instant" };
   }
   if (isVitalRingHit(xMm, yMm, vitalD, instantD)) {
-    const clean = rollVitalRingKill(damageFactor, random);
-    return {
-      kind: clean ? "vital_kill" : "ettersok",
-      zone: "vital",
-    };
+    return { kind: "ettersok", zone: "vital" };
   }
-  if (isBodyHit(xMm, yMm, geom)) {
+  if (isBodyHit(xMm, yMm, geom, birdFlip)) {
     return { kind: "ettersok", zone: "body" };
   }
   return { kind: "miss", zone: "none" };

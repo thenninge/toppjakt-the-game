@@ -8,6 +8,14 @@ type ZoneBody = {
   vitalCyPx: number;
   instantDiameterMm: number;
   vitalDiameterMm: number;
+  headCxPx: number;
+  headCyPx: number;
+  headDiameterMm: number;
+  bodyRxMm: number;
+  bodyRyMm: number;
+  bodyOffsetXMm: number;
+  bodyOffsetYMm: number;
+  bodyRotationDeg: number;
 };
 
 function isZone(v: unknown): v is ZoneBody {
@@ -17,13 +25,20 @@ function isZone(v: unknown): v is ZoneBody {
     typeof o.vitalCxPx === "number" &&
     typeof o.vitalCyPx === "number" &&
     typeof o.instantDiameterMm === "number" &&
-    typeof o.vitalDiameterMm === "number"
+    typeof o.vitalDiameterMm === "number" &&
+    typeof o.headCxPx === "number" &&
+    typeof o.headCyPx === "number" &&
+    typeof o.headDiameterMm === "number" &&
+    typeof o.bodyRxMm === "number" &&
+    typeof o.bodyRyMm === "number" &&
+    typeof o.bodyOffsetXMm === "number" &&
+    typeof o.bodyOffsetYMm === "number" &&
+    typeof o.bodyRotationDeg === "number"
   );
 }
 
 /**
  * Dev-only: rewrite committed hit-zone catalog from admin calibrations.
- * POST JSON: Record<BirdSpriteId, ZoneBody> (full or partial — missing ids keep file defaults skipped).
  */
 export async function POST(req: NextRequest) {
   if (process.env.NODE_ENV === "production") {
@@ -57,7 +72,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Require a complete map so the catalog never drops a sprite.
   const missing = ids.filter((id) => !zones[id]);
   if (missing.length > 0) {
     return NextResponse.json(
@@ -77,6 +91,14 @@ export async function POST(req: NextRequest) {
         `    vitalCyPx: ${Number(z.vitalCyPx.toFixed(1))},`,
         `    instantDiameterMm: ${Math.round(z.instantDiameterMm)},`,
         `    vitalDiameterMm: ${Math.round(z.vitalDiameterMm)},`,
+        `    headCxPx: ${Number(z.headCxPx.toFixed(1))},`,
+        `    headCyPx: ${Number(z.headCyPx.toFixed(1))},`,
+        `    headDiameterMm: ${Math.round(z.headDiameterMm)},`,
+        `    bodyRxMm: ${Math.round(z.bodyRxMm)},`,
+        `    bodyRyMm: ${Math.round(z.bodyRyMm)},`,
+        `    bodyOffsetXMm: ${Math.round(z.bodyOffsetXMm)},`,
+        `    bodyOffsetYMm: ${Math.round(z.bodyOffsetYMm)},`,
+        `    bodyRotationDeg: ${Math.round(z.bodyRotationDeg)},`,
         `  }`,
       ].join("\n");
     })
@@ -89,6 +111,13 @@ export async function POST(req: NextRequest) {
  * «Skriv til repo (dev)» to overwrite this file from calibrated overrides,
  * then commit + push so GitHub has the real defaults.
  *
+ * Zones:
+ * - Yellow (head): instant kill — headshot
+ * - Green (chest): instant kill — bird drops
+ * - Red: vital — short ettersøk
+ * - Body ellipse: wound — ettersøk toward max fly radius
+ * - Outside: clean miss
+ *
  * Auto-generated ${new Date().toISOString()} — do not hand-edit unless needed.
  */
 
@@ -99,12 +128,16 @@ export type BirdHitZone = {
   vitalCyPx: number;
   instantDiameterMm: number;
   vitalDiameterMm: number;
+  headCxPx: number;
+  headCyPx: number;
+  headDiameterMm: number;
+  bodyRxMm: number;
+  bodyRyMm: number;
+  bodyOffsetXMm: number;
+  bodyOffsetYMm: number;
+  bodyRotationDeg: number;
 };
 
-/**
- * Per-sprite green (instant) / red (vital) zones on the topp sprite.
- * Source of truth for catalogHitZone when no local override exists.
- */
 export const BIRD_HIT_ZONE_CATALOG: Record<BirdSpriteId, BirdHitZone> = {
 ${fixedEntries},
 };

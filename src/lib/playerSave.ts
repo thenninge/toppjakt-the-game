@@ -200,6 +200,18 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     reloadingPiecesMigrated: true,
     kestrelProfiles: normalizeKestrelProfiles(raw.kestrelProfiles),
     awareHunt: normalizeAwareHuntState(raw.awareHunt),
+    jegerprovePassed: (() => {
+      if (raw.jegerprovePassed === true) return true;
+      if (raw.jegerprovePassed === false) return false;
+      // Grandfather existing hunters who already bagged or scored a hit.
+      const lifeTiur =
+        typeof raw.lifetimeTiur === "number" ? raw.lifetimeTiur : 0;
+      const lifeOrre =
+        typeof raw.lifetimeOrrhaner === "number" ? raw.lifetimeOrrhaner : 0;
+      const maxRange =
+        typeof raw.maxRange === "number" ? raw.maxRange : 0;
+      return lifeTiur > 0 || lifeOrre > 0 || maxRange > 0;
+    })(),
   });
 }
 

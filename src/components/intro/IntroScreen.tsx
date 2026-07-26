@@ -90,6 +90,7 @@ import {
   type DayWeather,
 } from "@/lib/weather/spec";
 import { TownHub, type TownLocationId } from "@/components/town/TownHub";
+import { JegerproveView } from "@/components/town/JegerproveView";
 import { HowToPlayView } from "@/components/town/HowToPlayView";
 import { AdminOffice } from "@/components/town/AdminOffice";
 import {
@@ -112,6 +113,7 @@ import {
   removeCarcassFromStatsCounts,
   type GameCarcass,
 } from "@/lib/hunt/carcass";
+import { PINK_MIST_NICKNAME } from "@/lib/hunt/shoot";
 import {
   CUSTOMS_SERVICES,
   HOME_LOAD_PER_ROUND_NOK,
@@ -314,12 +316,17 @@ export function IntroScreen() {
         const next = ensureNamedStarterGear(chosen.stats);
         setStats(next);
         setName(next.name);
-        setPhase("town");
+        if (!next.jegerprovePassed) {
+          setLocation("jegerprove");
+          setPhase("location");
+        } else {
+          setPhase("town");
+        }
         return;
       }
 
-      const googleName = session?.user?.name?.trim() ?? "";
-      if (googleName) setName(displayName(googleName));
+      // Always let the hunter pick their own name — never lock to Google display name.
+      setName("");
       setPhase("name");
     }
 
@@ -329,7 +336,7 @@ export function IntroScreen() {
       cancelled = true;
       window.clearInterval(dotTimer);
     };
-  }, [phase, authStatus, session?.user?.name]);
+  }, [phase, authStatus, session?.user?.email]);
 
   function toggleMusic() {
     setMusicEnabled((prev) => {
@@ -499,12 +506,18 @@ export function IntroScreen() {
   }
 
   function enterLocation(id: TownLocationId) {
+    if (!stats.jegerprovePassed && id !== "jegerprove") return;
     if (id === "admin-office" && !adminUnlocked) return;
     setLocation(id);
     setPhase("location");
   }
 
   function backToTown() {
+    if (!stats.jegerprovePassed) {
+      setLocation("jegerprove");
+      setPhase("location");
+      return;
+    }
     setLocation(null);
     setPhase("town");
   }
@@ -1176,15 +1189,24 @@ export function IntroScreen() {
   }
 
   function headIntoTown() {
+    let needsExam = true;
     setStats((prev) => {
       const balance = startingBalanceForName(prev.name);
       const withBalance = { ...prev, balance };
-      if (isCheatPlayerName(prev.name) || isVipPlayerName(prev.name)) {
-        return ensureNamedStarterGear(withBalance);
-      }
-      return grantUncleRifle(withBalance);
+      const next =
+        isCheatPlayerName(prev.name) || isVipPlayerName(prev.name)
+          ? ensureNamedStarterGear(withBalance)
+          : grantUncleRifle(withBalance);
+      needsExam = !next.jegerprovePassed;
+      return next;
     });
-    setPhase("town");
+    if (needsExam) {
+      setLocation("jegerprove");
+      setPhase("location");
+    } else {
+      setLocation(null);
+      setPhase("town");
+    }
   }
 
   return (
@@ -1328,7 +1350,9 @@ export function IntroScreen() {
             </div>
 
             <label className="intro-prompt" htmlFor="player-name">
-              Please enter name:
+              {signedIn
+                ? "Velg jegernavn (valgfritt — ikke knyttet til Google-navnet):"
+                : "Please enter name:"}
             </label>
             <div className="intro-input-row">
               <span className="intro-cursor" aria-hidden>
@@ -1363,7 +1387,8 @@ export function IntroScreen() {
             </p>
             <p className="intro-line intro-gift">
               Here, take my CZ452 — and that Biltema 3-9× I stuck on it. Great
-              for squirrels in the back yard!
+              for squirrels in the back yard! But first — jegerprøven. No exam,
+              no town.
             </p>
 
             <blockquote className="intro-thought">
@@ -1382,12 +1407,52 @@ export function IntroScreen() {
           </div>
         )}
 
-        {phase === "town" && (
+        {phase === "town" && stats.jegerprovePassed && (
           <TownHub
             playerName={stats.name}
             nickname={stats.nickname}
             onEnter={enterLocation}
             adminUnlocked={adminUnlocked}
+          />
+        )}
+
+        {phase === "town" && !stats.jegerprovePassed ? (
+          <JegerproveView
+            playerName={stats.name}
+            nickname={stats.nickname}
+            alreadyPassed={false}
+            locked
+            onPassed={() =>
+              setStats((prev) =>
+                prev.jegerprovePassed
+                  ? prev
+                  : { ...prev, jegerprovePassed: true },
+              )
+            }
+            onLeave={() => {
+              setLocation(null);
+              setPhase("town");
+            }}
+          />
+        ) : null}
+
+        {phase === "location" && location === "jegerprove" && (
+          <JegerproveView
+            playerName={stats.name}
+            nickname={stats.nickname}
+            alreadyPassed={stats.jegerprovePassed}
+            locked={!stats.jegerprovePassed}
+            onPassed={() =>
+              setStats((prev) =>
+                prev.jegerprovePassed
+                  ? prev
+                  : { ...prev, jegerprovePassed: true },
+              )
+            }
+            onLeave={() => {
+              setLocation(null);
+              setPhase("town");
+            }}
           />
         )}
 
@@ -1493,6 +1558,7 @@ export function IntroScreen() {
             unusedLicenses={unusedLicenseCount(stats)}
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             jaktkort={stats.jaktkort}
+            jegerprovePassed={stats.jegerprovePassed}
             unlockedTerrainIds={stats.unlockedTerrainIds}
             isVip={isVipPlayerName(stats.name)}
             isAdmin={adminUnlocked}
@@ -1601,6 +1667,13 @@ export function IntroScreen() {
                 }
                 return { ...prev, awareHunt: next };
               })
+            }
+            onHeadshotNickname={() =>
+              setStats((prev) =>
+                prev.nickname === PINK_MIST_NICKNAME
+                  ? prev
+                  : { ...prev, nickname: PINK_MIST_NICKNAME },
+              )
             }
           />
         ) : null}

@@ -9,7 +9,8 @@ export type TownLocationId =
   | "admin-office"
   | "meat-market"
   | "rulles"
-  | "cb-customs";
+  | "cb-customs"
+  | "jegerprove";
 
 type TownLocation = {
   id: TownLocationId;
@@ -22,6 +23,11 @@ const LOCATIONS: TownLocation[] = [
     id: "home",
     name: "Home",
     blurb: "Inventory, kit, kart — og ut på jakt.",
+  },
+  {
+    id: "jegerprove",
+    name: "Jegerprøven",
+    blurb: "Ta prøven på nytt — eller se beviset (byen krever bestått).",
   },
   {
     id: "xxl",

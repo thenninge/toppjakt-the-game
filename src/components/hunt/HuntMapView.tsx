@@ -133,6 +133,7 @@ import {
   panToCenterOnBird,
   pickFluktImage,
   resolveFlushesOnPath,
+  rescaleSpriteWidthPct,
   spawnTiurOnMap,
   spookBird,
   visibleInSpotMode,
@@ -189,7 +190,10 @@ import {
   saveShotPairsForTerrain,
   type AwareHuntState,
 } from "@/lib/aware/shotPairStorage";
-import type { CellPoint } from "@/lib/aware/cellGeometry";
+import {
+  distanceMBetween,
+  type CellPoint,
+} from "@/lib/aware/cellGeometry";
 
 export type HuntHudStatus = {
   clockMinutes: number;
@@ -264,6 +268,8 @@ type HuntMapViewProps = {
   /** Synced open-hunt skuddpar (cloud + local PlayerStats). */
   awareHunt?: AwareHuntState | null;
   onAwareHuntChange?: (next: AwareHuntState | null) => void;
+  /** Headshot (yellow zone) — rename player to Pink Mist. */
+  onHeadshotNickname?: () => void;
 };
 
 type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
@@ -496,6 +502,7 @@ export function HuntMapView({
   onOwlOffered,
   awareHunt = null,
   onAwareHuntChange,
+  onHeadshotNickname,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
@@ -1882,11 +1889,12 @@ export function HuntMapView({
     const birdId = info.placement.birdId;
     const prior = birdMapContacts[birdId];
     // Same bird → same Aware-map seat; first lock follows spotting compass + frame X.
+    // Place at true range so stand→bird distance stays physically correct after walking.
     const birdBearing =
       prior?.bearingDeg ??
       bearingFromSpotFrame(viewBearingDeg, info.placement.x);
     const birdPos =
-      prior?.birdPos ?? birdMarkerOnAwareMap(measured, birdBearing);
+      prior?.birdPos ?? birdMarkerOnAwareMap(trueDist, birdBearing);
     if (!prior) {
       setBirdMapContacts((prev) => ({
         ...prev,
@@ -2107,10 +2115,35 @@ export function HuntMapView({
     }
     const session = awareSession;
     const bearingDeg = stance?.bearingDeg ?? session.birdBearingDeg;
-    const distanceM = Math.max(
+    const hunterStand =
+      stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 };
+    const birdPt =
+      stance?.bird ??
+      session.birdPos ??
+      birdMarkerOnAwareMap(session.trueDistanceM, bearingDeg);
+    /**
+     * Ballistics truth = stand → bird after walking to a safe Aware seat —
+     * never the stale spotting LRF range.
+     */
+    const trueDistanceM = Math.max(
       40,
-      Math.round(stance?.distanceM ?? session.measuredDistanceM),
+      Math.round(
+        stance?.distanceM ?? distanceMBetween(hunterStand, birdPt),
+      ),
     );
+    /** Keep original LRF scale bias on the new true range (unless AB is exact). */
+    let measuredDistanceM = trueDistanceM;
+    if (
+      !hasExactBallistics &&
+      session.rangeSource === "lrf" &&
+      session.trueDistanceM > 0
+    ) {
+      const bias = session.measuredDistanceM / session.trueDistanceM;
+      measuredDistanceM = Math.max(
+        40,
+        Math.round(trueDistanceM * bias),
+      );
+    }
     const cw = crosswindMs(
       weather.live.windSpeedMs,
       weather.live.windFromDeg,
@@ -2124,7 +2157,7 @@ export function HuntMapView({
         primaryAmmo.id,
         kestrelProfiles,
       );
-      hold = exactBallisticHold(solve.ammo, distanceM, cw, {
+      hold = exactBallisticHold(solve.ammo, trueDistanceM, cw, {
         densityRatio: density,
         powderTempC: weather.live.temperatureC,
         dvDtMpsPerC: solve.dvDtMpsPerC,
@@ -2132,18 +2165,16 @@ export function HuntMapView({
     }
     setAwareSession(null);
     const nerve = Math.max(0, stance?.birdNerve ?? birdEncounterRef.current?.nerve ?? 0);
-    const hunterStand =
-      stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 };
     rememberAwareStand(hunterStand);
     setBirdEncounter((prev) => {
       const next: BirdEncounter = {
         birdId: session.bird.birdId,
-        distanceM,
+        distanceM: trueDistanceM,
         nerve,
         discovered: true,
       };
       birdEncounterRef.current = prev
-        ? { ...prev, distanceM, nerve, discovered: true }
+        ? { ...prev, distanceM: trueDistanceM, nerve, discovered: true }
         : next;
       return birdEncounterRef.current;
     });
@@ -2151,16 +2182,22 @@ export function HuntMapView({
       imageSrc: session.imageSrc,
       bird: {
         ...session.bird,
-        distanceM,
+        distanceM: trueDistanceM,
+        // Keep perch/sprite factors; angular size tracks the new stand range.
+        widthPct: rescaleSpriteWidthPct(
+          session.bird.widthPct,
+          session.trueDistanceM,
+          trueDistanceM,
+        ),
       },
-      trueDistanceM: distanceM,
-      measuredDistanceM: distanceM,
+      trueDistanceM,
+      measuredDistanceM,
       ballisticHold: hold,
       crosswindMs: cw,
       densityRatio: density,
       bearingDeg,
       hunterPos: hunterStand,
-      birdPos: stance?.bird ?? session.birdPos ?? birdMarkerOnAwareMap(distanceM, bearingDeg),
+      birdPos: birdPt,
       camcorderActive: !!stance?.camcorderActive,
       chronoActive: !!stance?.chronoActive,
       rangeSource: session.rangeSource,
@@ -2168,8 +2205,12 @@ export function HuntMapView({
     });
     setLog(
       hold
-        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${distanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}`
-        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${distanceM} m — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}`,
+        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${trueDistanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}`
+        : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${trueDistanceM} m${
+            session.rangeSource === "lrf" && measuredDistanceM !== trueDistanceM
+              ? ` (LRF ${measuredDistanceM} m)`
+              : ""
+          } — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}`,
     );
   }
 
@@ -2532,6 +2573,9 @@ export function HuntMapView({
 
   function onHuntShotResult(result: HuntShotResult) {
     if (!shootSession || !map) return;
+    if (result.zone === "head") {
+      onHeadshotNickname?.();
+    }
     setBirdEncounter(null);
     const id = shootSession.bird.birdId;
     const dist = result.measuredDistanceM;
@@ -2768,7 +2812,9 @@ export function HuntMapView({
         : null;
       const logMsg =
         result.kind === "instant_kill"
-          ? `Instant kill på ${dist} m.${pairNote}${stayNote}`
+          ? result.zone === "head"
+            ? `Headshot — Pink Mist! ${dist} m.${pairNote}${stayNote}`
+            : `Instant kill på ${dist} m.${pairNote}${stayNote}`
           : result.kind === "vital_kill"
             ? `Vitalt treff på ${dist} m.${pairNote}${stayNote}`
             : fleeObservation

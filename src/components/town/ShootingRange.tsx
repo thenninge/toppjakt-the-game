@@ -85,6 +85,7 @@ import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
+import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
@@ -254,7 +255,9 @@ export function ShootingRange({
   const [lane, setLane] = useState<"zeroing" | "competitions" | "load-test">(
     "zeroing",
   );
-  const [compId, setCompId] = useState<"lobby" | "moa-std">("lobby");
+  const [compId, setCompId] = useState<"lobby" | "moa-std" | "field-impact">(
+    "lobby",
+  );
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
     [kitItems],
@@ -1427,7 +1430,7 @@ export function ShootingRange({
         <div className="shooting-range">
           <LocationNav
             onBackToTown={onLeave}
-            hint="MOA-konkurranse — 10 skudd, worst shot teller"
+            hint="MOA-konkurranse på Losby — 10 skudd, worst shot teller"
           />
           {laneTabs}
           <MoaCompetitionView
@@ -1438,6 +1441,40 @@ export function ShootingRange({
             zeroingProfiles={zeroingProfiles}
             rifleRoundCounts={rifleRoundCounts}
             customBarrels={customBarrels}
+            weather={weather}
+            customsMoaDelta={customsMoaDelta}
+            customsCalmMult={customsCalmMult}
+            customsTriggerPullScale={customsTriggerPullScale}
+            musicEnabled={musicEnabled}
+            onAffinitiesChange={onAffinitiesChange}
+            onConsumeAmmo={onConsumeAmmo}
+            onEnsureZeroing={onEnsureZeroing}
+            onPayEntryFee={onPayCompetitionFee}
+            onAwardPayout={onAwardCompetitionPayout}
+            onBack={() => setCompId("lobby")}
+          />
+        </div>
+      );
+    }
+
+    if (compId === "field-impact") {
+      return (
+        <div className="shooting-range">
+          <LocationNav
+            onBackToTown={onLeave}
+            hint="IMPACT! Losby — 5 feltfigurer, kun tid teller"
+          />
+          {laneTabs}
+          <FieldImpactCompetitionView
+            balance={balance}
+            kitItems={kitItems}
+            inventory={inventory}
+            ammoAffinities={ammoAffinities}
+            zeroingProfiles={zeroingProfiles}
+            dopeCard={dopeCard}
+            rifleRoundCounts={rifleRoundCounts}
+            customBarrels={customBarrels}
+            kestrelProfiles={kestrelProfiles}
             weather={weather}
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
@@ -1470,7 +1507,9 @@ export function ShootingRange({
         <ul className="moa-comp-event-list">
           <li className="moa-comp-event">
             <div className="moa-comp-event-main">
-              <span className="moa-comp-event-title">MOA-konkurranse · STD</span>
+              <span className="moa-comp-event-title">
+                MOA-konkurranse på Losby
+              </span>
               <span className="moa-comp-event-meta">
                 100 m · 10 blink · score = worst shot · start 100 kr
               </span>
@@ -1480,6 +1519,22 @@ export function ShootingRange({
               className="intro-button"
               disabled={!ready || !hasAmmo}
               onClick={() => setCompId("moa-std")}
+            >
+              Entre
+            </button>
+          </li>
+          <li className="moa-comp-event">
+            <div className="moa-comp-event-main">
+              <span className="moa-comp-event-title">IMPACT! — Losby feltfigurer</span>
+              <span className="moa-comp-event-meta">
+                100–500 m · tilfeldig sete · tiur/orre/ugle · kun tid · 150 kr
+              </span>
+            </div>
+            <button
+              type="button"
+              className="intro-button"
+              disabled={!ready || !hasAmmo}
+              onClick={() => setCompId("field-impact")}
             >
               Entre
             </button>

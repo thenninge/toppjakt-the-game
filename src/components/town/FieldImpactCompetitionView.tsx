@@ -28,7 +28,6 @@ import {
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
-  type ShotImpact,
 } from "@/lib/range/precision";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
@@ -43,56 +42,65 @@ import {
   getInventoryQty,
   getRifleRoundCount,
   zeroingKey,
+  type DopeCardEntry,
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
 import { applyScopeClickError } from "@/lib/optics/spec";
-import { densityRatioFromTempC } from "@/lib/ballistics/solver";
+import { densityRatioFromTempC, exactBallisticHold } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import type { DayWeather } from "@/lib/weather/spec";
+import { crosswindMs } from "@/lib/weather/spec";
 import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
+import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
+import { kestrelSolveAmmo } from "@/lib/ballistics/kestrelProfile";
 import {
-  MOA_COMP_DISTANCE_M,
-  MOA_COMP_ENTRY_FEE_NOK,
-  MOA_COMP_IMG_SRC,
-  MOA_COMP_NATIVE_H,
-  MOA_COMP_NATIVE_W,
-  MOA_COMP_PAYOUT_TIERS,
-  MOA_COMP_SHOT_COUNT,
-  MOA_COMP_TARGETS,
-  finalizeMoaComp,
-  formatMoaCompScore,
-  moaCompMmToPx,
-  moaCompScopeImageScale,
-  moaCompTargetPosMm,
-  nearestEmptyTargetIndex,
-  scoreMoaCompShot,
-  type MoaCompResult,
-  type MoaCompShot,
-} from "@/lib/range/moaComp";
+  birdNativePxPerMm,
+  birdScopeImageScale,
+  birdShotGeom,
+  birdVitalOffsetFromImageCenterPx,
+  classifyHuntShot,
+  SCOPE_VIEWPORT_REF_PX,
+} from "@/lib/hunt/shoot";
 import {
   aimMmDeltaFromPointerDrag,
-  clampAimMm,
 } from "@/lib/range/scopePointerAim";
 import {
   rifleSpecWithCustomBarrel,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
+import {
+  FIELD_IMPACT_DISTANCES_M,
+  FIELD_IMPACT_ENTRY_FEE_NOK,
+  FIELD_IMPACT_LANDSCAPE_SRC,
+  FIELD_IMPACT_PAYOUT_TIERS,
+  FIELD_IMPACT_SHOT_BEARING_DEG,
+  FIELD_IMPACT_STAGE_COUNT,
+  buildFieldImpactHoldCard,
+  fieldImpactStageFromLayout,
+  finalizeFieldImpact,
+  formatFieldImpactElapsed,
+  rollFieldImpactRound,
+  type FieldImpactHoldCard,
+  type FieldImpactResult,
+  type FieldImpactRoundLayout,
+  type FieldImpactStageLayout,
+} from "@/lib/range/fieldImpactComp";
 
-type MoaCompetitionViewProps = {
+type FieldImpactCompetitionViewProps = {
   balance: number;
   kitItems: ShopItem[];
   inventory: InventoryEntry[];
   ammoAffinities: Record<string, number>;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  dopeCard: DopeCardEntry[];
   rifleRoundCounts?: Record<string, number>;
   customBarrels?: Record<string, InstalledCustomBarrel>;
+  kestrelProfiles?: Record<string, KestrelGunProfile>;
   weather: DayWeather;
   customsMoaDelta?: number;
-  /** CB Customs calm multiplier (e.g. bagrider 1.15). */
   customsCalmMult?: number;
-  /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
   musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -102,7 +110,6 @@ type MoaCompetitionViewProps = {
     scopeId: string,
     ammoId: string,
   ) => ZeroingProfile;
-  /** Charge entry fee; return false if insufficient funds. */
   onPayEntryFee: (amountNok: number) => boolean;
   onAwardPayout: (amountNok: number) => void;
   onBack: () => void;
@@ -117,86 +124,51 @@ type Keys = {
 
 type Phase = "lobby" | "shooting" | "result";
 
-const AIM_SPEED_MM_PER_SEC = 55;
-/** Enough to pan the whole STD sheet under the reticle. */
-const AIM_LIMIT_MM = 220;
+const LANDSCAPE_AIM_FOV_FRAC = 0.36;
+const FOCUS_AIM_SPEED_MULT = 0.14;
 const DEFAULT_SCOPE_ZOOM = 12;
+const IMPACT_FLASH_MS = 900;
+/** Losby photo aspect ≈ 1024×606. */
+const DEFAULT_LAND_ASPECT = 1024 / 606;
 
-function MoaCompSheet({
-  shots,
-  highlightWorst,
-}: {
-  shots: MoaCompShot[];
-  highlightWorst?: number;
-}) {
-  const shotOn = new Set(shots.map((s) => s.targetIndex));
-  return (
-    <div
-      className="moa-comp-sheet"
-      style={{
-        aspectRatio: `${MOA_COMP_NATIVE_W} / ${MOA_COMP_NATIVE_H}`,
-      }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={MOA_COMP_IMG_SRC}
-        alt="MOA-konkurranse på Losby STD 100 m"
-        className="moa-comp-sheet-img"
-        draggable={false}
-        width={MOA_COMP_NATIVE_W}
-        height={MOA_COMP_NATIVE_H}
-      />
-      {MOA_COMP_TARGETS.map((t, i) => (
-        <span
-          key={`ring-${i}`}
-          className={
-            i === highlightWorst
-              ? "moa-comp-target-ring is-worst"
-              : shotOn.has(i)
-                ? "moa-comp-target-ring is-done"
-                : "moa-comp-target-ring"
-          }
-          style={{
-            left: `${(t.xPx / MOA_COMP_NATIVE_W) * 100}%`,
-            top: `${(t.yPx / MOA_COMP_NATIVE_H) * 100}%`,
-          }}
-          aria-hidden
-        />
-      ))}
-      {shots.map((s) => {
-        const t = MOA_COMP_TARGETS[s.targetIndex]!;
-        const hx = t.xPx + moaCompMmToPx(s.xMm);
-        const hy = t.yPx + moaCompMmToPx(s.yMm);
-        const d = Math.max(5, moaCompMmToPx(s.diameterMm));
-        return (
-          <span
-            key={`sheet-hole-${s.targetIndex}`}
-            className={
-              s.targetIndex === highlightWorst
-                ? "moa-comp-sheet-hole is-worst"
-                : "moa-comp-sheet-hole"
-            }
-            style={{
-              left: `${(hx / MOA_COMP_NATIVE_W) * 100}%`,
-              top: `${(hy / MOA_COMP_NATIVE_H) * 100}%`,
-              width: `${(d / MOA_COMP_NATIVE_W) * 100}%`,
-            }}
-            title={`#${s.targetIndex + 1} · ${formatMoaCompScore(s.radiusMoa)}`}
-          />
-        );
-      })}
-    </div>
-  );
+/** Aim (mm from vital) that puts landscape centre under the reticle. */
+function aimMmForLandscapeCenter(opts: {
+  nativeW: number;
+  nativeH: number;
+  spriteHeightMm: number;
+  widthPct: number;
+  landAspect: number;
+  birdXPct: number;
+  birdYPct: number;
+  vitalOff: { x: number; y: number };
+}): { x: number; y: number } {
+  const sceneW = opts.nativeW * (100 / Math.max(0.05, opts.widthPct));
+  const sceneH = sceneW / Math.max(0.25, opts.landAspect);
+  const ox = (opts.birdXPct / 100) * sceneW - sceneW / 2;
+  const oy = (opts.birdYPct / 100) * sceneH - sceneH / 2;
+  const pxPerMm = opts.nativeH / opts.spriteHeightMm;
+  return {
+    x: -(ox + opts.vitalOff.x) / pxPerMm,
+    y: -(oy + opts.vitalOff.y) / pxPerMm,
+  };
 }
 
-export function MoaCompetitionView({
+function speciesLabelNb(species: FieldImpactStageLayout["species"]): string {
+  if (species === "orrhane") return "orre";
+  if (species === "ugle") return "ugle";
+  return "tiur";
+}
+
+export function FieldImpactCompetitionView({
   balance,
   kitItems,
   inventory,
   ammoAffinities,
   zeroingProfiles,
+  dopeCard,
   rifleRoundCounts = {},
   customBarrels = {},
+  kestrelProfiles = {},
   weather,
   customsMoaDelta = 0,
   customsCalmMult = 1,
@@ -208,7 +180,7 @@ export function MoaCompetitionView({
   onPayEntryFee,
   onAwardPayout,
   onBack,
-}: MoaCompetitionViewProps) {
+}: FieldImpactCompetitionViewProps) {
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
   const barrelWearScale = useMemo(
     () =>
@@ -227,20 +199,35 @@ export function MoaCompetitionView({
   const ammoOptions = useMemo(() => kitItems.filter(isAmmoItem), [kitItems]);
   const ready = !!(rifle && scope && ammoOptions.length > 0);
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
+  const crosswind = crosswindMs(
+    weather.live.windSpeedMs,
+    weather.live.windFromDeg,
+    FIELD_IMPACT_SHOT_BEARING_DEG,
+  );
 
   const [phase, setPhase] = useState<Phase>("lobby");
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
-  const [aimMm, setAimMm] = useState(() => {
-    const p = moaCompTargetPosMm(0);
-    return { x: p.xMm, y: p.yMm };
-  });
-  const [shots, setShots] = useState<MoaCompShot[]>([]);
-  const [result, setResult] = useState<MoaCompResult | null>(null);
+  const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
+  const [roundLayout, setRoundLayout] = useState<FieldImpactRoundLayout | null>(
+    null,
+  );
+  const [stageIndex, setStageIndex] = useState(0);
+  const [landAspect, setLandAspect] = useState(DEFAULT_LAND_ASPECT);
+  const [shotsFired, setShotsFired] = useState(0);
+  const [startMs, setStartMs] = useState<number | null>(null);
+  const [elapsedUiMs, setElapsedUiMs] = useState(0);
+  const [result, setResult] = useState<FieldImpactResult | null>(null);
+  const [impactFlash, setImpactFlash] = useState(false);
+  const [lastImpact, setLastImpact] = useState<{
+    xMm: number;
+    yMm: number;
+    diameterMm: number;
+  } | null>(null);
   const [status, setStatus] = useState(
-    "10 skudd — ett per blink. Flytt våpenet selv mellom blinkene. Kun worst teller.",
+    "5 feltfigurer på Losby · tilfeldig sete + tiur/orre/ugle · kun tid.",
   );
   const [focusUi, setFocusUi] = useState<{
     phase: "idle" | "focused" | "fatigued";
@@ -261,6 +248,55 @@ export function MoaCompetitionView({
       ? zeroingKey(rifle.id, scope.id, selectedAmmo.id)
       : null;
   const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
+  const clickUnit = scope?.scope.clickUnit ?? "MRAD";
+
+  const stage = fieldImpactStageFromLayout(roundLayout, stageIndex);
+  const shotGeom = useMemo(
+    () => (stage ? birdShotGeom(stage.spriteId) : null),
+    [stage],
+  );
+  const distanceM = stage?.distanceM ?? 100;
+  const birdWidthPct = stage?.widthPct ?? 2;
+  const landscapeFocusX = stage?.x ?? 50;
+  const landscapeFocusY = stage?.y ?? 50;
+
+  const holdCard: FieldImpactHoldCard | null = useMemo(() => {
+    if (!rifle || !selectedAmmo || !stage) return null;
+    return buildFieldImpactHoldCard({
+      rifleId: rifle.id,
+      ammoId: selectedAmmo.id,
+      ammo: selectedAmmo.ammo,
+      distanceM: stage.distanceM,
+      dopeCard,
+      weather,
+      clickUnit,
+      kestrelProfiles,
+    });
+  }, [
+    rifle,
+    selectedAmmo,
+    stage,
+    dopeCard,
+    weather,
+    clickUnit,
+    kestrelProfiles,
+  ]);
+
+  const lobbyCards = useMemo(() => {
+    if (!rifle || !selectedAmmo) return [];
+    return FIELD_IMPACT_DISTANCES_M.map((d) =>
+      buildFieldImpactHoldCard({
+        rifleId: rifle.id,
+        ammoId: selectedAmmo.id,
+        ammo: selectedAmmo.ammo,
+        distanceM: d,
+        dopeCard,
+        weather,
+        clickUnit,
+        kestrelProfiles,
+      }),
+    );
+  }, [rifle, selectedAmmo, dopeCard, weather, clickUnit, kestrelProfiles]);
 
   const calmFactor = useMemo(
     () =>
@@ -307,13 +343,36 @@ export function MoaCompetitionView({
   );
   const consumeAmmoRef = useRef(onConsumeAmmo);
   const recoilClearRef = useRef<number | null>(null);
+  const impactFlashClearRef = useRef<number | null>(null);
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const scopeStageRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
-  const shotsLenRef = useRef(0);
-  const shotsRef = useRef<MoaCompShot[]>([]);
+  const geomRef = useRef(shotGeom);
+  const distanceRef = useRef(distanceM);
+  const birdSeatRef = useRef({
+    x: landscapeFocusX,
+    y: landscapeFocusY,
+    widthPct: birdWidthPct,
+  });
+  birdSeatRef.current = {
+    x: landscapeFocusX,
+    y: landscapeFocusY,
+    widthPct: Math.max(0.05, birdWidthPct),
+  };
+  const landAspectRef = useRef(landAspect);
+  landAspectRef.current = landAspect;
+  const stageIndexRef = useRef(0);
+  const shotsFiredRef = useRef(0);
+  const startMsRef = useRef<number | null>(null);
   const phaseRef = useRef<Phase>("lobby");
   const ammoRemainingRef = useRef(0);
+  const advancingRef = useRef(false);
+  const densityRef = useRef(densityRatio);
+  const powderTempRef = useRef(weather.live.temperatureC);
+  const crosswindRef = useRef(crosswind);
+  const barrelWearScaleRef = useRef(barrelWearScale);
+  const roundLayoutRef = useRef(roundLayout);
+  roundLayoutRef.current = roundLayout;
 
   const { playShot } = useRangeAudio({ enabled: musicEnabled });
   const {
@@ -322,19 +381,19 @@ export function MoaCompetitionView({
     resetTriggerProgress,
   } = useTriggerBarPaint();
   const {
-    focusBarRef,
     focusFillRef,
+    focusBarRef,
     paintFocusProgress,
-    resetFocusProgress,
     setFocusBarFatigued,
+    resetFocusProgress,
   } = useFocusBarPaint();
 
   useEffect(() => {
-    aimRef.current = aimMm;
-  }, [aimMm]);
-  useEffect(() => {
     weaponCalmRef.current = calmFactor;
   }, [calmFactor]);
+  useEffect(() => {
+    aimRef.current = aimMm;
+  }, [aimMm]);
   useEffect(() => {
     playShotRef.current = playShot;
   }, [playShot]);
@@ -342,61 +401,115 @@ export function MoaCompetitionView({
     consumeAmmoRef.current = onConsumeAmmo;
   }, [onConsumeAmmo]);
   useEffect(() => {
-    shotsLenRef.current = shots.length;
-    shotsRef.current = shots;
-  }, [shots]);
-  useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
   useEffect(() => {
     ammoRemainingRef.current = ammoRemaining;
   }, [ammoRemaining]);
+  useEffect(() => {
+    geomRef.current = shotGeom;
+  }, [shotGeom]);
+  useEffect(() => {
+    distanceRef.current = distanceM;
+  }, [distanceM]);
+  useEffect(() => {
+    stageIndexRef.current = stageIndex;
+  }, [stageIndex]);
+  useEffect(() => {
+    shotsFiredRef.current = shotsFired;
+  }, [shotsFired]);
+  useEffect(() => {
+    startMsRef.current = startMs;
+  }, [startMs]);
+  useEffect(() => {
+    densityRef.current = densityRatio;
+  }, [densityRatio]);
+  useEffect(() => {
+    powderTempRef.current = weather.live.temperatureC;
+  }, [weather.live.temperatureC]);
+  useEffect(() => {
+    crosswindRef.current = crosswind;
+  }, [crosswind]);
+  useEffect(() => {
+    barrelWearScaleRef.current = barrelWearScale;
+  }, [barrelWearScale]);
 
   useEffect(() => {
-    if (!ammoId && ammoOptions[0]) setAmmoId(ammoOptions[0].id);
-  }, [ammoId, ammoOptions]);
+    if (scope) {
+      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, scope.scope));
+    }
+  }, [scope]);
 
   useEffect(() => {
     if (!rifle || !scope || !selectedAmmo) return;
     onEnsureZeroing(rifle.id, scope.id, selectedAmmo.id);
-    setSessionZeroXMm(0);
-    setSessionZeroYMm(0);
   }, [rifle, scope, selectedAmmo, onEnsureZeroing]);
 
+  useEffect(() => {
+    return () => {
+      if (recoilClearRef.current != null) {
+        window.clearTimeout(recoilClearRef.current);
+      }
+      if (impactFlashClearRef.current != null) {
+        window.clearTimeout(impactFlashClearRef.current);
+      }
+    };
+  }, []);
+
+  function aimForStageLayout(
+    st: FieldImpactStageLayout,
+    aspect: number,
+  ): { x: number; y: number } {
+    const g = birdShotGeom(st.spriteId);
+    const vitalOff = birdVitalOffsetFromImageCenterPx(g);
+    return aimMmForLandscapeCenter({
+      nativeW: g.nativeW,
+      nativeH: g.nativeH,
+      spriteHeightMm: g.spriteHeightMm,
+      widthPct: st.widthPct,
+      landAspect: aspect,
+      birdXPct: st.x,
+      birdYPct: st.y,
+      vitalOff,
+    });
+  }
+
   function startRound() {
-    if (!ready || !selectedAmmo) return;
-    if (ammoRemaining < MOA_COMP_SHOT_COUNT) {
-      setStatus(
-        `Trenger ${MOA_COMP_SHOT_COUNT} skudd i eska — du har ${ammoRemaining}.`,
-      );
+    if (!ready || !selectedAmmo || !rifle) return;
+    if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
+      setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
-    if (balance < MOA_COMP_ENTRY_FEE_NOK) {
-      setStatus(
-        `Startavgift ${MOA_COMP_ENTRY_FEE_NOK} kr — saldo ${balance.toLocaleString("nb-NO")} kr.`,
-      );
+    if (!onPayEntryFee(FIELD_IMPACT_ENTRY_FEE_NOK)) {
+      setStatus("Ikke nok penger til startavgift.");
       return;
     }
-    if (!onPayEntryFee(MOA_COMP_ENTRY_FEE_NOK)) {
-      setStatus("Kunne ikke trekke startavgift.");
-      return;
-    }
-    setShots([]);
-    setResult(null);
-    const p = moaCompTargetPosMm(0);
-    const startAim = { x: p.xMm, y: p.yMm };
-    setAimMm(startAim);
-    aimRef.current = startAim;
-    focusRef.current = { held: false, startedAtMs: 0 };
-    triggerRef.current = { held: false, startedAtMs: null };
-    triggerMarkRef.current = null;
+    const layout = rollFieldImpactRound();
+    const first = layout.stages[0]!;
+    const aim0 = aimForStageLayout(first, landAspect);
+    const now = performance.now();
+    setRoundLayout(layout);
     setPhase("shooting");
+    setStageIndex(0);
+    setShotsFired(0);
+    setStartMs(now);
+    setElapsedUiMs(0);
+    setResult(null);
+    setLastImpact(null);
+    setImpactFlash(false);
+    setAimMm(aim0);
+    aimRef.current = aim0;
+    advancingRef.current = false;
+    setSessionZeroXMm(0);
+    setSessionZeroYMm(0);
     setStatus(
-      `Skudd 0/${MOA_COMP_SHOT_COUNT} — pil-taster flytter sikte mellom blinkene. F fokus, Space avtrekk.`,
+      `Hold 1/5 · ${speciesLabelNb(first.species)} @ ${first.distanceM} m — dial etter kortet.`,
     );
-    // Blur Start button so Space does not re-activate it; focus the stage.
     window.requestAnimationFrame(() => {
-      if (document.activeElement instanceof HTMLElement) {
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement !== scopeStageRef.current
+      ) {
         document.activeElement.blur();
       }
       scopeStageRef.current?.focus();
@@ -405,14 +518,15 @@ export function MoaCompetitionView({
 
   fireShotRef.current = () => {
     if (phaseRef.current !== "shooting") return;
+    if (advancingRef.current) return;
     if (!ready || !rifle || !selectedAmmo || !scope) return;
-    if (shotsLenRef.current >= MOA_COMP_SHOT_COUNT) return;
+    const g = geomRef.current;
+    if (!g) return;
     if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
 
-    const used = new Set(shotsRef.current.map((s) => s.targetIndex));
     const { affinity, map, rolled } = ensureAmmoAffinity(
       ammoAffinities,
       rifle.id,
@@ -420,75 +534,74 @@ export function MoaCompetitionView({
     );
     if (rolled) onAffinitiesChange(map);
 
+    const solve = kestrelSolveAmmo(
+      selectedAmmo.ammo,
+      selectedAmmo.id,
+      kestrelProfiles,
+    );
     const w = wobbleRef.current;
     const dispersionInput = {
       rifle: rifleSpecWithCustomBarrel(rifle.rifle, customBarrels[rifle.id]),
-      ammo: selectedAmmo.ammo,
+      ammo: solve.ammo,
       stock: stock?.stock,
       affinity,
       customsMoaDelta,
-      barrelWearScale,
+      barrelWearScale: barrelWearScaleRef.current,
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
+    const dist = distanceRef.current;
     const pull = triggerPullOffsetMm(
       triggerPullRef.current * customsTriggerPullScale,
       envelopeMoa,
-      MOA_COMP_DISTANCE_M,
+      dist,
     );
-    // aimMm is POA on the sheet (mm from image centre).
     const poa = {
       xMm: aimRef.current.x + w.x + pull.xMm,
       yMm: aimRef.current.y + w.y + pull.yMm,
     };
-    const shot = sampleShotFromPoa(
-      poa,
-      dispersionInput,
-      MOA_COMP_DISTANCE_M,
-      Math.random,
+    const shot = sampleShotFromPoa(poa, dispersionInput, dist, Math.random, {
+      densityRatio: densityRef.current,
+      powderTempC: powderTempRef.current,
+    });
+    const windMm = exactBallisticHold(
+      solve.ammo,
+      dist,
+      crosswindRef.current,
       {
-        densityRatio,
-        powderTempC: weather.live.temperatureC,
+        densityRatio: densityRef.current,
+        powderTempC: powderTempRef.current,
+        dvDtMpsPerC: solve.dvDtMpsPerC,
       },
-    );
+    ).windDriftMm;
     const clickErr = scope.scope.clickErrorPercent ?? 0;
     const realizedZero = zeroProfile
       ? effectiveZeroOffsetMm(
           zeroProfile,
           sessionZeroXMm,
           sessionZeroYMm,
-          MOA_COMP_DISTANCE_M,
+          dist,
           { clickErrorPercent: clickErr },
         )
       : {
           xMm: angularMmAtDistance(
             applyScopeClickError(sessionZeroXMm, clickErr),
-            MOA_COMP_DISTANCE_M,
+            dist,
           ),
           yMm: angularMmAtDistance(
             applyScopeClickError(sessionZeroYMm, clickErr),
-            MOA_COMP_DISTANCE_M,
+            dist,
           ),
         };
-    const absImpact = {
-      xMm: shot.xMm + realizedZero.xMm,
+    const impact = {
+      xMm: shot.xMm + realizedZero.xMm + windMm,
       yMm: shot.yMm + realizedZero.yMm,
       diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
     };
-    const idx = nearestEmptyTargetIndex(absImpact.xMm, absImpact.yMm, used);
-    if (idx < 0) {
-      setStatus("Alle blink er skutt.");
-      return;
-    }
+
     if (!consumeAmmoRef.current(selectedAmmo.id, rifle.id)) {
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
-    const bull = moaCompTargetPosMm(idx);
-    const scored = scoreMoaCompShot(idx, {
-      xMm: absImpact.xMm - bull.xMm,
-      yMm: absImpact.yMm - bull.yMm,
-      diameterMm: absImpact.diameterMm,
-    });
 
     playShotRef.current({
       hasSuppressor: !!suppressor,
@@ -506,25 +619,81 @@ export function MoaCompetitionView({
       }, 320);
     });
 
-    setShots((prev) => {
-      const next = [...prev, scored];
-      if (next.length >= MOA_COMP_SHOT_COUNT) {
-        const fin = finalizeMoaComp(next);
+    const nextShots = shotsFiredRef.current + 1;
+    setShotsFired(nextShots);
+    setLastImpact(impact);
+
+    const { zone } = classifyHuntShot(
+      impact.xMm,
+      impact.yMm,
+      selectedAmmo.ammo.damageFactor,
+      Math.random,
+      g,
+    );
+    const hit = zone !== "none";
+    if (!hit) {
+      setStatus(
+        `Bom · hold ${stageIndexRef.current + 1}/${FIELD_IMPACT_STAGE_COUNT} — prøv igjen.`,
+      );
+      return;
+    }
+
+    advancingRef.current = true;
+    setImpactFlash(true);
+    if (impactFlashClearRef.current != null) {
+      window.clearTimeout(impactFlashClearRef.current);
+    }
+
+    const nextStage = stageIndexRef.current + 1;
+    const finishNow = nextStage >= FIELD_IMPACT_STAGE_COUNT;
+    if (finishNow) {
+      const started = startMsRef.current ?? performance.now();
+      const elapsed = performance.now() - started;
+      const fin = finalizeFieldImpact({
+        elapsedMs: elapsed,
+        shotsFired: nextShots,
+        stagesHit: FIELD_IMPACT_STAGE_COUNT,
+      });
+      // Stop clock on last hit; show IMPACT briefly, then result.
+      impactFlashClearRef.current = window.setTimeout(() => {
+        setImpactFlash(false);
+        impactFlashClearRef.current = null;
         setResult(fin);
         if (fin.payoutNok > 0) onAwardPayout(fin.payoutNok);
         setPhase("result");
         setStatus(
-          `Ferdig — worst ${formatMoaCompScore(fin.worstMoa)}${
+          `Ferdig — ${formatFieldImpactElapsed(elapsed)}${
             fin.tierLabel ? ` · ${fin.tierLabel}` : " · ingen premie"
           }.`,
         );
-      } else {
+        advancingRef.current = false;
+      }, IMPACT_FLASH_MS);
+      return;
+    }
+
+    impactFlashClearRef.current = window.setTimeout(() => {
+      setImpactFlash(false);
+      impactFlashClearRef.current = null;
+      const layout = roundLayoutRef.current;
+      const next = fieldImpactStageFromLayout(layout, nextStage);
+      setStageIndex(nextStage);
+      setLastImpact(null);
+      if (next) {
+        const aimNext = aimForStageLayout(next, landAspectRef.current);
+        setAimMm(aimNext);
+        aimRef.current = aimNext;
         setStatus(
-          `Skudd ${next.length}/${MOA_COMP_SHOT_COUNT} · blink ${idx + 1}: ${formatMoaCompScore(scored.radiusMoa)} — flytt til neste blink.`,
+          `Hold ${nextStage + 1}/${FIELD_IMPACT_STAGE_COUNT} · ${speciesLabelNb(next.species)} @ ${next.distanceM} m — dial etter kortet.`,
+        );
+      } else {
+        setAimMm({ x: 0, y: 0 });
+        aimRef.current = { x: 0, y: 0 };
+        setStatus(
+          `Hold ${nextStage + 1}/${FIELD_IMPACT_STAGE_COUNT} · dial etter kortet.`,
         );
       }
-      return next;
-    });
+      advancingRef.current = false;
+    }, IMPACT_FLASH_MS);
   };
 
   function abortTrigger(reason: string) {
@@ -573,17 +742,24 @@ export function MoaCompetitionView({
   function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
     const drag = aimDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    const g = geomRef.current;
+    if (!g) return;
     const delta = aimMmDeltaFromPointerDrag({
       dxClientPx: e.clientX - drag.startX,
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
-      pxPerMm: moaCompMmToPx(1),
+      pxPerMm: birdNativePxPerMm(g),
     });
-    aimRef.current = clampAimMm(
-      drag.origX + delta.x,
-      drag.origY + delta.y,
-      AIM_LIMIT_MM,
-    );
+    const seat = birdSeatRef.current;
+    const sceneW = g.nativeW * (100 / seat.widthPct);
+    const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+    const pxPerMm = birdNativePxPerMm(g);
+    const limitX = (sceneW * 0.55) / pxPerMm;
+    const limitY = (sceneH * 0.55) / pxPerMm;
+    aimRef.current = {
+      x: Math.max(-limitX, Math.min(limitX, drag.origX + delta.x)),
+      y: Math.max(-limitY, Math.min(limitY, drag.origY + delta.y)),
+    };
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
@@ -619,7 +795,7 @@ export function MoaCompetitionView({
   function beginTrigger(nowMs: number) {
     if (triggerRef.current.held) return;
     if (phaseRef.current !== "shooting") return;
-    if (shotsLenRef.current >= MOA_COMP_SHOT_COUNT) return;
+    if (advancingRef.current) return;
     if (!focusRef.current.held || triggerMarkRef.current == null) {
       setStatus("Hold F (fokus) før avtrekk.");
       return;
@@ -678,7 +854,6 @@ export function MoaCompetitionView({
         releaseTrigger(performance.now());
       }
     }
-    // Capture so Space/F are not eaten by focused tab/action buttons.
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
     return () => {
@@ -696,13 +871,24 @@ export function MoaCompetitionView({
 
     function paintScopeWorld() {
       const el = scopeWorldRef.current;
-      if (!el) return;
+      const g = geomRef.current;
+      if (!el || !g) return;
       const ax = aimRef.current.x + wobbleRef.current.x;
       const ay = aimRef.current.y + wobbleRef.current.y;
       const scale = targetScaleRef.current;
-      // aimMm is sheet position from image centre — pan so POA sits under reticle.
-      const panPxX = moaCompMmToPx(ax) * scale;
-      const panPxY = moaCompMmToPx(ay) * scale;
+      const pxPerMm = birdNativePxPerMm(g);
+      const vo = birdVitalOffsetFromImageCenterPx(g);
+      const seat = birdSeatRef.current;
+      const sceneW = g.nativeW * (100 / seat.widthPct);
+      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+      const birdCx = (seat.x / 100) * sceneW;
+      const birdCy = (seat.y / 100) * sceneH;
+      const ox = birdCx - sceneW / 2;
+      const oy = birdCy - sceneH / 2;
+      const aimPxX = ax * pxPerMm;
+      const aimPxY = ay * pxPerMm;
+      const panPxX = (ox + vo.x + aimPxX) * scale;
+      const panPxY = (oy + vo.y + aimPxY) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
     }
 
@@ -711,13 +897,27 @@ export function MoaCompetitionView({
       last = now;
       const k = keysRef.current;
       let { x, y } = aimRef.current;
-      const speed = AIM_SPEED_MM_PER_SEC * dt;
+      const g = geomRef.current;
+      const seat = birdSeatRef.current;
+      const pxPerMm = g ? birdNativePxPerMm(g) : 1;
+      const scale = targetScaleRef.current;
+      const visibleScenePx = SCOPE_VIEWPORT_REF_PX / Math.max(0.01, scale);
+      let speed = ((visibleScenePx * LANDSCAPE_AIM_FOV_FRAC) / pxPerMm) * dt;
+      if (focusRef.current.held) {
+        speed *= FOCUS_AIM_SPEED_MULT;
+      }
+      const sceneW = g
+        ? g.nativeW * (100 / seat.widthPct)
+        : 1000;
+      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+      const limitX = (sceneW * 0.55) / pxPerMm;
+      const limitY = (sceneH * 0.55) / pxPerMm;
       if (k.left) x -= speed;
       if (k.right) x += speed;
       if (k.up) y -= speed;
       if (k.down) y += speed;
-      x = Math.max(-AIM_LIMIT_MM, Math.min(AIM_LIMIT_MM, x));
-      y = Math.max(-AIM_LIMIT_MM, Math.min(AIM_LIMIT_MM, y));
+      x = Math.max(-limitX, Math.min(limitX, x));
+      y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
 
       const calm = effectiveCalmWithFocus(
@@ -725,7 +925,7 @@ export function MoaCompetitionView({
         focusRef.current,
         now,
       );
-      const amp = wobbleAmplitudeMm(calm, MOA_COMP_DISTANCE_M);
+      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
       wobbleRef.current = {
@@ -772,6 +972,10 @@ export function MoaCompetitionView({
           phase: fPhase,
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
+        const started = startMsRef.current;
+        if (started != null) {
+          setElapsedUiMs(now - started);
+        }
       }
       raf = requestAnimationFrame(tick);
     }
@@ -780,14 +984,31 @@ export function MoaCompetitionView({
     return () => cancelAnimationFrame(raf);
   }, [phase, ready]);
 
-  // Reticle: CBA-tuned scale (true mils). Paper: boosted to match zeroing size.
-  const zoomScale = scope
-    ? scopeImageScale(zoom, scope.scope, MOA_COMP_DISTANCE_M)
+  const reticleScale = scope
+    ? scopeImageScale(zoom, scope.scope, distanceM)
     : 1;
-  const targetScale = scope
-    ? moaCompScopeImageScale(zoom, scope.scope, MOA_COMP_DISTANCE_M)
-    : 1;
+  const targetScale =
+    scope && shotGeom
+      ? birdScopeImageScale(
+          zoom,
+          scope.scope,
+          distanceM,
+          shotGeom.nativeW,
+          shotGeom.spriteId,
+          birdWidthPct,
+        )
+      : 1;
   targetScaleRef.current = targetScale;
+
+  const vitalOff = shotGeom
+    ? birdVitalOffsetFromImageCenterPx(shotGeom)
+    : { x: 0, y: 0 };
+  const mmToPx = (mm: number) =>
+    shotGeom ? mm * birdNativePxPerMm(shotGeom) : 0;
+  const sceneW = shotGeom
+    ? shotGeom.nativeW * (100 / Math.max(0.05, birdWidthPct))
+    : 0;
+  const sceneH = sceneW / Math.max(0.25, landAspect);
 
   const focusLabel =
     focusUi.phase === "focused"
@@ -823,9 +1044,9 @@ export function MoaCompetitionView({
 
   if (!ready) {
     return (
-      <div className="moa-comp">
+      <div className="field-impact-comp">
         <p className="intro-line">
-          MOA-konkurranse på Losby krever rifle, scope og ammo i kit.
+          IMPACT krever rifle, scope og ammo i kit.
         </p>
         <button type="button" className="intro-button" onClick={onBack}>
           ← Tilbake
@@ -836,32 +1057,59 @@ export function MoaCompetitionView({
 
   if (phase === "lobby") {
     return (
-      <div className="moa-comp">
+      <div className="field-impact-comp">
         <header className="shop-header">
-          <p className="intro-line intro-gift">
-            MOA-konkurranse på Losby · STD 100 m
-          </p>
+          <p className="intro-line intro-gift">IMPACT! — Losby feltfigurer</p>
           <p className="shop-row-note">
-            Ett skudd i hver av 10 blink. Score = dårligste skudd. Nest-ytre
-            sirkel = 1 MOA. Ruter = 1 cm.
+            Fem tilfeldige seter på 100–500 m. Hver firkant kan være tiur, orre
+            eller ugle. Dial etter kortet — kun tid teller.
           </p>
           <p className="shop-row-note">
             Saldo {balance.toLocaleString("nb-NO")} kr · startavgift{" "}
-            {MOA_COMP_ENTRY_FEE_NOK} kr
+            {FIELD_IMPACT_ENTRY_FEE_NOK} kr
           </p>
         </header>
 
-        <MoaCompSheet shots={[]} />
+        <div className="field-impact-lobby-range">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={FIELD_IMPACT_LANDSCAPE_SRC}
+            alt="Losby feltbane"
+            className="field-impact-lobby-range-img"
+            draggable={false}
+          />
+        </div>
+
+        <div className="field-impact-card-preview">
+          <p className="range-setup-label">Holdkort (auto fra DOPE / ballistikk)</p>
+          <ul className="field-impact-card-list">
+            {lobbyCards.map((c, i) => (
+              <li key={c.distanceM}>
+                <span className="field-impact-card-hold">
+                  Hold {i + 1} · Avstand {c.distanceM} m
+                </span>
+                <span className="field-impact-card-clicks">
+                  Klikk {c.elevLabel} · {c.windLabel}
+                </span>
+                <span className="field-impact-card-src">
+                  {c.source === "DOPE"
+                    ? `DOPE${c.dopeDistanceM != null && c.dopeDistanceM !== c.distanceM ? ` @ ${c.dopeDistanceM} m` : ""}`
+                    : "ballistikk"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <div className="moa-comp-tiers">
-          <p className="range-setup-label">Premier (worst MOA)</p>
+          <p className="range-setup-label">Premier (tid)</p>
           <ul className="moa-comp-tier-list">
-            {MOA_COMP_PAYOUT_TIERS.map((t) => (
-              <li key={t.maxWorstMoa}>
+            {FIELD_IMPACT_PAYOUT_TIERS.map((t) => (
+              <li key={t.maxSeconds}>
                 {t.label}: {t.payoutNok.toLocaleString("nb-NO")} kr
               </li>
             ))}
-            <li>Over 1.25 MOA: ingen premie</li>
+            <li>Over 120 s: ingen premie</li>
           </ul>
         </div>
 
@@ -900,7 +1148,7 @@ export function MoaCompetitionView({
 
         <div className="range-actions">
           <button type="button" className="intro-button" onClick={startRound}>
-            Start ({MOA_COMP_ENTRY_FEE_NOK} kr)
+            Start ({FIELD_IMPACT_ENTRY_FEE_NOK} kr)
           </button>
           <button
             type="button"
@@ -916,15 +1164,15 @@ export function MoaCompetitionView({
 
   if (phase === "result" && result) {
     return (
-      <div className="moa-comp">
+      <div className="field-impact-comp">
         <header className="shop-header">
-          <p className="intro-line intro-gift">Resultat</p>
+          <p className="intro-line intro-gift">IMPACT! — resultat</p>
           <p className="shop-row-note">
-            Score (worst):{" "}
-            <strong>{formatMoaCompScore(result.worstMoa)}</strong>
-            {" · "}
-            beste {formatMoaCompScore(result.bestMoa)}
+            Tid:{" "}
+            <strong>{formatFieldImpactElapsed(result.elapsedMs)}</strong>
             {result.tierLabel ? ` · ${result.tierLabel}` : " · ingen premie"}
+            {" · "}
+            {result.shotsFired} skudd
           </p>
           <p className="shop-row-note">
             Premie {result.payoutNok.toLocaleString("nb-NO")} kr − avgift{" "}
@@ -936,25 +1184,6 @@ export function MoaCompetitionView({
           </p>
         </header>
 
-        <MoaCompSheet
-          shots={result.shots}
-          highlightWorst={result.worstTargetIndex}
-        />
-
-        <ul className="moa-comp-shot-list">
-          {result.shots.map((s) => (
-            <li
-              key={s.targetIndex}
-              className={
-                s.targetIndex === result.worstTargetIndex ? "is-worst" : ""
-              }
-            >
-              Blink {s.targetIndex + 1}: {formatMoaCompScore(s.radiusMoa)}
-              {s.targetIndex === result.worstTargetIndex ? " ← worst" : ""}
-            </li>
-          ))}
-        </ul>
-
         <div className="range-actions">
           <button
             type="button"
@@ -962,7 +1191,6 @@ export function MoaCompetitionView({
             onClick={() => {
               setPhase("lobby");
               setResult(null);
-              setShots([]);
               setStatus("Klar for ny runde?");
             }}
           >
@@ -982,21 +1210,30 @@ export function MoaCompetitionView({
 
   // —— shooting ——
   return (
-    <div className="moa-comp moa-comp--live">
+    <div className="field-impact-comp field-impact-comp--live">
       <header className="shop-header">
         <p className="intro-line intro-gift">
-          MOA · {shots.length}/{MOA_COMP_SHOT_COUNT} skudd
+          IMPACT · hold {stageIndex + 1}/{FIELD_IMPACT_STAGE_COUNT} ·{" "}
+          {formatFieldImpactElapsed(elapsedUiMs)}
         </p>
         <p className="shop-row-note">
+          {stage ? `${speciesLabelNb(stage.species)} · ` : null}
           {rifle!.brand} {rifle!.name} · {selectedAmmo?.brand}{" "}
-          {selectedAmmo?.name} · {ammoRemaining} igjen · 100 m · pil-taster
-          flytter sikte
+          {selectedAmmo?.name} · {ammoRemaining} igjen · {distanceM} m
         </p>
       </header>
 
-      <div className="moa-comp-live-sheet">
-        <MoaCompSheet shots={shots} />
-      </div>
+      {holdCard ? (
+        <div className="field-impact-hold-slip" aria-live="polite">
+          <span className="field-impact-hold-slip-main">
+            Avstand {holdCard.distanceM} m · Klikk {holdCard.elevLabel} ·{" "}
+            {holdCard.windLabel}
+          </span>
+          <span className="field-impact-hold-slip-src">
+            {holdCard.source === "DOPE" ? "DOPE" : "ballistikk + dV/dT"}
+          </span>
+        </div>
+      ) : null}
 
       <div className="scope-stage" tabIndex={0} ref={scopeStageRef}>
         <div className="scope-stage-optic-row">
@@ -1038,47 +1275,76 @@ export function MoaCompetitionView({
               onPointerCancel={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="scope-target"
-                  src={MOA_COMP_IMG_SRC}
-                  alt="MOA-blink"
-                  draggable={false}
-                  width={MOA_COMP_NATIVE_W}
-                  height={MOA_COMP_NATIVE_H}
-                />
-                {shots.map((s) => {
-                  const bull = moaCompTargetPosMm(s.targetIndex);
-                  const hx = moaCompMmToPx(bull.xMm + s.xMm);
-                  const hy = moaCompMmToPx(bull.yMm + s.yMm);
-                  const d = moaCompMmToPx(s.diameterMm);
-                  return (
-                    <span
-                      key={`hole-${s.targetIndex}`}
-                      className="bullet-hole"
-                      style={{
-                        left: `calc(50% + ${hx}px)`,
-                        top: `calc(50% + ${hy}px)`,
-                        width: `${d}px`,
-                        height: `${d}px`,
-                        marginLeft: `${-d / 2}px`,
-                        marginTop: `${-d / 2}px`,
+                {shotGeom ? (
+                  <div
+                    className="hunt-scope-scene"
+                    style={{ width: sceneW, height: sceneH }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className="hunt-scope-landscape"
+                      src={FIELD_IMPACT_LANDSCAPE_SRC}
+                      alt=""
+                      draggable={false}
+                      aria-hidden
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                          setLandAspect(img.naturalWidth / img.naturalHeight);
+                        }
                       }}
                     />
-                  );
-                })}
+                    <div
+                      className="hunt-scope-bird-wrap"
+                      style={{
+                        left: `${landscapeFocusX}%`,
+                        top: `${landscapeFocusY}%`,
+                        width: `${birdWidthPct}%`,
+                        aspectRatio: `${shotGeom.nativeW} / ${shotGeom.nativeH}`,
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        className="scope-target hunt-tiur-target"
+                        src={shotGeom.displaySrc}
+                        alt="Feltfigur"
+                        draggable={false}
+                        width={shotGeom.nativeW}
+                        height={shotGeom.nativeH}
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                      {lastImpact ? (
+                        <span
+                          className="bullet-hole"
+                          style={{
+                            width: mmToPx(lastImpact.diameterMm),
+                            height: mmToPx(lastImpact.diameterMm),
+                            left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
+                            top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
+                            marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
+                            marginTop: -mmToPx(lastImpact.diameterMm) / 2,
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <ScopeReticle
                 scope={scope!.scope}
                 zoom={zoom}
-                imgScale={zoomScale}
+                imgScale={reticleScale}
               />
-              <div className="scope-vignette" aria-hidden />
+              {impactFlash ? (
+                <div className="field-impact-flash" aria-live="assertive">
+                  IMPACT! - TREFF!
+                </div>
+              ) : null}
             </div>
             <ScopeZoomRing
               scope={scope!.scope}
               zoom={zoom}
-              onChange={(z) => setZoom(clampScopeZoom(z, scope!.scope))}
+              onChange={(z) => setZoom(z)}
             />
           </div>
 
@@ -1086,18 +1352,18 @@ export function MoaCompetitionView({
             <span
               className={
                 triggerUi.pending
-                  ? "range-side-rail-label is-trigger"
+                  ? "range-side-rail-label is-pending"
                   : "range-side-rail-label"
               }
             >
-              {triggerUi.pending ? "Avtrekk…" : "Avtrekk"}
+              Avtrekk
             </span>
             <div
               className="range-trigger-bar"
-              aria-hidden
               style={{
                 ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
               }}
+              aria-hidden
             >
               <div ref={triggerFillRef} className="range-trigger-fill" />
               {triggerUi.targetPct > 0 ? (
@@ -1145,7 +1411,7 @@ export function MoaCompetitionView({
         <ScopeTurrets
           sessionZeroXMm={sessionZeroXMm}
           sessionZeroYMm={sessionZeroYMm}
-          clickUnit={scope?.scope.clickUnit ?? "MRAD"}
+          clickUnit={clickUnit}
           onNudge={(axis, deltaMm) => {
             if (axis === "x") {
               setSessionZeroXMm((v) => clampTurretMm(v + deltaMm));

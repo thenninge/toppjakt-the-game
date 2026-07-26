@@ -54,10 +54,16 @@ export function huntReadyCheck(input: {
   selectedHuntingTerrainId: string | null;
   jaktkort: ActiveJaktkort | null;
   zeroingProfiles: Record<string, ZeroingProfile>;
+  /** Required for new hunters (Norwegian-style exam). */
+  jegerprovePassed?: boolean;
 }): HuntReadyResult {
   const blockers: string[] = [];
   const terrain = getHuntingTerrain(input.selectedHuntingTerrainId);
   const kort = input.jaktkort;
+
+  if (!input.jegerprovePassed) {
+    blockers.push("Bestå jegerprøven i byen før du kan jakte");
+  }
 
   if (!terrain || !kort || kort.daysRemaining <= 0) {
     blockers.push("Kjøp jaktkort på inatur.no");

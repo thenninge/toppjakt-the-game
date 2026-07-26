@@ -251,6 +251,10 @@ export type PlayerStats = {
    * across devices for the same terrain/jaktkort day.
    */
   awareHunt: AwareHuntState | null;
+  /**
+   * Norwegian-style hunter exam cleared — required before hunt / jaktkort use.
+   */
+  jegerprovePassed: boolean;
 };
 
 export const STARTING_BALANCE = 10_000;
@@ -258,11 +262,17 @@ export const STARTING_BALANCE = 10_000;
 export const CHEAT_PLAYER_NAME = "Neppe";
 export const CHEAT_STARTING_BALANCE = 500_000;
 /**
- * First-name tokens that unlock elevated starting cash (case-insensitive).
- * e.g. "Jørn Nilsson" → matches "jørn" → {@link VIP_STARTING_BALANCE}.
+ * First-name tokens that unlock elevated starting cash + VIP kit
+ * (case-insensitive word match). e.g. "Jørn Nilsson" → {@link VIP_STARTING_BALANCE}.
  */
 export const VIP_NAME_TOKENS = ["jørn", "ivar", "tomas"] as const;
 export const VIP_STARTING_BALANCE = 100_000;
+/**
+ * Substrings in the chosen hunter name that grant elevated starting cash only
+ * (no VIP kit). Case-insensitive — e.g. "Smarteclaus", "Eirik Hesla".
+ */
+export const BONUS_CASH_NAME_SUBSTRINGS = ["smart", "hesla"] as const;
+export const BONUS_CASH_STARTING_BALANCE = VIP_STARTING_BALANCE;
 export const STARTER_RIFLE_ID = "rifle-cz452";
 export const STARTER_SCOPE_ID = "scope-biltema-3-9x40";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
@@ -509,10 +519,21 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
   return null;
 }
 
+/**
+ * True when the chosen hunter name contains a bonus-cash substring
+ * ("smart", "hesla" — e.g. Smarteclaus, Eirik Hesla).
+ */
+export function isBonusCashPlayerName(name: string): boolean {
+  const n = name.trim().toLowerCase().normalize("NFC");
+  if (!n) return false;
+  return BONUS_CASH_NAME_SUBSTRINGS.some((token) => n.includes(token));
+}
+
 /** Starting cash for a newly registered display name. */
 export function startingBalanceForName(name: string): number {
   if (isCheatPlayerName(name)) return CHEAT_STARTING_BALANCE;
   if (isVipPlayerName(name)) return VIP_STARTING_BALANCE;
+  if (isBonusCashPlayerName(name)) return BONUS_CASH_STARTING_BALANCE;
   return STARTING_BALANCE;
 }
 
@@ -614,6 +635,7 @@ export function grantKitProfile(
     next = { ...next, zeroingProfiles: profiles };
   }
 
+  // New players (incl. VIP kits) still take the exam — do not auto-pass.
   return next;
 }
 
@@ -728,6 +750,7 @@ export function createInitialStats(): PlayerStats {
     reloadingPiecesMigrated: true,
     kestrelProfiles: {},
     awareHunt: null,
+    jegerprovePassed: false,
   };
 }
 

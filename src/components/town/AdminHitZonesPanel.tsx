@@ -13,6 +13,13 @@ import {
   exportEffectiveHitZones,
   getBirdHitZone,
   getBirdHitZoneOverride,
+  HIT_ZONE_BODY_OFFSET_MAX,
+  HIT_ZONE_BODY_RX_MAX,
+  HIT_ZONE_BODY_RX_MIN,
+  HIT_ZONE_BODY_RY_MAX,
+  HIT_ZONE_BODY_RY_MIN,
+  HIT_ZONE_HEAD_MM_MAX,
+  HIT_ZONE_HEAD_MM_MIN,
   HIT_ZONE_INSTANT_MM_MAX,
   HIT_ZONE_INSTANT_MM_MIN,
   HIT_ZONE_VITAL_MM_MAX,
@@ -23,6 +30,7 @@ import {
 import {
   birdMmToNativePx,
   birdShotGeom,
+  bodyEllipseFromVitalMm,
 } from "@/lib/hunt/shoot";
 
 const PREVIEW_SCALE = 3.2;
@@ -31,7 +39,7 @@ type AdminHitZonesPanelProps = {
   onLeave: () => void;
 };
 
-/** Admin: edit green/red hit zones per bird sprite. */
+/** Admin: edit green/red/body hit zones per bird sprite. */
 export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   const spriteIds = useMemo(() => allBirdSpriteIds(), []);
   const [spriteId, setSpriteId] = useState<BirdSpriteId>(
@@ -42,6 +50,16 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   const [cy, setCy] = useState(0);
   const [instantMm, setInstantMm] = useState(66);
   const [vitalMm, setVitalMm] = useState(114);
+  const [headCx, setHeadCx] = useState(0);
+  const [headCy, setHeadCy] = useState(0);
+  const [headMm, setHeadMm] = useState(42);
+  const [bodyRx, setBodyRx] = useState(80);
+  const [bodyRy, setBodyRy] = useState(154);
+  const [bodyOx, setBodyOx] = useState(0);
+  const [bodyOy, setBodyOy] = useState(19);
+  const [bodyRot, setBodyRot] = useState(0);
+  const [previewFlip, setPreviewFlip] = useState(false);
+  const [clickMode, setClickMode] = useState<"vital" | "head">("vital");
   const [bakeStatus, setBakeStatus] = useState<string | null>(null);
   const [baking, setBaking] = useState(false);
 
@@ -56,6 +74,14 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     setCy(Math.round(z.vitalCyPx * 10) / 10);
     setInstantMm(z.instantDiameterMm);
     setVitalMm(z.vitalDiameterMm);
+    setHeadCx(Math.round(z.headCxPx * 10) / 10);
+    setHeadCy(Math.round(z.headCyPx * 10) / 10);
+    setHeadMm(z.headDiameterMm);
+    setBodyRx(z.bodyRxMm);
+    setBodyRy(z.bodyRyMm);
+    setBodyOx(z.bodyOffsetXMm);
+    setBodyOy(z.bodyOffsetYMm);
+    setBodyRot(z.bodyRotationDeg);
   }, [spriteId, epoch]);
 
   const sprite = getBirdSprite(spriteId);
@@ -70,16 +96,46 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   const mmToPx = (mm: number) => birdMmToNativePx(mm, geom) * PREVIEW_SCALE;
   const greenD = mmToPx(instantMm);
   const redD = mmToPx(vitalMm);
-  const zoneCx = cx * PREVIEW_SCALE;
+  const yellowD = mmToPx(headMm);
+  /** When preview is mirrored, centres appear at mirrored X on the flipped image. */
+  const zoneCx = (previewFlip ? sprite.toppW - cx : cx) * PREVIEW_SCALE;
   const zoneCy = cy * PREVIEW_SCALE;
+  const headDispCx = (previewFlip ? sprite.toppW - headCx : headCx) * PREVIEW_SCALE;
+  const headDispCy = headCy * PREVIEW_SCALE;
 
-  function save() {
-    setBirdHitZoneOverride(spriteId, {
+  const draftGeom = {
+    ...geom,
+    bodyRxMm: bodyRx,
+    bodyRyMm: bodyRy,
+    bodyOffsetXMm: bodyOx,
+    bodyOffsetYMm: bodyOy,
+    bodyRotationDeg: bodyRot,
+  };
+  const body = bodyEllipseFromVitalMm(draftGeom, previewFlip);
+  const bodyW = mmToPx(body.rxMm * 2);
+  const bodyH = mmToPx(body.ryMm * 2);
+  const bodyCx = zoneCx + mmToPx(body.offsetXMm);
+  const bodyCy = zoneCy + mmToPx(body.offsetYMm);
+
+  function currentZone() {
+    return {
       vitalCxPx: cx,
       vitalCyPx: cy,
       instantDiameterMm: instantMm,
       vitalDiameterMm: vitalMm,
-    });
+      headCxPx: headCx,
+      headCyPx: headCy,
+      headDiameterMm: headMm,
+      bodyRxMm: bodyRx,
+      bodyRyMm: bodyRy,
+      bodyOffsetXMm: bodyOx,
+      bodyOffsetYMm: bodyOy,
+      bodyRotationDeg: bodyRot,
+    };
+  }
+
+  function save() {
+    setBirdHitZoneOverride(spriteId, currentZone());
     setBakeStatus(
       "Lagret lokalt. Bruk «Skriv til repo» for å gjøre det til default for alle.",
     );
@@ -92,17 +148,19 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     setCy(Math.round(z.vitalCyPx * 10) / 10);
     setInstantMm(z.instantDiameterMm);
     setVitalMm(z.vitalDiameterMm);
+    setHeadCx(Math.round(z.headCxPx * 10) / 10);
+    setHeadCy(Math.round(z.headCyPx * 10) / 10);
+    setHeadMm(z.headDiameterMm);
+    setBodyRx(z.bodyRxMm);
+    setBodyRy(z.bodyRyMm);
+    setBodyOx(z.bodyOffsetXMm);
+    setBodyOy(z.bodyOffsetYMm);
+    setBodyRot(z.bodyRotationDeg);
     setBakeStatus(null);
   }
 
   async function bakeToRepo() {
-    // Persist current editor values first so bake includes this sprite.
-    setBirdHitZoneOverride(spriteId, {
-      vitalCxPx: cx,
-      vitalCyPx: cy,
-      instantDiameterMm: instantMm,
-      vitalDiameterMm: vitalMm,
-    });
+    setBirdHitZoneOverride(spriteId, currentZone());
     const payload = exportEffectiveHitZones();
     setBaking(true);
     setBakeStatus("Skriver katalog…");
@@ -137,12 +195,7 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   }
 
   async function copyJson() {
-    setBirdHitZoneOverride(spriteId, {
-      vitalCxPx: cx,
-      vitalCyPx: cy,
-      instantDiameterMm: instantMm,
-      vitalDiameterMm: vitalMm,
-    });
+    setBirdHitZoneOverride(spriteId, currentZone());
     const payload = exportEffectiveHitZones();
     try {
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
@@ -154,19 +207,26 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
 
   function onPreviewClick(e: MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * sprite.toppW;
+    let x = ((e.clientX - rect.left) / rect.width) * sprite.toppW;
     const y = ((e.clientY - rect.top) / rect.height) * sprite.toppH;
-    setCx(Math.round(x * 10) / 10);
-    setCy(Math.round(y * 10) / 10);
+    if (previewFlip) x = sprite.toppW - x;
+    const nx = Math.round(x * 10) / 10;
+    const ny = Math.round(y * 10) / 10;
+    if (clickMode === "head") {
+      setHeadCx(nx);
+      setHeadCy(ny);
+    } else {
+      setCx(nx);
+      setCy(ny);
+    }
   }
 
   return (
     <div className="admin-hit-zones">
       <p className="intro-line intro-gift">Treffområde</p>
       <p className="intro-line">
-        Klikk på bildet for vital-senter. Grønn = instant, rød = vital.{" "}
-        <strong>Lagre</strong> = kun denne nettleseren.{" "}
-        <strong>Skriv til repo</strong> = committed default for alle spillere.
+        Gul = headshot (instant). Grønn = bryst (instant). Rød = vital (kort
+        ettersøk). Blå ellipse = kropp (langt ettersøk). Utenfor = bom.
       </p>
 
       <div className="admin-spot-controls">
@@ -229,7 +289,117 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
               onChange={(e) => setVitalMm(Number(e.target.value))}
             />
           </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Gul Ø mm</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={HIT_ZONE_HEAD_MM_MIN}
+              max={HIT_ZONE_HEAD_MM_MAX}
+              step={1}
+              value={headMm}
+              onChange={(e) => setHeadMm(Number(e.target.value))}
+            />
+          </label>
+          <button
+            type="button"
+            className={
+              clickMode === "vital"
+                ? "intro-button admin-spot-btn is-selected"
+                : "intro-button admin-spot-btn"
+            }
+            onClick={() => setClickMode("vital")}
+          >
+            Klikk: vital
+          </button>
+          <button
+            type="button"
+            className={
+              clickMode === "head"
+                ? "intro-button admin-spot-btn is-selected"
+                : "intro-button admin-spot-btn"
+            }
+            onClick={() => setClickMode("head")}
+          >
+            Klikk: hode
+          </button>
+        </div>
 
+        <div className="admin-spot-row">
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Kropp rx mm</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={HIT_ZONE_BODY_RX_MIN}
+              max={HIT_ZONE_BODY_RX_MAX}
+              step={1}
+              value={bodyRx}
+              onChange={(e) => setBodyRx(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Kropp ry mm</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={HIT_ZONE_BODY_RY_MIN}
+              max={HIT_ZONE_BODY_RY_MAX}
+              step={1}
+              value={bodyRy}
+              onChange={(e) => setBodyRy(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Offset X</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={-HIT_ZONE_BODY_OFFSET_MAX}
+              max={HIT_ZONE_BODY_OFFSET_MAX}
+              step={1}
+              value={bodyOx}
+              onChange={(e) => setBodyOx(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Offset Y</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={-HIT_ZONE_BODY_OFFSET_MAX}
+              max={HIT_ZONE_BODY_OFFSET_MAX}
+              step={1}
+              value={bodyOy}
+              onChange={(e) => setBodyOy(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Rot °</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={-180}
+              max={180}
+              step={1}
+              value={bodyRot > 180 ? bodyRot - 360 : bodyRot}
+              onChange={(e) => setBodyRot(Number(e.target.value))}
+            />
+          </label>
+          <button
+            type="button"
+            className={
+              previewFlip
+                ? "intro-button admin-spot-btn is-selected"
+                : "intro-button admin-spot-btn"
+            }
+            onClick={() => setPreviewFlip((v) => !v)}
+          >
+            {previewFlip ? "Speil: på" : "Speil: av"}
+          </button>
+        </div>
+
+        <div className="admin-spot-row">
           <button
             type="button"
             className="intro-button admin-spot-btn"
@@ -265,6 +435,9 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
         <p className="admin-spot-meta">
           Katalog: ({catalog.vitalCxPx.toFixed(1)}, {catalog.vitalCyPx.toFixed(1)})
           · grønn Ø{catalog.instantDiameterMm} / rød Ø{catalog.vitalDiameterMm}
+          · gul Ø{catalog.headDiameterMm} @ ({catalog.headCxPx.toFixed(1)},{" "}
+          {catalog.headCyPx.toFixed(1)}) · kropp {catalog.bodyRxMm}×
+          {catalog.bodyRyMm} @ {catalog.bodyRotationDeg}°
           {hasOverride ? " · lokal override aktiv" : " · katalog"}
         </p>
         {bakeStatus ? (
@@ -282,7 +455,11 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
             e.preventDefault();
           }
         }}
-        aria-label="Klikk for å sette vital-senter"
+        aria-label={
+          clickMode === "head"
+            ? "Klikk for å sette headshot-senter"
+            : "Klikk for å sette vital-senter"
+        }
         style={{
           width: sprite.toppW * PREVIEW_SCALE,
           height: sprite.toppH * PREVIEW_SCALE,
@@ -296,6 +473,21 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
           height={sprite.toppH * PREVIEW_SCALE}
           draggable={false}
           className="admin-hit-preview-bird"
+          style={previewFlip ? { transform: "scaleX(-1)" } : undefined}
+        />
+        <span
+          className="admin-hit-body"
+          style={{
+            width: bodyW,
+            height: bodyH,
+            left: bodyCx,
+            top: bodyCy,
+            marginLeft: -bodyW / 2,
+            marginTop: -bodyH / 2,
+            transform: `rotate(${body.rotationDeg}deg)`,
+          }}
+          title="Kropp — utenfor = bom"
+          aria-hidden
         />
         <span
           className="triggercam-zone triggercam-zone--vital"
@@ -320,11 +512,34 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
           }}
         />
         <span
+          className="triggercam-zone triggercam-zone--head"
+          style={{
+            width: yellowD,
+            height: yellowD,
+            left: headDispCx,
+            top: headDispCy,
+            marginLeft: -yellowD / 2,
+            marginTop: -yellowD / 2,
+          }}
+          title="Headshot — instant kill"
+        />
+        <span
           className="admin-hit-cross"
           style={{ left: zoneCx, top: zoneCy }}
           aria-hidden
         />
+        <span
+          className="admin-hit-cross admin-hit-cross--head"
+          style={{ left: headDispCx, top: headDispCy }}
+          aria-hidden
+        />
       </div>
+
+      <p className="admin-spot-meta">
+        Kropp: {Math.round(body.rxMm * 2)}×{Math.round(body.ryMm * 2)} mm · rot{" "}
+        {Math.round(body.rotationDeg)}°
+        {previewFlip ? " (speilet)" : ""}
+      </p>
 
       <button type="button" className="intro-button" onClick={onLeave}>
         ← Tilbake til byen

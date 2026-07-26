@@ -113,6 +113,8 @@ type HomeBaseProps = {
   unusedLicenses: number;
   selectedHuntingTerrainId: string | null;
   jaktkort: ActiveJaktkort | null;
+  /** Hunter exam cleared — required to leave for a hunt. */
+  jegerprovePassed?: boolean;
   unlockedTerrainIds: string[];
   /** VIP name package — Finnskogen etc. on Inatur. */
   isVip?: boolean;
@@ -169,6 +171,7 @@ export function HomeBase({
   unusedLicenses,
   selectedHuntingTerrainId,
   jaktkort,
+  jegerprovePassed = false,
   unlockedTerrainIds,
   isVip = false,
   isAdmin = false,
@@ -365,8 +368,16 @@ export function HomeBase({
         selectedHuntingTerrainId,
         jaktkort,
         zeroingProfiles,
+        jegerprovePassed,
       }),
-    [kitItems, inventory, selectedHuntingTerrainId, jaktkort, zeroingProfiles],
+    [
+      kitItems,
+      inventory,
+      selectedHuntingTerrainId,
+      jaktkort,
+      zeroingProfiles,
+      jegerprovePassed,
+    ],
   );
 
   /**

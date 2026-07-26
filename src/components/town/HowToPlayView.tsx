@@ -102,6 +102,7 @@ const SECTIONS: GuideSection[] = [
   {
     title: "Kit, by & progresjon",
     bullets: [
+      "Jegerprøven: nye jegere må bestå 18 av 20 før byen åpnes (fugl, patron, kamuflasje). Du får bevis med navn og nickname.",
       "Bygg kit hjemme: rifle, scope, ammo, optikk, camo, mat. Uten jaktkort (inatur.no) kommer du ikke ut.",
       "Camo: lav birdSpot = fuglen bygger nerve saktere (snø- vs barmark-tall). Suit veier tyngst; buff/lue/hansker/støvler demper silhuetten. Feil mønster (snøkamo på bar mark) straffer deg. Custom camo hos CB hjelper litt mer.",
       "Gange på kartet: pace + celle-effort styrer minutter. Kit «top speed» (Home) påvirkes av ski vs støvler, ski-max/flyt/bredde, sekk-vekt og carry comfort — skistøvler kreves hvis du har ski i kit.",

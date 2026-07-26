@@ -267,6 +267,21 @@ export function spriteWidthPctForDistance(
 }
 
 /**
+ * Keep perch/sprite scale factors when the hunter moves to a new stand range.
+ * widthPct ∝ 1/distance, so multiply by fromDist/toDist.
+ */
+export function rescaleSpriteWidthPct(
+  widthPct: number,
+  fromDistanceM: number,
+  toDistanceM: number,
+): number {
+  const from = Math.max(1, fromDistanceM);
+  const to = Math.max(1, toDistanceM);
+  const next = widthPct * (from / to);
+  return Number.isFinite(next) && next > 0 ? next : widthPct;
+}
+
+/**
  * Is the LRF reticle (lens center) on this bird?
  * Hit radius grows with apparent size under current zoom.
  */

@@ -84,14 +84,18 @@ function distanceErrorFrac(opts: {
   return 0.35;
 }
 
+/** Absolute max fly-out for body-wound ettersøk (m). */
+export const ETTERSOK_BODY_MAX_FLY_M = 250;
+
 /** True fly-out range from the perched bird, by hit zone. */
 function flyDistanceRangeM(zone: "vital" | "body"): {
   min: number;
   max: number;
 } {
-  // Red ring (vital, not clean): shorter run. Body hit: can go farther.
-  if (zone === "vital") return { min: 15, max: 100 };
-  return { min: 40, max: 250 };
+  // Red ring: short ettersøk. Body: near max of max fly radius.
+  if (zone === "vital") return { min: 15, max: 80 };
+  const max = ETTERSOK_BODY_MAX_FLY_M;
+  return { min: Math.round(max * 0.85), max };
 }
 
 export type GenerateFleeObservationOpts = {

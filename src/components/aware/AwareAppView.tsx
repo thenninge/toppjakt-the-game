@@ -1075,8 +1075,17 @@ export function AwareAppView({
         <header className="aware-phone-bar">
           <span className="aware-brand">AWARE</span>
           {rangeSource === "lrf" ? (
-            <span className="lrf-range-callout" aria-label={`LRF ${Math.round(birdDistanceM)} meter`}>
-              LRF: {Math.round(birdDistanceM)} m
+            <span
+              className="lrf-range-callout"
+              aria-label={
+                Math.abs(liveDistanceM - birdDistanceM) > 3
+                  ? `LRF ${Math.round(birdDistanceM)} meter, stand ${Math.round(liveDistanceM)} meter`
+                  : `LRF ${Math.round(birdDistanceM)} meter`
+              }
+            >
+              {Math.abs(liveDistanceM - birdDistanceM) > 3
+                ? `Stand ${Math.round(liveDistanceM)} m · LRF ${Math.round(birdDistanceM)} m`
+                : `LRF: ${Math.round(birdDistanceM)} m`}
             </span>
           ) : null}
           <span className="aware-clock">{formatHuntClock(clockMinutes)}</span>
