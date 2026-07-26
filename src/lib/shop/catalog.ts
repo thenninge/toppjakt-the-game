@@ -304,13 +304,14 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   },
 
   // --- Scopes ---
+  // tubeDiameterMm = main tube (must match mount SKU). Verified vs maker specs.
   {
     id: "scope-nf-nx8-4-32-moa",
     category: "scope",
     brand: "Nightforce",
     name: "NX8 4-32x50 F1 MOA",
     priceNok: 28990,
-    note: "FFP · MOA-retikkel · 0.25 MOA klikk · medforstørrende.",
+    note: "FFP · MOA-retikkel · 0.25 MOA klikk · 30 mm rør.",
     scope: {
       tubeDiameterMm: 30,
       minZoom: 4,
@@ -329,7 +330,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Nightforce",
     name: "NX8 4-32x50 F1 MIL-R MRAD",
     priceNok: 31990,
-    note: "FFP · MIL-R retikkel.",
+    note: "FFP · MIL-R retikkel · 30 mm rør.",
     scope: {
       tubeDiameterMm: 30,
       minZoom: 4,
@@ -348,7 +349,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Nightforce",
     name: "ATACR 5-25x56 F1 MRAD",
     priceNok: 42990,
-    note: "FFP · MIL-R retikkel.",
+    note: "FFP · MIL-R retikkel · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 5,
@@ -367,7 +368,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Nightforce",
     name: "ATACR 7-35x56 F1 MRAD",
     priceNok: 48990,
-    note: "FFP · MIL-R retikkel.",
+    note: "FFP · MIL-R retikkel · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 7,
@@ -405,6 +406,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Element Optics",
     name: "Titan 5-20x50 MRAD",
     priceNok: 12990,
+    note: "30 mm rør.",
     scope: {
       tubeDiameterMm: 30,
       minZoom: 5,
@@ -420,6 +422,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Element Optics",
     name: "Theos 5-25x56 MRAD",
     priceNok: 18990,
+    note: "34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 5,
@@ -451,7 +454,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kahles",
     name: "K318i 3.5-18x50 MRAD",
     priceNok: 32990,
-    note: "FFP · SKMR mil-retikkel · 0.1 mil klikk.",
+    note: "FFP · SKMR mil-retikkel · 0.1 mil klikk · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 3.5,
@@ -470,7 +473,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kahles",
     name: "K525i 5-25x56 MRAD",
     priceNok: 42990,
-    note: "FFP · SKMR mil-retikkel · 0.1 mil klikk.",
+    note: "FFP · SKMR mil-retikkel · 0.1 mil klikk · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 5,
@@ -489,7 +492,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kahles",
     name: "K624i 6-24x56 MRAD",
     priceNok: 38990,
-    note: "FFP · SKMR mil-retikkel · 0.1 mil klikk.",
+    note: "FFP · SKMR mil-retikkel · 0.1 mil klikk · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 6,
@@ -508,7 +511,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Kahles",
     name: "K16i 1-6x24",
     priceNok: 21990,
-    note: "LPVO · SKMR-grafikk (SFP-skala) · Kahles topper typisk rundt 5-25 / 6-24.",
+    note: "LPVO · SKMR-grafikk (SFP-skala) · 30 mm rør.",
     scope: {
       tubeDiameterMm: 30,
       minZoom: 1,
@@ -526,6 +529,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zeiss",
     name: "LRP S5 6-36x56 MRAD",
     priceNok: 44990,
+    note: "34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 6,
@@ -541,7 +545,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Schmidt & Bender",
     name: "PM II 5-25x56 MRAD",
     priceNok: 42990,
-    note: "FFP · SB mil-retikkel · 0.1 mil klikk.",
+    note: "FFP · SB mil-retikkel · 0.1 mil klikk · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 5,
@@ -560,7 +564,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Schmidt & Bender",
     name: "PM II 3-20x50 MRAD",
     priceNok: 38990,
-    note: "FFP · SB mil-retikkel · 0.1 mil klikk.",
+    note: "FFP · SB mil-retikkel · 0.1 mil klikk · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 3,
@@ -579,7 +583,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Schmidt & Bender",
     name: "PM II High Power 5-45x56 MRAD",
     priceNok: 59990,
-    note: "FFP · SB mil-retikkel · 0.1 mil klikk.",
+    note: "FFP · SB mil-retikkel · 0.1 mil klikk · 34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 5,
@@ -598,7 +602,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Burris",
     name: "Fullfield E1 3-9x40",
     priceNok: 3490,
-    note: "Klassisk jaktkikkert med klikk.",
+    note: "Klassisk jaktkikkert · 1″ (25.4 mm) rør.",
     scope: {
       tubeDiameterMm: 25.4,
       minZoom: 3,
@@ -614,7 +618,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Burris",
     name: "Eliminator 6",
     priceNok: 24990,
-    note: "Digital LRF-scope — holdover på display, ikke tradisjonelle turrets for drop.",
+    note: "Digital LRF-scope — holdover på display · 30 mm rør.",
     scope: {
       tubeDiameterMm: 30,
       minZoom: 4,
@@ -630,6 +634,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vortex",
     name: "Razor HD Gen III 6-36x56 MRAD",
     priceNok: 39990,
+    note: "34 mm rør.",
     scope: {
       tubeDiameterMm: 34,
       minZoom: 6,
@@ -646,6 +651,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vortex",
     name: "Viper PST Gen II 5-25x50 MRAD",
     priceNok: 14990,
+    note: "30 mm rør.",
     scope: {
       tubeDiameterMm: 30,
       minZoom: 5,
@@ -661,7 +667,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Biltema",
     name: "3-9x40 Jaktkikkert",
     priceNok: 599,
-    note: "Klikk som føles som Lego. Virker på 100 m. Nesten.",
+    note: "Klikk som føles som Lego · 1″ (25.4 mm) rør.",
     scope: {
       tubeDiameterMm: 25.4,
       minZoom: 3,
@@ -677,6 +683,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Jula",
     name: "4-12x40",
     priceNok: 899,
+    note: "1″ (25.4 mm) rør.",
     scope: {
       tubeDiameterMm: 25.4,
       minZoom: 4,
@@ -692,7 +699,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Clas Ohlson",
     name: "4x32 Compact",
     priceNok: 449,
-    note: "Luftgevær-vibber. Til CZ452 før du har råd til mer.",
+    note: "Luftgevær-vibber · 1″ (25.4 mm) rør.",
     scope: {
       tubeDiameterMm: 25.4,
       minZoom: 4,

@@ -19,7 +19,6 @@ import { isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
 import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
-import { getShopItem } from "@/lib/shop/catalog";
 
 export type HuntReadyResult = {
   ok: boolean;
@@ -54,14 +53,17 @@ export function kitHasVerifiedHuntZero(input: {
 export function kitHasMatchingScopeMount(kitItems: ShopItem[]): boolean {
   const scope = kitItems.find(isScopeItem);
   if (!scope) return false;
-  const mount = kitItems.find(isMountItem);
-  if (!mount) return false;
-  return mount.mount.tubeDiameterMm === scope.scope.tubeDiameterMm;
+  return kitItems.some(
+    (i) =>
+      isMountItem(i) &&
+      i.mount.tubeDiameterMm === scope.scope.tubeDiameterMm,
+  );
 }
 
 /**
- * One mount SKU per owned scope, per tube diameter.
- * E.g. two 30 mm scopes require two 30 mm mounts in inventory.
+ * Inventory-wide “one mount per owned scope” — not used for hunt ready.
+ * Hunt only requires the packed rifle’s scope + a matching mount in kit.
+ * Kept for optional shop / UI hints.
  */
 export function inventoryMountCoverageOk(input: {
   inventory: InventoryEntry[];
@@ -99,6 +101,9 @@ export function inventoryMountCoverageOk(input: {
 /**
  * Minimum kit to leave Home for a hunt: rifle, scope, matching mount, ammo,
  * backpack, verified zero, and a valid jaktkort.
+ *
+ * Mount rule: the scope packed on the rifle needs one matching-diameter
+ * mount in kit. Spare scopes in inventory do not each need a mount.
  */
 export function huntReadyCheck(input: {
   kitItems: ShopItem[];
@@ -138,23 +143,18 @@ export function huntReadyCheck(input: {
   }
 
   const scope = input.kitItems.find(isScopeItem);
-  const mount = input.kitItems.find(isMountItem);
-  if (scope && !mount) {
+  const hasAnyMount = input.kitItems.some(isMountItem);
+  if (scope && !hasAnyMount) {
     blockers.push(
       `Ta med kikkertmontasje i kit (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)})`,
     );
-  } else if (scope && mount && !kitHasMatchingScopeMount(input.kitItems)) {
+  } else if (scope && !kitHasMatchingScopeMount(input.kitItems)) {
+    const packedMount = input.kitItems.find(isMountItem);
     blockers.push(
-      `Montasje må matche kikkert-rør (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)} — ikke ${formatTubeDiameterMm(mount.mount.tubeDiameterMm)})`,
+      packedMount
+        ? `Montasje må matche kikkert-rør (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)} — ikke ${formatTubeDiameterMm(packedMount.mount.tubeDiameterMm)})`
+        : `Ta med kikkertmontasje i kit (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)})`,
     );
-  }
-
-  const coverage = inventoryMountCoverageOk({
-    inventory: input.inventory,
-    resolveItem: getShopItem,
-  });
-  if (!coverage.ok && coverage.detail) {
-    blockers.push(coverage.detail);
   }
 
   if (!input.kitItems.some(isBackpackItem)) {
