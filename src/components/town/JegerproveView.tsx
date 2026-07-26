@@ -6,9 +6,13 @@ import { JegerproveCertificate } from "@/components/town/JegerproveCertificate";
 import {
   buildJegerproveSession,
   formatChoiceLabel,
+  getJegerproveLocale,
+  JEGERPROVE_LANG_LABEL,
+  JEGERPROVE_LANGS,
   JEGERPROVE_PASS_MIN_CORRECT,
   JEGERPROVE_QUESTION_COUNT,
   scoreJegerprove,
+  type JegerproveLang,
   type JegerproveQuestion,
   type JegerproveSession,
 } from "@/lib/jegerprove/exam";
@@ -36,9 +40,8 @@ export function JegerproveView({
   onPassed,
   onLeave,
 }: JegerproveViewProps) {
-  const [phase, setPhase] = useState<Phase>(
-    locked && !alreadyPassed ? "intro" : "intro",
-  );
+  const [phase, setPhase] = useState<Phase>("intro");
+  const [lang, setLang] = useState<JegerproveLang>("nb");
   const [session, setSession] = useState<JegerproveSession | null>(null);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -47,6 +50,9 @@ export function JegerproveView({
     null,
   );
   const [passedAt, setPassedAt] = useState<Date>(() => new Date());
+
+  const ui = getJegerproveLocale(lang).ui;
+  const examLang = session?.lang ?? lang;
 
   const question: JegerproveQuestion | null = session?.questions[index] ?? null;
   const progressLabel = useMemo(() => {
@@ -62,7 +68,7 @@ export function JegerproveView({
     question?.kind === "knowledge" ? question.imageNote : undefined;
 
   function startExam() {
-    const next = buildJegerproveSession();
+    const next = buildJegerproveSession(lang);
     setSession(next);
     setIndex(0);
     setAnswers({});
@@ -100,56 +106,74 @@ export function JegerproveView({
     <div className="jegerprove">
       {locked && !alreadyPassed && phase !== "certificate" ? (
         <p className="jegerprove-lock-banner" role="status">
-          Obligatorisk — bestå jegerprøven ({JEGERPROVE_PASS_MIN_CORRECT}/
-          {JEGERPROVE_QUESTION_COUNT}) før byen åpnes.
+          {ui.lockBanner(JEGERPROVE_PASS_MIN_CORRECT, JEGERPROVE_QUESTION_COUNT)}
         </p>
       ) : (
         <LocationNav
           onBackToTown={onLeave}
-          hint={
-            locked
-              ? "Bestått — byen er åpen."
-              : "Obligatorisk før jakt — som i virkeligheten."
-          }
+          hint={locked ? ui.navHintLocked : ui.navHintOpen}
         />
       )}
 
       <header className="shop-header">
-        <p className="intro-line intro-gift">Jegerprøven</p>
+        <p className="intro-line intro-gift">{ui.title}</p>
         <p className="shop-row-note">
-          Alle jegere i Norge må gjennom jegerprøven. Her er Cold Bore-varianten:
-          art, patroner, kamuflasje og litt sunn skepsis. Bestått krever{" "}
-          {JEGERPROVE_PASS_MIN_CORRECT} av {JEGERPROVE_QUESTION_COUNT} riktige.
+          {ui.subtitle(JEGERPROVE_PASS_MIN_CORRECT, JEGERPROVE_QUESTION_COUNT)}
         </p>
       </header>
 
       {phase === "intro" ? (
         <div className="jegerprove-panel">
+          <div className="jegerprove-lang-block">
+            <p className="range-setup-label" id="jegerprove-lang-label">
+              {ui.langLabel}
+            </p>
+            <div
+              className="range-segment jegerprove-lang-segment"
+              role="group"
+              aria-labelledby="jegerprove-lang-label"
+            >
+              {JEGERPROVE_LANGS.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  className={
+                    lang === code
+                      ? "range-seg-btn is-active"
+                      : "range-seg-btn"
+                  }
+                  aria-pressed={lang === code}
+                  onClick={() => setLang(code)}
+                >
+                  <span className="range-seg-value">
+                    {JEGERPROVE_LANG_LABEL[code]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {alreadyPassed && !locked ? (
             <>
-              <p className="intro-line">Du har allerede bestått.</p>
-              <p className="shop-row-note">
-                Du kan ta prøven på nytt for moro skyld — resultatet endrer ikke
-                status.
-              </p>
+              <p className="intro-line">{ui.alreadyPassedTitle}</p>
+              <p className="shop-row-note">{ui.alreadyPassedBody}</p>
             </>
           ) : (
             <>
               <p className="intro-line">
-                {locked
-                  ? "Velkommen, fersk jeger — først prøven"
-                  : "Artskunnskap, patroner og kamuflasje"}
+                {locked ? ui.welcomeLocked : ui.welcomeOpen}
               </p>
               <p className="shop-row-note">
-                {JEGERPROVE_QUESTION_COUNT} spørsmål med A/B/C tilfeldig blandet.
-                Du må ha minst {JEGERPROVE_PASS_MIN_CORRECT} riktige for å få
-                bevis og låse opp byen.
+                {ui.introBody(
+                  JEGERPROVE_PASS_MIN_CORRECT,
+                  JEGERPROVE_QUESTION_COUNT,
+                )}
               </p>
             </>
           )}
           <div className="jegerprove-actions">
             <button type="button" className="intro-button" onClick={startExam}>
-              {alreadyPassed && !locked ? "Øv på nytt" : "Start prøven"}
+              {alreadyPassed && !locked ? ui.practiceAgain : ui.start}
             </button>
             {!locked ? (
               <button
@@ -157,7 +181,7 @@ export function JegerproveView({
                 className="intro-button sheriff-secondary"
                 onClick={onLeave}
               >
-                Tilbake
+                {ui.back}
               </button>
             ) : null}
           </div>
@@ -167,7 +191,7 @@ export function JegerproveView({
       {phase === "exam" && question ? (
         <div className="jegerprove-panel">
           <p className="jegerprove-progress" aria-live="polite">
-            Spørsmål {progressLabel}
+            {ui.questionProgress(progressLabel)}
           </p>
           <p className="intro-line">{question.prompt}</p>
           {imageSrc ? (
@@ -184,7 +208,11 @@ export function JegerproveView({
               ) : null}
             </div>
           ) : null}
-          <div className="jegerprove-choices" role="radiogroup" aria-label="Svar">
+          <div
+            className="jegerprove-choices"
+            role="radiogroup"
+            aria-label={ui.answersAria}
+          >
             {question.choices.map((c) => {
               const active = selected === c.value;
               return (
@@ -214,8 +242,8 @@ export function JegerproveView({
               onClick={confirmAnswer}
             >
               {index + 1 >= (session?.questions.length ?? 0)
-                ? "Lever besvarelse"
-                : "Neste"}
+                ? ui.submit
+                : ui.next}
             </button>
           </div>
         </div>
@@ -223,16 +251,17 @@ export function JegerproveView({
 
       {phase === "certificate" ? (
         <div className="jegerprove-panel jegerprove-panel--certificate">
-          <p className="intro-line">Bestått — her er beviset ditt.</p>
+          <p className="intro-line">{ui.passedTitle}</p>
           {result ? (
             <p className="shop-row-note">
-              {result.correct} av {result.total} riktige.
+              {ui.scoreLine(result.correct, result.total)}
             </p>
           ) : null}
           <JegerproveCertificate
             playerName={playerName}
             nickname={nickname}
             passedAt={passedAt}
+            lang={examLang}
           />
           <div className="jegerprove-actions">
             <button
@@ -240,7 +269,7 @@ export function JegerproveView({
               className="intro-button"
               onClick={continueAfterCertificate}
             >
-              Fortsett til byen
+              {ui.continueTown}
             </button>
           </div>
         </div>
@@ -248,11 +277,13 @@ export function JegerproveView({
 
       {phase === "result" && result ? (
         <div className="jegerprove-panel">
-          <p className="intro-line">Ikke bestått — mer øving i skogen.</p>
+          <p className="intro-line">{ui.failedTitle}</p>
           <p className="shop-row-note">
-            {result.correct} av {result.total} riktige (trenger{" "}
-            {session?.passMinCorrect ?? JEGERPROVE_PASS_MIN_CORRECT}). Se
-            gjennom feilene og prøv igjen.
+            {ui.failedBody(
+              result.correct,
+              result.total,
+              session?.passMinCorrect ?? JEGERPROVE_PASS_MIN_CORRECT,
+            )}
           </p>
           {result.wrongIds.length > 0 && session ? (
             <ul className="jegerprove-wrong-list">
@@ -264,9 +295,10 @@ export function JegerproveView({
                   <li key={id}>
                     <span className="jegerprove-wrong-prompt">{q.prompt}</span>
                     <br />
-                    Riktig: {formatChoiceLabel(q, q.correctValue)}
+                    {ui.correctPrefix}:{" "}
+                    {formatChoiceLabel(q, q.correctValue, examLang)}
                     {yours
-                      ? ` · ditt svar: ${formatChoiceLabel(q, yours)}`
+                      ? ` · ${ui.yourAnswerPrefix}: ${formatChoiceLabel(q, yours, examLang)}`
                       : ""}
                   </li>
                 );
@@ -275,7 +307,7 @@ export function JegerproveView({
           ) : null}
           <div className="jegerprove-actions">
             <button type="button" className="intro-button" onClick={startExam}>
-              Prøv igjen
+              {ui.tryAgain}
             </button>
             {!locked ? (
               <button
@@ -283,7 +315,7 @@ export function JegerproveView({
                 className="intro-button sheriff-secondary"
                 onClick={onLeave}
               >
-                Tilbake til byen
+                {ui.backTown}
               </button>
             ) : null}
           </div>
