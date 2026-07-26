@@ -1,5 +1,5 @@
 /**
- * Per-sprite visual scale (1–200 %). Relative sizing between bird images —
+ * Per-sprite visual scale (0–200 %). Relative sizing between bird images —
  * independent of distance.
  *
  * Defaults: {@link BIRD_SPRITE_SCALE_CATALOG} (repo).
@@ -11,15 +11,16 @@ import {
   spriteIdsForSpecies,
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
+import type { BirdSpecies } from "@/lib/hunt/birds";
 import { BIRD_SPRITE_SCALE_CATALOG } from "@/lib/hunt/birdSpriteScaleCatalog";
 
 const STORAGE_KEY = "toppjakt-bird-sprite-scales-v1";
 
-export const BIRD_SPRITE_SCALE_MIN = 1;
+export const BIRD_SPRITE_SCALE_MIN = 0;
 export const BIRD_SPRITE_SCALE_MAX = 200;
 export const BIRD_SPRITE_SCALE_DEFAULT = 100;
 
-type ScaleSpecies = "tiur" | "orrhane";
+export type BirdSpriteScaleSpecies = BirdSpecies;
 type ScaleMap = Partial<Record<BirdSpriteId, number>>;
 
 let overrideCache: ScaleMap | null = null;
@@ -98,7 +99,9 @@ export function isBirdSpriteScaleDirty(id: BirdSpriteId): boolean {
 }
 
 /** True when any sprite of the species has a dirty local scale. */
-export function isBirdSpriteSpeciesScaleDirty(species: ScaleSpecies): boolean {
+export function isBirdSpriteSpeciesScaleDirty(
+  species: BirdSpriteScaleSpecies,
+): boolean {
   return spriteIdsForSpecies(species).some(isBirdSpriteScaleDirty);
 }
 

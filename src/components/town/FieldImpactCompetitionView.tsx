@@ -28,7 +28,7 @@ import {
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
-import { angularReticleImgScale } from "@/lib/range/reticles";
+import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -1032,15 +1032,8 @@ export function FieldImpactCompetitionView({
         )
       : 1;
   targetScaleRef.current = targetScale;
-  /** Hold-over: 1 mil on glass = distanceM mm on the bird. */
-  const reticleScale =
-    shotGeom != null
-      ? angularReticleImgScale({
-          mmPerUnit: distanceM,
-          pxPerMm: birdNativePxPerMm(shotGeom),
-          targetCssScale: targetScale,
-        })
-      : 1;
+  /** FFP reticle: optic zoom only — not bird size/distance. */
+  const reticleScale = opticReticleImgScale(zoom, scope?.scope);
 
   const vitalOff = shotGeom
     ? birdVitalOffsetFromImageCenterPx(shotGeom)

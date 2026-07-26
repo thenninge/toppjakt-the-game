@@ -71,8 +71,7 @@ import {
   type MoaCompResult,
   type MoaCompShot,
 } from "@/lib/range/moaComp";
-import { angularReticleImgScale } from "@/lib/range/reticles";
-import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
+import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
@@ -806,20 +805,13 @@ export function MoaCompetitionView({
     return () => cancelAnimationFrame(raf);
   }, [phase, ready]);
 
-  // Hold-over: reticle hashes match paper (1 mil / 1 MOA on the sheet).
+  // FFP reticle: optic zoom only (paper scale is separate).
   const targetScale = scope
     ? moaCompScopeImageScale(zoom, scope.scope, MOA_COMP_DISTANCE_M)
     : 1;
   targetScaleRef.current = targetScale;
   const reticleImgScale = scope
-    ? angularReticleImgScale({
-        mmPerUnit:
-          scope.scope.clickUnit === "MOA"
-            ? MM_PER_MOA_AT_100M * (MOA_COMP_DISTANCE_M / 100)
-            : MOA_COMP_DISTANCE_M,
-        pxPerMm: MOA_COMP_PX_PER_MM,
-        targetCssScale: targetScale,
-      })
+    ? opticReticleImgScale(zoom, scope.scope)
     : 1;
 
   const focusLabel =

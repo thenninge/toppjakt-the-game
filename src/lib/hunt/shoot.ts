@@ -38,6 +38,10 @@ export const PINK_MIST_NICKNAME = "Pink Mist";
 export const HEADSHOT_AAR_TEXT =
   'Brains is everywhere but in the cranium. Your new nickname is now "Pink Mist"';
 
+/** Lucky neck hit — not an aim point, still instant kill. */
+export const NECK_LUCKY_KILL_TEXT =
+  "Du bommet vel? men hadde flaks. Skuddet traff likevel i vital sone.";
+
 /** Sony hunt camcorder body — needs a tripod in kit to deploy. */
 export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
 /** Biltema steel tripod — standard setup nerve (+20 %). */
@@ -213,7 +217,13 @@ export type HuntShotResultKind =
   | "ettersok"
   | "miss";
 
-export type HuntShotZone = "head" | "instant" | "vital" | "body" | "none";
+export type HuntShotZone =
+  | "head"
+  | "neck"
+  | "instant"
+  | "vital"
+  | "body"
+  | "none";
 
 export type HuntShotResult = {
   kind: HuntShotResultKind;
@@ -277,6 +287,11 @@ export type BirdShotGeom = {
   headCxPx: number;
   headCyPx: number;
   headDiameterMm: number;
+  neckCxPx: number;
+  neckCyPx: number;
+  neckWidthMm: number;
+  neckHeightMm: number;
+  neckRotationDeg: number;
   bodyRxMm: number;
   bodyRyMm: number;
   bodyOffsetXMm: number;
@@ -308,6 +323,11 @@ export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
     headCxPx: zone.headCxPx,
     headCyPx: zone.headCyPx,
     headDiameterMm: zone.headDiameterMm,
+    neckCxPx: zone.neckCxPx,
+    neckCyPx: zone.neckCyPx,
+    neckWidthMm: zone.neckWidthMm,
+    neckHeightMm: zone.neckHeightMm,
+    neckRotationDeg: zone.neckRotationDeg,
     bodyRxMm: zone.bodyRxMm,
     bodyRyMm: zone.bodyRyMm,
     bodyOffsetXMm: zone.bodyOffsetXMm,
@@ -515,12 +535,13 @@ export function rollVitalRingKill(
 }
 
 /**
- * Hit ladder:
+ * Hit ladder (see {@link classifyHuntShot}):
  * - Yellow head: instant kill (headshot)
+ * - Orange neck: lucky instant kill
  * - Green chest: instant kill (drops)
  * - Red: vital → short ettersøk
- * - Body ellipse: wound → long ettersøk (near max fly radius)
- * - Outside: miss (unharmed)
+ * - Body ellipse: wound → long ettersøk
+ * - Outside: miss
  */
 export function headOffsetFromVitalMm(
   geom: Pick<
@@ -562,6 +583,74 @@ export function isHeadshotHit(
   return inCircleMm(xMm - off.xMm, yMm - off.yMm, d);
 }
 
+export function neckOffsetFromVitalMm(
+  geom: Pick<
+    BirdShotGeom,
+    | "nativeH"
+    | "spriteHeightMm"
+    | "vitalCxPx"
+    | "vitalCyPx"
+    | "neckCxPx"
+    | "neckCyPx"
+    | "neckRotationDeg"
+  >,
+  birdFlip = false,
+): { xMm: number; yMm: number; rotationDeg: number } {
+  const pxPerMm = birdNativePxPerMm(geom);
+  let xMm = (geom.neckCxPx - geom.vitalCxPx) / pxPerMm;
+  const yMm = (geom.neckCyPx - geom.vitalCyPx) / pxPerMm;
+  let rotationDeg = geom.neckRotationDeg ?? 0;
+  if (birdFlip) {
+    xMm = -xMm;
+    rotationDeg = -rotationDeg;
+  }
+  return { xMm, yMm, rotationDeg };
+}
+
+/** Rotated neck rectangle in mm relative to vital (+x right, +y down). */
+export function isNeckHit(
+  xMm: number,
+  yMm: number,
+  geom: Pick<
+    BirdShotGeom,
+    | "nativeH"
+    | "spriteHeightMm"
+    | "vitalCxPx"
+    | "vitalCyPx"
+    | "neckCxPx"
+    | "neckCyPx"
+    | "neckWidthMm"
+    | "neckHeightMm"
+    | "neckRotationDeg"
+  >,
+  birdFlip = false,
+): boolean {
+  const hw = (geom.neckWidthMm ?? 0) / 2;
+  const hh = (geom.neckHeightMm ?? 0) / 2;
+  if (hw <= 0 || hh <= 0) return false;
+  const { xMm: ox, yMm: oy, rotationDeg } = neckOffsetFromVitalMm(
+    geom,
+    birdFlip,
+  );
+  const dx = xMm - ox;
+  const dy = yMm - oy;
+  const rad = (-rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  return Math.abs(lx) <= hw && Math.abs(ly) <= hh;
+}
+
+/**
+ * Hit ladder:
+ * - Yellow head: instant kill (headshot)
+ * - Orange neck: lucky instant kill (not an aim point)
+ * - Green chest: instant kill (drops)
+ * - Red: vital → short ettersøk
+ * - Body ellipse: wound → long ettersøk (near max fly radius)
+ * - Outside: miss (unharmed)
+ */
 export function classifyHuntShot(
   xMm: number,
   yMm: number,
@@ -579,6 +668,11 @@ export function classifyHuntShot(
     | "headCxPx"
     | "headCyPx"
     | "headDiameterMm"
+    | "neckCxPx"
+    | "neckCyPx"
+    | "neckWidthMm"
+    | "neckHeightMm"
+    | "neckRotationDeg"
     | "bodyRxMm"
     | "bodyRyMm"
     | "bodyOffsetXMm"
@@ -595,6 +689,9 @@ export function classifyHuntShot(
     isHeadshotHit(xMm, yMm, geom, birdFlip)
   ) {
     return { kind: "instant_kill", zone: "head" };
+  }
+  if (geom && isNeckHit(xMm, yMm, geom, birdFlip)) {
+    return { kind: "instant_kill", zone: "neck" };
   }
   if (isInstantKillHit(xMm, yMm, instantD)) {
     return { kind: "instant_kill", zone: "instant" };

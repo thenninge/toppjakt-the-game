@@ -3264,7 +3264,9 @@ export function HuntMapView({
         result.kind === "instant_kill"
           ? result.zone === "head"
             ? `Headshot — Pink Mist! ${dist} m.${pairNote}${stayNote}`
-            : `Instant kill på ${dist} m.${pairNote}${stayNote}`
+            : result.zone === "neck"
+              ? `Du bommet vel? men hadde flaks. Skuddet traff likevel i vital sone. ${dist} m.${pairNote}${stayNote}`
+              : `Instant kill på ${dist} m.${pairNote}${stayNote}`
           : result.kind === "vital_kill"
             ? `Vitalt treff på ${dist} m.${pairNote}${stayNote}`
             : fleeObservation

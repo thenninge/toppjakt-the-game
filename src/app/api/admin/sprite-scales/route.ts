@@ -9,7 +9,7 @@ import {
 import type { BirdSpecies } from "@/lib/hunt/birds";
 import { BIRD_SPRITE_SCALE_CATALOG } from "@/lib/hunt/birdSpriteScaleCatalog";
 
-const SCALE_MIN = 1;
+const SCALE_MIN = 0;
 const SCALE_MAX = 200;
 
 function clampScale(n: number): number {
@@ -18,13 +18,13 @@ function clampScale(n: number): number {
 }
 
 type BakeBody = {
-  species?: "tiur" | "orrhane";
+  species?: "tiur" | "orrhane" | "ugle";
   scales?: Record<string, unknown>;
 };
 
 /**
  * Dev-only: rewrite committed sprite-scale catalog from admin calibrations.
- * Body: { species: "tiur" | "orrhane", scales: { [spriteId]: number, ... } }
+ * Body: { species: "tiur" | "orrhane" | "ugle", scales: { [spriteId]: number, ... } }
  * Merges the named species into the full catalog (other species unchanged).
  */
 export async function POST(req: NextRequest) {
@@ -46,9 +46,9 @@ export async function POST(req: NextRequest) {
   }
 
   const { species, scales: incoming } = body as BakeBody;
-  if (species !== "tiur" && species !== "orrhane") {
+  if (species !== "tiur" && species !== "orrhane" && species !== "ugle") {
     return NextResponse.json(
-      { error: 'species must be "tiur" or "orrhane"' },
+      { error: 'species must be "tiur", "orrhane", or "ugle"' },
       { status: 400 },
     );
   }
@@ -101,8 +101,8 @@ export async function POST(req: NextRequest) {
   const file = `/**
  * Committed per-sprite visual scales (1–200 %, default 100).
  *
- * Admin Scale % writes browser localStorage first. Use Spotting →
- * «Lagre til repo» (tiur / orre) to overwrite this file, then commit + push.
+ * Admin Scale % writes browser localStorage first. Use Spotting / Scopes →
+ * «Lagre til repo» (tiur / orre / ugle) to overwrite this file, then commit + push.
  *
  * Auto-generated ${new Date().toISOString()} — do not hand-edit unless needed.
  */

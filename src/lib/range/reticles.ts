@@ -1,14 +1,13 @@
 /**
- * Scope reticle assets and FFP/SFP display scaling.
- *
- * Hold-over contract: size the reticle from the *same* CSS scale as the
- * target/bird ({@link angularReticleImgScale}) so 1 mil on glass =
- * `distanceM` mm on the target plane. Dial clicks stay true 0.1 mil
- * (10 mm @ 100 m) via player.ts ZERO_CLICK_MM — independent of this visual.
+ * Hold-over contract: FFP reticle scales with *optic zoom only*
+ * ({@link opticReticleImgScale} / {@link scopeImageScale} @ 100 m).
+ * Target/bird CSS scale is separate (distance, true-angular ×0.1, subject)
+ * so 1 mil on glass ≈ `distanceM` mm on the target plane when paper uses
+ * {@link RANGE_TRUE_ANGULAR_TARGET_SCALE}. Dial clicks stay true 0.1 mil
+ * via player.ts ZERO_CLICK_MM.
  *
  * {@link ffpReticleImageScale} maps each asset’s `centerTo1MilPx` onto the
- * CBA diamond tip in native px; callers pass an `imgScale` that already
- * encodes “how big is 1 mil on screen for this world”.
+ * CBA diamond tip in native px.
  *
  * ZCO MPCT3 ({@code zco527b.png}): full tree, FFP. In-game 27× (premium FOV)
  * ≈7 mrad centre→edge.

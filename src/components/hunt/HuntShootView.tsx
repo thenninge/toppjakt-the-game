@@ -19,7 +19,7 @@ import {
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
-import { angularReticleImgScale } from "@/lib/range/reticles";
+import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import {
   rifleSpecWithCustomBarrel,
   type InstalledCustomBarrel,
@@ -84,6 +84,7 @@ import {
   classifyHuntShot,
   formatHuntImpactOffsetMm,
   HEADSHOT_AAR_TEXT,
+  NECK_LUCKY_KILL_TEXT,
   SCOPE_VIEWPORT_REF_PX,
   isShotCamItemId,
   type HuntShotResult,
@@ -845,7 +846,10 @@ export function HuntShootView({
       (kind === "instant_kill"
         ? zone === "head"
           ? pullLabel + "Headshot — Pink Mist!"
-          : pullLabel + "Instant kill (grønn sone)!"
+          : zone === "neck"
+            ? pullLabel +
+              "Du bommet vel? men hadde flaks. Skuddet traff likevel i vital sone."
+            : pullLabel + "Instant kill (grønn sone)!"
         : kind === "vital_kill"
           ? pullLabel + "Vitalt treff — fuglen faller."
           : kind === "ettersok"
@@ -1323,12 +1327,8 @@ export function HuntShootView({
     // Landscape hunt: use placement width (perch/sprite scales) not bare 1/d.
     landscapeSrc ? birdWidthPct : undefined,
   );
-  /** Hold-over: 1 mil on glass = trueDistanceM mm on the bird. */
-  const reticleScale = angularReticleImgScale({
-    mmPerUnit: trueDistanceM,
-    pxPerMm: birdNativePxPerMm(shotGeom),
-    targetCssScale: targetScale,
-  });
+  /** FFP reticle: optic zoom only — not bird size/distance. */
+  const reticleScale = opticReticleImgScale(zoom, scope.scope);
   const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
   // Flipped sprite mirrors vital X around image centre — keep reticle on chest.
   const vitalOff = birdFlip
@@ -1401,7 +1401,9 @@ export function HuntShootView({
         subtitle={
           replay.zone === "head"
             ? HEADSHOT_AAR_TEXT
-            : `${status} · treff ${formatHuntImpactOffsetMm(lastImpact.xMm, lastImpact.yMm)} (fra vital-senter) · sone ${replay.zone}`
+            : replay.zone === "neck"
+              ? NECK_LUCKY_KILL_TEXT
+              : `${status} · treff ${formatHuntImpactOffsetMm(lastImpact.xMm, lastImpact.yMm)} (fra vital-senter) · sone ${replay.zone}`
         }
         onContinue={() => onShotResult(replay)}
       />

@@ -798,6 +798,63 @@ body {
   opacity: 0.9;
 }
 
+.admin-scope-test {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-scope-test-range {
+  margin: 0 auto;
+}
+
+/** White glass behind every skive and bird in Admin → Scopes. */
+.admin-scope-test .scope-viewport {
+  background: #fff;
+  box-shadow:
+    0 0 0 3px #6b5238,
+    inset 0 0 28px rgba(0, 0, 0, 0.18),
+    0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+.admin-scope-test .scope-world,
+.admin-scope-test .scope-world-scene {
+  background: #fff;
+}
+
+.admin-scope-test .scope-vignette {
+  background: radial-gradient(
+    circle at center,
+    transparent 48%,
+    rgba(0, 0, 0, 0.22) 68%,
+    rgba(0, 0, 0, 0.72) 82%,
+    #000 94%
+  );
+}
+
+.admin-scope-test-stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0.35rem 0 0.75rem;
+}
+
+.admin-scope-sprite-scale {
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
+.admin-scope-sprite-scale-slider {
+  width: 100%;
+  accent-color: var(--accent-gold);
+  cursor: pointer;
+}
+
+.admin-scope-sprite-scale-ends {
+  font-size: 0.68rem;
+  color: var(--canyon-dust);
+}
+
 .admin-hit-zones {
   display: flex;
   flex-direction: column;
@@ -817,6 +874,8 @@ body {
 
 .admin-hit-preview-bird {
   display: block;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   pointer-events: none;
   user-select: none;
@@ -843,6 +902,18 @@ body {
   background: rgba(70, 140, 220, 0.08);
   pointer-events: none;
   z-index: 1;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  transform-origin: center center;
+}
+
+.admin-hit-neck {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed rgba(230, 140, 40, 0.95);
+  border-radius: 2px;
+  background: rgba(230, 140, 40, 0.14);
+  pointer-events: none;
+  z-index: 2;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
   transform-origin: center center;
 }
@@ -4196,8 +4267,20 @@ body {
   z-index: 2;
 }
 
+.triggercam-zone--neck {
+  border: 2px dashed rgba(230, 140, 40, 0.95);
+  border-radius: 2px;
+  background: rgba(230, 140, 40, 0.14);
+  z-index: 2;
+  transform-origin: center center;
+}
+
 .admin-hit-cross--head {
   border-color: #f0d060;
+}
+
+.admin-hit-cross--neck {
+  border-color: #e88a28;
 }
 
 .triggercam-aar-hole {
@@ -5451,6 +5534,28 @@ body {
 
 .range-seg-btn.is-active .range-seg-unit {
   color: var(--prompt-green);
+}
+
+.range-easy10x-chip {
+  display: inline-block;
+  margin: 0;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid #6b5238;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.range-easy10x-chip.is-active {
+  color: var(--prompt-green);
+  border-color: #4a7a3a;
+  background: rgba(143, 239, 106, 0.12);
 }
 
 .range-ammo-list {

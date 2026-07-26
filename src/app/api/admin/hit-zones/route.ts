@@ -11,6 +11,11 @@ type ZoneBody = {
   headCxPx: number;
   headCyPx: number;
   headDiameterMm: number;
+  neckCxPx: number;
+  neckCyPx: number;
+  neckWidthMm: number;
+  neckHeightMm: number;
+  neckRotationDeg: number;
   bodyRxMm: number;
   bodyRyMm: number;
   bodyOffsetXMm: number;
@@ -29,6 +34,11 @@ function isZone(v: unknown): v is ZoneBody {
     typeof o.headCxPx === "number" &&
     typeof o.headCyPx === "number" &&
     typeof o.headDiameterMm === "number" &&
+    typeof o.neckCxPx === "number" &&
+    typeof o.neckCyPx === "number" &&
+    typeof o.neckWidthMm === "number" &&
+    typeof o.neckHeightMm === "number" &&
+    typeof o.neckRotationDeg === "number" &&
     typeof o.bodyRxMm === "number" &&
     typeof o.bodyRyMm === "number" &&
     typeof o.bodyOffsetXMm === "number" &&
@@ -94,6 +104,11 @@ export async function POST(req: NextRequest) {
         `    headCxPx: ${Number(z.headCxPx.toFixed(1))},`,
         `    headCyPx: ${Number(z.headCyPx.toFixed(1))},`,
         `    headDiameterMm: ${Math.round(z.headDiameterMm)},`,
+        `    neckCxPx: ${Number(z.neckCxPx.toFixed(1))},`,
+        `    neckCyPx: ${Number(z.neckCyPx.toFixed(1))},`,
+        `    neckWidthMm: ${Math.round(z.neckWidthMm)},`,
+        `    neckHeightMm: ${Math.round(z.neckHeightMm)},`,
+        `    neckRotationDeg: ${Math.round(z.neckRotationDeg)},`,
         `    bodyRxMm: ${Math.round(z.bodyRxMm)},`,
         `    bodyRyMm: ${Math.round(z.bodyRyMm)},`,
         `    bodyOffsetXMm: ${Math.round(z.bodyOffsetXMm)},`,
@@ -113,6 +128,7 @@ export async function POST(req: NextRequest) {
  *
  * Zones:
  * - Yellow (head): instant kill — headshot
+ * - Orange (neck): lucky instant kill — not an aim point
  * - Green (chest): instant kill — bird drops
  * - Red: vital — short ettersøk
  * - Body ellipse: wound — ettersøk toward max fly radius
@@ -131,6 +147,12 @@ export type BirdHitZone = {
   headCxPx: number;
   headCyPx: number;
   headDiameterMm: number;
+  /** Neck rectangle centre (native topp px) — lucky instant kill. */
+  neckCxPx: number;
+  neckCyPx: number;
+  neckWidthMm: number;
+  neckHeightMm: number;
+  neckRotationDeg: number;
   bodyRxMm: number;
   bodyRyMm: number;
   bodyOffsetXMm: number;

@@ -9,20 +9,31 @@ description: >-
 
 # Scope / reticle calibration
 
-Repeat the **ZCO 5-27 MPCT** process for every premium reticle. Shared angular
+Repeat the **ZCO 5-27 MPCT** process for every premium reticle. Shared optic
 pipeline is already in place; per-scope work is asset + FOV fine-tune only.
+
+## Admin sandbox
+
+**Admin Office → Scopes** (`AdminScopeTestPanel`): free catalog scope pick,
+skyteskive *or* bird sprite, distance 10–1500 m (1 m steps), power ring, drag
+to pan. Reticle uses `opticReticleImgScale` (zoom only). Skive paper uses
+`zeroingTargetAndReticleScale` like ShootingRange. At fixed zoom the MPCT
+tree must look identical on CBA and any bird. Button «= Range 100 m» resets
+CBA / 100 m / max zoom.
 
 ## Shared contracts (do not break)
 
 | Concern | Rule | Where |
 |--------|------|--------|
 | Dial click | 1 klikk = 0.1 mil = 10 mm @ 100 m | `ZERO_CLICK_MM` in `player.ts` |
-| Hold-over | Reticle uses same CSS scale as target/bird | `angularReticleImgScale` |
-| FFP size | `centerTo1MilPx` → CBA diamond tip (115 px) | `ffpReticleImageScale` |
-| Global subtension | Keep `RETICLE_SUBTENSION_CAL = 1` once angular scale is correct | `precision.ts` |
+| Reticle size | FFP ∝ optic zoom only (100 m ref) — not subject/distance | `opticReticleImgScale` |
+| Paper / bird | Distance + true-angular ×0.1 (skive); hunt bird FOV separate | `zeroingTargetAndReticleScale` / `birdScopeImageScale` |
+| FFP asset map | `centerTo1MilPx` → CBA diamond tip (115 px) | `ffpReticleImageScale` |
+| Global subtension | Keep `RETICLE_SUBTENSION_CAL = 1` | `precision.ts` |
 | Premium FOV | +15 % circle diameter | `SCOPE_FOV_DIAMETER_PREMIUM` / catalog |
 
-True-angular paper: `RANGE_TRUE_ANGULAR_TARGET_SCALE = 0.1` on zeroing lane.
+True-angular paper: `RANGE_TRUE_ANGULAR_TARGET_SCALE = 0.1` on zeroing lane
+(so 1 mil on zoom-only reticle ≈ 100 mm on paper @ 100 m).
 
 ## Reference: ZCO (done)
 

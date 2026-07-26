@@ -112,6 +112,7 @@ export const SPECIES_MARKET: Record<BirdSpecies, SpeciesMarketSpec> = {
 /** Base meat ruin by hit zone (grønn / rød / kropp). */
 export const ZONE_RUIN_BASE: Record<HuntShotZone, number> = {
   head: 0.1,
+  neck: 0.12,
   instant: 0.14,
   vital: 0.48,
   body: 0.82,
@@ -121,6 +122,7 @@ export const ZONE_RUIN_BASE: Record<HuntShotZone, number> = {
 /** Player-facing hit placement score (higher = cleaner meat potential). */
 export const ZONE_HIT_SCORE: Record<HuntShotZone, number> = {
   head: 10,
+  neck: 9,
   instant: 10,
   vital: 5.5,
   body: 2,
@@ -268,6 +270,8 @@ export function zoneLabelNb(zone: HuntShotZone): string {
   switch (zone) {
     case "head":
       return "Headshot";
+    case "neck":
+      return "Nakke (flaks)";
     case "instant":
       return "Grønn sone";
     case "vital":

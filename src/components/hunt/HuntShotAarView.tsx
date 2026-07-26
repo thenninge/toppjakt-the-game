@@ -7,6 +7,8 @@ import {
   formatHuntImpactOffsetMm,
   headOffsetFromVitalMm,
   HEADSHOT_AAR_TEXT,
+  neckOffsetFromVitalMm,
+  NECK_LUCKY_KILL_TEXT,
   type HuntShotResultKind,
   type HuntShotZone,
 } from "@/lib/hunt/shoot";
@@ -58,6 +60,9 @@ export function HuntShotAarView({
   const redD = mmToPx(geom.vitalDiameterMm) * aarScale;
   const yellowD = mmToPx(geom.headDiameterMm) * aarScale;
   const headOff = headOffsetFromVitalMm(geom, birdFlip);
+  const neckOff = neckOffsetFromVitalMm(geom, birdFlip);
+  const neckW = mmToPx(geom.neckWidthMm) * aarScale;
+  const neckH = mmToPx(geom.neckHeightMm) * aarScale;
   const holeD = Math.max(6, mmToPx(hit.diameterMm) * aarScale);
   const hitX =
     (geom.nativeW / 2 + vitalOff.x + mmToPx(hit.xMm)) * aarScale;
@@ -67,13 +72,18 @@ export function HuntShotAarView({
   const zoneCy = (geom.nativeH / 2 + vitalOff.y) * aarScale;
   const headCx = zoneCx + mmToPx(headOff.xMm) * aarScale;
   const headCy = zoneCy + mmToPx(headOff.yMm) * aarScale;
+  const neckCx = zoneCx + mmToPx(neckOff.xMm) * aarScale;
+  const neckCy = zoneCy + mmToPx(neckOff.yMm) * aarScale;
 
   const isHeadshot = hit.zone === "head";
+  const isNeck = hit.zone === "neck";
   const detail =
     subtitle ??
     (isHeadshot
       ? HEADSHOT_AAR_TEXT
-      : `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`);
+      : isNeck
+        ? NECK_LUCKY_KILL_TEXT
+        : `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`);
 
   return (
     <div
@@ -140,6 +150,21 @@ export function HuntShotAarView({
               title="Headshot"
             />
           ) : null}
+          {isNeck && geom.neckWidthMm > 0 && geom.neckHeightMm > 0 ? (
+            <span
+              className="triggercam-zone triggercam-zone--neck"
+              style={{
+                width: neckW,
+                height: neckH,
+                left: neckCx,
+                top: neckCy,
+                marginLeft: -neckW / 2,
+                marginTop: -neckH / 2,
+                transform: `rotate(${neckOff.rotationDeg}deg)`,
+              }}
+              title="Nakke (flaks)"
+            />
+          ) : null}
           <span
             className="bullet-hole triggercam-aar-hole"
             style={{
@@ -155,7 +180,9 @@ export function HuntShotAarView({
         <p className="spot-binos-hint">
           {isHeadshot
             ? "Gul sone — headshot · instant kill"
-            : "Rød = vital · grønn = instant kill · rødt hull = treffpunkt"}
+            : isNeck
+              ? "Oransje sone — nakke (flaks) · instant kill"
+              : "Rød = vital · grønn = instant kill · rødt hull = treffpunkt"}
         </p>
         <button type="button" className="intro-button" onClick={onContinue}>
           {continueLabel}

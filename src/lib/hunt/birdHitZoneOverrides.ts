@@ -30,6 +30,10 @@ export const HIT_ZONE_BODY_RY_MAX = 320;
 export const HIT_ZONE_BODY_OFFSET_MAX = 200;
 export const HIT_ZONE_HEAD_MM_MIN = 15;
 export const HIT_ZONE_HEAD_MM_MAX = 120;
+export const HIT_ZONE_NECK_W_MIN = 8;
+export const HIT_ZONE_NECK_W_MAX = 120;
+export const HIT_ZONE_NECK_H_MIN = 8;
+export const HIT_ZONE_NECK_H_MAX = 160;
 
 export type BirdHitZoneOverride = BirdHitZone;
 
@@ -108,6 +112,38 @@ function normalize(
       HIT_ZONE_HEAD_MM_MAX,
     ),
   );
+  const neckCx = clamp(
+    raw.neckCxPx ??
+      base.neckCxPx ??
+      (headCx + (raw.vitalCxPx ?? base.vitalCxPx)) / 2,
+    0,
+    sprite.toppW,
+  );
+  const neckCy = clamp(
+    raw.neckCyPx ??
+      base.neckCyPx ??
+      (headCy + (raw.vitalCyPx ?? base.vitalCyPx)) / 2,
+    0,
+    sprite.toppH,
+  );
+  const neckW = Math.round(
+    clamp(
+      raw.neckWidthMm ?? base.neckWidthMm ?? 28,
+      HIT_ZONE_NECK_W_MIN,
+      HIT_ZONE_NECK_W_MAX,
+    ),
+  );
+  const neckH = Math.round(
+    clamp(
+      raw.neckHeightMm ?? base.neckHeightMm ?? 36,
+      HIT_ZONE_NECK_H_MIN,
+      HIT_ZONE_NECK_H_MAX,
+    ),
+  );
+  const neckRot =
+    Math.round(
+      ((raw.neckRotationDeg ?? base.neckRotationDeg ?? 0) % 360) + 360,
+    ) % 360;
   return {
     vitalCxPx: clamp(raw.vitalCxPx ?? base.vitalCxPx, 0, sprite.toppW),
     vitalCyPx: clamp(raw.vitalCyPx ?? base.vitalCyPx, 0, sprite.toppH),
@@ -116,6 +152,11 @@ function normalize(
     headCxPx: Math.round(headCx * 10) / 10,
     headCyPx: Math.round(headCy * 10) / 10,
     headDiameterMm: headD,
+    neckCxPx: Math.round(neckCx * 10) / 10,
+    neckCyPx: Math.round(neckCy * 10) / 10,
+    neckWidthMm: neckW,
+    neckHeightMm: neckH,
+    neckRotationDeg: neckRot,
     bodyRxMm: Math.round(
       clamp(
         raw.bodyRxMm ?? base.bodyRxMm ?? body.bodyRxMm,
@@ -172,6 +213,13 @@ function parseZone(
       headCyPx: typeof o.headCyPx === "number" ? o.headCyPx : undefined,
       headDiameterMm:
         typeof o.headDiameterMm === "number" ? o.headDiameterMm : undefined,
+      neckCxPx: typeof o.neckCxPx === "number" ? o.neckCxPx : undefined,
+      neckCyPx: typeof o.neckCyPx === "number" ? o.neckCyPx : undefined,
+      neckWidthMm: typeof o.neckWidthMm === "number" ? o.neckWidthMm : undefined,
+      neckHeightMm:
+        typeof o.neckHeightMm === "number" ? o.neckHeightMm : undefined,
+      neckRotationDeg:
+        typeof o.neckRotationDeg === "number" ? o.neckRotationDeg : undefined,
       bodyRxMm: typeof o.bodyRxMm === "number" ? o.bodyRxMm : undefined,
       bodyRyMm: typeof o.bodyRyMm === "number" ? o.bodyRyMm : undefined,
       bodyOffsetXMm:
@@ -230,14 +278,21 @@ export function catalogHitZone(spriteId: BirdSpriteId): BirdHitZoneOverride {
   if (fromCatalog) return { ...fromCatalog };
   const s = getBirdSprite(spriteId);
   const body = defaultBodyForSprite(spriteId);
+  const headCx = s.vitalCxPx;
+  const headCy = Math.max(4, s.vitalCyPx - 20);
   return {
     vitalCxPx: s.vitalCxPx,
     vitalCyPx: s.vitalCyPx,
     instantDiameterMm: 66,
     vitalDiameterMm: 114,
-    headCxPx: s.vitalCxPx,
-    headCyPx: Math.max(4, s.vitalCyPx - 20),
+    headCxPx: headCx,
+    headCyPx: headCy,
     headDiameterMm: 42,
+    neckCxPx: Math.round(((headCx + s.vitalCxPx) / 2) * 10) / 10,
+    neckCyPx: Math.round(((headCy + s.vitalCyPx) / 2) * 10) / 10,
+    neckWidthMm: 28,
+    neckHeightMm: 36,
+    neckRotationDeg: 0,
     ...body,
   };
 }

@@ -51,10 +51,9 @@ import {
   measureGroup,
   RANGE_DISTANCE_M,
   RANGE_DISTANCES_M,
+  RANGE_EASY_ZERO_SCALE,
   rollTriggerTargetMs,
   sampleShotFromPoa,
-  scopeImageScale,
-  RANGE_TRUE_ANGULAR_TARGET_SCALE,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
@@ -62,6 +61,7 @@ import {
   type RangeDistanceM,
   type ShotImpact,
 } from "@/lib/range/precision";
+import { zeroingTargetAndReticleScale } from "@/lib/range/scopeViewScale";
 import {
   DEFAULT_TARGET_BY_DISTANCE,
   RANGE_TARGET_IDS,
@@ -93,7 +93,6 @@ import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
-import { angularReticleImgScale } from "@/lib/range/reticles";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -412,6 +411,11 @@ export function ShootingRange({
   /** Paper grid: MOA (×0.727) or MIL (1 cm = 0.1 mil). Default = reticle. */
   const reticleUnit: ScopeClickUnit = scope?.scope.clickUnit ?? "MRAD";
   const [paperUnit, setPaperUnit] = useState<ScopeClickUnit>(reticleUnit);
+  /**
+   * 10× helper: larger paper (undo ×0.1 true-angular) + 10 clicks per turret
+   * nudge — easier innskyting. Off for tracking-test.
+   */
+  const [easy10x, setEasy10x] = useState(false);
   const target = getRangeTarget(targetId);
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
@@ -1231,27 +1235,17 @@ export function ShootingRange({
   /** Target shrinks with distance (angular size). Per-skive visualScale fixes
    * board size. Zeroing/load: ×0.1 so physical mm match true mils.
    * Tracking already true-mil. MOA paper ({@link MOA_RANGE_TARGET_SCALE}). */
-  const moaPaperScale = paperUnit === "MOA" ? MOA_RANGE_TARGET_SCALE : 1;
-  const trueAngularPaper =
-    lane === "tracking-test" ? 1 : RANGE_TRUE_ANGULAR_TARGET_SCALE;
-  const targetScale = scope
-    ? scopeImageScale(zoom, scope.scope, distanceM) *
-      target.visualScale *
-      moaPaperScale *
-      trueAngularPaper
-    : target.visualScale * trueAngularPaper;
-  /**
-   * Hold-over: reticle mil/MOA hashes sized from the *same* CSS scale as the
-   * paper so 1 mil = distanceM mm (MRAD) or 1 MOA = 29.4×(D/100) mm.
-   */
-  const reticleImgScale = angularReticleImgScale({
-    mmPerUnit:
-      paperUnit === "MOA"
-        ? MM_PER_MOA_AT_100M * (distanceM / 100)
-        : distanceM,
-    pxPerMm: target.pxPerMm,
-    targetCssScale: targetScale,
-  });
+  const { targetScale, reticleImgScale } = scope
+    ? zeroingTargetAndReticleScale({
+        zoom,
+        scope: scope.scope,
+        distanceM,
+        target,
+        paperUnit,
+        trackingLane: lane === "tracking-test",
+        easy10x,
+      })
+    : { targetScale: target.visualScale, reticleImgScale: 0 };
   const bullseyeOff = targetBullseyeOffsetFromImageCenterPx(target);
   targetScaleRef.current = targetScale;
   const fovDiameterScale = scope
@@ -1376,11 +1370,15 @@ export function ShootingRange({
   }
 
   function nudgeZero(axis: "x" | "y", deltaMm: number) {
+    const step =
+      easy10x && lane !== "tracking-test"
+        ? deltaMm * RANGE_EASY_ZERO_SCALE
+        : deltaMm;
     if (axis === "x") {
-      setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
+      setSessionZeroXMm((prev) => clampTurretMm(prev + step));
       return;
     }
-    setSessionZeroYMm((prev) => clampTurretMm(prev + deltaMm));
+    setSessionZeroYMm((prev) => clampTurretMm(prev + step));
   }
 
   function saveCurrentZero() {
@@ -1965,7 +1963,7 @@ export function ShootingRange({
       <section className="range-setup" aria-label="Serieoppsett">
         <ExpandableSection
           title="Baneoppsett"
-          summary={`${distanceM} m · ${paperUnit === "MOA" ? "MOA" : "MIL"} · ${target.shortLabel}`}
+          summary={`${distanceM} m · ${paperUnit === "MOA" ? "MOA" : "MIL"} · ${target.shortLabel}${easy10x ? " · 10×" : ""}`}
         >
           <div className="range-setup-block">
             <p className="range-setup-label" id="range-distance-label">
@@ -2050,6 +2048,50 @@ export function ShootingRange({
             ) : paperUnit !== reticleUnit ? (
               <p className="shop-row-note range-moa-paper-hint">
                 MIL-skive valgt mens retikkelet er MOA — 1 cm ≈ 0,1 mil.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="range-setup-block">
+            <p className="range-setup-label" id="range-easy10x-label">
+              Innskyting
+            </p>
+            <div
+              className="range-segment"
+              role="group"
+              aria-labelledby="range-easy10x-label"
+            >
+              <button
+                type="button"
+                className={
+                  easy10x ? "range-seg-btn is-active" : "range-seg-btn"
+                }
+                disabled={setupLocked}
+                aria-pressed={easy10x}
+                title="10× større blink og 10× klikksteg per turret-knepp"
+                onClick={() => {
+                  setEasy10x((v) => {
+                    const next = !v;
+                    setStatus(
+                      next
+                        ? "10× på — blink ×10, hvert knepp = 10 klikk."
+                        : "10× av — ekte vinkel og 1 klikk per knepp.",
+                    );
+                    return next;
+                  });
+                }}
+              >
+                <span className="range-seg-value">10×</span>
+                <span className="range-seg-unit">
+                  {easy10x ? "på" : "av"}
+                </span>
+              </button>
+            </div>
+            {easy10x ? (
+              <p className="shop-row-note range-moa-paper-hint">
+                Blink ×{RANGE_EASY_ZERO_SCALE} (lesbar) og turret ×
+                {RANGE_EASY_ZERO_SCALE} klikk per knepp. Slå av for finjustering
+                i ekte mil.
               </p>
             ) : null}
           </div>
@@ -2215,6 +2257,34 @@ export function ShootingRange({
         <span className="shop-row-note">
           Zoom {zoom.toFixed(1)}× ({scope.scope.minZoom}–{scope.scope.maxZoom}×)
           — dra i glasset for å sikte · dra ringen (kl. 8→12→4)
+          {lane !== "tracking-test" ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className={
+                  easy10x
+                    ? "range-easy10x-chip is-active"
+                    : "range-easy10x-chip"
+                }
+                aria-pressed={easy10x}
+                title="10× større blink og 10× klikksteg"
+                onClick={() => {
+                  setEasy10x((v) => {
+                    const next = !v;
+                    setStatus(
+                      next
+                        ? "10× på — blink ×10, hvert knepp = 10 klikk."
+                        : "10× av — ekte vinkel og 1 klikk per knepp.",
+                    );
+                    return next;
+                  });
+                }}
+              >
+                10×
+              </button>
+            </>
+          ) : null}
         </span>
       </div>
 

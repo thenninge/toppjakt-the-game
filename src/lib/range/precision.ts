@@ -98,11 +98,17 @@ export const SCOPE_IMAGE_SCALE_PER_ZOOM =
 
 /**
  * Undo the old “readable” 10× paper exaggeration on the zeroing lane.
- * Reticle stays mil-calibrated to the CBA diamond tip in *unscaled* px;
- * paper ×0.1 → 1 mil hash ≈ 100 mm @ 100 m (10 clicks between circles).
- * Tracking lane already uses true-mil reticle — leave its scale alone.
+ * Reticle is zoom-only ({@link opticReticleImgScale}); paper ×0.1 so
+ * 1 mil hash ≈ 100 mm @ 100 m (10 clicks between circles).
+ * Tracking lane already uses true-mil board — leave its scale alone.
  */
 export const RANGE_TRUE_ANGULAR_TARGET_SCALE = 0.1;
+
+/**
+ * Optional “10×” zeroing helper: undo true-angular shrink on paper and
+ * advance turrets 10 clicks per nudge so innskyting is easier to see/dial.
+ */
+export const RANGE_EASY_ZERO_SCALE = 10;
 
 export type ShotImpact = {
   /** mm right of bullseye (target coords). */

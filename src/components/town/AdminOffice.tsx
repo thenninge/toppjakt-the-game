@@ -5,6 +5,7 @@ import { SpotView } from "@/components/hunt/SpotView";
 import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
 import { AdminSceneCreationPanel } from "@/components/town/AdminSceneCreationPanel";
+import { AdminScopeTestPanel } from "@/components/town/AdminScopeTestPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
   BIRD_SPRITE_SCALE_DEFAULT,
@@ -51,7 +52,7 @@ type AdminOfficeProps = {
   onLeave: () => void;
 };
 
-type AdminTab = "spotting" | "scenes" | "treff";
+type AdminTab = "spotting" | "scenes" | "treff" | "scopes";
 
 function spotLabel(src: string): string {
   const base = src.split("/").pop() ?? src;
@@ -228,6 +229,15 @@ function SpriteScaleBakeButton({
 export function AdminOffice({ onLeave }: AdminOfficeProps) {
   const [tab, setTab] = useState<AdminTab>("spotting");
 
+  if (tab === "scopes") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminScopeTestPanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
   if (tab === "treff") {
     return (
       <div className="admin-office-shell">
@@ -303,6 +313,19 @@ function AdminTabBar({
         onClick={() => onTab("treff")}
       >
         Treffområde
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "scopes"}
+        className={
+          tab === "scopes"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("scopes")}
+      >
+        Scopes
       </button>
       <button
         type="button"

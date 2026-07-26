@@ -22,6 +22,10 @@ import {
   HIT_ZONE_HEAD_MM_MIN,
   HIT_ZONE_INSTANT_MM_MAX,
   HIT_ZONE_INSTANT_MM_MIN,
+  HIT_ZONE_NECK_H_MAX,
+  HIT_ZONE_NECK_H_MIN,
+  HIT_ZONE_NECK_W_MAX,
+  HIT_ZONE_NECK_W_MIN,
   HIT_ZONE_VITAL_MM_MAX,
   HIT_ZONE_VITAL_MM_MIN,
   setBirdHitZoneOverride,
@@ -53,13 +57,20 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   const [headCx, setHeadCx] = useState(0);
   const [headCy, setHeadCy] = useState(0);
   const [headMm, setHeadMm] = useState(42);
+  const [neckCx, setNeckCx] = useState(0);
+  const [neckCy, setNeckCy] = useState(0);
+  const [neckW, setNeckW] = useState(28);
+  const [neckH, setNeckH] = useState(36);
+  const [neckRot, setNeckRot] = useState(0);
   const [bodyRx, setBodyRx] = useState(80);
   const [bodyRy, setBodyRy] = useState(154);
   const [bodyOx, setBodyOx] = useState(0);
   const [bodyOy, setBodyOy] = useState(19);
   const [bodyRot, setBodyRot] = useState(0);
   const [previewFlip, setPreviewFlip] = useState(false);
-  const [clickMode, setClickMode] = useState<"vital" | "head">("vital");
+  const [clickMode, setClickMode] = useState<"vital" | "head" | "neck">(
+    "vital",
+  );
   const [bakeStatus, setBakeStatus] = useState<string | null>(null);
   const [baking, setBaking] = useState(false);
 
@@ -77,6 +88,11 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     setHeadCx(Math.round(z.headCxPx * 10) / 10);
     setHeadCy(Math.round(z.headCyPx * 10) / 10);
     setHeadMm(z.headDiameterMm);
+    setNeckCx(Math.round(z.neckCxPx * 10) / 10);
+    setNeckCy(Math.round(z.neckCyPx * 10) / 10);
+    setNeckW(z.neckWidthMm);
+    setNeckH(z.neckHeightMm);
+    setNeckRot(z.neckRotationDeg);
     setBodyRx(z.bodyRxMm);
     setBodyRy(z.bodyRyMm);
     setBodyOx(z.bodyOffsetXMm);
@@ -93,15 +109,21 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
   const hasOverride = !!getBirdHitZoneOverride(spriteId);
   const catalog = catalogHitZone(spriteId);
 
-  const mmToPx = (mm: number) => birdMmToNativePx(mm, geom) * PREVIEW_SCALE;
-  const greenD = mmToPx(instantMm);
-  const redD = mmToPx(vitalMm);
-  const yellowD = mmToPx(headMm);
+  /** Native px → % of preview box (survives max-width shrink on large sprites). */
+  const pctX = (nativeX: number) => `${(nativeX / sprite.toppW) * 100}%`;
+  const pctY = (nativeY: number) => `${(nativeY / sprite.toppH) * 100}%`;
+  const pctW = (nativeW: number) => `${(nativeW / sprite.toppW) * 100}%`;
+  const pctH = (nativeH: number) => `${(nativeH / sprite.toppH) * 100}%`;
+  const mmNative = (mm: number) => birdMmToNativePx(mm, geom);
+
   /** When preview is mirrored, centres appear at mirrored X on the flipped image. */
-  const zoneCx = (previewFlip ? sprite.toppW - cx : cx) * PREVIEW_SCALE;
-  const zoneCy = cy * PREVIEW_SCALE;
-  const headDispCx = (previewFlip ? sprite.toppW - headCx : headCx) * PREVIEW_SCALE;
-  const headDispCy = headCy * PREVIEW_SCALE;
+  const zoneNx = previewFlip ? sprite.toppW - cx : cx;
+  const zoneNy = cy;
+  const headNx = previewFlip ? sprite.toppW - headCx : headCx;
+  const headNy = headCy;
+  const neckNx = previewFlip ? sprite.toppW - neckCx : neckCx;
+  const neckNy = neckCy;
+  const neckDispRot = previewFlip ? -neckRot : neckRot;
 
   const draftGeom = {
     ...geom,
@@ -112,10 +134,8 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     bodyRotationDeg: bodyRot,
   };
   const body = bodyEllipseFromVitalMm(draftGeom, previewFlip);
-  const bodyW = mmToPx(body.rxMm * 2);
-  const bodyH = mmToPx(body.ryMm * 2);
-  const bodyCx = zoneCx + mmToPx(body.offsetXMm);
-  const bodyCy = zoneCy + mmToPx(body.offsetYMm);
+  const bodyNx = zoneNx + mmNative(body.offsetXMm);
+  const bodyNy = zoneNy + mmNative(body.offsetYMm);
 
   function currentZone() {
     return {
@@ -126,6 +146,11 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
       headCxPx: headCx,
       headCyPx: headCy,
       headDiameterMm: headMm,
+      neckCxPx: neckCx,
+      neckCyPx: neckCy,
+      neckWidthMm: neckW,
+      neckHeightMm: neckH,
+      neckRotationDeg: neckRot,
       bodyRxMm: bodyRx,
       bodyRyMm: bodyRy,
       bodyOffsetXMm: bodyOx,
@@ -151,6 +176,11 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     setHeadCx(Math.round(z.headCxPx * 10) / 10);
     setHeadCy(Math.round(z.headCyPx * 10) / 10);
     setHeadMm(z.headDiameterMm);
+    setNeckCx(Math.round(z.neckCxPx * 10) / 10);
+    setNeckCy(Math.round(z.neckCyPx * 10) / 10);
+    setNeckW(z.neckWidthMm);
+    setNeckH(z.neckHeightMm);
+    setNeckRot(z.neckRotationDeg);
     setBodyRx(z.bodyRxMm);
     setBodyRy(z.bodyRyMm);
     setBodyOx(z.bodyOffsetXMm);
@@ -215,6 +245,9 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     if (clickMode === "head") {
       setHeadCx(nx);
       setHeadCy(ny);
+    } else if (clickMode === "neck") {
+      setNeckCx(nx);
+      setNeckCy(ny);
     } else {
       setCx(nx);
       setCy(ny);
@@ -225,8 +258,9 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
     <div className="admin-hit-zones">
       <p className="intro-line intro-gift">Treffområde</p>
       <p className="intro-line">
-        Gul = headshot (instant). Grønn = bryst (instant). Rød = vital (kort
-        ettersøk). Blå ellipse = kropp (langt ettersøk). Utenfor = bom.
+        Gul = headshot (instant). Oransje = nakke (flaks-instant — ikke siktemål).
+        Grønn = bryst (instant). Rød = vital (kort ettersøk). Blå ellipse = kropp
+        (langt ettersøk). Utenfor = bom.
       </p>
 
       <div className="admin-spot-controls">
@@ -323,6 +357,76 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
           >
             Klikk: hode
           </button>
+          <button
+            type="button"
+            className={
+              clickMode === "neck"
+                ? "intro-button admin-spot-btn is-selected"
+                : "intro-button admin-spot-btn"
+            }
+            onClick={() => setClickMode("neck")}
+          >
+            Klikk: nakke
+          </button>
+        </div>
+
+        <div className="admin-spot-row">
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Nakke B mm</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={HIT_ZONE_NECK_W_MIN}
+              max={HIT_ZONE_NECK_W_MAX}
+              step={1}
+              value={neckW}
+              onChange={(e) => setNeckW(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Nakke H mm</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={HIT_ZONE_NECK_H_MIN}
+              max={HIT_ZONE_NECK_H_MAX}
+              step={1}
+              value={neckH}
+              onChange={(e) => setNeckH(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Nakke Cx</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              step={0.5}
+              value={neckCx}
+              onChange={(e) => setNeckCx(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Nakke Cy</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              step={0.5}
+              value={neckCy}
+              onChange={(e) => setNeckCy(Number(e.target.value))}
+            />
+          </label>
+          <label className="admin-spot-field admin-spot-scale">
+            <span>Nakke °</span>
+            <input
+              type="number"
+              className="admin-spot-scale-num"
+              min={-180}
+              max={180}
+              step={1}
+              value={neckRot > 180 ? neckRot - 360 : neckRot}
+              onChange={(e) => setNeckRot(Number(e.target.value))}
+            />
+          </label>
         </div>
 
         <div className="admin-spot-row">
@@ -436,7 +540,9 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
           Katalog: ({catalog.vitalCxPx.toFixed(1)}, {catalog.vitalCyPx.toFixed(1)})
           · grønn Ø{catalog.instantDiameterMm} / rød Ø{catalog.vitalDiameterMm}
           · gul Ø{catalog.headDiameterMm} @ ({catalog.headCxPx.toFixed(1)},{" "}
-          {catalog.headCyPx.toFixed(1)}) · kropp {catalog.bodyRxMm}×
+          {catalog.headCyPx.toFixed(1)}) · nakke {catalog.neckWidthMm}×
+          {catalog.neckHeightMm} @ ({catalog.neckCxPx.toFixed(1)},{" "}
+          {catalog.neckCyPx.toFixed(1)}) · kropp {catalog.bodyRxMm}×
           {catalog.bodyRyMm} @ {catalog.bodyRotationDeg}°
           {hasOverride ? " · lokal override aktiv" : " · katalog"}
         </p>
@@ -458,19 +564,23 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
         aria-label={
           clickMode === "head"
             ? "Klikk for å sette headshot-senter"
-            : "Klikk for å sette vital-senter"
+            : clickMode === "neck"
+              ? "Klikk for å sette nakke-senter"
+              : "Klikk for å sette vital-senter"
         }
         style={{
           width: sprite.toppW * PREVIEW_SCALE,
-          height: sprite.toppH * PREVIEW_SCALE,
+          maxWidth: "100%",
+          aspectRatio: `${sprite.toppW} / ${sprite.toppH}`,
+          height: "auto",
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={sprite.toppSrc}
           alt={spriteId}
-          width={sprite.toppW * PREVIEW_SCALE}
-          height={sprite.toppH * PREVIEW_SCALE}
+          width={sprite.toppW}
+          height={sprite.toppH}
           draggable={false}
           className="admin-hit-preview-bird"
           style={previewFlip ? { transform: "scaleX(-1)" } : undefined}
@@ -478,66 +588,79 @@ export function AdminHitZonesPanel({ onLeave }: AdminHitZonesPanelProps) {
         <span
           className="admin-hit-body"
           style={{
-            width: bodyW,
-            height: bodyH,
-            left: bodyCx,
-            top: bodyCy,
-            marginLeft: -bodyW / 2,
-            marginTop: -bodyH / 2,
-            transform: `rotate(${body.rotationDeg}deg)`,
+            width: pctW(mmNative(body.rxMm * 2)),
+            height: pctH(mmNative(body.ryMm * 2)),
+            left: pctX(bodyNx),
+            top: pctY(bodyNy),
+            transform: `translate(-50%, -50%) rotate(${body.rotationDeg}deg)`,
           }}
           title="Kropp — utenfor = bom"
           aria-hidden
         />
         <span
+          className="admin-hit-neck"
+          style={{
+            width: pctW(mmNative(neckW)),
+            height: pctH(mmNative(neckH)),
+            left: pctX(neckNx),
+            top: pctY(neckNy),
+            transform: `translate(-50%, -50%) rotate(${neckDispRot}deg)`,
+          }}
+          title="Nakke — flaks-instant (ikke siktemål)"
+          aria-hidden
+        />
+        <span
           className="triggercam-zone triggercam-zone--vital"
           style={{
-            width: redD,
-            height: redD,
-            left: zoneCx,
-            top: zoneCy,
-            marginLeft: -redD / 2,
-            marginTop: -redD / 2,
+            width: pctW(mmNative(vitalMm)),
+            height: pctH(mmNative(vitalMm)),
+            left: pctX(zoneNx),
+            top: pctY(zoneNy),
+            transform: "translate(-50%, -50%)",
           }}
         />
         <span
           className="triggercam-zone triggercam-zone--instant"
           style={{
-            width: greenD,
-            height: greenD,
-            left: zoneCx,
-            top: zoneCy,
-            marginLeft: -greenD / 2,
-            marginTop: -greenD / 2,
+            width: pctW(mmNative(instantMm)),
+            height: pctH(mmNative(instantMm)),
+            left: pctX(zoneNx),
+            top: pctY(zoneNy),
+            transform: "translate(-50%, -50%)",
           }}
         />
         <span
           className="triggercam-zone triggercam-zone--head"
           style={{
-            width: yellowD,
-            height: yellowD,
-            left: headDispCx,
-            top: headDispCy,
-            marginLeft: -yellowD / 2,
-            marginTop: -yellowD / 2,
+            width: pctW(mmNative(headMm)),
+            height: pctH(mmNative(headMm)),
+            left: pctX(headNx),
+            top: pctY(headNy),
+            transform: "translate(-50%, -50%)",
           }}
           title="Headshot — instant kill"
         />
         <span
           className="admin-hit-cross"
-          style={{ left: zoneCx, top: zoneCy }}
+          style={{ left: pctX(zoneNx), top: pctY(zoneNy) }}
           aria-hidden
         />
         <span
           className="admin-hit-cross admin-hit-cross--head"
-          style={{ left: headDispCx, top: headDispCy }}
+          style={{ left: pctX(headNx), top: pctY(headNy) }}
+          aria-hidden
+        />
+        <span
+          className="admin-hit-cross admin-hit-cross--neck"
+          style={{ left: pctX(neckNx), top: pctY(neckNy) }}
           aria-hidden
         />
       </div>
 
       <p className="admin-spot-meta">
         Kropp: {Math.round(body.rxMm * 2)}×{Math.round(body.ryMm * 2)} mm · rot{" "}
-        {Math.round(body.rotationDeg)}°
+        {Math.round(body.rotationDeg)}° · nakke {neckW}×{neckH} mm @{" "}
+        {Math.round(neckDispRot)}°
         {previewFlip ? " (speilet)" : ""}
       </p>
 

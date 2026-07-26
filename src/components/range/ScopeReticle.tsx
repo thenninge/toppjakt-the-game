@@ -11,7 +11,7 @@ import {
 type ScopeReticleProps = {
   scope: ScopeSpec;
   zoom: number;
-  /** Target world scale (`scopeImageScale`). */
+  /** Optic zoom scale (`opticReticleImgScale` / `scopeImageScale` @ 100 m). */
   imgScale: number;
 };
 
