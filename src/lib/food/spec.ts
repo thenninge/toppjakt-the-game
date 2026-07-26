@@ -97,11 +97,15 @@ export function isPackableFoodKind(kind: FoodKind): boolean {
   return kind === "ready" || kind === "meal";
 }
 
-/** Jula thermos — enables coffee cup on hunt. */
+/** Legacy Jula thermos id — prefer any `food.kind === "thermos"` in kit. */
 export const THERMOS_ITEM_ID = "misc-thermos-jula";
 
 /** Cups of coffee in a filled thermos (per hunt trip). */
 export const THERMOS_CUPS_PER_FILL = 5;
+
+export function isThermosFood(food: FoodSpec): boolean {
+  return food.kind === "thermos";
+}
 
 export const COFFEE_RECOVERY: FoodRecovery & { label: string } = {
   label: "Kaffekopp (termos)",

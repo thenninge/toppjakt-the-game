@@ -45,7 +45,12 @@ import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
-import { isAmmoItem, isFoodItem, isMiscItem, isStockItem } from "@/lib/shop/types";
+import { isAmmoItem, isFoodItem, isMiscItem, isMountItem, isScopeItem, isStockItem } from "@/lib/shop/types";
+import {
+  mountClearsZeroOnMountRemove,
+  mountClearsZeroOnScopeRemove,
+  type MountTier,
+} from "@/lib/mount/spec";
 import { isFireStarterMisc } from "@/lib/misc/spec";
 
 /** Live home-load lots for resolvePlayerItem (synced from save state). */
@@ -227,6 +232,11 @@ export type PlayerStats = {
    * Home inventory: auto-pack mat/snacks (ready + meal) into kit when owned.
    */
   autoSupplyFood: boolean;
+  /**
+   * Saved favorite hunt loadout (item ids). Pack from Home / range
+   * via «Pakk favorittkitt for jakt».
+   */
+  favoriteKitIds: string[];
   /** Laderommet — selected components for the current home load. */
   loadBenchRecipe: LoadBenchRecipe;
   /**
@@ -279,6 +289,8 @@ export const BONUS_CASH_NAME_SUBSTRINGS = ["smart", "hesla"] as const;
 export const BONUS_CASH_STARTING_BALANCE = VIP_STARTING_BALANCE;
 export const STARTER_RIFLE_ID = "rifle-cz452";
 export const STARTER_SCOPE_ID = "scope-biltema-3-9x40";
+/** Hawke 1" — matches Biltema starter scope tube. */
+export const STARTER_MOUNT_ID = "mount-hawke-match-1in";
 export const STARTER_LICENSE_ID = "license-starter-cz452";
 
 /**
@@ -346,6 +358,7 @@ export const KIT_PROFILE_TOMAS: KitProfile = {
   weaponIds: [
     "rifle-sauer-200str",
     "scope-zco-527-mct",
+    "mount-spuhr-sp4602-36",
     "ammo-norma-65x55-black-diamond",
     "ammo-lapua-65x55-scenar",
     "sup-svemko-hunter-1",
@@ -376,6 +389,7 @@ export const KIT_PROFILE_IVAR: KitProfile = {
   weaponIds: [
     "rifle-carbonwolf-berillium",
     "scope-nf-nx8-4-32-mrad",
+    "mount-spuhr-sp3001-30",
     "ammo-norma-65x55-black-diamond",
     "ammo-lapua-65x55-scenar",
     "sup-hausken-jd184-xtrm",
@@ -401,6 +415,7 @@ export const KIT_PROFILE_JORN: KitProfile = {
     "rifle-rem-700-sa-hansen-custom",
     "stock-mdt-hnt26-rem700",
     "scope-kahles-k525i-5-25-mrad",
+    "mount-spuhr-sp4002-34",
     "ammo-norma-65cm-black-diamond",
     "ammo-lapua-65cm-scenar-l",
     "sup-atec-optima-50",
@@ -425,6 +440,7 @@ export const KIT_PROFILE_NEPPE: KitProfile = {
   weaponIds: [
     "rifle-sauer-200str",
     "scope-nf-nx8-4-32-mrad",
+    "mount-spuhr-sp3001-30",
     "ammo-norma-65x55-black-diamond",
     "ammo-lapua-65x55-scenar",
     "sup-svemko-genesis-30",
@@ -559,6 +575,12 @@ export function grantUncleRifle(stats: PlayerStats): PlayerStats {
     next = {
       ...next,
       inventory: [...next.inventory, { itemId: STARTER_SCOPE_ID, qty: 1 }],
+    };
+  }
+  if (!next.inventory.some((e) => e.itemId === STARTER_MOUNT_ID)) {
+    next = {
+      ...next,
+      inventory: [...next.inventory, { itemId: STARTER_MOUNT_ID, qty: 1 }],
     };
   }
   if (!next.weaponLicenses.some((l) => l.id === STARTER_LICENSE_ID)) {
@@ -746,6 +768,7 @@ export function createInitialStats(): PlayerStats {
     jaktkort: null,
     unlockedTerrainIds: [],
     autoSupplyFood: false,
+    favoriteKitIds: [],
     loadBenchRecipe: createDefaultLoadBenchRecipe(),
     armedLoadPlan: null,
     loadDevTable: createEmptyLoadDevTable(),
@@ -933,6 +956,40 @@ export function isZeroVerified(
   return profile.savedXMm !== 0 || profile.savedYMm !== 0;
 }
 
+/** True if both kit id lists contain the same items (order-independent). */
+export function kitsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((id, i) => id === sb[i]);
+}
+
+/** Favorite ids still owned in inventory (qty > 0). */
+export function ownedFavoriteKitIds(stats: PlayerStats): string[] {
+  const owned = new Set(
+    stats.inventory.filter((e) => e.qty > 0).map((e) => e.itemId),
+  );
+  return stats.favoriteKitIds.filter((id) => owned.has(id));
+}
+
+/**
+ * Replace active kit with the saved favorite (owned items only).
+ * Clears / transfers zero profiles based on mount tier rules.
+ */
+export function applyFavoriteKit(stats: PlayerStats): PlayerStats {
+  const nextKit = ownedFavoriteKitIds(stats);
+  if (kitsEqual(stats.kit, nextKit)) return stats;
+  return {
+    ...stats,
+    kit: nextKit,
+    zeroingProfiles: applyMountZeroingAfterKitChange(
+      stats.zeroingProfiles,
+      stats.kit,
+      nextKit,
+    ),
+  };
+}
+
 /** Drop all zero profiles that include this scope id. */
 export function clearZeroingForScope(
   map: Record<string, ZeroingProfile>,
@@ -956,6 +1013,109 @@ export function clearZeroingForRifle(
   for (const [key, profile] of Object.entries(map)) {
     if (!key.startsWith(prefix)) next[key] = profile;
   }
+  return next;
+}
+
+/**
+ * Copy verified (or any) zero profiles from one scope id to another for the
+ * same rifle+ammo keys. Used by top-tier mounts when swapping scopes.
+ */
+export function transferZeroingForScopeSwap(
+  map: Record<string, ZeroingProfile>,
+  fromScopeId: string,
+  toScopeId: string,
+): Record<string, ZeroingProfile> {
+  if (!fromScopeId || !toScopeId || fromScopeId === toScopeId) return map;
+  const next = { ...map };
+  const fromNeedle = `::${fromScopeId}::`;
+  for (const [key, profile] of Object.entries(map)) {
+    if (!key.includes(fromNeedle)) continue;
+    const parts = key.split("::");
+    if (parts.length !== 3) continue;
+    const [rifleId, , ammoId] = parts;
+    if (!rifleId || !ammoId) continue;
+    const newKey = zeroingKey(rifleId, toScopeId, ammoId);
+    if (!isZeroVerified(next[newKey])) {
+      next[newKey] = { ...profile };
+    }
+  }
+  return next;
+}
+
+function kitMountTier(kitIds: readonly string[]): MountTier | null {
+  for (const id of kitIds) {
+    const item = getShopItem(id);
+    if (item && isMountItem(item)) return item.mount.tier;
+  }
+  return null;
+}
+
+/**
+ * After a kit change: clear / transfer zeros based on mount tier.
+ * Top = keep / transfer on same-diameter scope swap. Mid/budget = clear on
+ * scope or mount remove.
+ */
+export function applyMountZeroingAfterKitChange(
+  profiles: Record<string, ZeroingProfile>,
+  beforeKit: readonly string[],
+  afterKit: readonly string[],
+): Record<string, ZeroingProfile> {
+  const removed = beforeKit.filter((id) => !afterKit.includes(id));
+  const added = afterKit.filter((id) => !beforeKit.includes(id));
+  let next = profiles;
+
+  const removedScope = removed
+    .map((id) => getShopItem(id))
+    .find((i): i is import("@/lib/shop/types").ScopeShopItem =>
+      !!i && isScopeItem(i),
+    );
+  const addedScope = added
+    .map((id) => getShopItem(id))
+    .find((i): i is import("@/lib/shop/types").ScopeShopItem =>
+      !!i && isScopeItem(i),
+    );
+  const removedMount = removed
+    .map((id) => getShopItem(id))
+    .find((i): i is import("@/lib/shop/types").MountShopItem =>
+      !!i && isMountItem(i),
+    );
+  const afterTier = kitMountTier(afterKit);
+  // Prefer mount that remains / is newly equipped; fall back to removed mount tier.
+  const mountTier =
+    afterTier ?? (removedMount ? removedMount.mount.tier : null);
+
+  if (removedScope && addedScope) {
+    const sameTube =
+      removedScope.scope.tubeDiameterMm === addedScope.scope.tubeDiameterMm;
+    if (mountTier === "top" && sameTube) {
+      next = transferZeroingForScopeSwap(
+        next,
+        removedScope.id,
+        addedScope.id,
+      );
+    } else if (mountClearsZeroOnScopeRemove(mountTier)) {
+      next = clearZeroingForScope(next, removedScope.id);
+    }
+  } else if (removedScope && mountClearsZeroOnScopeRemove(mountTier)) {
+    next = clearZeroingForScope(next, removedScope.id);
+  }
+
+  for (const id of removed) {
+    const rem = getShopItem(id);
+    if (rem?.category === "rifle") {
+      next = clearZeroingForRifle(next, id);
+    }
+  }
+
+  if (removedMount && mountClearsZeroOnMountRemove(removedMount.mount.tier)) {
+    const scopeItem =
+      afterKit.map((id) => getShopItem(id)).find((i) => i && isScopeItem(i)) ??
+      beforeKit.map((id) => getShopItem(id)).find((i) => i && isScopeItem(i));
+    if (scopeItem && isScopeItem(scopeItem)) {
+      next = clearZeroingForScope(next, scopeItem.id);
+    }
+  }
+
   return next;
 }
 
@@ -1124,6 +1284,31 @@ export function canBuyHuntingRifle(stats: PlayerStats): boolean {
 
 export function canApproveNewLicense(stats: PlayerStats): boolean {
   return stats.weaponLicenses.length < MAX_HUNTING_RIFLES;
+}
+
+/** Distinct calibers on the player's våpenkort (exact catalog strings). */
+export function licensedCalibers(
+  licenses: readonly Pick<WeaponLicense, "caliber">[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const l of licenses) {
+    const c = l.caliber.trim();
+    if (!c || seen.has(c)) continue;
+    seen.add(c);
+    out.push(c);
+  }
+  return out;
+}
+
+/** Factory ammo (and CB home-loads) require a matching våpenkort caliber. */
+export function canBuyAmmoCaliber(
+  licenses: readonly Pick<WeaponLicense, "caliber">[],
+  caliber: string,
+): boolean {
+  const want = caliber.trim();
+  if (!want) return false;
+  return licenses.some((l) => l.caliber.trim() === want);
 }
 
 export function createWeaponLicense(input: {

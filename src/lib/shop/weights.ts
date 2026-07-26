@@ -54,6 +54,28 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "scope-jula-4-12x40": 480,
   "scope-clas-ohlson-4x32": 310,
 
+  // Kikkertmontasje
+  "mount-spuhr-sp3001-30": 237,
+  "mount-spuhr-sp4002-34": 268,
+  "mount-spuhr-sp4802-35": 275,
+  "mount-spuhr-sp4602-36": 282,
+  "mount-spuhr-sp2601-1in": 225,
+  "mount-recknagel-eratac-30": 215,
+  "mount-recknagel-eratac-34": 245,
+  "mount-recknagel-eratac-35": 252,
+  "mount-recknagel-eratac-36": 258,
+  "mount-recknagel-eratac-1in": 198,
+  "mount-leupold-mark4-30": 168,
+  "mount-leupold-mark4-34": 185,
+  "mount-leupold-mark4-35": 192,
+  "mount-leupold-prw2-1in": 142,
+  "mount-sako-optilock-30": 155,
+  "mount-sako-optilock-34": 172,
+  "mount-sako-optilock-1in": 138,
+  "mount-hawke-match-30": 128,
+  "mount-hawke-match-34": 145,
+  "mount-hawke-match-1in": 112,
+
   // Suppressors
   "sup-svemko-hunter-1": 380,
   "sup-svemko-magnum-1": 420,
@@ -174,7 +196,8 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-garmin-foretrex-801": 88,
   "misc-suunto-a-10": 48,
   "misc-sittpute-biltema": 120,
-  "misc-thermos-jula": 380,
+  "misc-thermos-jula": 1500,
+  "misc-thermos-stanley-adventure": 1000,
   "misc-nightcore-nu21": 68,
   "misc-nightcore-hc60": 128,
   "outdoors-opptenningsbrikker": 180,
@@ -372,6 +395,8 @@ export function defaultWeightGrams(category: ShopCategory): number {
       return 500;
     case "scope":
       return 700;
+    case "mount":
+      return 180;
     case "suppressor":
       return 350;
     case "stock":

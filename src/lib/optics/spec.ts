@@ -2,12 +2,19 @@
  * Optics specs for LRF binoculars/monoculars and riflescopes.
  */
 
+import type { ScopeTubeDiameterMm } from "@/lib/mount/spec";
+
 export type ScopeClickUnit = "MRAD" | "MOA";
 
 /** First focal plane — reticle scales with magnification. */
 export type ScopeFocalPlane = "FFP" | "SFP";
 
 export type ScopeSpec = {
+  /**
+   * Main tube outer diameter (mm). Mounts must match exactly —
+   * 25.4 = 1", then 30 / 34 / 35 (Mark 5HD) / 36 (ZCO) mm.
+   */
+  tubeDiameterMm: ScopeTubeDiameterMm;
   minZoom: number;
   maxZoom: number;
   /** FFP = reticle grows with zoom; SFP = fixed reticle (default). */

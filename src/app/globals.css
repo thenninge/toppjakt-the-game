@@ -1501,6 +1501,28 @@ body {
   flex: 1;
 }
 
+.current-rig-weight {
+  white-space: nowrap;
+  color: var(--canyon-sand);
+  font-variant-numeric: tabular-nums;
+}
+
+.current-rig-weight-note {
+  color: var(--canyon-dust);
+  font-size: 0.85em;
+}
+
+.current-rig-total {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #5a4030;
+  font-weight: 650;
+}
+
+.current-rig-total .current-rig-value {
+  color: var(--accent-gold);
+}
+
 .kit-overview {
   display: flex;
   flex-direction: column;
@@ -4312,6 +4334,71 @@ body {
   color: var(--canyon-dust);
 }
 
+.favorite-kit-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.favorite-kit-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+  color: var(--canyon-sand);
+}
+
+.favorite-kit-item-main {
+  min-width: 0;
+}
+
+.favorite-kit-item-weight {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.favorite-kit-item-weight-note {
+  color: var(--canyon-dust);
+  font-size: 0.85em;
+}
+
+.favorite-kit-item-missing {
+  color: var(--canyon-dust);
+  text-decoration: line-through;
+}
+
+.favorite-kit-total {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+  color: var(--canyon-sand);
+}
+
+.favorite-kit-total strong {
+  color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-item-favorite {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--canyon-sand);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.home-item-favorite input {
+  margin: 0;
+}
+
 .home-expandable-panel .home-freezer-list {
   border: 0;
   background: transparent;
@@ -4538,12 +4625,6 @@ body {
   margin: 0;
   font-size: 1.2rem;
   color: var(--prompt-green);
-}
-
-.shop-owned {
-  margin: 0;
-  font-size: 1.1rem;
-  color: var(--canyon-dust);
 }
 
 /* --- Persistent hunter stats frame --- */

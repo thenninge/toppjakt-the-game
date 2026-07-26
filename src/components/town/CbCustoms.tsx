@@ -134,8 +134,9 @@ export function CbCustoms({
       customsWeightReductionGrams(customsMods, {
         rifleWeightGrams: rifle?.weightGrams ?? 3500,
         stockWeightGrams: stock?.weightGrams ?? null,
+        hasCustomBarrel: !!installed,
       }),
-    [customsMods, rifle, stock],
+    [customsMods, rifle, stock, installed],
   );
 
   const moaDelta = customsBeddingMoaDelta(customsMods);

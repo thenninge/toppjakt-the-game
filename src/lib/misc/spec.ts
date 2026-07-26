@@ -8,8 +8,8 @@
  * Working idea (NOT final engine math):
  *   feltWeightContribution ≈ weightGrams - enduranceGrams
  *
- * Example: Termos 380 g weight + 2000 endurance → net −1620 g felt
- * (you carry the thermos, but it lets you go farther / stay sharper).
+ * Example: Termos with weightGrams — felt mass is the catalog weight.
+ * (Older note used a fictional endurance offset; thermos is food gear now.)
  *
  * Everything purchased feeds total gameplay of:
  *   - what ground you can cover
@@ -130,6 +130,11 @@ export function isFireStarterMisc(misc: MiscSpec): boolean {
 
 export function isSitPadMisc(misc: MiscSpec): boolean {
   return !!misc.isSitPad;
+}
+
+/** Lyddemper-cover / wrap — mirage only with a can mounted. */
+export function isSuppressorCoverMisc(misc: MiscSpec): boolean {
+  return !!misc.mirageRequiresSuppressor;
 }
 
 /** Combined mirage multiplier from packed misc (default 1). */

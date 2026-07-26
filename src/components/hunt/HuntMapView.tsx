@@ -74,24 +74,26 @@ import {
   isFoodItem,
   isLrfItem,
   isMiscItem,
+  isMountItem,
   isRifleItem,
   isScopeItem,
   isSuppressorItem,
   isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { rollHawkeHuntZeroDriftMm } from "@/lib/mount/spec";
 import { mmAt100ToScopeClicks } from "@/lib/optics/clicks";
 import {
   COFFEE_RECOVERY,
   SHORT_REST_RECOVERY,
   THERMOS_CUPS_PER_FILL,
-  THERMOS_ITEM_ID,
   TYRIBAL_RECOVERY,
   SIT_PAD_ITEM_ID,
   sitPadBodyGain,
   effectiveFoodRecovery,
   formatStaminaPct,
   kitCanBoil,
+  isThermosFood,
 } from "@/lib/food/spec";
 import { isCamcorderMisc, isCamcorderTripodMisc, isChronographMisc, isFireStarterMisc, isHeadlampMisc } from "@/lib/misc/spec";
 import {
@@ -545,6 +547,16 @@ export function HuntMapView({
   const [pos, setPos] = useState<HuntGridCell>(() =>
     map ? { ...map.start } : { row: 0, col: 0 },
   );
+  /** Budget mount (Hawke): one random ±2 click drift for the whole hunt. */
+  const mountHuntDriftMmRef = useRef(
+    (() => {
+      const mount = kitItems.find(isMountItem);
+      if (!mount || mount.mount.tier !== "budget") {
+        return { xMm: 0, yMm: 0 };
+      }
+      return rollHawkeHuntZeroDriftMm();
+    })(),
+  );
   const clockSecondsRef = useRef(HUNT_DAY_START_MINUTES * 60);
   const [clockMinutes, setClockMinutes] = useState(HUNT_DAY_START_MINUTES);
   const [distanceTravelledM, setDistanceTravelledM] = useState(0);
@@ -963,9 +975,10 @@ export function HuntMapView({
       computePackLoad({
         kitItems,
         customsMods,
+        customBarrels,
         carcasses,
       }),
-    [kitItems, customsMods, carcasses],
+    [kitItems, customsMods, customBarrels, carcasses],
   );
 
   function syncClockFromRef() {
@@ -1240,7 +1253,7 @@ export function HuntMapView({
   }, [map]);
 
   const hasThermos = useMemo(
-    () => kitItems.some((i) => i.id === THERMOS_ITEM_ID),
+    () => kitItems.some((i) => isFoodItem(i) && isThermosFood(i.food)),
     [kitItems],
   );
 
@@ -3795,6 +3808,7 @@ export function HuntMapView({
         customsTriggerPullScale={triggerPullScale}
         barrelWearScale={huntBarrelWearScale}
         customBarrels={customBarrels}
+        mountHuntDriftMm={mountHuntDriftMmRef.current}
         musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={effectiveMentalFatigue}

@@ -5,6 +5,10 @@
  *   Chestrig: feltFraction = (10 − comfort) / 9 → 10 = 0 %, 1 = 100 % of optic grams.
  *   Backpack: always feels load; 10 = 75 % felt (25 % lighter), 1 = 100 % felt
  *             on non-optic kit + carcasses.
+ *
+ * Rifle catalog weight includes factory barrel + factory stock. When those are
+ * replaced (CB custom pipe / aftermarket stock), subtract the factory share so
+ * totals do not double-count.
  */
 
 import type { GameCarcass } from "@/lib/hunt/carcass";
@@ -17,11 +21,16 @@ import {
   type CarrySpec,
 } from "@/lib/carry/spec";
 import {
-  customsWeightReductionGrams,
+  FLUTING_WEIGHT_G,
+  STOCK_SLIM_FRACTION,
+  estimatedFactoryBarrelGrams,
+  estimatedFactoryStockGrams,
   type CustomsMods,
 } from "@/lib/customs/spec";
+import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import {
   isBackpackItem,
+  isCamoItem,
   isChestrigItem,
   isLrfItem,
   isRifleItem,
@@ -29,6 +38,8 @@ import {
   isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { isBodyWornCamo } from "@/lib/camo/spec";
+import { formatWeightKg } from "@/lib/shop/weights";
 
 export type PackLoad = {
   /** Equipped kit after customs weight cuts (g). */
@@ -46,19 +57,96 @@ export type PackLoad = {
   fatigueLoadFactor: number;
 };
 
-/** Kit carry grams (customs fluting / stock slim applied). */
+function customBarrelForRifle(
+  rifle: ShopItem,
+  customBarrels: Record<string, InstalledCustomBarrel>,
+): InstalledCustomBarrel | undefined {
+  return customBarrels[rifle.id];
+}
+
+/** Kit carry grams (replacements + CB fluting / stock slim). Body-worn camo excluded. */
 export function kitWeightGrams(
   kitItems: ShopItem[],
   customsMods: CustomsMods,
+  customBarrels: Record<string, InstalledCustomBarrel> = {},
 ): number {
-  const raw = kitItems.reduce((sum, item) => sum + item.weightGrams, 0);
+  let sum = 0;
+  for (const item of kitItems) {
+    sum += itemCarryWeightGrams(item, customsMods, kitItems, customBarrels);
+  }
   const rifle = kitItems.find(isRifleItem);
-  const stock = kitItems.find(isStockItem);
-  const cut = customsWeightReductionGrams(customsMods, {
-    rifleWeightGrams: rifle?.weightGrams ?? 3500,
-    stockWeightGrams: stock?.weightGrams ?? null,
-  });
-  return Math.max(0, raw - cut);
+  const barrel = rifle ? customBarrelForRifle(rifle, customBarrels) : undefined;
+  if (barrel) sum += barrel.weightGrams;
+  return Math.max(0, sum);
+}
+
+/**
+ * Carry weight for one kit item after replacements + CB fluting / stock slim.
+ * Body-worn apparel → 0 (worn, not in sekk).
+ * Custom pipe mass is not on the rifle row — add via {@link kitWeightGrams} / Current rig pipe line.
+ */
+export function itemCarryWeightGrams(
+  item: ShopItem,
+  mods: CustomsMods,
+  kitItems: ShopItem[],
+  customBarrels: Record<string, InstalledCustomBarrel> = {},
+): number {
+  if (isCamoItem(item) && isBodyWornCamo(item.camo)) return 0;
+
+  let g = item.weightGrams;
+  if (isRifleItem(item)) {
+    const hasStock = kitItems.some(isStockItem);
+    const custom = customBarrelForRifle(item, customBarrels);
+    if (hasStock) {
+      g = Math.max(0, g - estimatedFactoryStockGrams(item.weightGrams));
+    }
+    if (custom) {
+      g = Math.max(0, g - estimatedFactoryBarrelGrams(item.weightGrams));
+    } else if (mods.fluting) {
+      // Factory-pipe fluting only — custom blanks carry their own mass on the pipe line.
+      g = Math.max(0, g - FLUTING_WEIGHT_G);
+    }
+    if (mods.stockSlim && !hasStock) {
+      const est = Math.round(
+        estimatedFactoryStockGrams(item.weightGrams) * STOCK_SLIM_FRACTION,
+      );
+      g = Math.max(0, g - est);
+    }
+    return g;
+  }
+  if (isStockItem(item) && mods.stockSlim) {
+    return Math.max(0, Math.round(g * (1 - STOCK_SLIM_FRACTION)));
+  }
+  return g;
+}
+
+/** Short note when displayed carry weight differs from catalog. */
+export function itemCarryWeightNote(
+  item: ShopItem,
+  mods: CustomsMods,
+  kitItems: ShopItem[],
+  customBarrels: Record<string, InstalledCustomBarrel> = {},
+): string | null {
+  if (isCamoItem(item) && isBodyWornCamo(item.camo)) {
+    return `katalog ${formatWeightKg(item.weightGrams)} · på kroppen`;
+  }
+  const carry = itemCarryWeightGrams(item, mods, kitItems, customBarrels);
+  if (carry === item.weightGrams) return null;
+  const parts: string[] = [`katalog ${formatWeightKg(item.weightGrams)}`];
+  if (isRifleItem(item)) {
+    if (kitItems.some(isStockItem)) parts.push("− fabrikkstokk");
+    if (customBarrelForRifle(item, customBarrels)) {
+      parts.push("− fabrikpipe");
+    } else if (mods.fluting) {
+      parts.push("fluting");
+    }
+    if (mods.stockSlim && !kitItems.some(isStockItem)) {
+      parts.push("slank stokk (estimert)");
+    }
+  } else if (isStockItem(item) && mods.stockSlim) {
+    parts.push("slank stokk");
+  }
+  return parts.join(" · ");
 }
 
 export function opticWeightGrams(kitItems: ShopItem[]): number {
@@ -143,8 +231,14 @@ export function computePackLoad(input: {
   kitItems: ShopItem[];
   customsMods: CustomsMods;
   carcasses: Pick<GameCarcass, "weightKg">[];
+  customBarrels?: Record<string, InstalledCustomBarrel>;
 }): PackLoad {
-  const kitGrams = kitWeightGrams(input.kitItems, input.customsMods);
+  const customBarrels = input.customBarrels ?? {};
+  const kitGrams = kitWeightGrams(
+    input.kitItems,
+    input.customsMods,
+    customBarrels,
+  );
   const opticGrams = Math.min(kitGrams, opticWeightGrams(input.kitItems));
   const nonOpticKitGrams = Math.max(0, kitGrams - opticGrams);
   const carcassGrams = carcassesWeightGrams(input.carcasses);

@@ -122,6 +122,10 @@ export function ScopeZoomRing({
 
   function onKnobPointerMove(e: PointerEvent<HTMLButtonElement>) {
     if (!draggingRef.current || disabled) return;
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endDrag(e);
+      return;
+    }
     setFromPointer(e.clientX, e.clientY);
   }
 
@@ -187,6 +191,7 @@ export function ScopeZoomRing({
         onPointerMove={onKnobPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
         onContextMenu={(e) => e.preventDefault()}
       >
         <span className="scope-zoom-knob-value">{zoom.toFixed(1)}×</span>

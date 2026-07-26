@@ -25,10 +25,16 @@ import {
   isBipodItem,
   isFoodItem,
   isSuppressorItem,
+  isMountItem,
   isBundleItem,
   type ShopCategory,
   type ShopItem,
 } from "@/lib/shop/types";
+import {
+  formatTubeDiameterMm,
+  mountTierLabelNb,
+  mountTierNoteNb,
+} from "@/lib/mount/spec";
 import { isPackableFoodKind } from "@/lib/food/spec";
 import {
   getStarterKitCaliber,
@@ -45,7 +51,10 @@ import {
 } from "@/lib/suppressor/spec";
 import {
   formatInventoryQuantity,
+  canBuyAmmoCaliber,
+  licensedCalibers,
   type InventoryEntry,
+  type WeaponLicense,
 } from "@/lib/player";
 import type { ProjectileType } from "@/lib/ammo/spec";
 import {
@@ -65,6 +74,8 @@ type XxlShopProps = {
   /** Unused weapon licenses — required to buy hunting rifles. */
   canBuyRifle: boolean;
   unusedLicenses: number;
+  /** Våpenkort — ammo only sold in these calibers. */
+  weaponLicenses: WeaponLicense[];
   /** VIP login — unlocks vipOnly catalog items (e.g. LEAF Alpha). */
   isVip?: boolean;
   onBuy: (
@@ -116,6 +127,7 @@ export function XxlShop({
   inventory,
   canBuyRifle,
   unusedLicenses,
+  weaponLicenses,
   isVip = false,
   onBuy,
   onLeave,
@@ -137,6 +149,15 @@ export function XxlShop({
   >("all");
   const [lrfBallisticsOnly, setLrfBallisticsOnly] = useState(false);
 
+  const ammoCalibersOnCard = useMemo(
+    () => licensedCalibers(weaponLicenses),
+    [weaponLicenses],
+  );
+  const licensedCaliberSet = useMemo(
+    () => new Set(ammoCalibersOnCard),
+    [ammoCalibersOnCard],
+  );
+
   const items = useMemo(() => {
     let list =
       category === "ballistics"
@@ -149,6 +170,8 @@ export function XxlShop({
     if (category === "ammo") {
       list = list.filter((item) => {
         if (!isAmmoItem(item)) return false;
+        // Only calibers the player holds a våpenkort for.
+        if (!licensedCaliberSet.has(item.ammo.caliber)) return false;
         if (caliberFilter !== "all" && item.ammo.caliber !== caliberFilter) {
           return false;
         }
@@ -221,6 +244,7 @@ export function XxlShop({
     scopeSort,
     clickUnitFilter,
     lrfBallisticsOnly,
+    licensedCaliberSet,
   ]);
 
   function ownedQty(itemId: string): number {
@@ -241,6 +265,15 @@ export function XxlShop({
         unusedLicenses <= 0
           ? "Ingen ubrukt våpenlisens. Søk hos Lensmannen først — lisens ≠ rifle."
           : "Kan ikke kjøpe flere jaktrifler (maks 8).",
+      );
+      return;
+    }
+    if (
+      isAmmoItem(item) &&
+      !canBuyAmmoCaliber(weaponLicenses, item.ammo.caliber)
+    ) {
+      setMessage(
+        `Krever våpenkort i ${item.ammo.caliber} — søk hos Lensmannen.`,
       );
       return;
     }
@@ -288,15 +321,6 @@ export function XxlShop({
 
   const starterCal = getStarterKitCaliber(starterSel.caliberId);
   const starterDeal = starterKitDealPriceNok(starterSel);
-
-  const ownedPreview = inventory
-    .map((e) => {
-      const item = getShopItem(e.itemId);
-      if (!item) return null;
-      return `${item.brand} ${item.name}${e.qty > 1 ? ` ×${e.qty}` : ""}`;
-    })
-    .filter(Boolean)
-    .slice(0, 6);
 
   const sortSelect = (
     value: GlobalSort,
@@ -365,18 +389,30 @@ export function XxlShop({
 
         {category === "ammo" && (
           <>
+            <p className="shop-row-note" style={{ flexBasis: "100%", margin: 0 }}>
+              {ammoCalibersOnCard.length === 0
+                ? "Ingen våpenkort — ammo selges ikke uten gyldig kaliber hos Lensmannen."
+                : `Ammo etter våpenkort: ${ammoCalibersOnCard.join(" · ")}`}
+            </p>
             <label className="shop-filter">
               Kaliber
               <select
-                value={caliberFilter}
+                value={
+                  caliberFilter !== "all" &&
+                  !licensedCaliberSet.has(caliberFilter)
+                    ? "all"
+                    : caliberFilter
+                }
                 onChange={(e) => setCaliberFilter(e.target.value)}
               >
-                <option value="all">Alle</option>
-                {CALIBER_SORT_ORDER.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
+                <option value="all">Alle på kort</option>
+                {CALIBER_SORT_ORDER.filter((c) => licensedCaliberSet.has(c)).map(
+                  (c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
             <label className="shop-filter">
@@ -483,6 +519,7 @@ export function XxlShop({
           const ski = isSkiItem(item) ? item.ski : null;
           const bipod = isBipodItem(item) ? item.bipod : null;
           const food = isFoodItem(item) ? item.food : null;
+          const mount = isMountItem(item) ? item.mount : null;
           const isSuppressor = item.category === "suppressor";
 
           return (
@@ -593,9 +630,16 @@ export function XxlShop({
                 ) : null}
                 {scope ? (
                   <span className="shop-row-ballistics">
-                    zoom {scope.minZoom}–{scope.maxZoom}× · {scope.clickUnit} ·
+                    rør {formatTubeDiameterMm(scope.tubeDiameterMm)} · zoom{" "}
+                    {scope.minZoom}–{scope.maxZoom}× · {scope.clickUnit} ·
                     klikk ±{scope.clickErrorPercent}% · zero-ret{" "}
                     {scope.zeroRetentionInaccuracy.toFixed(2)} MOA
+                  </span>
+                ) : null}
+                {mount ? (
+                  <span className="shop-row-ballistics">
+                    {formatTubeDiameterMm(mount.tubeDiameterMm)} ·{" "}
+                    {mountTierLabelNb(mount.tier)} — {mountTierNoteNb(mount.tier)}
                   </span>
                 ) : null}
                 {stock ? (
@@ -819,13 +863,6 @@ export function XxlShop({
       </ul>
 
       {message ? <p className="shop-message">{message}</p> : null}
-
-      {ownedPreview.length > 0 ? (
-        <p className="shop-owned">
-          Bag: {ownedPreview.join(" · ")}
-          {inventory.length > 6 ? " …" : ""}
-        </p>
-      ) : null}
 
       <div className="shop-footer-nav">
         <LocationNav onBackToTown={onLeave} />

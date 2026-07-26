@@ -180,6 +180,8 @@ type HuntShootViewProps = {
     scopeId: string,
     ammoId: string,
   ) => ZeroingProfile;
+  /** Hawke / budget mount: fixed ±2 click POI drift for this hunt. */
+  mountHuntDriftMm?: { xMm: number; yMm: number };
   musicEnabled: boolean;
   /** Hunt BODY fatigue 0–1 (1 = exhausted). Cuts calm → more weapon shake. */
   physicalFatigue?: number;
@@ -304,6 +306,7 @@ export function HuntShootView({
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
+  mountHuntDriftMm = { xMm: 0, yMm: 0 },
   musicEnabled,
   physicalFatigue = 0,
   mentalFatigue = 0,
@@ -540,15 +543,29 @@ export function HuntShootView({
       : null;
   const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
   const effectiveZero = zeroProfile
-    ? effectiveZeroOffsetMm(
-        zeroProfile,
-        sessionZeroXMm,
-        sessionZeroYMm,
-        trueDistanceM,
-      )
+    ? (() => {
+        const z = effectiveZeroOffsetMm(
+          zeroProfile,
+          sessionZeroXMm,
+          sessionZeroYMm,
+          trueDistanceM,
+        );
+        return {
+          xMm:
+            z.xMm +
+            angularMmAtDistance(mountHuntDriftMm.xMm, trueDistanceM),
+          yMm:
+            z.yMm +
+            angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM),
+        };
+      })()
     : {
-        xMm: angularMmAtDistance(sessionZeroXMm, trueDistanceM),
-        yMm: angularMmAtDistance(sessionZeroYMm, trueDistanceM),
+        xMm:
+          angularMmAtDistance(sessionZeroXMm, trueDistanceM) +
+          angularMmAtDistance(mountHuntDriftMm.xMm, trueDistanceM),
+        yMm:
+          angularMmAtDistance(sessionZeroYMm, trueDistanceM) +
+          angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM),
       };
 
   const calmFactor = useMemo(
@@ -689,8 +706,15 @@ export function HuntShootView({
           ),
         };
     const impact = {
-      xMm: shot.xMm + realizedZero.xMm + windMm,
-      yMm: shot.yMm + realizedZero.yMm,
+      xMm:
+        shot.xMm +
+        realizedZero.xMm +
+        angularMmAtDistance(mountHuntDriftMm.xMm, distanceRef.current) +
+        windMm,
+      yMm:
+        shot.yMm +
+        realizedZero.yMm +
+        angularMmAtDistance(mountHuntDriftMm.yMm, distanceRef.current),
       diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
     };
 

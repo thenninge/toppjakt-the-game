@@ -129,7 +129,12 @@ export function computeKitOverview(input: {
   ).size;
   const hasSkiBoots = kitItems.some((i) => isSkiItem(i) && !!i.ski.isBoots);
 
-  const pack = computePackLoad({ kitItems, customsMods, carcasses });
+  const pack = computePackLoad({
+    kitItems,
+    customsMods,
+    carcasses,
+    customBarrels,
+  });
   const totalWeightGrams = pack.totalGrams;
   const carryComfort: Score10 =
     carryPieces.length > 0

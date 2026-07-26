@@ -71,6 +71,28 @@ export const FLUTING_WEIGHT_G = 500;
 /** Fraction of stock (or estimated stock) mass removed by slanking. */
 export const STOCK_SLIM_FRACTION = 0.25;
 /**
+ * Share of rifle catalog mass treated as the factory stock.
+ * When an aftermarket stock is equipped, this is subtracted from the rifle
+ * so catalog rifle + new stock does not double-count.
+ */
+export const FACTORY_STOCK_WEIGHT_FRACTION = 0.3;
+/**
+ * Share of rifle catalog mass treated as the factory barrel.
+ * When a custom CB pipe is installed, this is subtracted from the rifle
+ * and the custom blank weight is added instead.
+ */
+export const FACTORY_BARREL_WEIGHT_FRACTION = 0.35;
+
+/** Estimated factory stock grams baked into a rifle catalog weight. */
+export function estimatedFactoryStockGrams(rifleWeightGrams: number): number {
+  return Math.round(Math.max(0, rifleWeightGrams) * FACTORY_STOCK_WEIGHT_FRACTION);
+}
+
+/** Estimated factory barrel grams baked into a rifle catalog weight. */
+export function estimatedFactoryBarrelGrams(rifleWeightGrams: number): number {
+  return Math.round(Math.max(0, rifleWeightGrams) * FACTORY_BARREL_WEIGHT_FRACTION);
+}
+/**
  * Multiplier on kit bird-spot after custom camo paint (legacy).
  * Prefer {@link CUSTOM_CAMO_SNEAK_BONUS_PCT} with the % clothing model.
  */
@@ -213,19 +235,24 @@ export function customsCalmMultiplier(mods: CustomsMods): number {
 
 /**
  * Grams removed from kit carry by fluting + stock slim.
- * `stockWeightGrams` = equipped stock; if missing, estimate ~30% of rifle mass.
+ * `stockWeightGrams` = equipped stock; if missing, estimate factory stock share.
+ * Pass `hasCustomBarrel` so factory-pipe fluting is not applied after a rebarrel.
  */
 export function customsWeightReductionGrams(
   mods: CustomsMods,
-  opts: { rifleWeightGrams: number; stockWeightGrams: number | null },
+  opts: {
+    rifleWeightGrams: number;
+    stockWeightGrams: number | null;
+    hasCustomBarrel?: boolean;
+  },
 ): number {
   let cut = 0;
-  if (mods.fluting) cut += FLUTING_WEIGHT_G;
+  if (mods.fluting && !opts.hasCustomBarrel) cut += FLUTING_WEIGHT_G;
   if (mods.stockSlim) {
     const base =
       opts.stockWeightGrams != null && opts.stockWeightGrams > 0
         ? opts.stockWeightGrams
-        : Math.round(opts.rifleWeightGrams * 0.3);
+        : estimatedFactoryStockGrams(opts.rifleWeightGrams);
     cut += Math.round(base * STOCK_SLIM_FRACTION);
   }
   return cut;

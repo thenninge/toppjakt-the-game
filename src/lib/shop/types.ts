@@ -10,6 +10,7 @@ import type { SkiSpec } from "@/lib/ski/spec";
 import type { BipodSpec } from "@/lib/bipod/spec";
 import type { FoodSpec } from "@/lib/food/spec";
 import type { SuppressorSpec } from "@/lib/suppressor/spec";
+import type { MountSpec } from "@/lib/mount/spec";
 
 export type ShopCategory =
   | "lrf"
@@ -26,6 +27,7 @@ export type ShopCategory =
   | "chestrig"
   | "skis"
   | "bipod"
+  | "mount"
   | "food"
   | "outdoors"
   | "misc";
@@ -69,6 +71,7 @@ export type AmmoShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type CamoShopItem = ShopItemBase & {
@@ -87,6 +90,7 @@ export type CamoShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type CarryShopItem = ShopItemBase & {
@@ -105,6 +109,7 @@ export type CarryShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type MiscShopItem = ShopItemBase & {
@@ -124,6 +129,7 @@ export type MiscShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type LrfShopItem = ShopItemBase & {
@@ -142,6 +148,7 @@ export type LrfShopItem = ShopItemBase & {
   bipod?: never;
   food?: never;
   thermal?: never;
+  mount?: never;
 };
 
 export type ThermalShopItem = ShopItemBase & {
@@ -160,6 +167,7 @@ export type ThermalShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type ScopeShopItem = ShopItemBase & {
@@ -177,6 +185,7 @@ export type ScopeShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type StockShopItem = ShopItemBase & {
@@ -195,6 +204,7 @@ export type StockShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type RifleShopItem = ShopItemBase & {
@@ -213,6 +223,7 @@ export type RifleShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type BallisticsShopItem = ShopItemBase & {
@@ -231,6 +242,7 @@ export type BallisticsShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type SkiShopItem = ShopItemBase & {
@@ -249,6 +261,7 @@ export type SkiShopItem = ShopItemBase & {
   ballistics?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
 };
 
 export type BipodShopItem = ShopItemBase & {
@@ -267,6 +280,7 @@ export type BipodShopItem = ShopItemBase & {
   ballistics?: never;
   ski?: never;
   food?: never;
+  mount?: never;
 };
 
 export type FoodShopItem = ShopItemBase & {
@@ -285,6 +299,7 @@ export type FoodShopItem = ShopItemBase & {
   ballistics?: never;
   ski?: never;
   bipod?: never;
+  mount?: never;
 };
 
 export type SuppressorShopItem = ShopItemBase & {
@@ -304,6 +319,28 @@ export type SuppressorShopItem = ShopItemBase & {
   ski?: never;
   bipod?: never;
   food?: never;
+  mount?: never;
+};
+
+
+export type MountShopItem = ShopItemBase & {
+  category: "mount";
+  mount: MountSpec;
+  weightGrams: number;
+  ammo?: never;
+  camo?: never;
+  carry?: never;
+  misc?: never;
+  lrf?: never;
+  thermal?: never;
+  scope?: never;
+  stock?: never;
+  rifle?: never;
+  ballistics?: never;
+  ski?: never;
+  bipod?: never;
+  food?: never;
+  suppressor?: never;
 };
 
 export type GearShopItem = ShopItemBase & {
@@ -325,6 +362,7 @@ export type GearShopItem = ShopItemBase & {
     | "bipod"
     | "food"
     | "suppressor"
+    | "mount"
   >;
   ammo?: never;
   camo?: never;
@@ -338,6 +376,7 @@ export type GearShopItem = ShopItemBase & {
   ballistics?: never;
   ski?: never;
   weightGrams: number;
+  mount?: never;
 };
 
 export type ShopItem =
@@ -355,6 +394,7 @@ export type ShopItem =
   | BipodShopItem
   | FoodShopItem
   | SuppressorShopItem
+  | MountShopItem
   | GearShopItem;
 
 export type CatalogDraft = {
@@ -386,6 +426,7 @@ export type CatalogDraft = {
   bipod?: BipodSpec;
   food?: FoodSpec;
   suppressor?: SuppressorSpec;
+  mount?: MountSpec;
 };
 
 export function isAmmoItem(item: ShopItem): item is AmmoShopItem {
@@ -459,10 +500,15 @@ export function isSuppressorItem(item: ShopItem): item is SuppressorShopItem {
   return item.category === "suppressor";
 }
 
+export function isMountItem(item: ShopItem): item is MountShopItem {
+  return item.category === "mount";
+}
+
 export const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
   lrf: "LRF / Avstandsmålere",
   thermal: "Termisk / Spotters",
   scope: "Scopes",
+  mount: "Kikkertmontasje",
   suppressor: "Lyddempere",
   stock: "Stokker",
   rifle: "Rifler",
@@ -484,6 +530,7 @@ export const SHOP_CATEGORIES: ShopCategory[] = [
   "lrf",
   "thermal",
   "scope",
+  "mount",
   "suppressor",
   "bipod",
   "stock",
@@ -528,6 +575,7 @@ export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
   switch (item.category) {
     case "rifle":
     case "scope":
+    case "mount":
     case "suppressor":
     case "stock":
     case "bipod":

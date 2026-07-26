@@ -59,6 +59,27 @@ export function camoSlot(camo: CamoSpec): CamoSlot {
   return camo.slot ?? "suit";
 }
 
+/**
+ * Apparel worn on the body — excluded from pack/kit carry weight.
+ * Vest + down stay in the sekk and still count.
+ */
+const BODY_WORN_CAMO_SLOTS: ReadonlySet<CamoSlot> = new Set([
+  "jacket",
+  "pants",
+  "socks",
+  "gloves",
+  "base_layer",
+]);
+
+export function isBodyWornCamoSlot(slot: CamoSlot): boolean {
+  return BODY_WORN_CAMO_SLOTS.has(slot);
+}
+
+/** True if this camo piece is worn on the body (not carried in the pack). */
+export function isBodyWornCamo(camo: CamoSpec): boolean {
+  return isBodyWornCamoSlot(camoSlot(camo));
+}
+
 /** Sum of one clothing % stat across equipped camo pieces. */
 export function kitCamoStatSum(
   pieces: CamoSpec[],

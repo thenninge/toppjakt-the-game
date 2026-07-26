@@ -7,7 +7,9 @@ import {
   addToInventory,
   ammoRoundsPerPurchase,
   applyAutoSupplyFood,
+  applyFavoriteKit,
   canApproveNewLicense,
+  canBuyAmmoCaliber,
   canBuyHuntingRifle,
   consumeAmmoRound,
   countHuntingRifles,
@@ -15,8 +17,7 @@ import {
   createInitialStats,
   createWeaponLicense,
   ensureZeroingProfile,
-  clearZeroingForRifle,
-  clearZeroingForScope,
+  applyMountZeroingAfterKitChange,
   formatPermitFee,
   grantStarterGear,
   grantUncleRifle,
@@ -598,6 +599,12 @@ export function IntroScreen() {
       const cost = item.priceNok * n;
       if (prev.balance < cost) return prev;
       if (isRifleItem(item) && !canBuyHuntingRifle(prev)) return prev;
+      if (
+        isAmmoItem(item) &&
+        !canBuyAmmoCaliber(prev.weaponLicenses, item.ammo.caliber)
+      ) {
+        return prev;
+      }
       let next: PlayerStats = {
         ...prev,
         balance: prev.balance - cost,
@@ -1095,16 +1102,11 @@ export function IntroScreen() {
           return item && isSkiItem(item) ? skiKitSlot(item.ski) : undefined;
         },
       );
-      const removed = before.filter((id) => !after.includes(id));
-      let profiles = prev.zeroingProfiles;
-      for (const id of removed) {
-        const rem = resolvePlayerItem(id);
-        if (rem?.category === "scope") {
-          profiles = clearZeroingForScope(profiles, id);
-        } else if (rem?.category === "rifle") {
-          profiles = clearZeroingForRifle(profiles, id);
-        }
-      }
+      const profiles = applyMountZeroingAfterKitChange(
+        prev.zeroingProfiles,
+        before,
+        after,
+      );
       return {
         ...prev,
         kit: after,
@@ -1205,6 +1207,63 @@ export function IntroScreen() {
     setStats((prev) =>
       applyAutoSupplyFood({ ...prev, autoSupplyFood: enabled }),
     );
+  }
+
+  function toggleFavoriteItem(itemId: string, enabled: boolean) {
+    setStats((prev) => {
+      if (!enabled) {
+        return {
+          ...prev,
+          favoriteKitIds: prev.favoriteKitIds.filter((id) => id !== itemId),
+        };
+      }
+      if (prev.favoriteKitIds.includes(itemId)) return prev;
+      const after = toggleKitItem(
+        prev.favoriteKitIds,
+        itemId,
+        (id) => resolvePlayerItem(id)?.category,
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return item && isFoodItem(item) ? item.food.kind : undefined;
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return item && isCamoItem(item) ? camoSlot(item.camo) : undefined;
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          if (!item) return undefined;
+          if (
+            isBallisticsItem(item) &&
+            isWindMeterBallistics(item.ballistics)
+          ) {
+            return "windmeter";
+          }
+          if (!isMiscItem(item)) return undefined;
+          if (isHeadlampMisc(item.misc)) return "headlamp";
+          if (isCamcorderMisc(item.misc)) return "camcorder";
+          if (isCamcorderTripodMisc(item.misc)) return "camcorderTripod";
+          return shotCamKitSlot(id);
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return !!(
+            item &&
+            isThermalItem(item) &&
+            item.thermal.isThermalBinocular
+          );
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return item && isSkiItem(item) ? skiKitSlot(item.ski) : undefined;
+        },
+      );
+      return { ...prev, favoriteKitIds: after };
+    });
+  }
+
+  function packFavoriteKit() {
+    setStats((prev) => applyFavoriteKit(prev));
   }
 
   function headIntoTown() {
@@ -1507,6 +1566,7 @@ export function IntroScreen() {
             inventory={stats.inventory}
             canBuyRifle={canBuyHuntingRifle(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
+            weaponLicenses={stats.weaponLicenses}
             isVip={isVipPlayerName(stats.name)}
             onBuy={buyShopItem}
             onLeave={backToTown}
@@ -1597,6 +1657,7 @@ export function IntroScreen() {
             isAdmin={adminUnlocked}
             zeroingProfiles={stats.zeroingProfiles}
             autoSupplyFood={stats.autoSupplyFood}
+            favoriteKitIds={stats.favoriteKitIds}
             loadBenchRecipe={stats.loadBenchRecipe}
             loadDevTable={stats.loadDevTable}
             loadBook={stats.loadBook}
@@ -1605,6 +1666,8 @@ export function IntroScreen() {
             armedLoadPlan={stats.armedLoadPlan}
             onToggleKit={toggleKit}
             onSetAutoSupplyFood={setAutoSupplyFood}
+            onToggleFavoriteItem={toggleFavoriteItem}
+            onPackFavoriteKit={packFavoriteKit}
             onChangeLoadBenchRecipe={(recipe) =>
               setStats((prev) => ({ ...prev, loadBenchRecipe: recipe }))
             }
@@ -1727,6 +1790,7 @@ export function IntroScreen() {
             customsMoaDelta={customsBeddingMoaDelta(stats.customsMods)}
             customsCalmMult={customsCalmMultiplier(stats.customsMods)}
             customsTriggerPullScale={customsTriggerPullScale(stats.customsMods)}
+            customsMods={stats.customsMods}
             balance={stats.balance}
             onPayCompetitionFee={(amountNok) => {
               let paid = false;
@@ -1767,6 +1831,9 @@ export function IntroScreen() {
               setStats((prev) => disarmLoadPlan(prev))
             }
             musicEnabled={musicEnabled}
+            favoriteKitIds={stats.favoriteKitIds}
+            onPackFavoriteKit={packFavoriteKit}
+            onRemoveFavoriteItem={(itemId) => toggleFavoriteItem(itemId, false)}
             onLeave={backToTown}
           />
         )}

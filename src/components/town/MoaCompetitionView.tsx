@@ -556,6 +556,23 @@ export function MoaCompetitionView({
     setTriggerUi({ pending: false, targetPct: 0 });
   }
 
+  function endAimDrag(
+    el?: HTMLDivElement | null,
+    pointerId?: number,
+  ) {
+    const drag = aimDragRef.current;
+    if (!drag) return;
+    if (pointerId != null && drag.pointerId !== pointerId) return;
+    aimDragRef.current = null;
+    if (el && el.hasPointerCapture(drag.pointerId)) {
+      try {
+        el.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+  }
+
   function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (phase !== "shooting") return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -573,6 +590,11 @@ export function MoaCompetitionView({
   function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
     const drag = aimDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    // Trackpad/mouse can drop button-up outside the element — stop if no buttons.
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endAimDrag(e.currentTarget, e.pointerId);
+      return;
+    }
     const delta = aimMmDeltaFromPointerDrag({
       dxClientPx: e.clientX - drag.startX,
       dyClientPx: e.clientY - drag.startY,
@@ -587,9 +609,11 @@ export function MoaCompetitionView({
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (aimDragRef.current?.pointerId === e.pointerId) {
-      aimDragRef.current = null;
-    }
+    endAimDrag(e.currentTarget, e.pointerId);
+  }
+
+  function onAimPointerLeave(e: PointerEvent<HTMLDivElement>) {
+    endAimDrag(e.currentTarget, aimDragRef.current?.pointerId);
   }
 
   function releaseTrigger(nowMs: number) {
@@ -1036,6 +1060,8 @@ export function MoaCompetitionView({
               onPointerMove={onAimPointerMove}
               onPointerUp={onAimPointerUp}
               onPointerCancel={onAimPointerUp}
+              onPointerLeave={onAimPointerLeave}
+              onLostPointerCapture={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -207,6 +207,11 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     })(),
     unlockedTerrainIds,
     autoSupplyFood: raw.autoSupplyFood === true,
+    favoriteKitIds: Array.isArray(raw.favoriteKitIds)
+      ? (raw.favoriteKitIds as unknown[]).filter(
+          (id): id is string => typeof id === "string" && id.length > 0,
+        )
+      : base.favoriteKitIds,
     loadBenchRecipe:
       normalizeLoadBenchRecipe(raw.loadBenchRecipe) ?? base.loadBenchRecipe,
     armedLoadPlan: normalizeArmedLoadPlan(raw.armedLoadPlan),

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
+import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
 import {
   isAmmoItem,
   isBallisticsItem,
@@ -158,6 +159,8 @@ type ShootingRangeProps = {
   customsCalmMult?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
+  /** Full CB mods — favorite-kit weight display (fluting / stock slim). */
+  customsMods?: import("@/lib/customs/spec").CustomsMods;
   balance: number;
   onPayCompetitionFee: (amountNok: number) => boolean;
   onAwardCompetitionPayout: (amountNok: number) => void;
@@ -204,6 +207,9 @@ type ShootingRangeProps = {
   onArmHomeLot?: (lotId: string) => void;
   onDisarmLoadPlan?: () => void;
   musicEnabled: boolean;
+  favoriteKitIds?: string[];
+  onPackFavoriteKit?: () => void;
+  onRemoveFavoriteItem?: (itemId: string) => void;
   onLeave: () => void;
 };
 
@@ -234,6 +240,7 @@ export function ShootingRange({
   customsMoaDelta = 0,
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
+  customsMods,
   balance,
   onPayCompetitionFee,
   onAwardCompetitionPayout,
@@ -254,6 +261,9 @@ export function ShootingRange({
   onArmHomeLot,
   onDisarmLoadPlan,
   musicEnabled,
+  favoriteKitIds = [],
+  onPackFavoriteKit,
+  onRemoveFavoriteItem,
   onLeave,
 }: ShootingRangeProps) {
   const [view, setView] = useState<"range" | "shotlog" | "dope">("range");
@@ -1780,6 +1790,22 @@ export function ShootingRange({
         </p>
         {!rifle ? <p className="shop-row-note">Mangler: rifle</p> : null}
         {!scope ? <p className="shop-row-note">Mangler: scope</p> : null}
+        {onPackFavoriteKit && onRemoveFavoriteItem ? (
+          <FavoriteKitPanel
+            favoriteKitIds={favoriteKitIds}
+            kit={kitItems.map((i) => i.id)}
+            ownedItemIds={
+              new Set(
+                inventory.filter((e) => e.qty > 0).map((e) => e.itemId),
+              )
+            }
+            onPackFavoriteKit={onPackFavoriteKit}
+            onRemoveFavoriteItem={onRemoveFavoriteItem}
+            customsMods={customsMods}
+            customBarrels={customBarrels}
+            hint="Pakker favoritt-jaktkittet og bytter ut det som ligger i kit nå."
+          />
+        ) : null}
         <div className="range-actions">
           <button
             type="button"
@@ -1845,6 +1871,21 @@ export function ShootingRange({
               : "Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
         }
       />
+
+      {onPackFavoriteKit && onRemoveFavoriteItem ? (
+        <FavoriteKitPanel
+          favoriteKitIds={favoriteKitIds}
+          kit={kitItems.map((i) => i.id)}
+          ownedItemIds={
+            new Set(inventory.filter((e) => e.qty > 0).map((e) => e.itemId))
+          }
+          onPackFavoriteKit={onPackFavoriteKit}
+          onRemoveFavoriteItem={onRemoveFavoriteItem}
+          customsMods={customsMods}
+          customBarrels={customBarrels}
+          hint="Etter nulling med ekstra ammo/gear: pakk favoritt-jaktkittet før du drar."
+        />
+      ) : null}
 
       {laneTabs}
 

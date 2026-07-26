@@ -16,6 +16,8 @@ import {
   isCarryItem,
   isCamoItem,
   isFoodItem,
+  isMiscItem,
+  isMountItem,
   isSkiItem,
   isThermalItem,
   inventoryGroupForItem,
@@ -24,6 +26,7 @@ import {
   type ShopCategory,
   type ShopItem,
 } from "@/lib/shop/types";
+import { formatTubeDiameterMm, mountTierLabelNb, mountClearsZeroOnScopeRemove, mountClearsZeroOnMountRemove } from "@/lib/mount/spec";
 import { formatWeightKg } from "@/lib/shop/weights";
 import { formatScore10 } from "@/lib/shop/score";
 import {
@@ -31,8 +34,14 @@ import {
   formatTopSpeed,
 } from "@/lib/kit/speed";
 import { computeKitOverview } from "@/lib/kit/overview";
-import { computePackLoad } from "@/lib/kit/pack";
-import { isShotCamItemId, isCamcorderItemId, isCamcorderTripodItemId } from "@/lib/hunt/shoot";
+import { computePackLoad, itemCarryWeightGrams, itemCarryWeightNote } from "@/lib/kit/pack";
+import {
+  isShotCamItemId,
+  isCamcorderItemId,
+  isCamcorderTripodItemId,
+  shotCamLabel,
+  resolveShotCamKind,
+} from "@/lib/hunt/shoot";
 import { isWindMeterItemId } from "@/lib/ballistics/kestrelProfile";
 import {
   formatMarketKr,
@@ -48,8 +57,11 @@ import {
   type CustomsMods,
 } from "@/lib/customs/spec";
 import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
+import { BARREL_MAKERS } from "@/lib/customs/customBarrel";
+import { isSuppressorCoverMisc } from "@/lib/misc/spec";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
+import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
 import { InaturNo } from "@/components/town/InaturNo";
 import { ShotLogDopeView, type ShotLogDopeTab } from "@/components/town/ShotLogDopeView";
@@ -72,6 +84,7 @@ import { huntReadyCheck } from "@/lib/hunt/readiness";
 const EXCLUSIVE_KIT_CATEGORIES = new Set([
   "rifle",
   "scope",
+  "mount",
   "stock",
   "suppressor",
   "backpack",
@@ -83,13 +96,22 @@ const EXCLUSIVE_KIT_CATEGORIES = new Set([
   "bipod",
 ]);
 
-/** Weapon platform slots shown in Current rig (single-item slots). */
-const RIG_SLOTS: { key: ShopCategory; label: string }[] = [
-  { key: "rifle", label: "Rifle" },
-  { key: "scope", label: "Scope" },
-  { key: "stock", label: "Stock" },
-  { key: "bipod", label: "Bipod" },
-  { key: "suppressor", label: "Can" },
+/** Weapon-mounted slots in Current rig (not sekk/apparel). */
+type RigSlotDef =
+  | { kind: "shop"; key: ShopCategory; label: string }
+  | { kind: "pipe"; label: string }
+  | { kind: "wrap"; label: string }
+  | { kind: "shotcam"; label: string };
+
+const WEAPON_RIG_SLOTS: RigSlotDef[] = [
+  { kind: "shop", key: "rifle", label: "Våpen" },
+  { kind: "pipe", label: "Pipe" },
+  { kind: "shop", key: "suppressor", label: "Lyddemper" },
+  { kind: "shop", key: "scope", label: "Kikkert" },
+  { kind: "shop", key: "mount", label: "Montasje" },
+  { kind: "wrap", label: "Wrap" },
+  { kind: "shop", key: "stock", label: "Stokk" },
+  { kind: "shotcam", label: "Triggercam" },
 ];
 
 function itemLabel(item: ShopItem): string {
@@ -125,6 +147,8 @@ type HomeBaseProps = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   /** Auto-pack mat/snacks from inventory into kit. */
   autoSupplyFood: boolean;
+  /** Saved favorite hunt loadout. */
+  favoriteKitIds: string[];
   loadBenchRecipe: LoadBenchRecipe;
   loadDevTable: LoadDevTable;
   loadBook: LoadBookEntry[];
@@ -133,6 +157,9 @@ type HomeBaseProps = {
   armedLoadPlan: ArmedLoadPlan | null;
   onToggleKit: (itemId: string) => void;
   onSetAutoSupplyFood: (enabled: boolean) => void;
+  /** Mark / unmark one inventory item as part of the favorite hunt kit. */
+  onToggleFavoriteItem: (itemId: string, enabled: boolean) => void;
+  onPackFavoriteKit: () => void;
   onChangeLoadBenchRecipe: (recipe: LoadBenchRecipe) => void;
   onChangeLoadDevTable: (table: LoadDevTable) => void;
   onChangeLoadBook: (book: LoadBookEntry[]) => void;
@@ -179,6 +206,7 @@ export function HomeBase({
   isAdmin = false,
   zeroingProfiles,
   autoSupplyFood,
+  favoriteKitIds,
   loadBenchRecipe,
   loadDevTable,
   loadBook,
@@ -187,6 +215,8 @@ export function HomeBase({
   armedLoadPlan,
   onToggleKit,
   onSetAutoSupplyFood,
+  onToggleFavoriteItem,
+  onPackFavoriteKit,
   onChangeLoadBenchRecipe,
   onChangeLoadDevTable,
   onChangeLoadBook,
@@ -259,10 +289,11 @@ export function HomeBase({
       computePackLoad({
         kitItems,
         customsMods,
+        customBarrels,
         // Freezer birds stay home — pack weight is kit only until the next hunt.
         carcasses: [],
       }),
-    [kitItems, customsMods],
+    [kitItems, customsMods, customBarrels],
   );
 
   const totalWeightGrams = packLoad.totalGrams;
@@ -338,26 +369,126 @@ export function HomeBase({
     [kitItems],
   );
 
-  const currentRig = useMemo(() => {
-    return RIG_SLOTS.map((slot) => {
-      const item = kitItems.find((i) => i.category === slot.key) ?? null;
-      return { ...slot, item };
-    });
-  }, [kitItems]);
+  const weaponRigRows = useMemo(() => {
+    const rifle = kitItems.find((i) => i.category === "rifle") ?? null;
+    const pipe = rifle ? customBarrels[rifle.id] ?? null : null;
+    const wrap =
+      kitItems.find(
+        (i) => isMiscItem(i) && isSuppressorCoverMisc(i.misc),
+      ) ?? null;
+    const shotCam =
+      kitItems.find((i) => isShotCamItemId(i.id)) ?? null;
+    const shotKind = resolveShotCamKind(kit);
 
-  const rigAmmo = useMemo(
-    () => kitItems.filter((i) => i.category === "ammo"),
-    [kitItems],
+    return WEAPON_RIG_SLOTS.map((slot) => {
+      if (slot.kind === "shop") {
+        const item = kitItems.find((i) => i.category === slot.key) ?? null;
+        const carryG = item
+          ? itemCarryWeightGrams(item, customsMods, kitItems, customBarrels)
+          : 0;
+        let note = item
+          ? itemCarryWeightNote(item, customsMods, kitItems, customBarrels)
+          : null;
+        let value = item ? itemLabel(item) : "— ikke valgt";
+        if (item && isMountItem(item)) {
+          value = `${itemLabel(item)} · ${formatTubeDiameterMm(item.mount.tubeDiameterMm)}`;
+          const tierNote = mountTierLabelNb(item.mount.tier);
+          note = note ? `${note} · ${tierNote}` : tierNote;
+        }
+        return {
+          key: slot.key,
+          label: slot.label,
+          item,
+          value,
+          weightGrams: item ? carryG : null,
+          note,
+          removable: !!item,
+        };
+      }
+      if (slot.kind === "pipe") {
+        if (!rifle) {
+          return {
+            key: "pipe",
+            label: slot.label,
+            item: null,
+            value: "— (trenger våpen)",
+            weightGrams: null as number | null,
+            note: null as string | null,
+            removable: false,
+          };
+        }
+        if (!pipe) {
+          return {
+            key: "pipe",
+            label: slot.label,
+            item: null,
+            value: "Fabrikpipe",
+            weightGrams: null,
+            note: "inkl. i våpenvekt",
+            removable: false,
+          };
+        }
+        const maker =
+          BARREL_MAKERS.find((m) => m.id === pipe.maker)?.name ?? pipe.maker;
+        return {
+          key: "pipe",
+          label: slot.label,
+          item: null,
+          value: `${maker} · ${pipe.lengthIn}" · ${pipe.averageBestAccuracyMoa.toFixed(2)} MOA`,
+          weightGrams: pipe.weightGrams,
+          note: pipe.fluted ? "flutet · erstatter fabrikpipe" : "erstatter fabrikpipe",
+          removable: false,
+        };
+      }
+      if (slot.kind === "wrap") {
+        const carryG = wrap
+          ? itemCarryWeightGrams(wrap, customsMods, kitItems)
+          : 0;
+        return {
+          key: "wrap",
+          label: slot.label,
+          item: wrap,
+          value: wrap ? itemLabel(wrap) : "— ikke valgt",
+          weightGrams: wrap ? carryG : null,
+          note: null as string | null,
+          removable: !!wrap,
+        };
+      }
+      // shotcam
+      const carryG = shotCam
+        ? itemCarryWeightGrams(shotCam, customsMods, kitItems)
+        : 0;
+      return {
+        key: "shotcam",
+        label: slot.label,
+        item: shotCam,
+        value: shotCam
+          ? `${shotKind ? shotCamLabel(shotKind) : "Shotcam"} · ${itemLabel(shotCam)}`
+          : "— ikke valgt",
+        weightGrams: shotCam ? carryG : null,
+        note: null as string | null,
+        removable: !!shotCam,
+      };
+    });
+  }, [kitItems, customBarrels, customsMods, kit]);
+
+  const weaponRigWeightGrams = useMemo(
+    () =>
+      weaponRigRows.reduce(
+        (sum, row) => sum + (row.weightGrams ?? 0),
+        0,
+      ),
+    [weaponRigRows],
   );
 
-  const rigGearComplete = currentRig.every((s) => s.item != null);
+  const rigFilledCount = weaponRigRows.filter((r) => !r.value.startsWith("—"))
+    .length;
+
   const selectedTerrain = getHuntingTerrain(selectedHuntingTerrainId) ?? null;
 
   const rigSummary = useMemo(() => {
-    const gearFilled = currentRig.filter((s) => s.item).length;
-    const ammoCount = rigAmmo.length;
-    return `${gearFilled}/${currentRig.length} gear · ${ammoCount} ammo`;
-  }, [currentRig, rigAmmo]);
+    return `${rigFilledCount}/${weaponRigRows.length} på våpen · ${formatWeightKg(weaponRigWeightGrams)}`;
+  }, [rigFilledCount, weaponRigRows.length, weaponRigWeightGrams]);
 
   const inventorySummary = useMemo(() => {
     if (ownedItems.length === 0) return "Tomt skap";
@@ -386,23 +517,59 @@ export function HomeBase({
   );
 
   /**
-   * Rifle and scope define the zeroing combo. Swapping or removing either
-   * clears saved zeros for that optic — warn the player first.
+   * Rifle/scope/mount affect zero retention. Warn when a change will wipe
+   * saved zeros (mid/budget mounts, or any rifle change).
    */
   function requestToggleKit(item: ShopItem) {
-    const isZeroCombo = item.category === "rifle" || item.category === "scope";
+    const mountInKit = kitItems.find(isMountItem) ?? null;
+    const mountTier = mountInKit?.mount.tier ?? null;
     const alreadyEquipped = kit.includes(item.id);
-    if (isZeroCombo && alreadyEquipped) {
+
+    if (item.category === "rifle" && alreadyEquipped) {
       setKitRemoveConfirm(item);
       return;
     }
-    if (isZeroCombo && !alreadyEquipped) {
-      const current = kitItems.find((i) => i.category === item.category);
+    if (item.category === "rifle" && !alreadyEquipped) {
+      const current = kitItems.find((i) => i.category === "rifle");
       if (current && current.id !== item.id) {
         setKitSwapConfirm(item);
         return;
       }
     }
+
+    if (item.category === "scope") {
+      const clears = mountClearsZeroOnScopeRemove(mountTier);
+      if (alreadyEquipped && clears) {
+        setKitRemoveConfirm(item);
+        return;
+      }
+      if (!alreadyEquipped) {
+        const current = kitItems.find((i) => i.category === "scope");
+        if (current && current.id !== item.id && clears) {
+          setKitSwapConfirm(item);
+          return;
+        }
+      }
+    }
+
+    if (item.category === "mount") {
+      if (alreadyEquipped && mountInKit && mountClearsZeroOnMountRemove(mountInKit.mount.tier)) {
+        setKitRemoveConfirm(item);
+        return;
+      }
+      if (!alreadyEquipped) {
+        const current = kitItems.find(isMountItem);
+        if (
+          current &&
+          current.id !== item.id &&
+          mountClearsZeroOnMountRemove(current.mount.tier)
+        ) {
+          setKitSwapConfirm(item);
+          return;
+        }
+      }
+    }
+
     onToggleKit(item.id);
   }
 
@@ -558,74 +725,70 @@ export function HomeBase({
       <ExpandableSection title="Current rig" summary={rigSummary}>
         <section className="current-rig" aria-label="Current rig">
           <p className="shop-row-note current-rig-inline-note">
-            Dette tar du med på skytebanen og jakt. Flere ammo-typer = test i
-            sekvens. Bytt under inventory for å reconfigure.
-            {rigGearComplete ? "" : " — noen gear-slots er tomme."}
+            Bare det som sitter på våpenet: våpen, pipe, lyddemper, kikkert,
+            montasje, wrap, stokk og triggercam. Vekt etter CB-tuning der det
+            gjelder. Pipe byttes hos CB Customs.
           </p>
           <ul className="current-rig-list">
-          {currentRig.map(({ key, label, item }) => (
-            <li
-              key={key}
-              className={
-                item ? "current-rig-slot" : "current-rig-slot is-empty"
-              }
-            >
-              <span className="current-rig-label">{label}</span>
-              <span className="current-rig-value">
-                {item ? itemLabel(item) : "— ikke valgt"}
-              </span>
-              {item ? (
-                <button
-                  type="button"
-                  className="current-rig-clear"
-                  onClick={() => requestToggleKit(item)}
-                  title={`Fjern ${label} fra kit`}
-                >
-                  Fjern
-                </button>
-              ) : (
-                <span className="current-rig-clear is-placeholder" aria-hidden>
-                  —
-                </span>
-              )}
-            </li>
-          ))}
-          <li
-            className={
-              rigAmmo.length > 0
-                ? "current-rig-slot current-rig-ammo"
-                : "current-rig-slot current-rig-ammo is-empty"
-            }
-          >
-            <span className="current-rig-label">Ammo</span>
-            <div className="current-rig-ammo-list">
-              {rigAmmo.length === 0 ? (
-                <span className="current-rig-value">— ingen valgt</span>
-              ) : (
-                rigAmmo.map((item) => (
-                  <div key={item.id} className="current-rig-ammo-row">
-                    <span className="current-rig-value">
-                      {itemLabel(item)}
+            {weaponRigRows.map((row) => (
+              <li
+                key={row.key}
+                className={
+                  row.value.startsWith("—")
+                    ? "current-rig-slot is-empty"
+                    : "current-rig-slot"
+                }
+              >
+                <span className="current-rig-label">{row.label}</span>
+                <span className="current-rig-value">
+                  {row.value}
+                  {row.weightGrams != null ? (
+                    <span className="current-rig-weight">
                       {" · "}
-                      {formatInventoryQuantity(
-                        item.id,
-                        inventory.find((e) => e.itemId === item.id)?.qty ?? 0,
-                      )}
+                      {formatWeightKg(row.weightGrams)}
+                      {row.note ? (
+                        <span className="current-rig-weight-note">
+                          {" "}
+                          ({row.note})
+                        </span>
+                      ) : null}
                     </span>
-                    <button
-                      type="button"
-                      className="current-rig-clear"
-                      onClick={() => onToggleKit(item.id)}
-                      title="Fjern ammo fra kit"
-                    >
-                      Fjern
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </li>
-        </ul>
+                  ) : row.note ? (
+                    <span className="current-rig-weight-note">
+                      {" "}
+                      ({row.note})
+                    </span>
+                  ) : null}
+                </span>
+                {row.removable && row.item ? (
+                  <button
+                    type="button"
+                    className="current-rig-clear"
+                    onClick={() => requestToggleKit(row.item!)}
+                    title={`Fjern ${row.label} fra kit`}
+                  >
+                    Fjern
+                  </button>
+                ) : (
+                  <span className="current-rig-clear is-placeholder" aria-hidden>
+                    —
+                  </span>
+                )}
+              </li>
+            ))}
+            <li className="current-rig-slot current-rig-total">
+              <span className="current-rig-label">Total på våpen</span>
+              <span className="current-rig-value">
+                {formatWeightKg(weaponRigWeightGrams)}
+                {customsMods.fluting || customsMods.stockSlim
+                  ? " · etter CB-tuning"
+                  : ""}
+              </span>
+              <span className="current-rig-clear is-placeholder" aria-hidden>
+                —
+              </span>
+            </li>
+          </ul>
         </section>
       </ExpandableSection>
 
@@ -833,6 +996,29 @@ export function HomeBase({
         </p>
       ) : null}
 
+      {kitItems.some((i) => isCamcorderItemId(i.id)) &&
+      !kitItems.some((i) => isCamcorderTripodItemId(i.id)) ? (
+        <p className="shop-row-note" style={{ color: "var(--danger-rust)" }}>
+          Camcorder i kit uten stativ — ta med Biltema-, Manfrotto- eller
+          Triggerstick-stativ før jakt.
+        </p>
+      ) : null}
+
+      <FavoriteKitPanel
+        favoriteKitIds={favoriteKitIds}
+        kit={kit}
+        ownedItemIds={
+          new Set(
+            inventory.filter((e) => e.qty > 0).map((e) => e.itemId),
+          )
+        }
+        onPackFavoriteKit={onPackFavoriteKit}
+        onRemoveFavoriteItem={(itemId) => onToggleFavoriteItem(itemId, false)}
+        customsMods={customsMods}
+        customBarrels={customBarrels}
+        hint="Bytter ut hele kittet med lagret favoritt (f.eks. etter skytebane)."
+      />
+
       {ownedItems.length === 0 ? (
         <p className="intro-line">Tomt skap. XXL venter.</p>
       ) : (
@@ -871,6 +1057,7 @@ export function HomeBase({
                   <ul className="shop-list home-kit-list">
                     {rows.map(({ item, qty }) => {
                       const equipped = kit.includes(item.id);
+                      const isFavorite = favoriteKitIds.includes(item.id);
                       const finnDeal = finnSalePayoutNok(item, qty);
                       return (
                         <li key={item.id} className="shop-row">
@@ -937,6 +1124,22 @@ export function HomeBase({
                             ) : null}
                           </div>
                           <div className="home-inventory-actions">
+                            <label
+                              className="home-item-favorite"
+                              title="Del av favoritt-jaktkitt"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isFavorite}
+                                onChange={(e) =>
+                                  onToggleFavoriteItem(
+                                    item.id,
+                                    e.target.checked,
+                                  )
+                                }
+                              />
+                              <span>Favoritt</span>
+                            </label>
                             <button
                               type="button"
                               className={
@@ -988,8 +1191,10 @@ export function HomeBase({
           title="Bytte utstyr"
           message={
             kitSwapConfirm.category === "scope"
-              ? "Du bytter kikkert.\n\nAll lagret zero for den gamle kikkerten slettes. Du må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
-              : "Du bytter rifle.\n\nAll lagret zero for den gamle rifla slettes. Du må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+              ? "Du bytter kikkert.\n\nMed mellomklasse/budsjett-montasje slettes lagret zero for den gamle kikkerten — skyte inn på nytt («Lagre zero»). Toppklasse (Spuhr/Recknagel) overfører zero ved samme rørdiameter."
+              : kitSwapConfirm.category === "mount"
+                ? "Du bytter montasje.\n\nMellomklasse/budsjett: lagret zero slettes — skyte inn på nytt. Toppklasse beholder zero."
+                : "Du bytter rifle.\n\nAll lagret zero for den gamle rifla slettes. Du må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
           }
           confirmLabel="Bytt"
           cancelLabel="Avbryt"
@@ -1003,12 +1208,16 @@ export function HomeBase({
           title={
             kitRemoveConfirm.category === "scope"
               ? "Fjern kikkert"
-              : "Fjern rifle"
+              : kitRemoveConfirm.category === "mount"
+                ? "Fjern montasje"
+                : "Fjern rifle"
           }
           message={
             kitRemoveConfirm.category === "scope"
-              ? "Fjerner du kikkerten fra kit, slettes all lagret zero for den kikkerten.\n\nDu må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
-              : "Fjerner du rifla fra kit, slettes all lagret zero for den rifla.\n\nDu må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+              ? "Fjerner du kikkerten med mellomklasse/budsjett-montasje, slettes lagret zero.\n\nToppklasse beholder zero ved av/på."
+              : kitRemoveConfirm.category === "mount"
+                ? "Fjerner du mellomklasse/budsjett-montasje, slettes lagret zero for kikkerten.\n\nToppklasse (QD) beholder zero."
+                : "Fjerner du rifla fra kit, slettes all lagret zero for den rifla.\n\nDu må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
           }
           confirmLabel="Fjern"
           cancelLabel="Avbryt"

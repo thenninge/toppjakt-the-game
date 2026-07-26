@@ -106,6 +106,9 @@ function useHoldRepeat(action: () => void, disabled: boolean) {
   const actionRef = useRef(action);
   actionRef.current = action;
   const timersRef = useRef<{ delay?: number; interval?: number }>({});
+  const holdingRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   function clear() {
     if (timersRef.current.delay != null) {
@@ -115,11 +118,23 @@ function useHoldRepeat(action: () => void, disabled: boolean) {
       window.clearInterval(timersRef.current.interval);
     }
     timersRef.current = {};
+    holdingRef.current = false;
+    const el = buttonRef.current;
+    const pid = pointerIdRef.current;
+    if (el && pid != null && el.hasPointerCapture(pid)) {
+      try {
+        el.releasePointerCapture(pid);
+      } catch {
+        /* already released */
+      }
+    }
+    pointerIdRef.current = null;
   }
 
   function start() {
     if (disabled) return;
     clear();
+    holdingRef.current = true;
     actionRef.current();
     timersRef.current.delay = window.setTimeout(() => {
       timersRef.current.interval = window.setInterval(() => {
@@ -132,16 +147,21 @@ function useHoldRepeat(action: () => void, disabled: boolean) {
 
   return {
     onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
       e.preventDefault();
+      buttonRef.current = e.currentTarget;
+      pointerIdRef.current = e.pointerId;
       e.currentTarget.setPointerCapture(e.pointerId);
       start();
     },
-    onPointerUp: (e: ReactPointerEvent<HTMLButtonElement>) => {
-      clear();
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
+    onPointerMove: (e: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!holdingRef.current) return;
+      // Same sticky-mouse guard as scope aim / turret drag.
+      if (e.pointerType === "mouse" && e.buttons === 0) {
+        clear();
       }
     },
+    onPointerUp: () => clear(),
     onPointerCancel: () => clear(),
     onLostPointerCapture: () => clear(),
     onContextMenu: (e: ReactMouseEvent) => e.preventDefault(),
@@ -299,26 +319,49 @@ function ShooterDrum({
   scaleDir: 1 | -1;
 }) {
   const dragRef = useRef<{
+    pointerId: number;
     start: number;
     lastEmitted: number;
   } | null>(null);
+  const cylinderRef = useRef<HTMLDivElement>(null);
 
   const ticks = Array.from({ length: SHOOTER_HALF_SPAN * 2 + 1 }, (_, i) => {
     const offset = i - SHOOTER_HALF_SPAN;
     return faceClicks + offset * scaleDir;
   });
 
+  function endDrag(el?: HTMLDivElement | null, pointerId?: number) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (pointerId != null && drag.pointerId !== pointerId) return;
+    dragRef.current = null;
+    const target = el ?? cylinderRef.current;
+    if (target && target.hasPointerCapture(drag.pointerId)) {
+      try {
+        target.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+  }
+
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (disabled) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const start = orientation === "vertical" ? e.clientY : e.clientX;
-    dragRef.current = { start, lastEmitted: 0 };
+    dragRef.current = { pointerId: e.pointerId, start, lastEmitted: 0 };
   }
 
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
-    if (!drag || disabled) return;
+    if (!drag || drag.pointerId !== e.pointerId || disabled) return;
+    // Trackpad/mouse can drop button-up outside the element — stop if no buttons.
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endDrag(e.currentTarget, e.pointerId);
+      return;
+    }
     const pos = orientation === "vertical" ? e.clientY : e.clientX;
     const delta = pos - drag.start;
     /* Dragging the drum with the finger: surface follows pointer.
@@ -330,10 +373,14 @@ function ShooterDrum({
     }
   }
 
-  function endDrag(e: ReactPointerEvent<HTMLDivElement>) {
-    dragRef.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+  function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    endDrag(e.currentTarget, e.pointerId);
+  }
+
+  function onPointerLeave(e: ReactPointerEvent<HTMLDivElement>) {
+    // Only end if buttons already up (leave while held uses capture move).
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endDrag(e.currentTarget, dragRef.current?.pointerId);
     }
   }
 
@@ -369,11 +416,14 @@ function ShooterDrum({
       <div className="scope-turret-shooter-main">
         {orientation === "vertical" ? base : null}
         <div
+          ref={cylinderRef}
           className="scope-turret-shooter-cylinder"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onPointerLeave={onPointerLeave}
+          onLostPointerCapture={onPointerUp}
           onContextMenu={(ev) => ev.preventDefault()}
           role="presentation"
         >

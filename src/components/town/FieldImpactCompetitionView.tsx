@@ -348,7 +348,11 @@ export function FieldImpactCompetitionView({
   const scopeStageRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const geomRef = useRef(shotGeom);
+  // Sync every render (same as HuntShootView) — useEffect is too late for
+  // rAF paint / fire between stage advance and the next commit.
+  geomRef.current = shotGeom;
   const distanceRef = useRef(distanceM);
+  distanceRef.current = distanceM;
   const birdSeatRef = useRef({
     x: landscapeFocusX,
     y: landscapeFocusY,
@@ -362,17 +366,28 @@ export function FieldImpactCompetitionView({
   const landAspectRef = useRef(landAspect);
   landAspectRef.current = landAspect;
   const stageIndexRef = useRef(0);
+  stageIndexRef.current = stageIndex;
   const shotsFiredRef = useRef(0);
+  shotsFiredRef.current = shotsFired;
   const startMsRef = useRef<number | null>(null);
+  startMsRef.current = startMs;
   const phaseRef = useRef<Phase>("lobby");
+  phaseRef.current = phase;
   const ammoRemainingRef = useRef(0);
+  ammoRemainingRef.current = ammoRemaining;
   const advancingRef = useRef(false);
   const densityRef = useRef(densityRatio);
+  densityRef.current = densityRatio;
   const powderTempRef = useRef(weather.live.temperatureC);
+  powderTempRef.current = weather.live.temperatureC;
   const crosswindRef = useRef(crosswind);
+  crosswindRef.current = crosswind;
   const barrelWearScaleRef = useRef(barrelWearScale);
+  barrelWearScaleRef.current = barrelWearScale;
   const roundLayoutRef = useRef(roundLayout);
   roundLayoutRef.current = roundLayout;
+  /** False until the player pans — allows re-center when landAspect loads. */
+  const hasPannedRef = useRef(false);
 
   const { playShot } = useRangeAudio({ enabled: musicEnabled });
   const {
@@ -400,39 +415,6 @@ export function FieldImpactCompetitionView({
   useEffect(() => {
     consumeAmmoRef.current = onConsumeAmmo;
   }, [onConsumeAmmo]);
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
-  useEffect(() => {
-    ammoRemainingRef.current = ammoRemaining;
-  }, [ammoRemaining]);
-  useEffect(() => {
-    geomRef.current = shotGeom;
-  }, [shotGeom]);
-  useEffect(() => {
-    distanceRef.current = distanceM;
-  }, [distanceM]);
-  useEffect(() => {
-    stageIndexRef.current = stageIndex;
-  }, [stageIndex]);
-  useEffect(() => {
-    shotsFiredRef.current = shotsFired;
-  }, [shotsFired]);
-  useEffect(() => {
-    startMsRef.current = startMs;
-  }, [startMs]);
-  useEffect(() => {
-    densityRef.current = densityRatio;
-  }, [densityRatio]);
-  useEffect(() => {
-    powderTempRef.current = weather.live.temperatureC;
-  }, [weather.live.temperatureC]);
-  useEffect(() => {
-    crosswindRef.current = crosswind;
-  }, [crosswind]);
-  useEffect(() => {
-    barrelWearScaleRef.current = barrelWearScale;
-  }, [barrelWearScale]);
 
   useEffect(() => {
     if (scope) {
@@ -474,6 +456,27 @@ export function FieldImpactCompetitionView({
     });
   }
 
+  /** Keep rAF / fireShot refs aligned with a stage before React re-renders. */
+  function applyStageToLiveRefs(st: FieldImpactStageLayout) {
+    const g = birdShotGeom(st.spriteId);
+    geomRef.current = g;
+    distanceRef.current = st.distanceM;
+    birdSeatRef.current = {
+      x: st.x,
+      y: st.y,
+      widthPct: Math.max(0.05, st.widthPct),
+    };
+  }
+
+  /** Re-center POA on vital when landscape aspect resolves (same as hunt). */
+  useEffect(() => {
+    if (phase !== "shooting" || !stage) return;
+    if (hasPannedRef.current) return;
+    const aim0 = aimForStageLayout(stage, landAspect);
+    setAimMm(aim0);
+    aimRef.current = aim0;
+  }, [phase, stage, landAspect]);
+
   function startRound() {
     if (!ready || !selectedAmmo || !rifle) return;
     if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
@@ -486,8 +489,11 @@ export function FieldImpactCompetitionView({
     }
     const layout = rollFieldImpactRound();
     const first = layout.stages[0]!;
-    const aim0 = aimForStageLayout(first, landAspect);
+    applyStageToLiveRefs(first);
+    roundLayoutRef.current = layout;
+    const aim0 = aimForStageLayout(first, landAspectRef.current);
     const now = performance.now();
+    hasPannedRef.current = false;
     setRoundLayout(layout);
     setPhase("shooting");
     setStageIndex(0);
@@ -679,6 +685,8 @@ export function FieldImpactCompetitionView({
       setStageIndex(nextStage);
       setLastImpact(null);
       if (next) {
+        applyStageToLiveRefs(next);
+        hasPannedRef.current = false;
         const aimNext = aimForStageLayout(next, landAspectRef.current);
         setAimMm(aimNext);
         aimRef.current = aimNext;
@@ -725,6 +733,23 @@ export function FieldImpactCompetitionView({
     setTriggerUi({ pending: false, targetPct: 0 });
   }
 
+  function endAimDrag(
+    el?: HTMLDivElement | null,
+    pointerId?: number,
+  ) {
+    const drag = aimDragRef.current;
+    if (!drag) return;
+    if (pointerId != null && drag.pointerId !== pointerId) return;
+    aimDragRef.current = null;
+    if (el && el.hasPointerCapture(drag.pointerId)) {
+      try {
+        el.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+  }
+
   function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (phase !== "shooting") return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -742,6 +767,11 @@ export function FieldImpactCompetitionView({
   function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
     const drag = aimDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    // Trackpad/mouse can drop button-up outside the element — stop if no buttons.
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endAimDrag(e.currentTarget, e.pointerId);
+      return;
+    }
     const g = geomRef.current;
     if (!g) return;
     const delta = aimMmDeltaFromPointerDrag({
@@ -760,12 +790,15 @@ export function FieldImpactCompetitionView({
       x: Math.max(-limitX, Math.min(limitX, drag.origX + delta.x)),
       y: Math.max(-limitY, Math.min(limitY, drag.origY + delta.y)),
     };
+    hasPannedRef.current = true;
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (aimDragRef.current?.pointerId === e.pointerId) {
-      aimDragRef.current = null;
-    }
+    endAimDrag(e.currentTarget, e.pointerId);
+  }
+
+  function onAimPointerLeave(e: PointerEvent<HTMLDivElement>) {
+    endAimDrag(e.currentTarget, aimDragRef.current?.pointerId);
   }
 
   function releaseTrigger(nowMs: number) {
@@ -916,6 +949,9 @@ export function FieldImpactCompetitionView({
       if (k.right) x += speed;
       if (k.up) y -= speed;
       if (k.down) y += speed;
+      if (k.left || k.right || k.up || k.down) {
+        hasPannedRef.current = true;
+      }
       x = Math.max(-limitX, Math.min(limitX, x));
       y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
@@ -1273,6 +1309,8 @@ export function FieldImpactCompetitionView({
               onPointerMove={onAimPointerMove}
               onPointerUp={onAimPointerUp}
               onPointerCancel={onAimPointerUp}
+              onPointerLeave={onAimPointerLeave}
+              onLostPointerCapture={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
                 {shotGeom ? (

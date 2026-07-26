@@ -8,13 +8,18 @@ import {
 import {
   isAmmoItem,
   isBackpackItem,
+  isMiscItem,
+  isMountItem,
   isRifleItem,
   isScopeItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { formatTubeDiameterMm, type ScopeTubeDiameterMm } from "@/lib/mount/spec";
+import { isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
 import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
+import { getShopItem } from "@/lib/shop/catalog";
 
 export type HuntReadyResult = {
   ok: boolean;
@@ -45,9 +50,55 @@ export function kitHasVerifiedHuntZero(input: {
   );
 }
 
+/** Mount in kit that matches the packed scope tube diameter. */
+export function kitHasMatchingScopeMount(kitItems: ShopItem[]): boolean {
+  const scope = kitItems.find(isScopeItem);
+  if (!scope) return false;
+  const mount = kitItems.find(isMountItem);
+  if (!mount) return false;
+  return mount.mount.tubeDiameterMm === scope.scope.tubeDiameterMm;
+}
+
 /**
- * Minimum kit to leave Home for a hunt: rifle, scope, ammo, backpack,
- * verified zero, and a valid jaktkort.
+ * One mount SKU per owned scope, per tube diameter.
+ * E.g. two 30 mm scopes require two 30 mm mounts in inventory.
+ */
+export function inventoryMountCoverageOk(input: {
+  inventory: InventoryEntry[];
+  /** Resolve catalog item; missing ids are skipped. */
+  resolveItem: (id: string) => ShopItem | undefined;
+}): { ok: boolean; detail?: string } {
+  const scopeCount = new Map<number, number>();
+  const mountCount = new Map<number, number>();
+
+  for (const entry of input.inventory) {
+    if (entry.qty <= 0) continue;
+    const item = input.resolveItem(entry.itemId);
+    if (!item) continue;
+    if (isScopeItem(item)) {
+      const d = item.scope.tubeDiameterMm;
+      scopeCount.set(d, (scopeCount.get(d) ?? 0) + entry.qty);
+    } else if (isMountItem(item)) {
+      const d = item.mount.tubeDiameterMm;
+      mountCount.set(d, (mountCount.get(d) ?? 0) + entry.qty);
+    }
+  }
+
+  for (const [diameter, scopes] of scopeCount) {
+    const mounts = mountCount.get(diameter) ?? 0;
+    if (mounts < scopes) {
+      return {
+        ok: false,
+        detail: `Trenger ${scopes}× ${formatTubeDiameterMm(diameter as ScopeTubeDiameterMm)}-montasje (har ${mounts}) — én pr kikkert`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Minimum kit to leave Home for a hunt: rifle, scope, matching mount, ammo,
+ * backpack, verified zero, and a valid jaktkort.
  */
 export function huntReadyCheck(input: {
   kitItems: ShopItem[];
@@ -85,6 +136,27 @@ export function huntReadyCheck(input: {
   if (!input.kitItems.some(isScopeItem)) {
     blockers.push("Ta med kikkert i kit");
   }
+
+  const scope = input.kitItems.find(isScopeItem);
+  const mount = input.kitItems.find(isMountItem);
+  if (scope && !mount) {
+    blockers.push(
+      `Ta med kikkertmontasje i kit (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)})`,
+    );
+  } else if (scope && mount && !kitHasMatchingScopeMount(input.kitItems)) {
+    blockers.push(
+      `Montasje må matche kikkert-rør (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)} — ikke ${formatTubeDiameterMm(mount.mount.tubeDiameterMm)})`,
+    );
+  }
+
+  const coverage = inventoryMountCoverageOk({
+    inventory: input.inventory,
+    resolveItem: getShopItem,
+  });
+  if (!coverage.ok && coverage.detail) {
+    blockers.push(coverage.detail);
+  }
+
   if (!input.kitItems.some(isBackpackItem)) {
     blockers.push("Ta med sekk (backpack) i kit");
   }
@@ -109,6 +181,18 @@ export function huntReadyCheck(input: {
   ) {
     blockers.push(
       "Ingen lagret zero — skyte inn rifle+kikkert+ammo på skytebanen og trykk «Lagre zero»",
+    );
+  }
+
+  const hasCamcorder = input.kitItems.some(
+    (i) => isMiscItem(i) && isCamcorderMisc(i.misc),
+  );
+  const hasCamcorderTripod = input.kitItems.some(
+    (i) => isMiscItem(i) && isCamcorderTripodMisc(i.misc),
+  );
+  if (hasCamcorder && !hasCamcorderTripod) {
+    blockers.push(
+      "Camcorder krever stativ i kit (Biltema, Manfrotto eller Triggerstick)",
     );
   }
 

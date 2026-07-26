@@ -15,6 +15,7 @@ export type {
   BipodShopItem,
   FoodShopItem,
   SuppressorShopItem,
+  MountShopItem,
 } from "./types";
 export {
   SHOP_CATEGORIES,
@@ -35,6 +36,7 @@ export {
   isBipodItem,
   isFoodItem,
   isSuppressorItem,
+  isMountItem,
   isBundleItem,
 } from "./types";
 export {
@@ -61,6 +63,8 @@ export {
   clothingMindDrainMult,
   clothingRestBodyGain,
   camoSlot,
+  isBodyWornCamo,
+  isBodyWornCamoSlot,
   sneakPctToScore,
 } from "@/lib/camo/spec";
 export type { CarrySpec } from "@/lib/carry/spec";
@@ -86,6 +90,7 @@ export {
   isChamberCoolerMisc,
   isFireStarterMisc,
   isSitPadMisc,
+  isSuppressorCoverMisc,
   miscKitMirageMult,
   miscKitWeaponCalmGrams,
 } from "@/lib/misc/spec";
@@ -138,6 +143,7 @@ export {
   formatStaminaPct,
   isCookGear,
   THERMOS_ITEM_ID,
+  isThermosFood,
   COFFEE_RECOVERY,
   SHORT_REST_RECOVERY,
   TYRIBAL_RECOVERY,
