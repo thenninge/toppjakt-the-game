@@ -15,12 +15,11 @@ import {
   focusRemainingMs,
   rollTriggerTargetMs,
   sampleShotFromPoa,
-  scopeImageScale,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
-  RANGE_DISTANCE_M,
 } from "@/lib/range/precision";
+import { angularReticleImgScale } from "@/lib/range/reticles";
 import {
   rifleSpecWithCustomBarrel,
   type InstalledCustomBarrel,
@@ -63,7 +62,7 @@ import {
   type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError } from "@/lib/optics/spec";
+import { applyScopeClickError, scopeFovDiameterScale } from "@/lib/optics/spec";
 import {
   isAmmoItem,
   isBipodItem,
@@ -1314,7 +1313,6 @@ export function HuntShootView({
     );
   }
 
-  const reticleScale = scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M);
   const birdWidthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
   const targetScale = birdScopeImageScale(
     zoom,
@@ -1325,6 +1323,12 @@ export function HuntShootView({
     // Landscape hunt: use placement width (perch/sprite scales) not bare 1/d.
     landscapeSrc ? birdWidthPct : undefined,
   );
+  /** Hold-over: 1 mil on glass = trueDistanceM mm on the bird. */
+  const reticleScale = angularReticleImgScale({
+    mmPerUnit: trueDistanceM,
+    pxPerMm: birdNativePxPerMm(shotGeom),
+    targetCssScale: targetScale,
+  });
   const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
   // Flipped sprite mirrors vital X around image centre — keep reticle on chest.
   const vitalOff = birdFlip
@@ -1644,7 +1648,13 @@ export function HuntShootView({
             </div>
           </div>
 
-          <div className="scope-optic">
+          <div
+            className={
+              scopeFovDiameterScale(scope.scope) > 1
+                ? "scope-optic is-fov-premium"
+                : "scope-optic"
+            }
+          >
             <div
               className={
                 recoilActive

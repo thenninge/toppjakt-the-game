@@ -24,7 +24,6 @@ import {
   focusRemainingMs,
   rollTriggerTargetMs,
   sampleShotFromPoa,
-  scopeImageScale,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
@@ -46,7 +45,7 @@ import {
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError } from "@/lib/optics/spec";
+import { applyScopeClickError, scopeFovDiameterScale } from "@/lib/optics/spec";
 import { densityRatioFromTempC } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
@@ -59,6 +58,7 @@ import {
   MOA_COMP_NATIVE_H,
   MOA_COMP_NATIVE_W,
   MOA_COMP_PAYOUT_TIERS,
+  MOA_COMP_PX_PER_MM,
   MOA_COMP_SHOT_COUNT,
   MOA_COMP_TARGETS,
   finalizeMoaComp,
@@ -71,6 +71,8 @@ import {
   type MoaCompResult,
   type MoaCompShot,
 } from "@/lib/range/moaComp";
+import { angularReticleImgScale } from "@/lib/range/reticles";
+import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
@@ -804,14 +806,21 @@ export function MoaCompetitionView({
     return () => cancelAnimationFrame(raf);
   }, [phase, ready]);
 
-  // Reticle: CBA-tuned scale (true mils). Paper: boosted to match zeroing size.
-  const zoomScale = scope
-    ? scopeImageScale(zoom, scope.scope, MOA_COMP_DISTANCE_M)
-    : 1;
+  // Hold-over: reticle hashes match paper (1 mil / 1 MOA on the sheet).
   const targetScale = scope
     ? moaCompScopeImageScale(zoom, scope.scope, MOA_COMP_DISTANCE_M)
     : 1;
   targetScaleRef.current = targetScale;
+  const reticleImgScale = scope
+    ? angularReticleImgScale({
+        mmPerUnit:
+          scope.scope.clickUnit === "MOA"
+            ? MM_PER_MOA_AT_100M * (MOA_COMP_DISTANCE_M / 100)
+            : MOA_COMP_DISTANCE_M,
+        pxPerMm: MOA_COMP_PX_PER_MM,
+        targetCssScale: targetScale,
+      })
+    : 1;
 
   const focusLabel =
     focusUi.phase === "focused"
@@ -1049,7 +1058,15 @@ export function MoaCompetitionView({
             </div>
           </div>
 
-          <div className="scope-optic">
+          <div
+            className={
+              scope
+                ? scopeFovDiameterScale(scope.scope) > 1
+                  ? "scope-optic is-fov-premium"
+                  : "scope-optic"
+                : "scope-optic"
+            }
+          >
             <div
               className={
                 recoilActive
@@ -1097,7 +1114,7 @@ export function MoaCompetitionView({
               <ScopeReticle
                 scope={scope!.scope}
                 zoom={zoom}
-                imgScale={zoomScale}
+                imgScale={reticleImgScale}
               />
               <div className="scope-vignette" aria-hidden />
             </div>

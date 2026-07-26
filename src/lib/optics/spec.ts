@@ -9,6 +9,14 @@ export type ScopeClickUnit = "MRAD" | "MOA";
 /** First focal plane — reticle scales with magnification. */
 export type ScopeFocalPlane = "FFP" | "SFP";
 
+/** Medium glass (Element etc.) — baseline scope-circle diameter. */
+export const SCOPE_FOV_DIAMETER_STANDARD = 1;
+/**
+ * Premium apparent FOV diameter vs medium (Kahles / SB / NF / ZCO / Razor).
+ * +15 % circle → more milliradians visible at the same zoom.
+ */
+export const SCOPE_FOV_DIAMETER_PREMIUM = 1.15;
+
 export type ScopeSpec = {
   /**
    * Main tube outer diameter (mm). Mounts must match exactly —
@@ -34,7 +42,21 @@ export type ScopeSpec = {
    * Leupold Mark 5 keeps ~0.12; budget ~0.5–1.2+.
    */
   zeroRetentionInaccuracy: number;
+  /**
+   * Scope-circle diameter multiplier vs medium glass (Element = 1).
+   * Premium (ZCO/Kahles/NF/SB/Razor) = {@link SCOPE_FOV_DIAMETER_PREMIUM}.
+   * At in-game 27×, premium circle shows ≈7 mrad centre→edge (was ~19.8×).
+   */
+  fovDiameterScale?: number;
 };
+
+export function scopeFovDiameterScale(
+  scope: Pick<ScopeSpec, "fovDiameterScale"> | null | undefined,
+): number {
+  const s = scope?.fovDiameterScale;
+  if (s != null && Number.isFinite(s) && s > 0) return s;
+  return SCOPE_FOV_DIAMETER_STANDARD;
+}
 
 /**
  * Scale dialed mm-at-100 m by this scope's click error band.

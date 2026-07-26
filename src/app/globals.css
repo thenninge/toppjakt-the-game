@@ -6364,6 +6364,12 @@ body {
   box-sizing: border-box;
 }
 
+/** Premium glass (ZCO / Kahles / NF / SB / Razor): +15 % felt FOV diameter. */
+.scope-optic.is-fov-premium {
+  width: min(100%, calc(28rem * 1.15));
+  max-width: calc(28rem * 1.15);
+}
+
 .scope-viewport {
   position: relative;
   width: 100%;
@@ -7320,6 +7326,11 @@ body {
 @media (max-width: 520px) {
   .scope-optic {
     width: min(100%, 22rem);
+  }
+
+  .scope-optic.is-fov-premium {
+    width: min(100%, calc(22rem * 1.15));
+    max-width: calc(22rem * 1.15);
   }
 
   .scope-stage-optic-row {

@@ -54,6 +54,7 @@ import {
   rollTriggerTargetMs,
   sampleShotFromPoa,
   scopeImageScale,
+  RANGE_TRUE_ANGULAR_TARGET_SCALE,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
@@ -79,7 +80,9 @@ import {
   MOA_RANGE_TARGET_SCALE,
   mmAt100ToScopeClicks,
 } from "@/lib/optics/clicks";
+import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
+import { scopeFovDiameterScale } from "@/lib/optics/spec";
 import {
   DEFAULT_ZERO_DISTANCE_M,
   dropBelowLosMm,
@@ -90,7 +93,7 @@ import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
-import { trackingReticleImgScale } from "@/lib/range/reticles";
+import { angularReticleImgScale } from "@/lib/range/reticles";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -1225,25 +1228,35 @@ export function ShootingRange({
     return () => cancelAnimationFrame(raf);
   }, [ready, measurement]);
 
-  const zoomScale = scope
-    ? scopeImageScale(zoom, scope.scope, RANGE_DISTANCE_M)
-    : 1;
-  /** Target shrinks with distance (angular size). Reticle uses zoom-only
-   * scale so mil/MOA hashes stay true angular. Per-skive visualScale fixes
-   * board size. MOA paper ({@link MOA_RANGE_TARGET_SCALE}) makes 1 cm ≈ ¼ MOA. */
+  /** Target shrinks with distance (angular size). Per-skive visualScale fixes
+   * board size. Zeroing/load: ×0.1 so physical mm match true mils.
+   * Tracking already true-mil. MOA paper ({@link MOA_RANGE_TARGET_SCALE}). */
   const moaPaperScale = paperUnit === "MOA" ? MOA_RANGE_TARGET_SCALE : 1;
+  const trueAngularPaper =
+    lane === "tracking-test" ? 1 : RANGE_TRUE_ANGULAR_TARGET_SCALE;
   const targetScale = scope
     ? scopeImageScale(zoom, scope.scope, distanceM) *
       target.visualScale *
-      moaPaperScale
-    : target.visualScale;
-  /** Tracking: true mils vs 1 cm grid. Zeroing: CBA-readable (1 mil ≈ 10 mm). */
-  const reticleImgScale =
-    lane === "tracking-test"
-      ? trackingReticleImgScale(zoomScale, target)
-      : zoomScale;
+      moaPaperScale *
+      trueAngularPaper
+    : target.visualScale * trueAngularPaper;
+  /**
+   * Hold-over: reticle mil/MOA hashes sized from the *same* CSS scale as the
+   * paper so 1 mil = distanceM mm (MRAD) or 1 MOA = 29.4×(D/100) mm.
+   */
+  const reticleImgScale = angularReticleImgScale({
+    mmPerUnit:
+      paperUnit === "MOA"
+        ? MM_PER_MOA_AT_100M * (distanceM / 100)
+        : distanceM,
+    pxPerMm: target.pxPerMm,
+    targetCssScale: targetScale,
+  });
   const bullseyeOff = targetBullseyeOffsetFromImageCenterPx(target);
   targetScaleRef.current = targetScale;
+  const fovDiameterScale = scope
+    ? scopeFovDiameterScale(scope.scope)
+    : 1;
   bullseyeOffRef.current = bullseyeOff;
   imgNaturalWRef.current = target.nativeWidth;
   targetPxPerMmRef.current = target.pxPerMm;
@@ -1925,14 +1938,27 @@ export function ShootingRange({
           {suppressor ? " · can" : ""}
         </p>
         {lane === "load-test" ? (
-          <p className="shop-row-note">100 m · CBA-skive (fast)</p>
+          <p className="shop-row-note">100 m · CBA-skive (fast) · 1 mil = 100 mm</p>
         ) : lane === "tracking-test" ? (
           <p className="shop-row-note">
-            100 m · 1 cm-rute = 1 klikk · retikkel i ekte mrad · S&amp;B/ZCO = 1:1
+            100 m · 1 cm-rute = 1 klikk · retikkel i ekte mrad · 1 mil = 10 cm
           </p>
-        ) : ballisticHint ? (
-          <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
-        ) : null}
+        ) : (
+          <>
+            <p className="shop-row-note">
+              Hold-over aktiv · retikkel og skive deler samme vinkel
+              {paperUnit === "MOA"
+                ? ` · 1 MOA ≈ ${(MM_PER_MOA_AT_100M * (distanceM / 100)).toFixed(0)} mm`
+                : ` · 1 mil = ${distanceM} mm`}
+              {" · "}
+              diamant 10 mm = 1 klikk
+              {fovDiameterScale > 1 ? " · premium FOV" : ""}
+            </p>
+            {ballisticHint ? (
+              <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
+            ) : null}
+          </>
+        )}
       </header>
 
       {lane !== "load-test" && lane !== "tracking-test" ? (
@@ -2391,7 +2417,13 @@ export function ShootingRange({
               ) : null}
             </div>
 
-            <div className="scope-optic">
+            <div
+              className={
+                fovDiameterScale > 1
+                  ? "scope-optic is-fov-premium"
+                  : "scope-optic"
+              }
+            >
               <div
                 className={
                   recoilActive

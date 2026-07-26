@@ -24,11 +24,11 @@ import {
   focusRemainingMs,
   rollTriggerTargetMs,
   sampleShotFromPoa,
-  scopeImageScale,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
+import { angularReticleImgScale } from "@/lib/range/reticles";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -46,7 +46,7 @@ import {
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError } from "@/lib/optics/spec";
+import { applyScopeClickError, scopeFovDiameterScale } from "@/lib/optics/spec";
 import { densityRatioFromTempC, exactBallisticHold } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
@@ -1020,9 +1020,6 @@ export function FieldImpactCompetitionView({
     return () => cancelAnimationFrame(raf);
   }, [phase, ready]);
 
-  const reticleScale = scope
-    ? scopeImageScale(zoom, scope.scope, distanceM)
-    : 1;
   const targetScale =
     scope && shotGeom
       ? birdScopeImageScale(
@@ -1035,6 +1032,15 @@ export function FieldImpactCompetitionView({
         )
       : 1;
   targetScaleRef.current = targetScale;
+  /** Hold-over: 1 mil on glass = distanceM mm on the bird. */
+  const reticleScale =
+    shotGeom != null
+      ? angularReticleImgScale({
+          mmPerUnit: distanceM,
+          pxPerMm: birdNativePxPerMm(shotGeom),
+          targetCssScale: targetScale,
+        })
+      : 1;
 
   const vitalOff = shotGeom
     ? birdVitalOffsetFromImageCenterPx(shotGeom)
@@ -1298,7 +1304,15 @@ export function FieldImpactCompetitionView({
             </div>
           </div>
 
-          <div className="scope-optic">
+          <div
+            className={
+              scope
+                ? scopeFovDiameterScale(scope.scope) > 1
+                  ? "scope-optic is-fov-premium"
+                  : "scope-optic"
+                : "scope-optic"
+            }
+          >
             <div
               className={
                 recoilActive

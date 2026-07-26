@@ -57,11 +57,52 @@ export const CBA_DIAMOND_CENTER_TO_TIP_PX = 115;
 export const CBA_CENTER_DOT_DIAMETER_MM = 6;
 
 /**
- * Image CSS scale at 1× optical — tuned so a typical 8–12× view shows the
- * diamond as a small aim point in the scope circle (not a full-screen poster).
- * Apparent size ∝ zoom (see scopeImageScale).
+ * Scope FOV ↔ zoom (premium glass, +15 % circle).
+ * Empirically ±{@link SCOPE_FOV_CAL_HALF_MRAD} mrad appeared at
+ * {@link SCOPE_FOV_MEASURED_ZOOM}×; remap so that same view is at
+ * {@link SCOPE_FOV_CAL_ZOOM}× (ZCO max / real 27×).
  */
-export const SCOPE_IMAGE_SCALE_PER_ZOOM = 0.012;
+export const SCOPE_FOV_CAL_ZOOM = 27;
+/** In-game zoom where ±7 mrad was measured before this remap. */
+export const SCOPE_FOV_MEASURED_ZOOM = 19.8;
+export const SCOPE_FOV_CAL_HALF_MRAD = 7;
+/** Matches hunt `SCOPE_VIEWPORT_REF_PX` (448) × premium FOV 1.15. */
+const SCOPE_FOV_CAL_RADIUS_PX = (448 / 2) * 1.15;
+/**
+ * After the 19.8→27 remap the glass still showed 16 mrad edge-to-edge at
+ * 27×; scale by 16/14 so diameter = 14 mrad (±7).
+ */
+export const SCOPE_FOV_DIAMETER_ZOOM_IN = 16 / 14;
+
+/**
+ * Live hold-over fine-tune vs dialed POI.
+ * With angular reticle↔target scale, dial mils already match glass — keep 1.
+ * (Old 40/45 shrink made 45 clicks read as ~5 mrad on the reticle.)
+ */
+export const RETICLE_SUBTENSION_CAL = 1;
+
+/**
+ * Image CSS scale at 1× optical. Base formula targets ±7 mrad at
+ * {@link SCOPE_FOV_CAL_ZOOM}×, then × measured/cal so the old
+ * {@link SCOPE_FOV_MEASURED_ZOOM}× view lands on 27×, then ×
+ * {@link SCOPE_FOV_DIAMETER_ZOOM_IN}.
+ */
+export const SCOPE_IMAGE_SCALE_PER_ZOOM =
+  (SCOPE_FOV_CAL_RADIUS_PX /
+    (SCOPE_FOV_CAL_HALF_MRAD *
+      CBA_DIAMOND_CENTER_TO_TIP_PX *
+      SCOPE_FOV_CAL_ZOOM *
+      RETICLE_SUBTENSION_CAL)) *
+  (SCOPE_FOV_MEASURED_ZOOM / SCOPE_FOV_CAL_ZOOM) *
+  SCOPE_FOV_DIAMETER_ZOOM_IN;
+
+/**
+ * Undo the old “readable” 10× paper exaggeration on the zeroing lane.
+ * Reticle stays mil-calibrated to the CBA diamond tip in *unscaled* px;
+ * paper ×0.1 → 1 mil hash ≈ 100 mm @ 100 m (10 clicks between circles).
+ * Tracking lane already uses true-mil reticle — leave its scale alone.
+ */
+export const RANGE_TRUE_ANGULAR_TARGET_SCALE = 0.1;
 
 export type ShotImpact = {
   /** mm right of bullseye (target coords). */

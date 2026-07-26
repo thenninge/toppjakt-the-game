@@ -5,6 +5,7 @@ import {
   getReticleDef,
   reticleDisplaySizePx,
   reticleOpticalCenter,
+  resolveReticleForZoom,
 } from "@/lib/range/reticles";
 
 type ScopeReticleProps = {
@@ -25,11 +26,12 @@ function GenericReticle() {
 }
 
 export function ScopeReticle({ scope, zoom, imgScale }: ScopeReticleProps) {
-  const def = getReticleDef(scope.reticleId);
-  if (!def) {
+  const base = getReticleDef(scope.reticleId);
+  if (!base) {
     return <GenericReticle />;
   }
 
+  const def = resolveReticleForZoom(base, zoom, scope.maxZoom);
   const { width, height, scale } = reticleDisplaySizePx(
     scope,
     zoom,
@@ -37,6 +39,7 @@ export function ScopeReticle({ scope, zoom, imgScale }: ScopeReticleProps) {
     def,
   );
   const optical = reticleOpticalCenter(def);
+  const rot = def.imageRotationDeg ?? 0;
 
   return (
     <div className="scope-reticle scope-reticle--image" aria-hidden>
@@ -54,6 +57,12 @@ export function ScopeReticle({ scope, zoom, imgScale }: ScopeReticleProps) {
           // Pin optical crosshair (not image midpoint) to POA.
           marginLeft: `${-optical.x * scale}px`,
           marginTop: `${-optical.y * scale}px`,
+          ...(rot !== 0
+            ? {
+                transform: `rotate(${rot}deg)`,
+                transformOrigin: `${optical.x * scale}px ${optical.y * scale}px`,
+              }
+            : null),
         }}
       />
     </div>

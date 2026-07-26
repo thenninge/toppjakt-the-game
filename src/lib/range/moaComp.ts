@@ -15,6 +15,7 @@ import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import {
   CBA_DIAMOND_CENTER_TO_TIP_MM,
   CBA_DIAMOND_CENTER_TO_TIP_PX,
+  RANGE_TRUE_ANGULAR_TARGET_SCALE,
   scopeImageScale,
   type ShotImpact,
 } from "@/lib/range/precision";
@@ -77,7 +78,8 @@ export function moaCompScopeImageScale(
   return (
     scopeImageScale(zoom, scope, distanceM) *
     moaCompScopeScaleFactor() *
-    MOA_COMP_SCOPE_PAPER_TUNE
+    MOA_COMP_SCOPE_PAPER_TUNE *
+    RANGE_TRUE_ANGULAR_TARGET_SCALE
   );
 }
 

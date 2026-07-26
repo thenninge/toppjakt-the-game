@@ -14,6 +14,7 @@ import {
   starterKitContentIds,
   type StarterKitSelection,
 } from "@/lib/reloading/starterKit";
+import { SCOPE_FOV_DIAMETER_PREMIUM } from "@/lib/optics/spec";
 
 /**
  * XXL catalog.
@@ -319,6 +320,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MOA",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.06,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -337,6 +339,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.06,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -355,6 +358,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -373,6 +377,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -391,6 +396,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.025,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -455,6 +461,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.05,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -473,6 +480,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -491,6 +499,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.05,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -508,6 +517,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.075,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -541,6 +551,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.03,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -559,6 +570,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -577,6 +589,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.025,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
@@ -624,6 +637,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickUnit: "MRAD",
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.1,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
     },
   },
   {
