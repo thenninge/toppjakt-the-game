@@ -1227,6 +1227,11 @@ export function IntroScreen() {
               stats={stats}
               onRename={renameHunter}
               onDeleteUser={requestDeleteUser}
+              onLangChange={(lang) =>
+                setStats((prev) =>
+                  prev.lang === lang ? prev : { ...prev, lang },
+                )
+              }
               authEmail={signedIn ? session?.user?.email ?? "Google" : null}
               onGoogleLogin={signedIn ? undefined : loginWithGoogle}
               onGoogleLogout={signedIn ? () => void logoutGoogle() : undefined}
@@ -1422,6 +1427,10 @@ export function IntroScreen() {
             nickname={stats.nickname}
             alreadyPassed={false}
             locked
+            lang={stats.lang}
+            onLangChange={(lang) =>
+              setStats((prev) => (prev.lang === lang ? prev : { ...prev, lang }))
+            }
             onPassed={() =>
               setStats((prev) =>
                 prev.jegerprovePassed
@@ -1442,6 +1451,10 @@ export function IntroScreen() {
             nickname={stats.nickname}
             alreadyPassed={stats.jegerprovePassed}
             locked={!stats.jegerprovePassed}
+            lang={stats.lang}
+            onLangChange={(lang) =>
+              setStats((prev) => (prev.lang === lang ? prev : { ...prev, lang }))
+            }
             onPassed={() =>
               setStats((prev) =>
                 prev.jegerprovePassed
@@ -1793,7 +1806,8 @@ export function IntroScreen() {
           location !== "rulles" &&
           location !== "shooting-range" &&
           location !== "how-to-play" &&
-          location !== "admin-office" && (
+          location !== "admin-office" &&
+          location !== "jegerprove" && (
           <div className="intro-dialogue">
             <p className="intro-line intro-gift">{location}</p>
             <p className="intro-line">

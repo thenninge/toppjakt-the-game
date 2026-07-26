@@ -3,6 +3,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { PlayerStats } from "@/lib/player";
 import {
+  GAME_LANG_LABEL,
+  GAME_LANGS,
+  type GameLang,
+} from "@/lib/i18n/lang";
+import {
   birdsPerKm,
   formatBirdsPerKm,
   formatLifetimeDistance,
@@ -10,10 +15,52 @@ import {
 
 const ADMIN_PIN = "9898";
 
+const MENU_COPY: Record<
+  GameLang,
+  {
+    language: string;
+    edit: string;
+    rename: string;
+    deleteHunter: string;
+    back: string;
+    cancel: string;
+    save: string;
+  }
+> = {
+  nb: {
+    language: "Språk",
+    edit: "Edit",
+    rename: "Endre navn",
+    deleteHunter: "Slett jeger",
+    back: "← Tilbake",
+    cancel: "Avbryt",
+    save: "Lagre",
+  },
+  en: {
+    language: "Language",
+    edit: "Edit",
+    rename: "Change name",
+    deleteHunter: "Delete hunter",
+    back: "← Back",
+    cancel: "Cancel",
+    save: "Save",
+  },
+  ja: {
+    language: "言語",
+    edit: "編集",
+    rename: "名前を変更",
+    deleteHunter: "ハンターを削除",
+    back: "← 戻る",
+    cancel: "キャンセル",
+    save: "保存",
+  },
+};
+
 type StatsFrameProps = {
   stats: PlayerStats;
   onRename?: (nextName: string) => string | null;
   onDeleteUser?: () => void;
+  onLangChange?: (lang: GameLang) => void;
   /** Google / CBAware account status. */
   authEmail?: string | null;
   onGoogleLogin?: () => void;
@@ -36,6 +83,7 @@ export function StatsFrame({
   stats,
   onRename,
   onDeleteUser,
+  onLangChange,
   authEmail,
   onGoogleLogin,
   onGoogleLogout,
@@ -49,9 +97,11 @@ export function StatsFrame({
   const [adminPin, setAdminPin] = useState("");
   const [adminPinError, setAdminPinError] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const copy = MENU_COPY[stats.lang] ?? MENU_COPY.nb;
   const hasMenu =
     !!onRename ||
     !!onDeleteUser ||
+    !!onLangChange ||
     !!onGoogleLogin ||
     !!onGoogleLogout ||
     !!onAdminUnlock;
@@ -184,7 +234,30 @@ export function StatsFrame({
             ) : null}
             {menu === "edit" ? (
               <div className="stats-menu-panel" role="menu">
-                <p className="stats-menu-heading">Edit</p>
+                <p className="stats-menu-heading">{copy.edit}</p>
+                {onLangChange ? (
+                  <div className="stats-menu-lang" role="group" aria-label={copy.language}>
+                    <p className="stats-menu-heading">{copy.language}</p>
+                    <div className="stats-menu-lang-row">
+                      {GAME_LANGS.map((code) => (
+                        <button
+                          key={code}
+                          type="button"
+                          className={
+                            stats.lang === code
+                              ? "stats-menu-item is-active"
+                              : "stats-menu-item"
+                          }
+                          role="menuitemradio"
+                          aria-checked={stats.lang === code}
+                          onClick={() => onLangChange(code)}
+                        >
+                          {GAME_LANG_LABEL[code]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {onRename ? (
                   <button
                     type="button"
@@ -192,7 +265,7 @@ export function StatsFrame({
                     role="menuitem"
                     onClick={openRename}
                   >
-                    Endre navn
+                    {copy.rename}
                   </button>
                 ) : null}
                 {onDeleteUser ? (
@@ -205,7 +278,7 @@ export function StatsFrame({
                       onDeleteUser();
                     }}
                   >
-                    Slett jeger
+                    {copy.deleteHunter}
                   </button>
                 ) : null}
                 {onAdminUnlock ? (
@@ -242,7 +315,7 @@ export function StatsFrame({
                   role="menuitem"
                   onClick={() => setMenu("root")}
                 >
-                  ← Tilbake
+                  {copy.back}
                 </button>
               </div>
             ) : null}
@@ -287,7 +360,7 @@ export function StatsFrame({
             ) : null}
             {menu === "rename" ? (
               <div className="stats-menu-panel stats-menu-rename" role="dialog">
-                <p className="stats-menu-heading">Endre navn</p>
+                <p className="stats-menu-heading">{copy.rename}</p>
                 <form onSubmit={submitRename}>
                   <input
                     className="stats-rename-input"
@@ -297,7 +370,7 @@ export function StatsFrame({
                     maxLength={24}
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
-                    aria-label="Nytt jegernavn"
+                    aria-label={copy.rename}
                   />
                   {renameError ? (
                     <p className="stats-rename-error">{renameError}</p>
@@ -311,10 +384,10 @@ export function StatsFrame({
                         setRenameError("");
                       }}
                     >
-                      Avbryt
+                      {copy.cancel}
                     </button>
                     <button type="submit" className="stats-menu-item">
-                      Lagre
+                      {copy.save}
                     </button>
                   </div>
                 </form>

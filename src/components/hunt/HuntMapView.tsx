@@ -78,6 +78,7 @@ import { mmAt100ToScopeClicks } from "@/lib/optics/clicks";
 import {
   COFFEE_RECOVERY,
   SHORT_REST_RECOVERY,
+  THERMOS_CUPS_PER_FILL,
   THERMOS_ITEM_ID,
   TYRIBAL_RECOVERY,
   effectiveFoodRecovery,
@@ -393,6 +394,8 @@ type EatSession = {
   mindGain: number;
   mindToFull?: boolean;
   minutes: number;
+  /** Drink one cup from the thermos fill. */
+  consumeCoffeeCup?: boolean;
 };
 
 type ForcedRestSession = {
@@ -588,6 +591,8 @@ export function HuntMapView({
   );
   const [postShotGhostSecLeft, setPostShotGhostSecLeft] = useState(0);
   const [eatSession, setEatSession] = useState<EatSession | null>(null);
+  /** Cups left in the thermos this hunt (refilled at trip start). */
+  const [thermosCupsLeft, setThermosCupsLeft] = useState(THERMOS_CUPS_PER_FILL);
   const [forcedRest, setForcedRest] = useState<ForcedRestSession | null>(null);
   const [forcedCamp, setForcedCamp] = useState<ForcedCampPrompt | null>(null);
   const [campOvernight, setCampOvernight] = useState<CampOvernightSession | null>(
@@ -938,6 +943,7 @@ export function HuntMapView({
     setShotPairs(loadShotPairsForHuntStart(terrainId, awareHunt));
     setFindHitAar(null);
     setEatSession(null);
+    setThermosCupsLeft(THERMOS_CUPS_PER_FILL);
     setForcedRest(null);
     setForcedCamp(null);
     setCampOvernight(null);
@@ -1652,6 +1658,14 @@ export function HuntMapView({
     birdList?: HuntBird[];
     /** Explicit cell — required when called in the same tick as setPos (async). */
     cell?: HuntGridCell;
+    /**
+     * After Aware walk: force perch distances to stand→bird geometry so the
+     * next Spot LRF is not stuck on the original perch range.
+     */
+    distanceByBirdId?: Record<
+      string,
+      { distanceM: number; fromDistanceM?: number }
+    >;
   }): SpotSession | null {
     if (!canHuntAtTime(clockMinutes)) return null;
 
@@ -1687,6 +1701,25 @@ export function HuntMapView({
     const here = birdsInCell(birdList, at);
     const hereIds = new Set(here.map((b) => b.id));
 
+    function applyDistancePatches(
+      placements: BirdVisualPlacement[],
+    ): BirdVisualPlacement[] {
+      const patches = opts?.distanceByBirdId;
+      if (!patches) return placements;
+      return placements.map((p) => {
+        const patch = patches[p.birdId];
+        if (!patch) return p;
+        const nextDist = Math.max(40, Math.round(patch.distanceM));
+        if (Math.abs(nextDist - p.distanceM) < 0.5) return p;
+        const from = patch.fromDistanceM ?? p.distanceM;
+        return {
+          ...p,
+          distanceM: nextDist,
+          widthPct: rescaleSpriteWidthPct(p.widthPct, from, nextDist),
+        };
+      });
+    }
+
     if (cachedOk && cachedOk.imageSrc === imageSrc) {
       const sticky = cachedOk.placements.filter((p) => hereIds.has(p.birdId));
       // Stale cache (birds flushed / replaced) with live birds here → rebind.
@@ -1695,23 +1728,24 @@ export function HuntMapView({
           ? cachedOk.viewBearingDeg
           : rollSpotViewBearingDeg();
         const owl = maybeMorphOwlIntoSpot(birdList, sticky);
+        const placements = applyDistancePatches(owl.placements);
         setSpotLayoutByCell((prev) => ({
           ...prev,
           [cellKey]: {
             imageSrc,
-            placements: owl.placements,
+            placements,
             viewBearingDeg,
           },
         }));
         const syncedBirds = owl.birds.map((b) => {
-          const p = owl.placements.find((x) => x.birdId === b.id);
+          const p = placements.find((x) => x.birdId === b.id);
           return p ? { ...b, distanceM: p.distanceM, species: p.species } : b;
         });
         setBirds(syncedBirds);
-        seedLatentSpotNerve(owl.placements, syncedBirds);
+        seedLatentSpotNerve(placements, syncedBirds);
         return {
           imageSrc,
-          birdPlacements: owl.placements,
+          birdPlacements: placements,
           viewBearingDeg,
         };
       }
@@ -1722,19 +1756,24 @@ export function HuntMapView({
       fillAllPerches: false,
     });
     const owl = maybeMorphOwlIntoSpot(bound.birds, bound.placements);
+    const placements = applyDistancePatches(owl.placements);
+    const syncedBirds = owl.birds.map((b) => {
+      const p = placements.find((x) => x.birdId === b.id);
+      return p ? { ...b, distanceM: p.distanceM, species: p.species } : b;
+    });
     setSpotLayoutByCell((prev) => ({
       ...prev,
       [cellKey]: {
         imageSrc,
-        placements: owl.placements,
+        placements,
         viewBearingDeg,
       },
     }));
-    setBirds(owl.birds);
-    seedLatentSpotNerve(owl.placements, owl.birds);
+    setBirds(syncedBirds);
+    seedLatentSpotNerve(placements, syncedBirds);
     return {
       imageSrc,
-      birdPlacements: owl.placements,
+      birdPlacements: placements,
       viewBearingDeg,
     };
   }
@@ -1743,6 +1782,10 @@ export function HuntMapView({
     reuseImageSrc?: string | null;
     initialMode?: SpotMode;
     focusBirdId?: string;
+    distanceByBirdId?: Record<
+      string,
+      { distanceM: number; fromDistanceM?: number }
+    >;
   }) {
     if (!canHuntAtTime(clockMinutes)) {
       setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
@@ -1750,6 +1793,7 @@ export function HuntMapView({
     }
     const prepared = prepareSpotAtPos({
       reuseImageSrc: opts?.reuseImageSrc,
+      distanceByBirdId: opts?.distanceByBirdId,
     });
     if (!prepared) {
       setLog("Skuddlys over (17:00) — ingen jakt før i morgen.");
@@ -1882,12 +1926,33 @@ export function HuntMapView({
     setMentalFatigue((m) =>
       clampFatigue(m + 0.02 * pace.mentalStrain * Math.max(1, lookMin)),
     );
-    const trueDist = info.placement.distanceM;
-    const measured = hasExactBallistics
-      ? Math.round(trueDist)
-      : info.measuredDistanceM;
     const birdId = info.placement.birdId;
     const prior = birdMapContacts[birdId];
+    const stand = recalledAwareStand();
+    /**
+     * After walking on Aware and returning to Spot, perch cache may lag.
+     * Prefer stand→bird geometry whenever the bird seat is already known.
+     */
+    const placementTrue = info.placement.distanceM;
+    const trueDist =
+      prior?.birdPos != null
+        ? Math.max(40, Math.round(distanceMBetween(stand, prior.birdPos)))
+        : placementTrue;
+    let measured: number;
+    if (hasExactBallistics) {
+      measured = Math.round(trueDist);
+    } else if (
+      info.rangeSource === "lrf" &&
+      placementTrue > 0 &&
+      Math.abs(trueDist - placementTrue) > 0.5
+    ) {
+      measured = Math.max(
+        40,
+        Math.round(trueDist * (info.measuredDistanceM / placementTrue)),
+      );
+    } else {
+      measured = info.measuredDistanceM;
+    }
     // Same bird → same Aware-map seat; first lock follows spotting compass + frame X.
     // Place at true range so stand→bird distance stays physically correct after walking.
     const birdBearing =
@@ -1943,12 +2008,22 @@ export function HuntMapView({
     };
 
     setSpotSession(null);
-    const stand = recalledAwareStand();
     const resumedStand =
       Math.abs(stand.x - 50) > 0.5 || Math.abs(stand.y - 50) > 0.5;
     setAwareSession({
       imageSrc,
-      bird: info.placement,
+      bird: {
+        ...info.placement,
+        distanceM: trueDist,
+        widthPct:
+          Math.abs(trueDist - placementTrue) > 0.5
+            ? rescaleSpriteWidthPct(
+                info.placement.widthPct,
+                placementTrue,
+                trueDist,
+              )
+            : info.placement.widthPct,
+      },
       trueDistanceM: trueDist,
       measuredDistanceM: measured,
       ballisticHold: hold,
@@ -2044,8 +2119,47 @@ export function HuntMapView({
       abortAware(opts);
       return;
     }
+    const session = awareSession;
+    const hunter = opts?.hunter ?? recalledAwareStand();
+    let distanceByBirdId:
+      | Record<string, { distanceM: number; fromDistanceM?: number }>
+      | undefined;
+    if (session?.birdPos) {
+      const newDist = Math.max(
+        40,
+        Math.round(distanceMBetween(hunter, session.birdPos)),
+      );
+      const fromDist = session.trueDistanceM || session.bird.distanceM;
+      distanceByBirdId = {
+        [session.bird.birdId]: {
+          distanceM: newDist,
+          fromDistanceM: fromDist,
+        },
+      };
+      const nerve =
+        birdEncounterRef.current?.birdId === session.bird.birdId
+          ? birdEncounterRef.current.nerve
+          : (latentSpotNerveRef.current[session.bird.birdId]?.nerve ??
+            birdEncounterRef.current?.nerve ??
+            0);
+      const enc: BirdEncounter = {
+        birdId: session.bird.birdId,
+        distanceM: newDist,
+        nerve,
+        discovered: true,
+      };
+      birdEncounterRef.current = enc;
+      setBirdEncounter(enc);
+      latentSpotNerveRef.current[session.bird.birdId] = {
+        distanceM: newDist,
+        nerve,
+      };
+    }
     setAwareSession(null);
-    beginSpot();
+    beginSpot({
+      reuseImageSrc: session?.imageSrc,
+      distanceByBirdId,
+    });
     setLog("Tilbake til spotting — fuglen er fortsatt nervøs.");
   }
 
@@ -2883,6 +2997,10 @@ export function HuntMapView({
       setLog("Ingen termos i kit — ingen kaffe.");
       return;
     }
+    if (thermosCupsLeft <= 0) {
+      setLog("Termosen er tom — 5 kopper var det.");
+      return;
+    }
     setEatSession({
       imageSrc: pickEatImage(),
       itemId: null,
@@ -2890,6 +3008,7 @@ export function HuntMapView({
       bodyGain: COFFEE_RECOVERY.bodyGain,
       mindGain: COFFEE_RECOVERY.mindGain,
       minutes: COFFEE_RECOVERY.minutes,
+      consumeCoffeeCup: true,
     });
   }
 
@@ -2932,6 +3051,15 @@ export function HuntMapView({
         return;
       }
     }
+    if (eatSession.consumeCoffeeCup) {
+      if (thermosCupsLeft <= 0) {
+        setLog("Termosen er tom.");
+        setEatSession(null);
+        setPanel("arrived");
+        return;
+      }
+      setThermosCupsLeft((n) => Math.max(0, n - 1));
+    }
     advanceClockMinutes(eatSession.minutes);
     setPhysicalFatigue((p) => clampFatigue(p - eatSession.bodyGain));
     if (eatSession.mindToFull) {
@@ -2947,8 +3075,15 @@ export function HuntMapView({
       eatSession.label === TYRIBAL_RECOVERY.label
         ? ` ${TYRIBAL_RECOVERY.note}`
         : "";
+    const coffeeLeft = eatSession.consumeCoffeeCup
+      ? Math.max(0, thermosCupsLeft - 1)
+      : null;
+    const coffeeNote =
+      coffeeLeft != null
+        ? ` (${coffeeLeft}/${THERMOS_CUPS_PER_FILL} kaffe igjen).`
+        : "";
     setLog(
-      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.${fireNote}`,
+      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.${fireNote}${coffeeNote}`,
     );
     setEatSession(null);
     setPanel("arrived");
@@ -4046,16 +4181,18 @@ export function HuntMapView({
                   <button
                     type="button"
                     className="intro-button hunt-eat-option"
-                    disabled={!hasThermos}
+                    disabled={!hasThermos || thermosCupsLeft <= 0}
                     onClick={drinkCoffee}
                   >
                     <span className="hunt-eat-option-title">
                       {COFFEE_RECOVERY.label}
                     </span>
                     <span className="hunt-eat-option-meta">
-                      {hasThermos
-                        ? `Body +${formatStaminaPct(COFFEE_RECOVERY.bodyGain)} · Mind +${formatStaminaPct(COFFEE_RECOVERY.mindGain)} · ${COFFEE_RECOVERY.minutes} min`
-                        : "Krever termos i kit"}
+                      {!hasThermos
+                        ? "Krever termos i kit"
+                        : thermosCupsLeft <= 0
+                          ? "Termos tom (5/5 drukket)"
+                          : `Body +${formatStaminaPct(COFFEE_RECOVERY.bodyGain)} · Mind +${formatStaminaPct(COFFEE_RECOVERY.mindGain)} · ${COFFEE_RECOVERY.minutes} min · ${thermosCupsLeft}/${THERMOS_CUPS_PER_FILL} igjen`}
                     </span>
                   </button>
                 </li>

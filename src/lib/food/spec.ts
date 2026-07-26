@@ -86,6 +86,9 @@ export function isPackableFoodKind(kind: FoodKind): boolean {
 /** Jula thermos — enables coffee cup on hunt. */
 export const THERMOS_ITEM_ID = "misc-thermos-jula";
 
+/** Cups of coffee in a filled thermos (per hunt trip). */
+export const THERMOS_CUPS_PER_FILL = 5;
+
 export const COFFEE_RECOVERY: FoodRecovery & { label: string } = {
   label: "Kaffekopp (termos)",
   bodyGain: 0.05,

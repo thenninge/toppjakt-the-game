@@ -662,15 +662,15 @@ export function AwareAppView({
   const activePair =
     shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
   /**
-   * Don't spoil wounded ettersøk land position — player uses flee cue + track.
-   * Only while Tracking that ettersøk. Never during the 60 s post-shot
-   * skuddpar window (bird aim must stay visible), even if older pairs exist.
+   * Don't spoil exact land / bird seat during ettersøk or hent/søk — player
+   * uses skuddpar (stand → aim) + flee cue. Hide on every tab (incl. Shoot).
+   * Keep visible during the 60 s post-shot skuddpar window, and during stalk.
    */
   const hideTrueLand =
     !postShotSkuddparMode &&
-    mode === "track" &&
-    !!activePair?.fleeObservation &&
-    activePair.resultKind === "ettersok";
+    !!focusPairId &&
+    !!activePair &&
+    activePair.found !== true;
   /** Skuddpar on this cell map (stand → aim + søkeradius). */
   const pairsOnCell = shotPairs.filter(
     (p) => p.cell.row === cell.row && p.cell.col === cell.col,
@@ -1239,7 +1239,7 @@ export function AwareAppView({
                   style={{ left: `${birdWorld.x}%`, top: `${birdWorld.y}%` }}
                   title={`Fugl ${Math.round(liveDistanceM)} m`}
                 >
-                  <span className="aware-bird-dot" />
+                  <span className="aware-bird-x" aria-hidden />
                   <span className="aware-bird-label">
                     {Math.round(liveDistanceM)} m
                   </span>
@@ -1436,6 +1436,10 @@ export function AwareAppView({
                 </dd>
               </div>
             </dl>
+          ) : hideTrueLand ? (
+            <p className="shop-row-note">
+              Eksakt landingspunkt er skjult — bruk skuddpar og fluktretning.
+            </p>
           ) : (
             <p className="shop-row-note">
               {Math.round(liveDistanceM)} m · skyteretning{" "}

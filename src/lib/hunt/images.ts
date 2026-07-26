@@ -271,7 +271,7 @@ export function pickPrespottedImage(): string {
 export const SPOT_TIME_FACTOR_EYES = 1;
 export const SPOT_TIME_FACTOR_BINOS = 5;
 /** Budget thermal (Lynx) — default when kit omits timeFactor. */
-export const SPOT_TIME_FACTOR_THERMAL = 20;
+export const SPOT_TIME_FACTOR_THERMAL = 23;
 /** Premium thermal (Condor) burns clock + battery faster. */
 export const SPOT_TIME_FACTOR_THERMAL_PREMIUM = 30;
 /** Full thermal charge as game-minutes (drains 1:1 with thermal game time). */

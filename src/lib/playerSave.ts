@@ -3,6 +3,7 @@
  */
 
 import { createInitialStats, type PlayerStats, type ZeroingProfile } from "@/lib/player";
+import { normalizeGameLang } from "@/lib/i18n/lang";
 import { normalizeLoadBenchRecipe } from "@/lib/reloading/recipe";
 import { normalizeArmedLoadPlan } from "@/lib/reloading/loadPhysics";
 import { normalizeLoadDevTable } from "@/lib/reloading/loadDevTable";
@@ -212,6 +213,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
         typeof raw.maxRange === "number" ? raw.maxRange : 0;
       return lifeTiur > 0 || lifeOrre > 0 || maxRange > 0;
     })(),
+    lang: normalizeGameLang(raw.lang, base.lang),
   });
 }
 

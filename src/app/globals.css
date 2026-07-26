@@ -4217,6 +4217,21 @@ body {
   font-size: 0.78rem;
 }
 
+.stats-menu-item.is-active {
+  background: rgba(196, 165, 116, 0.18);
+  color: var(--prompt-green);
+}
+
+.stats-menu-lang {
+  margin: 0 0 0.25rem;
+}
+
+.stats-menu-lang-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
 .stats-menu-rename {
   min-width: 12.5rem;
 }
@@ -7216,13 +7231,13 @@ body {
   position: absolute;
   /* Counter map zoom so markers stay screen-sized. */
   transform: translate(-50%, -50%) scale(var(--aware-marker-inv-zoom, 1));
-  border-radius: 50%;
   pointer-events: none;
 }
 
 .aware-pair-stand {
   width: 14px;
   height: 14px;
+  border-radius: 50%;
   background: #8fef6a;
   box-shadow: 0 0 0 2px #1a120c;
   z-index: 4;
@@ -7322,14 +7337,33 @@ body {
   gap: 0.15rem;
 }
 
-.aware-bird-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #8fef6a;
-  box-shadow:
-    0 0 0 2px #1a120c,
-    0 0 10px rgba(143, 239, 106, 0.7);
+/** Red X — bird / aim seat (vs hunter circle). */
+.aware-bird-x {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  filter: drop-shadow(0 0 1px #1a120c) drop-shadow(0 0 4px rgba(224, 70, 55, 0.55));
+}
+
+.aware-bird-x::before,
+.aware-bird-x::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  border-radius: 1px;
+  background: #e04637;
+}
+
+.aware-bird-x::before {
+  transform: rotate(45deg);
+}
+
+.aware-bird-x::after {
+  transform: rotate(-45deg);
 }
 
 .aware-bird-label {
@@ -7337,7 +7371,7 @@ body {
   line-height: 1;
   padding: 0.1rem 0.25rem;
   background: rgba(20, 14, 10, 0.85);
-  color: #8fef6a;
+  color: #f0a090;
   border: 1px solid #5a4030;
   white-space: nowrap;
 }
@@ -7362,17 +7396,41 @@ body {
 }
 
 .aware-pair-impact {
-  width: 12px;
-  height: 12px;
-  background: #c45c3a;
-  box-shadow: 0 0 0 2px #1a120c;
+  width: 14px;
+  height: 14px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   z-index: 4;
+  filter: drop-shadow(0 0 1px #1a120c);
+}
+
+.aware-pair-impact::before,
+.aware-pair-impact::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  border-radius: 1px;
+  background: #e04637;
+}
+
+.aware-pair-impact::before {
+  transform: rotate(45deg);
+}
+
+.aware-pair-impact::after {
+  transform: rotate(-45deg);
 }
 
 .aware-track-dot {
   min-width: 1.1rem;
   height: 1.1rem;
   padding: 0 0.15rem;
+  border-radius: 50%;
   background: #3d6b7a;
   color: #e8d4a8;
   font-size: 0.7rem;

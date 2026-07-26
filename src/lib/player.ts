@@ -1,5 +1,6 @@
 import type { GameCarcass } from "@/lib/hunt/carcass";
 import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
+import type { GameLang } from "@/lib/i18n/lang";
 import {
   EMPTY_CUSTOMS_MODS,
   type CustomsMods,
@@ -255,6 +256,8 @@ export type PlayerStats = {
    * Norwegian-style hunter exam cleared — required before hunt / jaktkort use.
    */
   jegerprovePassed: boolean;
+  /** Preferred UI language (Jegerprøve + hamburger preference). */
+  lang: GameLang;
 };
 
 export const STARTING_BALANCE = 10_000;
@@ -751,6 +754,7 @@ export function createInitialStats(): PlayerStats {
     kestrelProfiles: {},
     awareHunt: null,
     jegerprovePassed: false,
+    lang: "nb",
   };
 }
 

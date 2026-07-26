@@ -259,7 +259,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     thermal: {
       pixelFactor: 6,
       magnification: 2.8,
-      timeFactor: 20,
+      timeFactor: 23,
     },
   },
   {
@@ -3346,7 +3346,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Jula",
     name: "Termos 1L",
     priceNok: 149,
-    note: "Kaffe er også kit. Weight + Endurance-offset.",
+    note: "Kaffe er også kit. 5 kopper per tur. Weight + Endurance-offset.",
     misc: { enduranceGrams: 2000 },
   },
   {

@@ -3,19 +3,16 @@
  * Stable choice `value` ids stay language-agnostic; only labels/prompts localize.
  */
 
-export type JegerproveLang = "nb" | "en" | "ja";
+import {
+  GAME_LANG_LABEL,
+  GAME_LANGS,
+  type GameLang,
+} from "@/lib/i18n/lang";
 
-export const JEGERPROVE_LANGS: readonly JegerproveLang[] = [
-  "nb",
-  "en",
-  "ja",
-] as const;
+export type JegerproveLang = GameLang;
 
-export const JEGERPROVE_LANG_LABEL: Record<JegerproveLang, string> = {
-  nb: "Norsk",
-  en: "English",
-  ja: "日本語",
-};
+export const JEGERPROVE_LANGS = GAME_LANGS;
+export const JEGERPROVE_LANG_LABEL = GAME_LANG_LABEL;
 
 export type JegerproveSpeciesChoice = "tiur" | "orre" | "ugle";
 
@@ -47,6 +44,8 @@ export type JegerproveUiCopy = {
   yourAnswerPrefix: string;
   tryAgain: string;
   backTown: string;
+  /** LocationNav back button while taking / reviewing the exam. */
+  backNav: string;
   speciesPrompt: string;
   speciesImageAlt: string;
   species: Record<JegerproveSpeciesChoice, string>;
@@ -100,6 +99,7 @@ const UI_NB: JegerproveUiCopy = {
   yourAnswerPrefix: "ditt svar",
   tryAgain: "Prøv igjen",
   backTown: "Tilbake til byen",
+  backNav: "← Tilbake til byen",
   speciesPrompt: "Kryss av for riktig fugl:",
   speciesImageAlt: "Fugl — hvilken art?",
   species: { tiur: "Tiur", orre: "Orre", ugle: "Ugle" },
@@ -155,6 +155,7 @@ const UI_EN: JegerproveUiCopy = {
   yourAnswerPrefix: "your answer",
   tryAgain: "Try again",
   backTown: "Back to town",
+  backNav: "← Back to town",
   speciesPrompt: "Select the correct bird:",
   speciesImageAlt: "Bird — which species?",
   species: {
@@ -214,6 +215,7 @@ const UI_JA: JegerproveUiCopy = {
   yourAnswerPrefix: "あなたの回答",
   tryAgain: "再挑戦",
   backTown: "町へ戻る",
+  backNav: "← 町へ戻る",
   speciesPrompt: "正しい鳥を選んでください：",
   speciesImageAlt: "鳥 — どの種類？",
   species: {

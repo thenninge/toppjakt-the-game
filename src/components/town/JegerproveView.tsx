@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { JegerproveCertificate } from "@/components/town/JegerproveCertificate";
 import {
@@ -26,6 +26,9 @@ type JegerproveViewProps = {
    * (new hunters / jegerprovePassed === false).
    */
   locked?: boolean;
+  /** Player preferred language (persisted). */
+  lang: JegerproveLang;
+  onLangChange: (lang: JegerproveLang) => void;
   onPassed: () => void;
   onLeave: () => void;
 };
@@ -37,11 +40,12 @@ export function JegerproveView({
   nickname,
   alreadyPassed,
   locked = false,
+  lang,
+  onLangChange,
   onPassed,
   onLeave,
 }: JegerproveViewProps) {
   const [phase, setPhase] = useState<Phase>("intro");
-  const [lang, setLang] = useState<JegerproveLang>("nb");
   const [session, setSession] = useState<JegerproveSession | null>(null);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -51,8 +55,16 @@ export function JegerproveView({
   );
   const [passedAt, setPassedAt] = useState<Date>(() => new Date());
 
-  const ui = getJegerproveLocale(lang).ui;
-  const examLang = session?.lang ?? lang;
+  // Chrome + questions follow the exam language once started; intro follows player lang.
+  const displayLang: JegerproveLang = session?.lang ?? lang;
+  const ui = getJegerproveLocale(displayLang).ui;
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang =
+        displayLang === "nb" ? "nb" : displayLang === "ja" ? "ja" : "en";
+    }
+  }, [displayLang]);
 
   const question: JegerproveQuestion | null = session?.questions[index] ?? null;
   const progressLabel = useMemo(() => {
@@ -102,8 +114,13 @@ export function JegerproveView({
     onLeave();
   }
 
+  function changeLang(code: JegerproveLang) {
+    if (phase !== "intro") return;
+    onLangChange(code);
+  }
+
   return (
-    <div className="jegerprove">
+    <div className="jegerprove" lang={displayLang === "nb" ? "nb" : displayLang}>
       {locked && !alreadyPassed && phase !== "certificate" ? (
         <p className="jegerprove-lock-banner" role="status">
           {ui.lockBanner(JEGERPROVE_PASS_MIN_CORRECT, JEGERPROVE_QUESTION_COUNT)}
@@ -111,6 +128,7 @@ export function JegerproveView({
       ) : (
         <LocationNav
           onBackToTown={onLeave}
+          backLabel={ui.backNav}
           hint={locked ? ui.navHintLocked : ui.navHintOpen}
         />
       )}
@@ -143,7 +161,7 @@ export function JegerproveView({
                       : "range-seg-btn"
                   }
                   aria-pressed={lang === code}
-                  onClick={() => setLang(code)}
+                  onClick={() => changeLang(code)}
                 >
                   <span className="range-seg-value">
                     {JEGERPROVE_LANG_LABEL[code]}
@@ -261,7 +279,7 @@ export function JegerproveView({
             playerName={playerName}
             nickname={nickname}
             passedAt={passedAt}
-            lang={examLang}
+            lang={displayLang}
           />
           <div className="jegerprove-actions">
             <button
@@ -296,9 +314,9 @@ export function JegerproveView({
                     <span className="jegerprove-wrong-prompt">{q.prompt}</span>
                     <br />
                     {ui.correctPrefix}:{" "}
-                    {formatChoiceLabel(q, q.correctValue, examLang)}
+                    {formatChoiceLabel(q, q.correctValue, displayLang)}
                     {yours
-                      ? ` · ${ui.yourAnswerPrefix}: ${formatChoiceLabel(q, yours, examLang)}`
+                      ? ` · ${ui.yourAnswerPrefix}: ${formatChoiceLabel(q, yours, displayLang)}`
                       : ""}
                   </li>
                 );
