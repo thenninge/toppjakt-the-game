@@ -5749,7 +5749,7 @@ body {
   user-select: none;
 }
 
-.scope-viewport:active {
+.scope-viewport.is-aim-dragging {
   cursor: grabbing;
 }
 

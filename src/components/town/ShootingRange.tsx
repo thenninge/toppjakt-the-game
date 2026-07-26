@@ -71,6 +71,8 @@ import {
 import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
+  SCOPE_AIM_TAP_MM,
+  scopeAimHoldMult,
 } from "@/lib/range/scopePointerAim";
 import {
   MOA_RANGE_TARGET_SCALE,
@@ -204,11 +206,11 @@ type ShootingRangeProps = {
   onLeave: () => void;
 };
 
-type Keys = {
-  up: boolean;
-  down: boolean;
-  left: boolean;
-  right: boolean;
+type AimKeys = {
+  up: number | null;
+  down: number | null;
+  left: number | null;
+  right: number | null;
 };
 
 const AIM_SPEED_MM_PER_SEC = 22;
@@ -429,11 +431,11 @@ export function ShootingRange({
   const [recoilActive, setRecoilActive] = useState(false);
   const recoilClearRef = useRef<number | null>(null);
 
-  const keysRef = useRef<Keys>({
-    up: false,
-    down: false,
-    left: false,
-    right: false,
+  const keysRef = useRef<AimKeys>({
+    up: null,
+    down: null,
+    left: null,
+    right: null,
   });
   const aimRef = useRef(aimMm);
   const aimDragRef = useRef<{
@@ -443,6 +445,7 @@ export function ShootingRange({
     origX: number;
     origY: number;
   } | null>(null);
+  const [aimDragging, setAimDragging] = useState(false);
   const wobbleRef = useRef({ x: 0, y: 0 });
   const measurementRef = useRef(measurement);
   const shotsLenRef = useRef(0);
@@ -767,6 +770,24 @@ export function ShootingRange({
     setTriggerUi({ pending: false, targetPct: 0 });
   }
 
+  function endAimDrag(
+    el?: HTMLDivElement | null,
+    pointerId?: number,
+  ) {
+    const drag = aimDragRef.current;
+    if (!drag) return;
+    if (pointerId != null && drag.pointerId !== pointerId) return;
+    aimDragRef.current = null;
+    setAimDragging(false);
+    if (el && el.hasPointerCapture(drag.pointerId)) {
+      try {
+        el.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+  }
+
   function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (measurementRef.current) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -779,11 +800,16 @@ export function ShootingRange({
       origX: aimRef.current.x,
       origY: aimRef.current.y,
     };
+    setAimDragging(true);
   }
 
   function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
     const drag = aimDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endAimDrag(e.currentTarget, e.pointerId);
+      return;
+    }
     const distFactor = distanceRef.current / RANGE_DISTANCE_M;
     const aimLimit = 80 * distFactor;
     const delta = aimMmDeltaFromPointerDrag({
@@ -801,9 +827,11 @@ export function ShootingRange({
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (aimDragRef.current?.pointerId === e.pointerId) {
-      aimDragRef.current = null;
-    }
+    endAimDrag(e.currentTarget, e.pointerId);
+  }
+
+  function onAimPointerLeave(e: PointerEvent<HTMLDivElement>) {
+    endAimDrag(e.currentTarget, aimDragRef.current?.pointerId);
   }
 
   function releaseTrigger(nowMs: number) {
@@ -867,20 +895,39 @@ export function ShootingRange({
   useEffect(() => {
     if (!ready) return;
 
+    function nudgeAim(dxMm: number, dyMm: number) {
+      const distFactor = distanceRef.current / RANGE_DISTANCE_M;
+      const aimLimit = 80 * distFactor;
+      aimRef.current = clampAimMm(
+        aimRef.current.x + dxMm,
+        aimRef.current.y + dyMm,
+        aimLimit,
+      );
+    }
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "ArrowUp") {
+      const dir =
+        e.key === "ArrowUp"
+          ? "up"
+          : e.key === "ArrowDown"
+            ? "down"
+            : e.key === "ArrowLeft"
+              ? "left"
+              : e.key === "ArrowRight"
+                ? "right"
+                : null;
+      if (dir) {
         e.preventDefault();
-        keysRef.current.up = true;
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        keysRef.current.down = true;
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        keysRef.current.left = true;
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        keysRef.current.right = true;
-      } else if (e.key === "+" || e.key === "=") {
+        if (keysRef.current[dir] != null) return;
+        keysRef.current[dir] = performance.now();
+        const step = SCOPE_AIM_TAP_MM * (distanceRef.current / RANGE_DISTANCE_M);
+        if (dir === "up") nudgeAim(0, -step);
+        if (dir === "down") nudgeAim(0, step);
+        if (dir === "left") nudgeAim(-step, 0);
+        if (dir === "right") nudgeAim(step, 0);
+        return;
+      }
+      if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         if (!scope) return;
         setZoom((z) => clampScopeZoom(z + 0.5, scope.scope));
@@ -900,10 +947,10 @@ export function ShootingRange({
     }
 
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key === "ArrowUp") keysRef.current.up = false;
-      if (e.key === "ArrowDown") keysRef.current.down = false;
-      if (e.key === "ArrowLeft") keysRef.current.left = false;
-      if (e.key === "ArrowRight") keysRef.current.right = false;
+      if (e.key === "ArrowUp") keysRef.current.up = null;
+      if (e.key === "ArrowDown") keysRef.current.down = null;
+      if (e.key === "ArrowLeft") keysRef.current.left = null;
+      if (e.key === "ArrowRight") keysRef.current.right = null;
       if (e.key === "f" || e.key === "F") {
         endFocus("Fokus sluppet — avtrekk avbrutt.");
       }
@@ -950,10 +997,14 @@ export function ShootingRange({
       if (focusRef.current.held) {
         speed *= FOCUS_AIM_SPEED_MULT;
       }
-      if (k.left) x -= speed;
-      if (k.right) x += speed;
-      if (k.up) y -= speed;
-      if (k.down) y += speed;
+      const mx = scopeAimHoldMult(k.left, now);
+      const mr = scopeAimHoldMult(k.right, now);
+      const mu = scopeAimHoldMult(k.up, now);
+      const md = scopeAimHoldMult(k.down, now);
+      if (mx > 0) x -= speed * mx;
+      if (mr > 0) x += speed * mr;
+      if (mu > 0) y -= speed * mu;
+      if (md > 0) y += speed * md;
       const aimLimit = 80 * distFactor;
       x = Math.max(-aimLimit, Math.min(aimLimit, x));
       y = Math.max(-aimLimit, Math.min(aimLimit, y));
@@ -2116,13 +2167,19 @@ export function ShootingRange({
               <div
                 className={
                   recoilActive
-                    ? "scope-viewport is-recoiling"
-                    : "scope-viewport"
+                    ? aimDragging
+                      ? "scope-viewport is-recoiling is-aim-dragging"
+                      : "scope-viewport is-recoiling"
+                    : aimDragging
+                      ? "scope-viewport is-aim-dragging"
+                      : "scope-viewport"
                 }
                 onPointerDown={onAimPointerDown}
                 onPointerMove={onAimPointerMove}
                 onPointerUp={onAimPointerUp}
                 onPointerCancel={onAimPointerUp}
+                onPointerLeave={onAimPointerLeave}
+                onLostPointerCapture={onAimPointerUp}
               >
                 <div ref={scopeWorldRef} className="scope-world">
                   <div ref={mirageSceneRef} className="scope-world-scene">

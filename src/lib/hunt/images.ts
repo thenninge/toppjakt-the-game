@@ -66,6 +66,8 @@ const SPOT_IMAGES: string[] = [
   "/images/spot/batchB/spotting11b.png",
   "/images/spot/batchB/spotting24b.png",
   "/images/spot/batchB/spotting25b.png",
+  "/images/spot/batchB/spotting26b.png",
+  "/images/spot/batchB/spotting27b.png",
 ];
 
 /**

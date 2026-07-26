@@ -93,6 +93,9 @@ import { formatHuntClock } from "@/lib/hunt/travel";
 import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
+  SCOPE_AIM_TAP_FOV_FRAC,
+  SCOPE_AIM_TAP_MM,
+  scopeAimHoldMult,
 } from "@/lib/range/scopePointerAim";
 import {
   ENCOUNTER_NERVE,
@@ -200,15 +203,15 @@ type HuntShootViewProps = {
   onSessionZeroChange?: (xMm: number, yMm: number) => void;
 };
 
-type Keys = {
-  up: boolean;
-  down: boolean;
-  left: boolean;
-  right: boolean;
+type AimKeys = {
+  up: number | null;
+  down: number | null;
+  left: number | null;
+  right: number | null;
 };
 
 const AIM_SPEED_MM_PER_SEC = 44;
-/** Landscape acquire: fraction of scope FOV panned per second. */
+/** Landscape acquire: fraction of scope FOV panned per second (at hold start). */
 const LANDSCAPE_AIM_FOV_FRAC = 0.36;
 /**
  * While holding F: fine reticle placement.
@@ -461,11 +464,11 @@ export function HuntShootView({
 
   const hasTriggercam = kitItems.some((i) => i.id === TRIGGERCAM_ITEM_ID);
 
-  const keysRef = useRef<Keys>({
-    up: false,
-    down: false,
-    left: false,
-    right: false,
+  const keysRef = useRef<AimKeys>({
+    up: null,
+    down: null,
+    left: null,
+    right: null,
   });
   const aimRef = useRef({ x: 0, y: 0 });
   const hasPannedRef = useRef(false);
@@ -476,6 +479,7 @@ export function HuntShootView({
     origX: number;
     origY: number;
   } | null>(null);
+  const [aimDragging, setAimDragging] = useState(false);
   const wobbleRef = useRef({ x: 0, y: 0 });
   const distanceRef = useRef(trueDistanceM);
   const crosswindRef = useRef(crosswindMs);
@@ -891,6 +895,24 @@ export function HuntShootView({
     return { pxPerMm, limitX: limit, limitY: limit };
   }
 
+  function endAimDrag(
+    el?: HTMLDivElement | null,
+    pointerId?: number,
+  ) {
+    const drag = aimDragRef.current;
+    if (!drag) return;
+    if (pointerId != null && drag.pointerId !== pointerId) return;
+    aimDragRef.current = null;
+    setAimDragging(false);
+    if (el && el.hasPointerCapture(drag.pointerId)) {
+      try {
+        el.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+  }
+
   function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (firedRef.current) return;
     // Ignore non-primary mouse (right-click) and multi-touch extras.
@@ -904,11 +926,17 @@ export function HuntShootView({
       origX: aimRef.current.x,
       origY: aimRef.current.y,
     };
+    setAimDragging(true);
   }
 
   function onAimPointerMove(e: PointerEvent<HTMLDivElement>) {
     const drag = aimDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    // Trackpad/mouse can drop button-up outside the element — stop if no buttons.
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endAimDrag(e.currentTarget, e.pointerId);
+      return;
+    }
     const { pxPerMm, limitX, limitY } = aimLimitsMm();
     const delta = aimMmDeltaFromPointerDrag({
       dxClientPx: e.clientX - drag.startX,
@@ -927,9 +955,12 @@ export function HuntShootView({
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (aimDragRef.current?.pointerId === e.pointerId) {
-      aimDragRef.current = null;
-    }
+    endAimDrag(e.currentTarget, e.pointerId);
+  }
+
+  function onAimPointerLeave(e: PointerEvent<HTMLDivElement>) {
+    // Leaving the glass ends aim-drag (stuck :active / phantom left-button).
+    endAimDrag(e.currentTarget, aimDragRef.current?.pointerId);
   }
 
   function beginTrigger(nowMs: number) {
@@ -976,6 +1007,28 @@ export function HuntShootView({
   }
 
   useEffect(() => {
+    function nudgeAim(dxMm: number, dyMm: number) {
+      const { limitX, limitY } = aimLimitsMm();
+      const next = clampAimMm(
+        aimRef.current.x + dxMm,
+        aimRef.current.y + dyMm,
+        limitX,
+        limitY,
+      );
+      aimRef.current = next;
+      hasPannedRef.current = true;
+    }
+
+    function arrowTapMm(): number {
+      if (landscapeSrcRef.current) {
+        const scale = Math.max(0.01, targetScaleRef.current);
+        const pxPerMm = birdNativePxPerMm(geomRef.current);
+        const visibleScenePx = SCOPE_VIEWPORT_REF_PX / scale;
+        return ((visibleScenePx * SCOPE_AIM_TAP_FOV_FRAC) / pxPerMm);
+      }
+      return SCOPE_AIM_TAP_MM * (distanceRef.current / 100);
+    }
+
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -984,19 +1037,28 @@ export function HuntShootView({
         return;
       }
       if (!ready || firedRef.current) return;
-      if (e.key === "ArrowUp") {
+      const dir =
+        e.key === "ArrowUp"
+          ? "up"
+          : e.key === "ArrowDown"
+            ? "down"
+            : e.key === "ArrowLeft"
+              ? "left"
+              : e.key === "ArrowRight"
+                ? "right"
+                : null;
+      if (dir) {
         e.preventDefault();
-        keysRef.current.up = true;
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        keysRef.current.down = true;
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        keysRef.current.left = true;
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        keysRef.current.right = true;
-      } else if (e.key === "f" || e.key === "F") {
+        if (keysRef.current[dir] != null) return;
+        keysRef.current[dir] = performance.now();
+        const step = arrowTapMm();
+        if (dir === "up") nudgeAim(0, -step);
+        if (dir === "down") nudgeAim(0, step);
+        if (dir === "left") nudgeAim(-step, 0);
+        if (dir === "right") nudgeAim(step, 0);
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         beginFocus(performance.now());
       } else if (e.key === " " || e.code === "Space") {
@@ -1015,10 +1077,10 @@ export function HuntShootView({
       }
     }
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key === "ArrowUp") keysRef.current.up = false;
-      if (e.key === "ArrowDown") keysRef.current.down = false;
-      if (e.key === "ArrowLeft") keysRef.current.left = false;
-      if (e.key === "ArrowRight") keysRef.current.right = false;
+      if (e.key === "ArrowUp") keysRef.current.up = null;
+      if (e.key === "ArrowDown") keysRef.current.down = null;
+      if (e.key === "ArrowLeft") keysRef.current.left = null;
+      if (e.key === "ArrowRight") keysRef.current.right = null;
       if (e.key === "f" || e.key === "F") endFocus();
       if (e.key === " " || e.code === "Space") {
         if (triggerRef.current.held) {
@@ -1100,11 +1162,17 @@ export function HuntShootView({
       if (focusRef.current.held) {
         speed *= FOCUS_AIM_SPEED_MULT;
       }
-      if (k.left) x -= speed;
-      if (k.right) x += speed;
-      if (k.up) y -= speed;
-      if (k.down) y += speed;
-      if (k.left || k.right || k.up || k.down) hasPannedRef.current = true;
+      const mx = scopeAimHoldMult(k.left, now);
+      const myL = scopeAimHoldMult(k.right, now);
+      const myU = scopeAimHoldMult(k.up, now);
+      const myD = scopeAimHoldMult(k.down, now);
+      if (mx > 0) x -= speed * mx;
+      if (myL > 0) x += speed * myL;
+      if (myU > 0) y -= speed * myU;
+      if (myD > 0) y += speed * myD;
+      if (mx > 0 || myL > 0 || myU > 0 || myD > 0) {
+        hasPannedRef.current = true;
+      }
       x = Math.max(-limitX, Math.min(limitX, x));
       y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
@@ -1532,12 +1600,20 @@ export function HuntShootView({
           <div className="scope-optic">
             <div
               className={
-                recoilActive ? "scope-viewport is-recoiling" : "scope-viewport"
+                recoilActive
+                  ? aimDragging
+                    ? "scope-viewport is-recoiling is-aim-dragging"
+                    : "scope-viewport is-recoiling"
+                  : aimDragging
+                    ? "scope-viewport is-aim-dragging"
+                    : "scope-viewport"
               }
               onPointerDown={onAimPointerDown}
               onPointerMove={onAimPointerMove}
               onPointerUp={onAimPointerUp}
               onPointerCancel={onAimPointerUp}
+              onPointerLeave={onAimPointerLeave}
+              onLostPointerCapture={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
                 {landscapeSrc ? (
