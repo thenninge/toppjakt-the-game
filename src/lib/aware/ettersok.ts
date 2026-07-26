@@ -401,26 +401,33 @@ export const CAMCORDER_SHOT_PAIR_UNCERTAINTY_M = 10;
 export const CAMCORDER_TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M =
   CAMCORDER_SHOT_PAIR_UNCERTAINTY_M / 2;
 
+/** Swarovski EL Range — exact auto skuddpar (kit LRF, no deploy). */
+export const SWAROVSKI_EL_RANGE_ID = "lrf-swarovski-el-range-10x42";
+
 export type VisibleShotPairEstimate = {
   /** Drawn aim point (stand → target). */
   target: CellPoint;
   distanceM: number;
   bearingDeg: number;
-  source: "camcorder" | "triggercam";
+  source: "camcorder" | "triggercam" | "el_range";
 };
 
-/** Triggercam in kit, or camcorder deployed before the shot. */
+/** Triggercam / camcorder / EL Range can autofill skuddpar. */
 export function canAutoSaveShotPair(opts: {
   hasTriggercam: boolean;
   hasCamcorder: boolean;
+  hasElRange?: boolean;
 }): boolean {
-  return opts.hasTriggercam || opts.hasCamcorder;
+  return opts.hasTriggercam || opts.hasCamcorder || !!opts.hasElRange;
 }
 
 /**
- * Auto skuddpar from camera gear after a real shot.
+ * Auto skuddpar after a real shot.
+ * EL Range (in kit): exact bearing + distance.
  * Camcorder ±10 m, triggercam ±30 m, both ±5 m along the true shot bearing.
- * Returns null without gear — player must have saved skuddpar manually.
+ * Returns null without gear — player must save skuddpar manually.
+ *
+ * Ettersøk flee cues still require Triggercam/camcorder separately.
  */
 export function estimateVisibleShotPair(opts: {
   stand: CellPoint;
@@ -429,11 +436,31 @@ export function estimateVisibleShotPair(opts: {
   hasTriggercam: boolean;
   /** Camcorder must have been deployed before the shot. */
   hasCamcorder: boolean;
+  /** Swarovski EL Range in kit — exact skuddpar. */
+  hasElRange?: boolean;
   random?: () => number;
 }): VisibleShotPairEstimate | null {
   const random = opts.random ?? Math.random;
   const trueBearing = bearingDegFromTo(opts.stand, opts.trueAim);
   const trueDist = distanceMBetween(opts.stand, opts.trueAim);
+
+  if (opts.hasElRange) {
+    const distanceM = Math.max(
+      50,
+      Math.min(450, Math.round(trueDist)),
+    );
+    const bearingDeg = Math.round(normalizeDeg(trueBearing));
+    return {
+      target: impactFromShot({
+        stand: opts.stand,
+        bearingDeg,
+        distanceM,
+      }),
+      distanceM,
+      bearingDeg,
+      source: "el_range",
+    };
+  }
 
   if (opts.hasCamcorder) {
     const band =

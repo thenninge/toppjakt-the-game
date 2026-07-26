@@ -129,7 +129,11 @@ export function computeKitOverview(input: {
   const ammoItems = kitItems.filter(isAmmoItem);
   const carryPieces = kitItems.filter(isCarryItem).map((i) => i.carry);
   const camoPieces = kitItems.filter(isCamoItem).map((i) => i.camo);
-  const skiItem = kitItems.find(isSkiItem) ?? null;
+  const skiBoardsItem = kitItems.find(
+    (i) => isSkiItem(i) && !i.ski.isBoots,
+  );
+  const skiBoards =
+    skiBoardsItem && isSkiItem(skiBoardsItem) ? skiBoardsItem.ski : null;
   const hasLrf = kitItems.some(isLrfItem);
   const hasThermal = kitItems.some(isThermalItem);
   const foodPieces = kitItems.filter(isFoodItem).map((i) => i.food);
@@ -138,7 +142,7 @@ export function computeKitOverview(input: {
   const apparelSlots = new Set(
     camoPieces.map((c) => camoSlot(c)).filter((s) => s !== "suit"),
   ).size;
-  const hasSkiBoots = camoPieces.some((c) => camoSlot(c) === "ski_boots");
+  const hasSkiBoots = kitItems.some((i) => isSkiItem(i) && !!i.ski.isBoots);
 
   const pack = computePackLoad({ kitItems, customsMods, carcasses });
   const totalWeightGrams = pack.totalGrams;
@@ -150,7 +154,7 @@ export function computeKitOverview(input: {
   const topSpeedKmh = computeKitTopSpeedKmh({
     totalWeightGrams,
     carryPieces,
-    ski: skiItem?.ski ?? null,
+    ski: skiBoards,
   });
 
   // —— Precision ——
@@ -274,7 +278,7 @@ export function computeKitOverview(input: {
     );
   } else if (carryComfort < 6) {
     speedTips.push(
-      `Carry comfort ${formatScore10(carryComfort)} — oppgrader backpack/chestrig for raskere gange under last.`,
+      `Carry comfort ${formatScore10(carryComfort)} — bedre chestrig = mindre binovekt på Body; bedre sekk = lettere felt last.`,
     );
   }
   if (pack.carcassGrams > 0) {
@@ -282,17 +286,17 @@ export function computeKitOverview(input: {
       `Vilt i sekken: ${(pack.carcassGrams / 1000).toFixed(1).replace(".", ",")} kg → +${Math.round((pack.fatigueLoadFactor - 1) * 100)}% fysisk fatigue per rute.`,
     );
   }
-  if (!skiItem) {
+  if (!skiBoards) {
     speedTips.push(
       "Ingen ski/truger — top speed beregnes som støvler (lav). Ski med høy max speed / flyt hjelper.",
     );
   } else {
-    if (skiItem.ski.maxSpeed < 6) {
+    if (skiBoards.maxSpeed < 6) {
       speedTips.push(
         "Ski max-speed er lav — se etter raskere ski i XXL.",
       );
     }
-    if (skiItem.ski.flowPerKg < 5) {
+    if (skiBoards.flowPerKg < 5) {
       speedTips.push(
         "Lav flyt/kg på ski — bedre flyt demper vektstraff under tung sekk.",
       );
@@ -418,7 +422,7 @@ export function computeKitOverview(input: {
       carcassKg: Math.round((pack.carcassGrams / 1000) * 100) / 100,
       fatigueLoadFactor: pack.fatigueLoadFactor,
       carryComfort,
-      hasSkis: !!skiItem,
+      hasSkis: !!skiBoards,
       tips: speedTips,
     },
     sneak: {

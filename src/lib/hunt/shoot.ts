@@ -28,6 +28,9 @@ export const TIUR_IMAGE_NATIVE_H = 138;
 /** XXL misc — after-action impact replay on hunt shots. */
 export const TRIGGERCAM_ITEM_ID = "misc-triggercam";
 
+/** Cheaper Triggercam alternative — same AAR / skuddpar, higher nerve cost. */
+export const SCOPEMATE_ITEM_ID = "misc-scopemate";
+
 /** Headshot reward — player nickname after a yellow-zone kill. */
 export const PINK_MIST_NICKNAME = "Pink Mist";
 
@@ -46,6 +49,53 @@ export const CAMCORDER_SETUP_NERVE = 0.2;
 
 /** Nerve bump when setting up chronograph in front of the bird (Aware). */
 export const CHRONO_SETUP_NERVE = 0.05;
+
+/** Nerve bump when measuring wind/temp with Kestrel in Aware. */
+export const KESTREL_MEASURE_NERVE = 0.05;
+
+/** Nerve bump when starting Triggercam in Aware. */
+export const TRIGGERCAM_SETUP_NERVE = 0.05;
+
+/** Nerve bump when starting Scopemate in Aware. */
+export const SCOPEMATE_SETUP_NERVE = 0.07;
+
+export type ShotCamKind = "triggercam" | "scopemate";
+
+export function isShotCamItemId(id: string): boolean {
+  return id === TRIGGERCAM_ITEM_ID || id === SCOPEMATE_ITEM_ID;
+}
+
+/** Kit exclusivity slot — Triggercam and Scopemate share this. */
+export function shotCamKitSlot(id: string): "shotcam" | undefined {
+  return isShotCamItemId(id) ? "shotcam" : undefined;
+}
+
+/** Prefer Triggercam if both somehow remain in kit (legacy saves). */
+export function resolveShotCamKind(
+  itemIds: Iterable<string>,
+): ShotCamKind | null {
+  const set = itemIds instanceof Set ? itemIds : new Set(itemIds);
+  if (set.has(TRIGGERCAM_ITEM_ID)) return "triggercam";
+  if (set.has(SCOPEMATE_ITEM_ID)) return "scopemate";
+  return null;
+}
+
+/** Drop extra shot-cams so kit has at most one (Triggercam wins). */
+export function sanitizeKitShotCams(kit: string[]): string[] {
+  const kind = resolveShotCamKind(kit);
+  if (!kind) return kit;
+  const keepId =
+    kind === "triggercam" ? TRIGGERCAM_ITEM_ID : SCOPEMATE_ITEM_ID;
+  return kit.filter((id) => !isShotCamItemId(id) || id === keepId);
+}
+
+export function shotCamSetupNerve(kind: ShotCamKind): number {
+  return kind === "scopemate" ? SCOPEMATE_SETUP_NERVE : TRIGGERCAM_SETUP_NERVE;
+}
+
+export function shotCamLabel(kind: ShotCamKind): string {
+  return kind === "scopemate" ? "Scopemate" : "Triggercam";
+}
 
 /**
  * Reference scope viewport size (px) — matches `.scope-viewport` (~28rem).

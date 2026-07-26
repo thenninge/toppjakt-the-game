@@ -177,7 +177,9 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-thermos-jula": 380,
   "misc-nightcore-nu21": 68,
   "misc-nightcore-hc60": 128,
+  "outdoors-opptenningsbrikker": 180,
   "misc-triggercam": 460,
+  "misc-scopemate": 420,
   "misc-hunt-camcorder": 890,
   "misc-garmin-xero-c1-pro": 108,
   "misc-fx-true-ballistic": 820,
@@ -234,10 +236,6 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "ski-asnes-kongsvoll": 2200,
   "ski-asnes-combat": 2800,
   "ski-natoplank": 3500,
-  "ski-sgn-togga": 2400,
-  "ski-dps-judas": 2600,
-  "ski-joggepinner": 1600,
-  "ski-jobbepinner-feller": 2100,
 
   // Bipods / tofot
   "bipod-game-on-softgun": 280,
@@ -263,6 +261,11 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "food-circlek-baguette": 260,
   "food-boller-5pk": 400,
   "food-dronning-kokesjokolade": 100,
+  "food-xl1-drikk": 500,
+  "food-proteinbar": 60,
+  "food-snickers": 50,
+  "food-instant-kaffe": 100,
+  "food-redbull": 250,
 
   // Hjemmelading — presser / verktøy
   "reload-lee-challenger-t2": 3200,
@@ -377,6 +380,7 @@ export function defaultWeightGrams(category: ShopCategory): number {
     case "reloading":
       return 500;
     case "misc":
+    case "outdoors":
       return 500;
     case "camo":
       return 1100;

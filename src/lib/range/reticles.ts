@@ -1,9 +1,10 @@
 /**
  * Scope reticle assets and FFP/SFP display scaling.
  *
- * Visual calibration: CBA diamond tip (10 mm) aligns with the first major
- * hash on the reticle graphic so subtensions stay readable in the scope
- * circle. Turret clicks remain true 0.1 mil (10 mm @ 100 m); see
+ * Zeroing visual calibration: CBA diamond tip (10 mm) aligns with the first
+ * major hash so subtensions stay readable in the scope circle (≈10× true).
+ * Tracking lane uses {@link trackingReticleImgScale} so 1 mil = 100 mm on the
+ * 1 cm grid. Turret clicks remain true 0.1 mil (10 mm @ 100 m); see
  * player.ts ZERO_CLICK_MM.
  *
  * Measure `centerTo1MilPx` on the native PNG (center → 1.0 mil hash).
@@ -124,6 +125,24 @@ export function ffpReticleImageScale(
   const milToDiamond =
     CBA_DIAMOND_CENTER_TO_TIP_PX / reticle.centerTo1MilPx;
   return imgScale * milToDiamond;
+}
+
+/**
+ * `imgScale` for {@link ScopeReticle} on the tracking lane so labeled mils are
+ * true against the 1 cm grid (1 mil hash = 100 mm = 10 squares).
+ *
+ * Zeroing keeps the CBA “readable” calibration (1 mil hash ≈ 10 mm diamond).
+ * Tracking undoes that 10× exaggeration relative to paper.
+ */
+export function trackingReticleImgScale(
+  zoomScale: number,
+  target: { pxPerMm: number; visualScale: number },
+): number {
+  const mmPerMilOnPaper = 100;
+  const paperMilScreenPx =
+    mmPerMilOnPaper * target.pxPerMm * target.visualScale * zoomScale;
+  // ffpReticleImageScale: 1 mil screen px = CBA_DIAMOND * imgScale
+  return paperMilScreenPx / CBA_DIAMOND_CENTER_TO_TIP_PX;
 }
 
 /**

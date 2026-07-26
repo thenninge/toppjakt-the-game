@@ -523,6 +523,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
       binosPriceNok={
         binoItem?.priceNok ?? (isHabrok ? thermalItem?.priceNok ?? 0 : 0)
       }
+      binosAperturePercent={binoItem?.lrf.aperturePercent ?? null}
       thermalPriceNok={thermalItem?.priceNok ?? 0}
       clockMinutes={8 * 60}
       hasBinos={hasBinos}

@@ -50,7 +50,14 @@ import {
   ENCOUNTER_NERVE,
   tickEncounterNerve,
 } from "@/lib/game/nervousness";
-import { CAMCORDER_SETUP_NERVE, CHRONO_SETUP_NERVE } from "@/lib/hunt/shoot";
+import {
+  CAMCORDER_SETUP_NERVE,
+  CHRONO_SETUP_NERVE,
+  KESTREL_MEASURE_NERVE,
+  shotCamLabel,
+  shotCamSetupNerve,
+  type ShotCamKind,
+} from "@/lib/hunt/shoot";
 import {
   cellLabel,
   type HuntGridCell,
@@ -87,6 +94,10 @@ export type AwareShootStance = {
   camcorderActive?: boolean;
   /** Chronograph set up before leaving Aware (nerve cost already paid). */
   chronoActive?: boolean;
+  /** Kestrel enviro measured in Aware (nerve cost already paid). */
+  kestrelEnviroActive?: boolean;
+  /** Triggercam started in Aware before the shot. */
+  triggercamActive?: boolean;
   /** Bird nervousness carried into the shoot scene (0–cap). */
   birdNerve?: number;
 };
@@ -115,6 +126,10 @@ type AwareAppViewProps = {
   initialCamcorderReady?: boolean;
   /** Chronograph already deployed (e.g. returning from shoot). */
   initialChronoReady?: boolean;
+  /** Kestrel enviro already measured this encounter. */
+  initialKestrelEnviroReady?: boolean;
+  /** Triggercam already started this encounter. */
+  initialTriggercamReady?: boolean;
   /** Has LRF — Shoot-tab still useful, but less critical. */
   hasLrf?: boolean;
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
@@ -124,8 +139,10 @@ type AwareAppViewProps = {
   hasCamcorder?: boolean;
   /** Kit includes Garmin Xero chronograph. */
   hasChronograph?: boolean;
-  /** Triggercam in kit — allows autofill on skuddpar wizard. */
+  /** Triggercam or Scopemate in kit — start in Aware for AAR / skuddpar autofill. */
   hasTriggercam?: boolean;
+  /** Which shot-cam is active when {@link hasTriggercam} (Triggercam preferred). */
+  shotCamKind?: ShotCamKind | null;
   clockMinutes: number;
   shotPairs: ShotPair[];
   focusPairId?: string | null;
@@ -321,6 +338,8 @@ export function AwareAppView({
   initialBirdNerve = 0,
   initialCamcorderReady = false,
   initialChronoReady = false,
+  initialKestrelEnviroReady = false,
+  initialTriggercamReady = false,
   hasLrf = false,
   ammo = null,
   hasKestrel = false,
@@ -328,6 +347,7 @@ export function AwareAppView({
   hasCamcorder = false,
   hasChronograph = false,
   hasTriggercam = false,
+  shotCamKind = null,
   clockMinutes,
   shotPairs,
   focusPairId = null,
@@ -350,6 +370,12 @@ export function AwareAppView({
   );
   const [camcorderReady, setCamcorderReady] = useState(initialCamcorderReady);
   const [chronoReady, setChronoReady] = useState(initialChronoReady);
+  const [kestrelEnviroReady, setKestrelEnviroReady] = useState(
+    initialKestrelEnviroReady,
+  );
+  const [triggercamReady, setTriggercamReady] = useState(
+    initialTriggercamReady,
+  );
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? { x: 50, y: 50 },
   );
@@ -468,7 +494,8 @@ export function AwareAppView({
     [dangerHazards, hunter],
   );
 
-  const windSnap = hasKestrel ? weather.live : weather.forecast;
+  const windSnap =
+    hasKestrel && kestrelEnviroReady ? weather.live : weather.forecast;
   const shotCrosswind = crosswindMs(
     windSnap.windSpeedMs,
     windSnap.windFromDeg,
@@ -503,7 +530,16 @@ export function AwareAppView({
 
   const shootWizardActive = shootWizard.phase !== "idle";
   /** Cam gear that "remembers" stand→bird for skuddpar autofill. */
-  const skuddparAutofill = hasTriggercam || camcorderReady;
+  const skuddparAutofill = triggercamReady || camcorderReady;
+  const activeShotCam: ShotCamKind | null = hasTriggercam
+    ? (shotCamKind ?? "triggercam")
+    : null;
+  const shotCamName = activeShotCam
+    ? shotCamLabel(activeShotCam)
+    : "Triggercam";
+  const shotCamNervePct = activeShotCam
+    ? Math.round(shotCamSetupNerve(activeShotCam) * 100)
+    : 5;
   /** Stand→bird while defining skuddpar (wizard stand is frozen). */
   const wizardBirdDistanceM =
     shootWizardActive && skuddparAutofill
@@ -769,7 +805,7 @@ export function AwareAppView({
       bearingDeg: 0,
     });
     setStatus(
-      "Skuddpar: stand låst. Uten Triggercam/camcorder må du stille retning og avstand selv — ingen autofyll.",
+      "Skuddpar: stand låst. Uten Triggercam/Scopemate/camcorder må du stille retning og avstand selv — ingen autofyll.",
     );
   }
 
@@ -1009,6 +1045,8 @@ export function AwareAppView({
       bird: birdWorld,
       camcorderActive: hasCamcorder && camcorderReady,
       chronoActive: hasChronograph && chronoReady,
+      kestrelEnviroActive: hasKestrel && kestrelEnviroReady,
+      triggercamActive: hasTriggercam && triggercamReady,
       birdNerve: nerveRef.current,
     });
   }
@@ -1053,6 +1091,55 @@ export function AwareAppView({
       next >= ENCOUNTER_NERVE.flushThreshold
         ? "Chrono oppe — men fuglen er svært urolig (+5% nervøsitet)!"
         : "Chrono satt opp foran stand (+5% nervøsitet). Jakt-skudd logges i shotlog med v0 + temperatur.",
+    );
+    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+      flushedRef.current = true;
+      onBirdFlushedRef.current(next);
+    }
+  }
+
+  function measureKestrelEnviro() {
+    if (!hasKestrel || kestrelEnviroReady || flushedRef.current) return;
+    const next = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      nerveRef.current + KESTREL_MEASURE_NERVE,
+    );
+    nerveRef.current = next;
+    flushSync(() => {
+      setNerve(next);
+      setKestrelEnviroReady(true);
+    });
+    onNerveChangeRef.current?.(next);
+    const live = weather.live;
+    setStatus(
+      next >= ENCOUNTER_NERVE.flushThreshold
+        ? `Kestrel målt — men fuglen er svært urolig (+5% nervøsitet)! ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}.`
+        : `Enviro målt med Kestrel (+5% nervøsitet): ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}. App prefyller vind/temp.`,
+    );
+    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+      flushedRef.current = true;
+      onBirdFlushedRef.current(next);
+    }
+  }
+
+  function startTriggercam() {
+    if (!activeShotCam || triggercamReady || flushedRef.current) return;
+    const nerveCost = shotCamSetupNerve(activeShotCam);
+    const next = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      nerveRef.current + nerveCost,
+    );
+    nerveRef.current = next;
+    flushSync(() => {
+      setNerve(next);
+      setTriggercamReady(true);
+    });
+    onNerveChangeRef.current?.(next);
+    const pct = Math.round(nerveCost * 100);
+    setStatus(
+      next >= ENCOUNTER_NERVE.flushThreshold
+        ? `${shotCamName} startet — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+        : `${shotCamName} startet (+${pct}% nervøsitet) — filmer skuddet (AAR) og hjelper skuddpar-autofill.`,
     );
     if (next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
@@ -1450,7 +1537,7 @@ export function AwareAppView({
             <p className="shop-row-note aware-weather-line">{nerveHint}</p>
           ) : null}
           <p className="shop-row-note aware-weather-line">
-            {hasKestrel ? "Kestrel" : "Prognose"}:{" "}
+            {hasKestrel && kestrelEnviroReady ? "Kestrel" : "Prognose"}:{" "}
             {windSnap.temperatureC.toFixed(1)}°C ·{" "}
             {formatWindSpeed(windSnap.windSpeedMs)} fra{" "}
             {formatWindCompass(windSnap.windFromDeg)} (
@@ -1486,6 +1573,30 @@ export function AwareAppView({
                     : "Sett opp Chrono (+5% nervøsitet)"}
                 </button>
               ) : null}
+              {hasKestrel ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  disabled={kestrelEnviroReady}
+                  onClick={measureKestrelEnviro}
+                >
+                  {kestrelEnviroReady
+                    ? "Kestrel enviro målt"
+                    : "Mål enviro med Kestrel (+5% nervøsitet)"}
+                </button>
+              ) : null}
+              {hasTriggercam ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  disabled={triggercamReady}
+                  onClick={startTriggercam}
+                >
+                  {triggercamReady
+                    ? `${shotCamName} aktiv`
+                    : `Start ${shotCamName} (+${shotCamNervePct}% nervøsitet)`}
+                </button>
+              ) : null}
               <p className="shop-row-note">
                 Trykk kart → planleggingsmål (kakene flytter apex hit, samme
                 retning/bredde · skuddlinje følger).
@@ -1499,6 +1610,16 @@ export function AwareAppView({
                   ? chronoReady
                     ? " Chrono måler foran stand (+5% nerve) — shotlog får v0 + °C."
                     : " Xero i kit: Sett opp Chrono (+5% nervøsitet)."
+                  : ""}
+                {hasKestrel
+                  ? kestrelEnviroReady
+                    ? " Kestrel enviro målt — app prefyller vind/temp."
+                    : " Kestrel i kit: Mål enviro (+5% nervøsitet) for auto vind/temp i app."
+                  : ""}
+                {hasTriggercam
+                  ? triggercamReady
+                    ? ` ${shotCamName} filmer — AAR + skuddpar-autofill.`
+                    : ` ${shotCamName} i kit: Start ${shotCamName} (+${shotCamNervePct}% nervøsitet) før skudd.`
                   : ""}
                 {holdHint
                   ? " Kestrel AB dialer elev + windage når du går til skudd."
@@ -1530,7 +1651,7 @@ export function AwareAppView({
                   ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen). Fugleprikken er der du siktet.`
                   : skuddparAutofill
                     ? "Cam i bruk: retning/avstand prefylles fra fugleprikken — juster ved behov."
-                    : "Uten Triggercam/oppsatt camcorder: still retning og avstand selv (ingen autofyll)."}
+                    : "Uten Triggercam/Scopemate/oppsatt camcorder: still retning og avstand selv (ingen autofyll)."}
               </p>
 
               {shootWizard.phase === "idle" ? (

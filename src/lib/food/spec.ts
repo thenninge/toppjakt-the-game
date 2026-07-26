@@ -5,7 +5,7 @@
  * (stove + gas in kit).
  */
 
-export type FoodKind = "stove" | "fuel" | "meal" | "ready";
+export type FoodKind = "stove" | "fuel" | "meal" | "ready" | "thermos";
 
 export type FoodSpec = {
   kind: FoodKind;
@@ -26,6 +26,11 @@ export type FoodSpec = {
   minutes: number;
   /** Freeze-dried / needs boiled water (stove + fuel required). */
   requiresBoil: boolean;
+  /**
+   * Temporary full mind for this many game minutes after drinking/eating,
+   * then mental fatigue snaps back to the pre-consume value.
+   */
+  temporaryMindFullMinutes?: number;
 };
 
 export function isCookGear(food: FoodSpec): boolean {
@@ -53,9 +58,18 @@ export function effectiveFoodRecovery(
   food: FoodSpec,
   canBoil: boolean,
 ): FoodRecovery | null {
-  if (food.kind === "stove" || food.kind === "fuel") return null;
-  if (food.bodyGain <= 0 && food.mindGain <= 0) return null;
+  if (food.kind === "stove" || food.kind === "fuel" || food.kind === "thermos")
+    return null;
   if (food.requiresBoil && !canBoil) return null;
+  const stimMin = food.temporaryMindFullMinutes ?? 0;
+  if (stimMin > 0) {
+    return {
+      bodyGain: food.bodyGain,
+      mindGain: 0,
+      minutes: Math.max(1, food.minutes),
+    };
+  }
+  if (food.bodyGain <= 0 && food.mindGain <= 0) return null;
   return {
     bodyGain: food.bodyGain,
     mindGain: food.mindGain,
@@ -112,3 +126,17 @@ export const TYRIBAL_RECOVERY = {
   mindToFull: true as const,
   minutes: 45,
 };
+
+/** Biltema sittpute — boosts body recovery on rest / tyribål. */
+export const SIT_PAD_ITEM_ID = "misc-sittpute-biltema";
+
+/** Body recovery multiplier with sit pad in kit (50% → 60%). */
+export const SIT_PAD_BODY_RECOVERY_MULT = 1.2;
+
+export function sitPadBodyGain(
+  baseBodyGain: number,
+  hasSitPad: boolean,
+): number {
+  if (!hasSitPad) return baseBodyGain;
+  return Math.min(1, baseBodyGain * SIT_PAD_BODY_RECOVERY_MULT);
+}

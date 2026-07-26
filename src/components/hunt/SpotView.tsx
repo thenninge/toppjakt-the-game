@@ -17,7 +17,7 @@ import {
   clampOpticPan,
   landscapeAtLensCenter,
   measureDistanceWithLrf,
-  opticAperturePercent,
+  resolveOpticAperturePercent,
   opticApertureRadiusPct,
   HABROK_GREEN_MIN_ZOOM,
   HABROK_YELLOW_MIN_ZOOM,
@@ -99,6 +99,8 @@ type SpotViewProps = {
   hasThermalFusion?: boolean;
   /** Shop price of equipped binos — drives circular bezel thickness. */
   binosPriceNok?: number;
+  /** Optional LRF aperture override (e.g. Jula stronger dorul). */
+  binosAperturePercent?: number | null;
   /** Shop price of equipped thermal — drives circular bezel thickness. */
   thermalPriceNok?: number;
   /** Absolute hunt clock in minutes (for HUD). */
@@ -383,6 +385,7 @@ export function SpotView({
   hasThermalOutline = false,
   hasThermalFusion = false,
   binosPriceNok = 0,
+  binosAperturePercent = null,
   thermalPriceNok = 0,
   clockMinutes,
   hasBinos,
@@ -444,8 +447,8 @@ export function SpotView({
    */
   const opticAperture =
     mode === "thermal" || (mode === "binos" && isThermalBinocular)
-      ? opticAperturePercent(thermalPriceNok || binosPriceNok)
-      : opticAperturePercent(binosPriceNok);
+      ? resolveOpticAperturePercent(thermalPriceNok || binosPriceNok)
+      : resolveOpticAperturePercent(binosPriceNok, binosAperturePercent);
   const rawMag =
     mode === "thermal"
       ? isThermalBinocular

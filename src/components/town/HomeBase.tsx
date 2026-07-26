@@ -32,6 +32,7 @@ import {
 } from "@/lib/kit/speed";
 import { computeKitOverview } from "@/lib/kit/overview";
 import { computePackLoad } from "@/lib/kit/pack";
+import { isShotCamItemId } from "@/lib/hunt/shoot";
 import {
   formatMarketKr,
   formatWeightKg as formatCarcassWeightKg,
@@ -74,7 +75,6 @@ const EXCLUSIVE_KIT_CATEGORIES = new Set([
   "suppressor",
   "backpack",
   "chestrig",
-  "skis",
   "ballistics",
   "lrf",
   "thermal",
@@ -272,8 +272,8 @@ export function HomeBase({
   );
 
   const ski = useMemo(() => {
-    const found = kitItems.find(isSkiItem);
-    return found ? found.ski : null;
+    const found = kitItems.find((i) => isSkiItem(i) && !i.ski.isBoots);
+    return found && isSkiItem(found) ? found.ski : null;
   }, [kitItems]);
 
   const canBoil = useMemo(
@@ -281,11 +281,14 @@ export function HomeBase({
     [kitItems],
   );
 
-  const hasSkis = useMemo(() => kitItems.some(isSkiItem), [kitItems]);
+  const hasSkis = useMemo(
+    () => kitItems.some((i) => isSkiItem(i) && !i.ski.isBoots),
+    [kitItems],
+  );
   const hasSkiBoots = useMemo(
     () =>
       kitItems.some(
-        (i) => isCamoItem(i) && camoSlot(i.camo) === "ski_boots",
+        (i) => isSkiItem(i) && i.ski.isBoots,
       ),
     [kitItems],
   );
@@ -883,7 +886,9 @@ export function HomeBase({
                                   item.thermal.isThermalBinocular
                                   ? " · erstatter bino+termisk"
                                   : " · én i kit"
-                                : ""}
+                                : isShotCamItemId(item.id)
+                                  ? " · én shotcam i kit"
+                                  : ""}
                               {finnDeal
                                 ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
                                 : ""}
@@ -898,9 +903,9 @@ export function HomeBase({
                             ) : null}
                             {isSkiItem(item) ? (
                               <span className="shop-row-ballistics">
-                                max {formatScore10(item.ski.maxSpeed)} · flyt/kg{" "}
-                                {formatScore10(item.ski.flowPerKg)} ·{" "}
-                                {item.ski.widthMm} mm
+                                {item.ski.isBoots
+                                  ? `skistøvler · speed ${formatScore10(item.ski.maxSpeed)} · stam ${formatScore10(item.ski.flowPerKg)}`
+                                  : `max ${formatScore10(item.ski.maxSpeed)} · flyt/kg ${formatScore10(item.ski.flowPerKg)} · ${item.ski.widthMm} mm`}
                               </span>
                             ) : null}
                             {isFoodItem(item) ? (
@@ -909,9 +914,13 @@ export function HomeBase({
                                   ? "brenner"
                                   : item.food.kind === "fuel"
                                     ? `gass · ${item.food.huntTrips} turer`
-                                    : item.food.requiresBoil
-                                      ? `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · krever koking`
-                                      : `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · ${item.food.minutes} min`}
+                                    : item.food.kind === "thermos"
+                                      ? "termos · 5 kaffekopper per tur"
+                                      : item.food.temporaryMindFullMinutes
+                                        ? `Mind → 100% i ${item.food.temporaryMindFullMinutes} min · crash`
+                                        : item.food.requiresBoil
+                                          ? `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · krever koking`
+                                          : `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · ${item.food.minutes} min`}
                               </span>
                             ) : null}
                           </div>
@@ -1030,6 +1039,8 @@ export function toggleKitItem(
   getMiscSlot?: (id: string) => string | undefined,
   /** Habrok-class thermal binocular — exclusive vs other thermal + LRF. */
   getIsThermalBinocular?: (id: string) => boolean,
+  /** Skis category: boards vs boots (both can be packed). */
+  getSkiSlot?: (id: string) => string | undefined,
 ): string[] {
   if (kit.includes(itemId)) {
     return kit.filter((id) => id !== itemId);
@@ -1049,12 +1060,17 @@ export function toggleKitItem(
     // Adding ordinary bino/thermal removes Habrok if equipped.
     next = kit.filter((id) => !getIsThermalBinocular?.(id));
   }
+  if (category === "skis") {
+    const skiSlot = getSkiSlot?.(itemId) ?? "boards";
+    const without = next.filter((id) => getSkiSlot?.(id) !== skiSlot);
+    return [...without, itemId];
+  }
   if (category && EXCLUSIVE_KIT_CATEGORIES.has(category)) {
     const withoutSame = next.filter((id) => getCategory(id) !== category);
     return [...withoutSame, itemId];
   }
   const foodKind = getFoodKind?.(itemId);
-  if (foodKind === "stove" || foodKind === "fuel") {
+  if (foodKind === "stove" || foodKind === "fuel" || foodKind === "thermos") {
     const without = next.filter((id) => getFoodKind?.(id) !== foodKind);
     return [...without, itemId];
   }
@@ -1063,7 +1079,7 @@ export function toggleKitItem(
     const without = next.filter((id) => getMiscSlot?.(id) !== miscSlot);
     return [...without, itemId];
   }
-  // One per camo/apparel slot (suit, buff, beanie, gloves, boots, ski_boots).
+  // One per camo/apparel slot (suit, buff, beanie, gloves, boots).
   const slot = getCamoSlot?.(itemId);
   if (slot) {
     const without = next.filter((id) => getCamoSlot?.(id) !== slot);

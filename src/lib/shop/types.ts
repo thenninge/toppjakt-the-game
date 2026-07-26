@@ -9,6 +9,7 @@ import type { BallisticsSpec } from "@/lib/ballistics/spec";
 import type { SkiSpec } from "@/lib/ski/spec";
 import type { BipodSpec } from "@/lib/bipod/spec";
 import type { FoodSpec } from "@/lib/food/spec";
+import type { SuppressorSpec } from "@/lib/suppressor/spec";
 
 export type ShopCategory =
   | "lrf"
@@ -26,6 +27,7 @@ export type ShopCategory =
   | "skis"
   | "bipod"
   | "food"
+  | "outdoors"
   | "misc";
 
 export type ShopItemBase = {
@@ -104,7 +106,8 @@ export type CarryShopItem = ShopItemBase & {
 };
 
 export type MiscShopItem = ShopItemBase & {
-  category: "misc";
+  /** Misc ballistics-adjacent kit, or Outdoors field gear (same MiscSpec). */
+  category: "misc" | "outdoors";
   misc: MiscSpec;
   weightGrams: number;
   ammo?: never;
@@ -282,6 +285,25 @@ export type FoodShopItem = ShopItemBase & {
   bipod?: never;
 };
 
+export type SuppressorShopItem = ShopItemBase & {
+  category: "suppressor";
+  suppressor: SuppressorSpec;
+  weightGrams: number;
+  ammo?: never;
+  camo?: never;
+  carry?: never;
+  misc?: never;
+  lrf?: never;
+  thermal?: never;
+  scope?: never;
+  stock?: never;
+  rifle?: never;
+  ballistics?: never;
+  ski?: never;
+  bipod?: never;
+  food?: never;
+};
+
 export type GearShopItem = ShopItemBase & {
   category: Exclude<
     ShopCategory,
@@ -290,6 +312,7 @@ export type GearShopItem = ShopItemBase & {
     | "backpack"
     | "chestrig"
     | "misc"
+    | "outdoors"
     | "lrf"
     | "thermal"
     | "scope"
@@ -299,6 +322,7 @@ export type GearShopItem = ShopItemBase & {
     | "skis"
     | "bipod"
     | "food"
+    | "suppressor"
   >;
   ammo?: never;
   camo?: never;
@@ -328,6 +352,7 @@ export type ShopItem =
   | SkiShopItem
   | BipodShopItem
   | FoodShopItem
+  | SuppressorShopItem
   | GearShopItem;
 
 export type CatalogDraft = {
@@ -357,6 +382,7 @@ export type CatalogDraft = {
   ski?: SkiSpec;
   bipod?: BipodSpec;
   food?: FoodSpec;
+  suppressor?: SuppressorSpec;
 };
 
 export function isAmmoItem(item: ShopItem): item is AmmoShopItem {
@@ -371,8 +397,16 @@ export function isCarryItem(item: ShopItem): item is CarryShopItem {
   return item.category === "backpack" || item.category === "chestrig";
 }
 
+export function isBackpackItem(item: ShopItem): item is CarryShopItem {
+  return item.category === "backpack";
+}
+
+export function isChestrigItem(item: ShopItem): item is CarryShopItem {
+  return item.category === "chestrig";
+}
+
 export function isMiscItem(item: ShopItem): item is MiscShopItem {
-  return item.category === "misc";
+  return item.category === "misc" || item.category === "outdoors";
 }
 
 export function isLrfItem(item: ShopItem): item is LrfShopItem {
@@ -418,6 +452,10 @@ export function isFoodItem(item: ShopItem): item is FoodShopItem {
   return item.category === "food";
 }
 
+export function isSuppressorItem(item: ShopItem): item is SuppressorShopItem {
+  return item.category === "suppressor";
+}
+
 export const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
   lrf: "LRF / Avstandsmålere",
   thermal: "Termisk / Spotters",
@@ -428,13 +466,15 @@ export const SHOP_CATEGORY_LABELS: Record<ShopCategory, string> = {
   ammo: "Ammunisjon",
   reloading: "Hjemmelading",
   camo: "Camouflage",
-  ballistics: "Ballistics",
+  ballistics: "Ballistics/misc",
   backpack: "Backpacks",
   chestrig: "Chestrigs",
   skis: "Skis/Snowshoes",
   bipod: "Bipods / Tofot",
-  food: "Food",
-  misc: "Misc kult kit",
+  food: "Food/cooking",
+  outdoors: "Outdoors",
+  /** Internal — shown under Ballistics/misc tab, not its own button. */
+  misc: "Ballistics/misc",
 };
 
 export const SHOP_CATEGORIES: ShopCategory[] = [
@@ -453,7 +493,7 @@ export const SHOP_CATEGORIES: ShopCategory[] = [
   "chestrig",
   "skis",
   "food",
-  "misc",
+  "outdoors",
 ];
 
 /** Home inventory buckets (skap-gruppering). */
@@ -471,7 +511,7 @@ export const INVENTORY_GROUPS: readonly {
   { id: "gun_kit", label: "Gun-kit" },
   { id: "kit_kit", label: "Kit-kit" },
   { id: "camo", label: "Camo/clothes" },
-  { id: "food", label: "Food" },
+  { id: "food", label: "Food/cooking" },
   { id: "reloading", label: "Hjemmelading" },
 ] as const;
 
@@ -497,7 +537,7 @@ export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
     case "food":
       return "food";
     default:
-      // lrf, thermal, ballistics, backpack, chestrig, skis, misc
+      // lrf, thermal, ballistics, backpack, chestrig, skis, outdoors, misc
       return "kit_kit";
   }
 }

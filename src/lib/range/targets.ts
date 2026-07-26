@@ -10,6 +10,7 @@ import type { RangeDistanceM } from "@/lib/range/precision";
 
 export type RangeTargetId =
   | "cba-100"
+  | "tracking-test"
   | "target-200"
   | "target-300"
   | "target-400"
@@ -27,6 +28,11 @@ export type RangeTargetDef = {
   bullseyeYPx: number;
   /** Native pixels per physical millimetre on the paper. */
   pxPerMm: number;
+  /**
+   * Optional separate Y calibration (elevation). When omitted, use {@link pxPerMm}.
+   * Tracking template has slightly different V/H red-line spacing.
+   */
+  pxPerMmY?: number;
   /**
    * Extra display scale in the scope (1 = asset as-is).
    * Used when the PNG under-represents real board angular size.
@@ -50,6 +56,27 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     bullseyeYPx: 538,
     pxPerMm: 115 / 10,
     visualScale: 1,
+  },
+  /**
+   * Tracking test template @ 100 m — 1 cm grid (= 0.1 mrad / 1 click).
+   * Origin (0) = top centre cross (vertical 0 × top horizontal).
+   * Labels 5R/5L/5U/… are in 0.1 mrad clicks (5R = 5 cm = 0.5 mrad), not full mils.
+   * Windage: 5R↔5L = 353 px / 100 mm. Elevation: 5-click step ≈ 182 px / 50 mm.
+   * Perfect MRAD scope: 5 clicks → 5U/5R; 20 clicks → 20U.
+   */
+  "tracking-test": {
+    id: "tracking-test",
+    label: "Tracking test 100 m",
+    shortLabel: "Track",
+    src: "/range/tracking-test.jpg",
+    nativeWidth: 724,
+    nativeHeight: 1024,
+    bullseyeXPx: 359,
+    bullseyeYPx: 147,
+    pxPerMm: 353 / 100,
+    pxPerMmY: 182 / 50,
+    /** Readable board; reticle uses true-mil scale on this lane (see reticles). */
+    visualScale: 2,
   },
   /**
    * target200.png — dotted grid ≈ 60.5 px ≈ 2 cm; ×2 visual for real size.

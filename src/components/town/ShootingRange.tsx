@@ -89,6 +89,7 @@ import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { trackingReticleImgScale } from "@/lib/range/reticles";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -112,7 +113,7 @@ import {
   type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError } from "@/lib/optics/spec";
+import { applyScopeClickError, rollScopeClickScale } from "@/lib/optics/spec";
 import {
   densityRatioFromTempC,
   exactBallisticHold,
@@ -256,9 +257,11 @@ export function ShootingRange({
   onLeave,
 }: ShootingRangeProps) {
   const [view, setView] = useState<"range" | "shotlog" | "dope">("range");
-  const [lane, setLane] = useState<"zeroing" | "competitions" | "load-test">(
-    "zeroing",
-  );
+  const [lane, setLane] = useState<
+    "zeroing" | "tracking-test" | "competitions" | "load-test"
+  >("zeroing");
+  const laneRef = useRef(lane);
+  laneRef.current = lane;
   const [compId, setCompId] = useState<"lobby" | "moa-std" | "field-impact">(
     "lobby",
   );
@@ -424,14 +427,27 @@ export function ShootingRange({
     resetFocusProgress,
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const scopeReticleOffsetRef = useRef<HTMLDivElement>(null);
   const mirageSceneRef = useRef<HTMLDivElement>(null);
   const mirageDisplaceRef = useRef<SVGFEDisplacementMapElement>(null);
   const targetScaleRef = useRef(1);
   const bullseyeOffRef = useRef({ x: 0, y: 0 });
   const imgNaturalWRef = useRef(target.nativeWidth);
   const targetPxPerMmRef = useRef(target.pxPerMm);
+  const targetPxPerMmYRef = useRef(target.pxPerMmY ?? target.pxPerMm);
+  /** Tracking test: stable realized click scale per axis (± clickErrorPercent). */
+  const trackingClickScaleRef = useRef({ x: 1, y: 1 });
   const [recoilActive, setRecoilActive] = useState(false);
   const recoilClearRef = useRef<number | null>(null);
+  /** Tracking test: freeze reticle (ignore F release until unlock). */
+  const [trackingLocked, setTrackingLocked] = useState(false);
+  const trackingLockedRef = useRef(false);
+  trackingLockedRef.current = trackingLocked;
+  const fHeldRef = useRef(false);
+  const sessionZeroXRef = useRef(0);
+  const sessionZeroYRef = useRef(0);
+  sessionZeroXRef.current = sessionZeroXMm;
+  sessionZeroYRef.current = sessionZeroYMm;
 
   const keysRef = useRef<AimKeys>({
     up: null,
@@ -757,10 +773,21 @@ export function ShootingRange({
       pending: false,
       targetPct: markMs / TRIGGER_BAR_MS,
     });
-    setStatus("Fokus — hold pusten. Slipp Space på merket i avtrekksbaren.");
+    setStatus(
+      trackingLockedRef.current
+        ? "Låst — turrets flytter crosshairs. Unlock for å slippe."
+        : "Fokus — hold pusten. Slipp Space på merket i avtrekksbaren.",
+    );
   }
 
   function endFocus(abortReason: string) {
+    if (trackingLockedRef.current) {
+      // Lock holds calm: F release / Fokus-up does nothing until Unlock.
+      if (triggerRef.current.held) {
+        abortTrigger(abortReason);
+      }
+      return;
+    }
     if (!focusRef.current.held) return;
     focusRef.current = { held: false, startedAtMs: 0 };
     if (triggerRef.current.held) {
@@ -770,6 +797,22 @@ export function ShootingRange({
     resetTriggerProgress();
     resetFocusProgress();
     setTriggerUi({ pending: false, targetPct: 0 });
+  }
+
+  function setTrackingLock(next: boolean) {
+    trackingLockedRef.current = next;
+    setTrackingLocked(next);
+    if (next) {
+      beginFocus(performance.now());
+      setStatus(
+        "Lock på — blinken står stille, crosshairs følger turret (U→ned, L→høyre).",
+      );
+      return;
+    }
+    if (!fHeldRef.current) {
+      endFocus("Unlock — fokus sluppet.");
+    }
+    setStatus("Unlock — hold F for fokus, eller lås igjen.");
   }
 
   function endAimDrag(
@@ -792,6 +835,7 @@ export function ShootingRange({
 
   function onAimPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (measurementRef.current) return;
+    if (laneRef.current === "tracking-test") return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -920,6 +964,7 @@ export function ShootingRange({
                 : null;
       if (dir) {
         e.preventDefault();
+        if (laneRef.current === "tracking-test") return;
         if (keysRef.current[dir] != null) return;
         keysRef.current[dir] = performance.now();
         const step =
@@ -943,10 +988,12 @@ export function ShootingRange({
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         if (e.repeat) return;
+        fHeldRef.current = true;
         beginFocus(performance.now());
       } else if (e.key === " " || e.code === "Space") {
         e.preventDefault();
         if (e.repeat) return;
+        if (laneRef.current === "tracking-test") return;
         beginTrigger(performance.now());
       }
     }
@@ -957,6 +1004,7 @@ export function ShootingRange({
       if (e.key === "ArrowLeft") keysRef.current.left = null;
       if (e.key === "ArrowRight") keysRef.current.right = null;
       if (e.key === "f" || e.key === "F") {
+        fHeldRef.current = false;
         endFocus("Fokus sluppet — avtrekk avbrutt.");
       }
       if (e.key === " " || e.code === "Space") {
@@ -982,14 +1030,45 @@ export function ShootingRange({
     function paintScopeWorld() {
       const el = scopeWorldRef.current;
       if (!el) return;
-      const ax = aimRef.current.x + wobbleRef.current.x;
-      const ay = aimRef.current.y + wobbleRef.current.y;
+      const tracking = laneRef.current === "tracking-test";
+      const ax = tracking ? 0 : aimRef.current.x + wobbleRef.current.x;
+      const ay = tracking ? 0 : aimRef.current.y + wobbleRef.current.y;
       const scale = targetScaleRef.current;
       const off = bullseyeOffRef.current;
       const pxPerMm = targetPxPerMmRef.current;
       const panPxX = (off.x + ax * pxPerMm) * scale;
       const panPxY = (off.y + ay * pxPerMm) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+
+      const reticleEl = scopeReticleOffsetRef.current;
+      if (reticleEl) {
+        if (!tracking) {
+          reticleEl.style.transform = "";
+        } else {
+          const dist = distanceRef.current;
+          const sx = trackingClickScaleRef.current.x;
+          const sy = trackingClickScaleRef.current.y;
+          // Realized dial (perfect scopes: scale 1 → exactly 10 mm / 0.1 mrad per click).
+          const zeroXmm = angularMmAtDistance(
+            sessionZeroXRef.current * sx,
+            dist,
+          );
+          const zeroYmm = angularMmAtDistance(
+            sessionZeroYRef.current * sy,
+            dist,
+          );
+          const ppmX = targetPxPerMmRef.current;
+          const ppmY = targetPxPerMmYRef.current;
+          // Invert: Up dial (neg Y) → reticle down; Left dial (neg X) → reticle right.
+          let ox = -zeroXmm * ppmX * scale;
+          let oy = -zeroYmm * ppmY * scale;
+          if (!trackingLockedRef.current) {
+            ox -= wobbleRef.current.x * ppmX * scale;
+            oy -= wobbleRef.current.y * ppmY * scale;
+          }
+          reticleEl.style.transform = `translate(${ox}px, ${oy}px)`;
+        }
+      }
     }
 
     function tick(now: number) {
@@ -997,22 +1076,32 @@ export function ShootingRange({
       last = now;
       const k = keysRef.current;
       let { x, y } = aimRef.current;
-      const distFactor = distanceRef.current / RANGE_DISTANCE_M;
-      let speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
-      if (focusRef.current.held) {
-        speed *= FOCUS_AIM_SPEED_MULT;
+      const tracking = laneRef.current === "tracking-test";
+      if (tracking) {
+        x = 0;
+        y = 0;
+        k.up = null;
+        k.down = null;
+        k.left = null;
+        k.right = null;
+      } else {
+        const distFactor = distanceRef.current / RANGE_DISTANCE_M;
+        let speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
+        if (focusRef.current.held) {
+          speed *= FOCUS_AIM_SPEED_MULT;
+        }
+        const mx = scopeAimHoldMult(k.left, now);
+        const mr = scopeAimHoldMult(k.right, now);
+        const mu = scopeAimHoldMult(k.up, now);
+        const md = scopeAimHoldMult(k.down, now);
+        if (mx > 0) x -= speed * mx;
+        if (mr > 0) x += speed * mr;
+        if (mu > 0) y -= speed * mu;
+        if (md > 0) y += speed * md;
+        const aimLimit = 80 * distFactor;
+        x = Math.max(-aimLimit, Math.min(aimLimit, x));
+        y = Math.max(-aimLimit, Math.min(aimLimit, y));
       }
-      const mx = scopeAimHoldMult(k.left, now);
-      const mr = scopeAimHoldMult(k.right, now);
-      const mu = scopeAimHoldMult(k.up, now);
-      const md = scopeAimHoldMult(k.down, now);
-      if (mx > 0) x -= speed * mx;
-      if (mr > 0) x += speed * mr;
-      if (mu > 0) y -= speed * mu;
-      if (md > 0) y += speed * md;
-      const aimLimit = 80 * distFactor;
-      x = Math.max(-aimLimit, Math.min(aimLimit, x));
-      y = Math.max(-aimLimit, Math.min(aimLimit, y));
       aimRef.current = { x, y };
 
       const calm = effectiveCalmWithFocus(
@@ -1063,17 +1152,21 @@ export function ShootingRange({
         displace.setAttribute("scale", String(Math.round(mirage * 56)));
       }
 
-      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
-      wobbleRef.current = {
-        x:
-          Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
-          Math.sin(t * 5.3 + ph.b) * amp * 0.35 +
-          Math.sin(t * 11.0) * amp * 0.15,
-        y:
-          Math.cos(t * 1.7 + ph.b) * amp * 0.55 +
-          Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
-          Math.sin(t * 9.5 + 1) * amp * 0.15,
-      };
+      if (tracking && trackingLockedRef.current) {
+        wobbleRef.current = { x: 0, y: 0 };
+      } else {
+        const amp = wobbleAmplitudeMm(calm, distanceRef.current);
+        wobbleRef.current = {
+          x:
+            Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
+            Math.sin(t * 5.3 + ph.b) * amp * 0.35 +
+            Math.sin(t * 11.0) * amp * 0.15,
+          y:
+            Math.cos(t * 1.7 + ph.b) * amp * 0.55 +
+            Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
+            Math.sin(t * 9.5 + 1) * amp * 0.15,
+        };
+      }
 
       paintScopeWorld();
 
@@ -1131,11 +1224,17 @@ export function ShootingRange({
       target.visualScale *
       moaPaperScale
     : target.visualScale;
+  /** Tracking: true mils vs 1 cm grid. Zeroing: CBA-readable (1 mil ≈ 10 mm). */
+  const reticleImgScale =
+    lane === "tracking-test"
+      ? trackingReticleImgScale(zoomScale, target)
+      : zoomScale;
   const bullseyeOff = targetBullseyeOffsetFromImageCenterPx(target);
   targetScaleRef.current = targetScale;
   bullseyeOffRef.current = bullseyeOff;
   imgNaturalWRef.current = target.nativeWidth;
   targetPxPerMmRef.current = target.pxPerMm;
+  targetPxPerMmYRef.current = target.pxPerMmY ?? target.pxPerMm;
 
   const ballisticHint = selectedAmmo
     ? (() => {
@@ -1392,6 +1491,22 @@ export function ShootingRange({
       <button
         type="button"
         role="tab"
+        aria-selected={lane === "tracking-test"}
+        className={
+          lane === "tracking-test"
+            ? "range-lane-tab is-active"
+            : "range-lane-tab"
+        }
+        onClick={() => {
+          setLane("tracking-test");
+          setCompId("lobby");
+        }}
+      >
+        Tracking test
+      </button>
+      <button
+        type="button"
+        role="tab"
         aria-selected={lane === "load-test"}
         className={
           lane === "load-test" ? "range-lane-tab is-active" : "range-lane-tab"
@@ -1479,6 +1594,43 @@ export function ShootingRange({
     if (targetId !== "cba-100") setTargetId("cba-100");
     if (paperUnit !== "MRAD") setPaperUnit("MRAD");
   }, [lane, distanceM, targetId, paperUnit]);
+
+  // Tracking test: fixed template @ 100 m, start dial at 0, unlock.
+  useEffect(() => {
+    if (lane !== "tracking-test") {
+      if (trackingLockedRef.current) {
+        trackingLockedRef.current = false;
+        setTrackingLocked(false);
+      }
+      if (targetId === "tracking-test") {
+        setTargetId(DEFAULT_TARGET_BY_DISTANCE[distanceM] ?? "cba-100");
+      }
+      return;
+    }
+    if (distanceM !== 100) setDistanceM(100);
+    if (targetId !== "tracking-test") setTargetId("tracking-test");
+    if (paperUnit !== "MRAD") setPaperUnit("MRAD");
+    setSessionZeroXMm(0);
+    setSessionZeroYMm(0);
+    setAimMm({ x: 0, y: 0 });
+    aimRef.current = { x: 0, y: 0 };
+    wobbleRef.current = { x: 0, y: 0 };
+    setShots([]);
+    setMeasurement(null);
+    trackingLockedRef.current = false;
+    setTrackingLocked(false);
+    const errPct = scope?.scope.clickErrorPercent ?? 0;
+    trackingClickScaleRef.current = {
+      x: rollScopeClickScale(errPct),
+      y: rollScopeClickScale(errPct),
+    };
+    const perfect = errPct <= 0;
+    setStatus(
+      perfect
+        ? "Tracking test — 1 klikk = 1 cm-rute. Lock, skru 5 klikk til 5U/5R (eller 20 til 20U)."
+        : `Tracking test — klikk-avvik ±${errPct}%. Lock og skru 5 klikk: treffer du 5U/5R?`,
+    );
+  }, [lane, scope?.id]);
 
   if (lane === "competitions") {
     if (compId === "moa-std") {
@@ -1651,6 +1803,7 @@ export function ShootingRange({
   function handleFocusPointerDown(e: PointerEvent<HTMLButtonElement>) {
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
+    fHeldRef.current = true;
     beginFocus(performance.now());
   }
 
@@ -1659,6 +1812,7 @@ export function ShootingRange({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    fHeldRef.current = false;
     endFocus("Fokus sluppet — avtrekk avbrutt.");
   }
 
@@ -1683,7 +1837,9 @@ export function ShootingRange({
         hint={
           lane === "load-test"
             ? "Load test @ 100 m CBA · velg ladning · F / Space-avtrekk · mål serie"
-            : "Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
+            : lane === "tracking-test"
+              ? "Tracking test @ 100 m · F fokus · Lock · turret flytter crosshairs (U↓ L→)"
+              : "Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
         }
       />
 
@@ -1711,7 +1867,9 @@ export function ShootingRange({
         <p className="intro-line intro-gift">
           {lane === "load-test"
             ? "Shooting Range — Load test"
-            : "Shooting Range — Zeroing"}
+            : lane === "tracking-test"
+              ? "Shooting Range — Tracking test"
+              : "Shooting Range — Zeroing"}
         </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name}
@@ -1724,12 +1882,16 @@ export function ShootingRange({
         </p>
         {lane === "load-test" ? (
           <p className="shop-row-note">100 m · CBA-skive (fast)</p>
+        ) : lane === "tracking-test" ? (
+          <p className="shop-row-note">
+            100 m · 1 cm-rute = 1 klikk · retikkel i ekte mrad · S&amp;B/ZCO = 1:1
+          </p>
         ) : ballisticHint ? (
           <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
         ) : null}
       </header>
 
-      {lane !== "load-test" ? (
+      {lane !== "load-test" && lane !== "tracking-test" ? (
       <section className="range-setup" aria-label="Serieoppsett">
         <ExpandableSection
           title="Baneoppsett"
@@ -1834,7 +1996,8 @@ export function ShootingRange({
               role="group"
               aria-labelledby="range-target-label"
             >
-              {RANGE_TARGET_IDS.map((id) => {
+              {RANGE_TARGET_IDS.filter((id) => id !== "tracking-test").map(
+                (id) => {
                 const t = getRangeTarget(id);
                 const isDefault = id === DEFAULT_TARGET_BY_DISTANCE[distanceM];
                 return (
@@ -1861,7 +2024,8 @@ export function ShootingRange({
                     </span>
                   </button>
                 );
-              })}
+              },
+              )}
             </div>
           </div>
         </ExpandableSection>
@@ -1998,6 +2162,7 @@ export function ShootingRange({
               windFromDeg={weather.live.windFromDeg}
               windSpeedMs={weather.live.windSpeedMs}
               temperatureC={weather.live.temperatureC}
+              forecastTemperatureC={weather.forecast.temperatureC}
               hasKestrel={hasKestrel}
               dopeCard={dopeCard}
               ammoId={ammoId}
@@ -2166,6 +2331,20 @@ export function ShootingRange({
               >
                 <div ref={focusFillRef} className="range-focus-fill" />
               </div>
+              {lane === "tracking-test" ? (
+                <button
+                  type="button"
+                  className={
+                    trackingLocked
+                      ? "intro-button range-tracking-lock is-active"
+                      : "intro-button sheriff-secondary range-tracking-lock"
+                  }
+                  aria-pressed={trackingLocked}
+                  onClick={() => setTrackingLock(!trackingLocked)}
+                >
+                  {trackingLocked ? "Unlock" : "Lock"}
+                </button>
+              ) : null}
             </div>
 
             <div className="scope-optic">
@@ -2270,11 +2449,16 @@ export function ShootingRange({
                     </filter>
                   </defs>
                 </svg>
-                <ScopeReticle
-                  scope={scope.scope}
-                  zoom={zoom}
-                  imgScale={zoomScale}
-                />
+                <div
+                  ref={scopeReticleOffsetRef}
+                  className="scope-reticle-offset"
+                >
+                  <ScopeReticle
+                    scope={scope.scope}
+                    zoom={zoom}
+                    imgScale={reticleImgScale}
+                  />
+                </div>
                 <div className="scope-vignette" aria-hidden />
               </div>
               <ScopeZoomRing
@@ -2292,7 +2476,11 @@ export function ShootingRange({
                     : "range-side-rail-label"
                 }
               >
-                {triggerUi.pending ? "Avtrekk…" : "Avtrekk"}
+                {lane === "tracking-test"
+                  ? "—"
+                  : triggerUi.pending
+                    ? "Avtrekk…"
+                    : "Avtrekk"}
               </span>
               <div
                 className="range-trigger-bar"
@@ -2327,27 +2515,44 @@ export function ShootingRange({
             >
               Fokus
             </button>
-            <button
-              type="button"
-              className={
-                triggerUi.pending
-                  ? "range-touch-btn range-touch-btn--trigger is-active"
-                  : "range-touch-btn range-touch-btn--trigger"
-              }
-              aria-pressed={triggerUi.pending}
-              onPointerDown={handleTriggerPointerDown}
-              onPointerUp={handleTriggerPointerUp}
-              onPointerCancel={handleTriggerPointerUp}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              Avtrekk
-            </button>
+            {lane === "tracking-test" ? (
+              <button
+                type="button"
+                className={
+                  trackingLocked
+                    ? "range-touch-btn range-touch-btn--focus is-active"
+                    : "range-touch-btn range-touch-btn--focus"
+                }
+                aria-pressed={trackingLocked}
+                onClick={() => setTrackingLock(!trackingLocked)}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {trackingLocked ? "Unlock" : "Lock"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={
+                  triggerUi.pending
+                    ? "range-touch-btn range-touch-btn--trigger is-active"
+                    : "range-touch-btn range-touch-btn--trigger"
+                }
+                aria-pressed={triggerUi.pending}
+                onPointerDown={handleTriggerPointerDown}
+                onPointerUp={handleTriggerPointerUp}
+                onPointerCancel={handleTriggerPointerUp}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                Avtrekk
+              </button>
+            )}
           </div>
         </div>
       )}
 
       {status ? <p className="shop-row-note">{status}</p> : null}
 
+      {lane !== "tracking-test" ? (
       <div className="range-actions">
         <button
           type="button"
@@ -2398,6 +2603,28 @@ export function ShootingRange({
           Ferdig
         </button>
       </div>
+      ) : (
+        <div className="range-actions">
+          <button
+            type="button"
+            className="intro-button"
+            onClick={() => {
+              setSessionZeroXMm(0);
+              setSessionZeroYMm(0);
+              setStatus("Turret nullstilt til 0 / 0.");
+            }}
+          >
+            Nullstill turret
+          </button>
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={onLeave}
+          >
+            Ferdig
+          </button>
+        </div>
+      )}
     </div>
   );
 }

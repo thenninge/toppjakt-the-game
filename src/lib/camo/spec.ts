@@ -10,7 +10,8 @@
  * birdSpotSnow / birdSpotNoSnow: LOW = good for hunter.
  * terrainSpeed / stamina: Score10, HIGH = better (expensive ≈ better).
  *
- * Ski boots (slot ski_boots) are required when skis are in the kit.
+ * Ski boots (slot ski_boots) were moved to the skis shop category
+ * (`SkiSpec.isBoots`). This slot remains for legacy type compatibility.
  */
 
 import type { Score10 } from "@/lib/shop/score";

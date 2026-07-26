@@ -3586,6 +3586,459 @@ body {
   text-align: center;
 }
 
+/* --- Sig Sauer BDX companion app (Enviro/App) --- */
+
+.sig-bdx-app {
+  --sig-cyan: #00aef0;
+  --sig-muted: #8a9199;
+  --sig-line: #3a3f46;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.35rem 0.45rem 0.4rem;
+  border-radius: 0.45rem;
+  border: 1px solid #1a1d22;
+  background: #0a0b0d;
+  color: #f2f4f6;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  min-height: 14rem;
+  font-size: 0.72rem;
+}
+
+.sig-bdx-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0 0.35rem;
+  border-bottom: 1px solid var(--sig-line);
+}
+
+.sig-bdx-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--sig-cyan);
+  color: var(--sig-cyan);
+  font-size: 0.42rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.sig-bdx-device {
+  text-align: center;
+  color: var(--sig-cyan);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sig-bdx-header-icons {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--sig-muted);
+  font-size: 0.72rem;
+}
+
+.sig-bdx-hdr-help {
+  display: inline-flex;
+  width: 0.95rem;
+  height: 0.95rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--sig-muted);
+  font-size: 0.55rem;
+  font-weight: 700;
+}
+
+.sig-bdx-hdr-gear {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1.5px solid var(--sig-muted);
+  border-radius: 0.2rem;
+  position: relative;
+}
+
+.sig-bdx-hdr-gear::before {
+  content: "";
+  position: absolute;
+  inset: 0.18rem;
+  border: 1.5px solid var(--sig-muted);
+  border-radius: 50%;
+}
+
+.sig-bdx-holds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.55rem 0.1rem 0.45rem;
+  border-bottom: 1px solid var(--sig-line);
+}
+
+.sig-bdx-hold-label {
+  display: block;
+  color: var(--sig-muted);
+  font-size: 0.58rem;
+  margin-bottom: 0.15rem;
+}
+
+.sig-bdx-hold-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.28rem;
+}
+
+.sig-bdx-hold-value {
+  color: var(--sig-cyan);
+  font-size: 1.55rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sig-bdx-arrow {
+  color: var(--sig-cyan);
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.sig-bdx-arrow.is-null {
+  opacity: 0.25;
+}
+
+.sig-bdx-hold-unit {
+  color: var(--sig-cyan);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  align-self: flex-end;
+  margin-bottom: 0.12rem;
+}
+
+.sig-bdx-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.38rem 0.1rem;
+  border-bottom: 1px solid var(--sig-line);
+}
+
+.sig-bdx-muted {
+  color: var(--sig-muted);
+  font-size: 0.58rem;
+}
+
+.sig-bdx-accent {
+  color: var(--sig-cyan);
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sig-bdx-accent small,
+.sig-bdx-plain small {
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+
+.sig-bdx-plain {
+  color: #e8eaed;
+  font-variant-numeric: tabular-nums;
+}
+
+.sig-bdx-angle {
+  margin-left: auto;
+  color: var(--sig-cyan);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sig-bdx-ballistics-row {
+  justify-content: space-between;
+}
+
+.sig-bdx-env {
+  padding: 0.35rem 0.1rem 0.45rem;
+  border-bottom: 1px solid var(--sig-line);
+}
+
+.sig-bdx-env-title {
+  margin: 0 0 0.35rem;
+  color: var(--sig-muted);
+  font-size: 0.58rem;
+}
+
+.sig-bdx-env-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 7.2rem;
+}
+
+.sig-bdx-wind-speed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sig-bdx-wind-readout {
+  font-size: 0.95rem;
+}
+
+.sig-bdx-wind-pill {
+  display: flex;
+  flex-direction: column;
+  width: 2.1rem;
+  border-radius: 999px;
+  border: 2px solid var(--sig-cyan);
+  overflow: hidden;
+  box-shadow: 0 0 10px rgba(0, 174, 240, 0.35);
+  background: #101216;
+}
+
+.sig-bdx-wind-btn {
+  flex: 1;
+  min-height: 1.55rem;
+  border: none;
+  background: transparent;
+  color: #f2f4f6;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.sig-bdx-wind-btn + .sig-bdx-wind-btn {
+  border-top: 1px solid rgba(0, 174, 240, 0.35);
+}
+
+.sig-bdx-wind-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sig-bdx-wind-btn:not(:disabled):hover {
+  background: rgba(0, 174, 240, 0.12);
+}
+
+.sig-bdx-clock {
+  position: relative;
+  width: 7rem;
+  height: 7rem;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 1px solid #4a5058;
+  background:
+    radial-gradient(circle at 50% 50%, #1a1d22 0%, #0c0e11 70%);
+}
+
+.sig-bdx-clock-hour {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -0.55rem 0 0 -0.55rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #c8ccd2;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.1rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sig-bdx-clock-hour.is-from {
+  background: var(--sig-cyan);
+  color: #061018;
+  box-shadow: 0 0 0 2px rgba(0, 174, 240, 0.35);
+}
+
+.sig-bdx-clock-hour:focus-visible {
+  outline: 2px solid var(--sig-cyan);
+  outline-offset: 2px;
+}
+
+.sig-bdx-clock-hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin: -0.175rem 0 0 -0.175rem;
+  border-radius: 50%;
+  background: var(--sig-cyan);
+  z-index: 2;
+}
+
+.sig-bdx-clock-arrow {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.sig-bdx-clock-arrow::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0.85rem;
+  bottom: 50%;
+  width: 0.14rem;
+  margin-left: -0.07rem;
+  background: var(--sig-cyan);
+  border-radius: 0.07rem;
+  box-shadow: 0 0 6px rgba(0, 174, 240, 0.45);
+}
+
+.sig-bdx-clock-arrow::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0.55rem;
+  width: 0;
+  height: 0;
+  margin-left: -0.28rem;
+  border-left: 0.28rem solid transparent;
+  border-right: 0.28rem solid transparent;
+  border-bottom: 0.4rem solid var(--sig-cyan);
+  filter: drop-shadow(0 0 4px rgba(0, 174, 240, 0.45));
+}
+
+.sig-bdx-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  padding: 0.4rem 0.1rem 0.2rem;
+}
+
+.sig-bdx-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.25rem;
+}
+
+.sig-bdx-gun {
+  flex: 1;
+  min-width: 0;
+  color: var(--sig-muted);
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sig-bdx-crosshair {
+  color: var(--sig-muted);
+  font-size: 0.85rem;
+}
+
+.sig-bdx-icon-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  border: 1px solid var(--sig-cyan);
+  color: var(--sig-cyan);
+  font-size: 0.55rem;
+  line-height: 1;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.sig-bdx-icon-temp::before {
+  content: "";
+  width: 0.22rem;
+  height: 0.55rem;
+  border: 1.5px solid var(--sig-cyan);
+  border-radius: 0.15rem;
+  box-sizing: border-box;
+}
+
+.sig-bdx-icon-temp::after {
+  content: "";
+  position: absolute;
+  bottom: 0.12rem;
+  left: 50%;
+  width: 0.32rem;
+  height: 0.32rem;
+  margin-left: -0.16rem;
+  border-radius: 50%;
+  background: var(--sig-cyan);
+}
+
+.sig-bdx-icon-alt::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 0.28rem solid transparent;
+  border-right: 0.28rem solid transparent;
+  border-bottom: 0.38rem solid var(--sig-cyan);
+}
+
+.sig-bdx-temp-row {
+  flex-wrap: wrap;
+}
+
+.sig-bdx-temp-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.sig-bdx-temp-btn {
+  width: 1.35rem;
+  height: 1.15rem;
+  border: 1px solid #3a3f46;
+  border-radius: 0.2rem;
+  background: #14171c;
+  color: var(--sig-cyan);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sig-bdx-temp-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sig-bdx-temp-btn:not(:disabled):hover {
+  border-color: var(--sig-cyan);
+}
+
+.sig-bdx-meta {
+  margin: 0.2rem 0 0;
+  font-size: 0.5rem;
+  line-height: 1.3;
+  color: #6a7078;
+  text-align: center;
+}
+
 .hunt-shot-conditions {
   flex: 0 1 11.5rem;
   display: flex;
@@ -6188,6 +6641,15 @@ body {
   z-index: 3;
 }
 
+/** Tracking test: move reticle over a fixed target (turret / wobble). */
+.scope-reticle-offset {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  will-change: transform;
+}
+
 .scope-reticle--image {
   display: block;
 }
@@ -6716,6 +7178,17 @@ body {
   display: none;
   width: min(100%, 28rem);
   gap: 0.55rem;
+}
+
+.range-tracking-lock {
+  margin-top: 0.45rem;
+  width: 100%;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.85rem;
+}
+
+.range-tracking-lock.is-active {
+  outline: 1px solid var(--prompt-green);
 }
 
 .range-touch-btn {
@@ -8393,6 +8866,223 @@ body {
 
 .sig-kilo-hold-value .sig-kilo-unit {
   font-size: 0.78rem;
+}
+
+/* --- Swarovski EL Range companion app --- */
+
+.el-range-app {
+  --el-green: #5a7a4a;
+  --el-green-dark: #3d5a32;
+  --el-link: #8b4518;
+  --el-row: #ececea;
+  --el-text: #2a2a28;
+  --el-muted: #6a6a66;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0.45rem 0.5rem;
+  border-radius: 0.45rem;
+  border: 1px solid #c8c8c4;
+  background: #f4f4f1;
+  color: var(--el-text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  min-height: 14rem;
+  font-size: 0.72rem;
+}
+
+.el-range-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-bottom: 0.15rem;
+}
+
+.el-range-brand {
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--el-green-dark);
+}
+
+.el-range-ammo {
+  color: var(--el-muted);
+  font-size: 0.65rem;
+}
+
+.el-range-weather-link {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--el-link);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.el-range-weather-link:hover {
+  color: #6b3410;
+}
+
+.el-range-section {
+  margin: 0.25rem 0 0.1rem;
+  font-weight: 700;
+  font-size: 0.72rem;
+  color: var(--el-text);
+}
+
+.el-range-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.el-range-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.42rem 0.55rem;
+  border-radius: 0.55rem;
+  background: var(--el-row);
+}
+
+.el-range-label {
+  color: var(--el-text);
+  font-size: 0.7rem;
+}
+
+.el-range-info {
+  color: var(--el-muted);
+  font-size: 0.62rem;
+  margin-left: 0.15rem;
+}
+
+.el-range-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--el-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.el-range-edit {
+  color: #9a9a94;
+  font-size: 0.72rem;
+}
+
+.el-range-unit-toggle {
+  display: inline-flex;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid #c5c5c0;
+  background: #ddd;
+}
+
+.el-range-unit {
+  margin: 0;
+  padding: 0.18rem 0.55rem;
+  border: none;
+  background: transparent;
+  color: var(--el-muted);
+  font: inherit;
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.el-range-unit.is-active {
+  background: var(--el-green);
+  color: #fff;
+}
+
+.el-range-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.el-range-stepper button {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.3rem;
+  border: 1px solid #c0c0ba;
+  background: #fff;
+  color: var(--el-text);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.el-range-stepper button:hover {
+  background: #f0f0ec;
+}
+
+.el-range-value-plain {
+  min-width: 3.6rem;
+  text-align: center;
+  color: var(--el-muted);
+  font-size: 0.7rem;
+}
+
+.el-range-hint {
+  margin: 0;
+  padding: 0 0.15rem;
+  font-size: 0.58rem;
+  line-height: 1.3;
+  color: var(--el-muted);
+}
+
+.el-range-holds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: center;
+  padding: 0.3rem 0.2rem 0.1rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--el-green-dark);
+}
+
+.el-range-apply {
+  margin-top: 0.15rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-radius: 0.45rem;
+  background: var(--el-green-dark);
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.el-range-apply:hover {
+  background: #324a28;
+}
+
+.el-range-applied {
+  margin: 0;
+  text-align: center;
+  font-size: 0.58rem;
+  color: var(--el-muted);
+  line-height: 1.3;
 }
 
 

@@ -14,6 +14,7 @@ export type {
   SkiShopItem,
   BipodShopItem,
   FoodShopItem,
+  SuppressorShopItem,
 } from "./types";
 export {
   SHOP_CATEGORIES,
@@ -21,6 +22,8 @@ export {
   isAmmoItem,
   isCamoItem,
   isCarryItem,
+  isBackpackItem,
+  isChestrigItem,
   isMiscItem,
   isLrfItem,
   isThermalItem,
@@ -31,6 +34,7 @@ export {
   isSkiItem,
   isBipodItem,
   isFoodItem,
+  isSuppressorItem,
   isBundleItem,
 } from "./types";
 export {
@@ -60,8 +64,10 @@ export type { CarrySpec } from "@/lib/carry/spec";
 export {
   DEFAULT_CARRY,
   combineCarrySpecs,
-  carryToEngine,
-  scoreToDeploySeconds,
+  scoreToQuickReleaseNerve,
+  scoreToFeltFraction,
+  scoreToBackpackFeltFraction,
+  scoreToOpticFeltFraction,
   scoreToWeightPenaltyFactor,
 } from "@/lib/carry/spec";
 export type { Score10 } from "./score";
@@ -74,6 +80,8 @@ export {
   isChronographMisc,
   isRangeFanMisc,
   isChamberCoolerMisc,
+  isFireStarterMisc,
+  isSitPadMisc,
   miscKitMirageMult,
   miscKitWeaponCalmGrams,
 } from "@/lib/misc/spec";
@@ -109,8 +117,12 @@ export {
   SUPPRESSOR_CALM_WEIGHT_FACTOR,
   suppressorKitWeightGrams,
   suppressorWeaponCalmGrams,
+  suppressorShotFlushChance,
+  suppressorShotStayChance,
 } from "@/lib/suppressor/spec";
-export type { SkiSpec } from "@/lib/ski/spec";
+export type { SuppressorSpec } from "@/lib/suppressor/spec";
+export type { SkiSpec, SkiKitSlot } from "@/lib/ski/spec";
+export { skiKitSlot, isSkiBootsSpec } from "@/lib/ski/spec";
 export type { BipodSpec } from "@/lib/bipod/spec";
 export { bipodWeaponCalmGrams } from "@/lib/bipod/spec";
 export type { FoodSpec, FoodKind, FoodRecovery } from "@/lib/food/spec";
@@ -124,6 +136,9 @@ export {
   COFFEE_RECOVERY,
   SHORT_REST_RECOVERY,
   TYRIBAL_RECOVERY,
+  SIT_PAD_ITEM_ID,
+  SIT_PAD_BODY_RECOVERY_MULT,
+  sitPadBodyGain,
 } from "@/lib/food/spec";
 export {
   computeKitTopSpeedKmh,

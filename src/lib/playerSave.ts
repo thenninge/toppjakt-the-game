@@ -21,6 +21,7 @@ import {
   createJaktkort,
   normalizeJaktkort,
 } from "@/lib/hunt/jaktkort";
+import { sanitizeKitShotCams } from "@/lib/hunt/shoot";
 
 const STORAGE_KEY = "toppjakt-player-save-v1";
 export const SAVE_VERSION = 1 as const;
@@ -100,7 +101,9 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     raw.reloadingPiecesMigrated === true
       ? inventoryRaw
       : migrateReloadingInventoryPieces(inventoryRaw);
-  const kit = Array.isArray(raw.kit) ? raw.kit : base.kit;
+  const kit = sanitizeKitShotCams(
+    Array.isArray(raw.kit) ? (raw.kit as string[]) : base.kit,
+  );
   const weaponLicenses = Array.isArray(raw.weaponLicenses)
     ? raw.weaponLicenses
     : base.weaponLicenses;

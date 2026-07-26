@@ -20,8 +20,8 @@ export type NervousnessInputs = {
   /** Seconds the player has been inside the bird’s danger zone this contact. */
   timeInDangerZoneSec: number;
   /**
-   * Extra seconds of fumbling this encounter (optics draw, rifle from pack, etc.).
-   * Comes from carryToEngine(CarrySpec) deploy times when those actions happen in-zone.
+   * Extra bird-nerve from fumbling (e.g. chestrig QR when raising binos).
+   * Applied as a one-shot bump, not continuous deploy seconds.
    */
   faffeSeconds: number;
   /** Optional: movement/noise contribution already computed elsewhere. */

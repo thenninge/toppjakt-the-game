@@ -96,6 +96,22 @@ export function formatWindSpeed(ms: number): string {
   return `${ms.toFixed(1)} m/s`;
 }
 
+/**
+ * Synthetic forecast humidity / pressure for LRF companion apps
+ * (weather model only carries temp + wind today).
+ */
+export function forecastAtmosphereExtras(temperatureC: number): {
+  humidityPct: number;
+  pressureHpa: number;
+} {
+  const t = Number.isFinite(temperatureC) ? temperatureC : 5;
+  const humidityPct = Math.round(
+    Math.min(95, Math.max(28, 58 - t * 1.1 + ((Math.round(t * 10) % 7) - 3))),
+  );
+  const pressureHpa = Math.round((1016.2 - t * 0.42) * 10) / 10;
+  return { humidityPct, pressureHpa };
+}
+
 /** Crosswind component (m/s) for a shot bearing (degrees, where the rifle points).
  * Sign: **+ = wind from the left** (9 o'clock) → bullet drifts right → dial L.
  * − = wind from the right (3 o'clock) → dial R.

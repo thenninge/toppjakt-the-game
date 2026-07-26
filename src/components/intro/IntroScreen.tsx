@@ -122,9 +122,11 @@ import {
   customsTriggerPullScale,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
-import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isThermalItem } from "@/lib/shop/types";
+import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isThermalItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
-import { isHeadlampMisc } from "@/lib/misc/spec";
+import { skiKitSlot } from "@/lib/ski/spec";
+import { isHeadlampMisc, isFireStarterMisc } from "@/lib/misc/spec";
+import { shotCamKitSlot } from "@/lib/hunt/shoot";
 import {
   getHuntingTerrain,
   type HuntingTerrainId,
@@ -588,7 +590,9 @@ export function IntroScreen() {
         ? ammoRoundsPerPurchase(item)
         : item.category === "reloading"
           ? purchaseQtyForReloadingItem(item)
-          : 1;
+          : isMiscItem(item) && isFireStarterMisc(item.misc)
+            ? Math.max(1, item.misc.fireStarterUsesPerPack ?? 5)
+            : 1;
       const cost = item.priceNok * n;
       if (prev.balance < cost) return prev;
       if (isRifleItem(item) && !canBuyHuntingRifle(prev)) return prev;
@@ -1063,9 +1067,9 @@ export function IntroScreen() {
         },
         (id) => {
           const item = resolvePlayerItem(id);
-          return item && isMiscItem(item) && isHeadlampMisc(item.misc)
-            ? "headlamp"
-            : undefined;
+          if (!item || !isMiscItem(item)) return undefined;
+          if (isHeadlampMisc(item.misc)) return "headlamp";
+          return shotCamKitSlot(id);
         },
         (id) => {
           const item = resolvePlayerItem(id);
@@ -1074,6 +1078,10 @@ export function IntroScreen() {
             isThermalItem(item) &&
             item.thermal.isThermalBinocular
           );
+        },
+        (id) => {
+          const item = resolvePlayerItem(id);
+          return item && isSkiItem(item) ? skiKitSlot(item.ski) : undefined;
         },
       );
       const removed = before.filter((id) => !after.includes(id));

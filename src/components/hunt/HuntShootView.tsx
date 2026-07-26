@@ -85,7 +85,7 @@ import {
   formatHuntImpactOffsetMm,
   HEADSHOT_AAR_TEXT,
   SCOPE_VIEWPORT_REF_PX,
-  TRIGGERCAM_ITEM_ID,
+  isShotCamItemId,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
@@ -125,6 +125,8 @@ type HuntShootViewProps = {
   densityRatio?: number;
   /** Live air / powder temperature (°C) for dV/dT + Enviro. */
   temperatureC?: number;
+  /** Forecast / værmelding temp for EL Range atmosphere. */
+  forecastTemperatureC?: number;
   /** Shot bearing toward bird (for Kestrel LCD). */
   shotBearingDeg?: number;
   windFromDeg?: number;
@@ -142,6 +144,13 @@ type HuntShootViewProps = {
    * Chronograph armed in Aware — log realized v0 + air temp to shotlog on fire.
    */
   chronoActive?: boolean;
+  /**
+   * Kestrel enviro measured in Aware — ballistics app auto-prefills wind/temp.
+   * On shooting range (no Aware), omit / true when Kestrel is in kit.
+   */
+  kestrelEnviroActive?: boolean;
+  /** Triggercam started in Aware — AAR replay after the shot. */
+  triggercamActive?: boolean;
   /** Persist chronograph row (hunt shot with Xero set up). */
   onLogSeries?: (entry: ShotLogEntry) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
@@ -257,6 +266,7 @@ export function HuntShootView({
   crosswindMs = 0,
   densityRatio = 1,
   temperatureC = 15,
+  forecastTemperatureC,
   shotBearingDeg = 0,
   windFromDeg = 0,
   windSpeedMs = 0,
@@ -269,6 +279,8 @@ export function HuntShootView({
   kestrelProfiles = {},
   onAddDope,
   chronoActive = false,
+  kestrelEnviroActive = true,
+  triggercamActive = false,
   onLogSeries,
   customsMoaDelta = 0,
   customsCalmMult = 1,
@@ -464,7 +476,8 @@ export function HuntShootView({
     onAbort();
   }
 
-  const hasTriggercam = kitItems.some((i) => i.id === TRIGGERCAM_ITEM_ID);
+  const hasTriggercam =
+    triggercamActive && kitItems.some((i) => isShotCamItemId(i.id));
 
   const keysRef = useRef<AimKeys>({
     up: null,
@@ -1453,7 +1466,8 @@ export function HuntShootView({
               windFromDeg={windFromDeg}
               windSpeedMs={windSpeedMs}
               temperatureC={temperatureC}
-              hasKestrel={!!activeHold}
+              forecastTemperatureC={forecastTemperatureC ?? temperatureC}
+              hasKestrel={hasKestrelInKit && kestrelEnviroActive}
               dopeCard={dopeCard}
               ammoId={ammoId}
               rifleId={rifle?.id ?? null}

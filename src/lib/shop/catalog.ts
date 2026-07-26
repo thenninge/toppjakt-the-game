@@ -42,10 +42,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Biltema",
     name: "Avstandsmåler 6× monokkel",
     priceNok: 1000,
-    note: "Ufancy 6×, men måler meter. Primærbehov dekket.",
+    note: "Ufancy 6×, men måler meter (±5%). Primærbehov dekket.",
     lrf: {
       hasOnboardBallistics: false,
-      rangeErrorPercent: 3,
+      rangeErrorPercent: 5,
       magnification: 6,
     },
   },
@@ -55,12 +55,13 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Jula",
     name: "Pocket Laser Rangefinder 4×",
     priceNok: 799,
-    soldOut: true,
-    note: "Golf/jakt-hybrid 4× fra hylla ved grillen. — For tiden utsolgt.",
+    note: "Golf/jakt-hybrid 4× fra hylla ved grillen. Billig avstand — grov ±10%.",
     lrf: {
       hasOnboardBallistics: false,
-      rangeErrorPercent: 3,
+      rangeErrorPercent: 10,
       magnification: 4,
+      /** Strong dorul vs budget tier (65%). */
+      aperturePercent: 50,
     },
   },
   {
@@ -239,12 +240,12 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Swarovski",
     name: "EL Range 10x42",
     priceNok: 42990,
-    soldOut: true,
-    note: "For tiden utsolgt.",
+    note: "Premium LRF-kikkert 10×42. EL Range-app: værmelding for temp/trykk/fukt — du setter vind + crosswind angle. Lagrer skuddpar eksakt (ettersøk krever Triggercam/camcorder).",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Tracking Assistant / ballistic",
       rangeErrorPercent: 1,
+      magnification: 10,
     },
   },
 
@@ -665,12 +666,16 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   },
 
   // --- Suppressors ---
+  // soundReductionDb: peak dB cut (negative). Flush for supersonic:
+  // 0 dB → 100 %, −40 dB → 65 %. Subsonic+.22/.300 = silent.
   {
     id: "sup-svemko-hunter-1",
     category: "suppressor",
     brand: "Svemko",
     name: "Hunter 1.0 Standard",
     priceNok: 7500,
+    note: "God allround-demping for jaktkalibre.",
+    suppressor: { soundReductionDb: -32 },
   },
   {
     id: "sup-svemko-magnum-1",
@@ -678,6 +683,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Svemko",
     name: "Magnum 1.0 Standard",
     priceNok: 6900,
+    note: "Bygget for magnum — litt mer volum, solid demping.",
+    suppressor: { soundReductionDb: -30 },
   },
   {
     id: "sup-svemko-pure-m",
@@ -685,6 +692,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Svemko",
     name: "Pure M",
     priceNok: 9800,
+    note: "Lett titan — blant de stille i klassen.",
+    suppressor: { soundReductionDb: -34 },
   },
   {
     id: "sup-svemko-genesis-30",
@@ -692,7 +701,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Svemko",
     name: "Genesis .30 Titan",
     priceNok: 24000,
-    note: "Premium full-titan langhold.",
+    note: "Premium full-titan langhold — topp demping.",
+    suppressor: { soundReductionDb: -38 },
   },
   {
     id: "sup-hausken-jd184-xtrm",
@@ -700,6 +710,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Hausken",
     name: "JD184 XTRM MK2",
     priceNok: 4790,
+    suppressor: { soundReductionDb: -28 },
   },
   {
     id: "sup-hausken-jd224-xtrm",
@@ -707,6 +718,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Hausken",
     name: "JD224 XTRM MK2",
     priceNok: 5490,
+    suppressor: { soundReductionDb: -29 },
   },
   {
     id: "sup-hausken-jd151-xtrm",
@@ -714,6 +726,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Hausken",
     name: "JD151 XTRM MK2",
     priceNok: 4250,
+    suppressor: { soundReductionDb: -27 },
   },
   {
     id: "sup-hausken-jd252-xtrm",
@@ -721,6 +734,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Hausken",
     name: "JD252 XTRM MK2",
     priceNok: 6490,
+    suppressor: { soundReductionDb: -30 },
   },
   {
     id: "sup-atec-h2",
@@ -728,6 +742,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "A-TEC",
     name: "H2 (modulær)",
     priceNok: 3950,
+    suppressor: { soundReductionDb: -27 },
   },
   {
     id: "sup-atec-optima-50",
@@ -735,6 +750,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "A-TEC",
     name: "Optima 50",
     priceNok: 4490,
+    suppressor: { soundReductionDb: -28 },
   },
   {
     id: "sup-atec-nordic",
@@ -742,6 +758,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "A-TEC",
     name: "Nordic / Hertz",
     priceNok: 3180,
+    suppressor: { soundReductionDb: -24 },
   },
   {
     id: "sup-atec-wave-22",
@@ -749,7 +766,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "A-TEC",
     name: "Wave .22 LR",
     priceNok: 799,
-    note: "Passer onkelens CZ452 / rimfire.",
+    note: "Passer onkelens CZ452 / rimfire. Effektiv på .22.",
+    suppressor: { soundReductionDb: -28 },
   },
   {
     id: "sup-freyr-devik-3d-231",
@@ -757,6 +775,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Freyr & Devik",
     name: "Ultimate Silence 3D-231",
     priceNok: 5400,
+    suppressor: { soundReductionDb: -30 },
   },
   {
     id: "sup-freyr-devik-3d-131",
@@ -764,6 +783,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Freyr & Devik",
     name: "Ultimate Silence 3D-131",
     priceNok: 4800,
+    suppressor: { soundReductionDb: -29 },
   },
   {
     id: "sup-tronrud-gen1",
@@ -772,6 +792,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "Gen 1 Titan",
     priceNok: 8900,
     note: "Klassisk norsk titan-demper (Gen 1).",
+    suppressor: { soundReductionDb: -33 },
   },
   {
     id: "sup-vanguard-titan",
@@ -780,6 +801,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "Titan (Tronrud-arv)",
     priceNok: 9900,
     note: "Etterfølger-linje etter Tronrud titan.",
+    suppressor: { soundReductionDb: -34 },
   },
   {
     id: "sup-aimsport-triton",
@@ -787,6 +809,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Aimsport",
     name: "Triton 50",
     priceNok: 4290,
+    suppressor: { soundReductionDb: -26 },
   },
   {
     id: "sup-stalon-victor",
@@ -794,6 +817,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Stalon",
     name: "Victor L",
     priceNok: 3990,
+    suppressor: { soundReductionDb: -26 },
   },
   {
     id: "sup-biltema-22-can",
@@ -802,6 +826,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: ".22 «lyddemper»",
     priceNok: 399,
     note: "Budget rimfire-can. Bedre enn ingenting på ekornbanen.",
+    suppressor: { soundReductionDb: -18 },
   },
   {
     id: "sup-jula-economy-30",
@@ -810,6 +835,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "Economy .30 demper",
     priceNok: 1490,
     note: "Tung, stål, ærlig demping. Ikke titan-drømmen.",
+    suppressor: { soundReductionDb: -20 },
   },
 
   // --- Stocks ---
@@ -2848,11 +2874,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vorn",
     name: "Deer 42L",
     priceNok: 3495,
-    note: "QRR — rifla klar på ryggen. Reduserer rifle-faffe og vektstraff.",
+    note: "QRR — rifla klar på ryggen. Høy QR = lite bird-nerve når du tar rifla frem; høy comfort = mindre felt last.",
     carry: {
       carryComfort: 8,
       quickRelease: 9,
-      opticsAccess: 3,
     },
   },
   {
@@ -2865,7 +2890,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     carry: {
       carryComfort: 7,
       quickRelease: 8,
-      opticsAccess: 4,
     },
   },
   {
@@ -2878,7 +2902,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     carry: {
       carryComfort: 9,
       quickRelease: 7,
-      opticsAccess: 3,
     },
   },
   {
@@ -2891,7 +2914,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     carry: {
       carryComfort: 3,
       quickRelease: 3,
-      opticsAccess: 2,
     },
   },
   {
@@ -2903,22 +2925,20 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     carry: {
       carryComfort: 2,
       quickRelease: 2,
-      opticsAccess: 1,
     },
   },
 
-  // --- Chestrigs (LRF / optics access) ---
+  // --- Chestrigs (LRF / bino: QR → bird nerve, comfort → optic felt weight) ---
   {
     id: "chest-cds-binocular-harness",
     category: "chestrig",
     brand: "Cotton Carrier",
     name: "Binocular / LRF harness",
     priceNok: 1890,
-    note: "Kikkert/LRF på brystet — dramatisk mindre observasjons-faffe.",
+    note: "Kikkert/LRF på brystet — høy QR (lite bird-nerve) når du tar opp glasset.",
     carry: {
       carryComfort: 4,
-      quickRelease: 3,
-      opticsAccess: 8,
+      quickRelease: 8,
     },
   },
   {
@@ -2927,11 +2947,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Badlands",
     name: "Bino Case / Harness",
     priceNok: 2490,
-    note: "Solid LRF/bino-bære. Rask observasjon, litt vektstøtte.",
+    note: "Solid LRF/bino-bære. Høy QR, litt vektstøtte (comfort).",
     carry: {
       carryComfort: 5,
-      quickRelease: 3,
-      opticsAccess: 9,
+      quickRelease: 9,
     },
   },
   {
@@ -2942,8 +2961,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     priceNok: 2190,
     carry: {
       carryComfort: 5,
-      quickRelease: 3,
-      opticsAccess: 9,
+      quickRelease: 9,
     },
   },
   {
@@ -2952,11 +2970,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "KUIU",
     name: "Pro Bino Harness",
     priceNok: 2790,
-    note: "Premium harness — rask tilgang, bedre lastfordeling.",
+    note: "Premium harness — høy QR, bedre comfort (mindre binovekt på Body).",
     carry: {
       carryComfort: 6,
-      quickRelease: 4,
-      opticsAccess: 9,
+      quickRelease: 9,
     },
   },
   {
@@ -2965,10 +2982,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Sitka",
     name: "Mountain Optics Harness",
     priceNok: 2990,
+    note: "Topp QR (nesten ingen nerve-bump) og god comfort for tung LRF.",
     carry: {
       carryComfort: 6,
-      quickRelease: 4,
-      opticsAccess: 10,
+      quickRelease: 10,
     },
   },
   {
@@ -2977,11 +2994,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Biltema",
     name: "Kikkertsele / bryststropp",
     priceNok: 149,
-    note: "Bedre enn lomma. Fortsatt litt faffe.",
+    note: "Bedre enn lomma. Lav QR → mer bird-nerve når du tar opp kikkert.",
     carry: {
       carryComfort: 2,
-      quickRelease: 3,
-      opticsAccess: 4,
+      quickRelease: 4,
     },
   },
   {
@@ -2990,10 +3006,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Jula",
     name: "Nakkerem + pouch",
     priceNok: 99,
+    note: "Billig nakkestropp — lav QR og comfort.",
     carry: {
       carryComfort: 2,
       quickRelease: 3,
-      opticsAccess: 3,
     },
   },
 
@@ -3116,14 +3132,15 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     bipod: { weaponCalm: 10, deploySpeed: 7, tracking: 10 },
   },
 
-  // --- Skis / Snowshoes ---
+  // --- Skis / Snowshoes (seasonal stock) ---
   {
     id: "ski-asnes-kongsvoll",
     category: "skis",
     brand: "Åsnes",
     name: "Kongsvoll",
     priceNok: 4490,
-    note: "Klassisk fjellski — balansert fart og flyt.",
+    soldOut: true,
+    note: "Klassisk fjellski — balansert fart og flyt. Utsolgt — kommer på lager i sesongen.",
     ski: { maxSpeed: 7, flowPerKg: 7, widthMm: 65 },
   },
   {
@@ -3132,7 +3149,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Åsnes",
     name: "Combat",
     priceNok: 4990,
-    note: "Bredere militær-/jaktprofil. Tåler sekk bedre i snø.",
+    soldOut: true,
+    note: "Bredere militær-/jaktprofil. Tåler sekk bedre i snø. Utsolgt — kommer på lager i sesongen.",
     ski: { maxSpeed: 6, flowPerKg: 8, widthMm: 80 },
   },
   {
@@ -3141,47 +3159,42 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "NATO",
     name: "Natoplank",
     priceNok: 1890,
-    note: "Tunge, brede. Treg på hardt føre — konge i dyp snø med tung sekk.",
+    soldOut: true,
+    note: "Tunge, brede. Treg på hardt føre — konge i dyp snø med tung sekk. Utsolgt — kommer på lager i sesongen.",
     ski: { maxSpeed: 4, flowPerKg: 9, widthMm: 100 },
   },
   {
-    id: "ski-sgn-togga",
-    category: "skis",
-    brand: "SGN",
-    name: "Togga",
-    priceNok: 5990,
-    note: "Moderne jakt-/fjellski. Bred 120 mm — sterk i dyp snø med sekk.",
-    ski: { maxSpeed: 7, flowPerKg: 8, widthMm: 120 },
-  },
-  {
-    id: "ski-dps-judas",
-    category: "skis",
-    brand: "DPS",
-    name: "Judas",
-    priceNok: 7490,
-    note: "Bred powder-ski. Mye flyt per kilo i dyp snø.",
-    ski: { maxSpeed: 5, flowPerKg: 9, widthMm: 110 },
-  },
-  {
-    id: "ski-joggepinner",
+    id: "camo-ski-boots-budget",
     category: "skis",
     brand: "Budget",
-    name: "Joggepinner",
-    priceNok: 990,
-    note: "Smale og lette. Raskt på hardt føre — synker med tung sekk i dyp snø.",
-    ski: { maxSpeed: 9, flowPerKg: 3, widthMm: 45 },
-  },
-  {
-    id: "ski-jobbepinner-feller",
-    category: "skis",
-    brand: "Budget",
-    name: "Jobbepinner med feller",
+    name: "Skistøvler 1 (plast/NNN-ish)",
     priceNok: 1490,
-    note: "Arbeidsski med feller. Mindre toppfart, bedre oppover og under last.",
-    ski: { maxSpeed: 5, flowPerKg: 6, widthMm: 55 },
+    soldOut: true,
+    note: "Må ha skistøvler for å gå på ski. Budget — verkende tær. Utsolgt — kommer på lager i sesongen.",
+    ski: { maxSpeed: 4, flowPerKg: 4, widthMm: 0, isBoots: true },
+  },
+  {
+    id: "camo-ski-boots-mid",
+    category: "skis",
+    brand: "Åsnes / Rottefella",
+    name: "Skistøvler 2 (fjell)",
+    priceNok: 3490,
+    soldOut: true,
+    note: "Ordentlige fjellskistøvler — kreves med ski i kit. Utsolgt — kommer på lager i sesongen.",
+    ski: { maxSpeed: 7, flowPerKg: 7, widthMm: 0, isBoots: true },
+  },
+  {
+    id: "camo-ski-boots-pro",
+    category: "skis",
+    brand: "Crispi / Scarpa",
+    name: "Skistøvler 3 (pro)",
+    priceNok: 5990,
+    soldOut: true,
+    note: "Premium skistøvel. Best fart/stamina på ski. Utsolgt — kommer på lager i sesongen.",
+    ski: { maxSpeed: 9, flowPerKg: 9, widthMm: 0, isBoots: true },
   },
 
-  // --- Food & cook ---
+  // --- Food/cooking ---
   // Real needs stove+gas for stamina. Ready food works cold.
   {
     id: "food-real-turmat",
@@ -3319,12 +3332,114 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       requiresBoil: false,
     },
   },
+  {
+    id: "food-xl1-drikk",
+    category: "food",
+    brand: "XL-1",
+    name: "Drikk",
+    priceNok: 99,
+    note: "Body +15% · Mind +5% · 1 min. Hurtig energipåfyll.",
+    food: {
+      kind: "ready",
+      huntTrips: 1,
+      staminaGain: 3,
+      bodyGain: 0.15,
+      mindGain: 0.05,
+      minutes: 1,
+      requiresBoil: false,
+    },
+  },
+  {
+    id: "food-proteinbar",
+    category: "food",
+    brand: "Maxim",
+    name: "Proteinbar",
+    priceNok: 99,
+    note: "Body +10% · Mind +0% · 1 min. Mat, ikke stemning.",
+    food: {
+      kind: "ready",
+      huntTrips: 1,
+      staminaGain: 2,
+      bodyGain: 0.1,
+      mindGain: 0,
+      minutes: 1,
+      requiresBoil: false,
+    },
+  },
+  {
+    id: "food-snickers",
+    category: "food",
+    brand: "Mars",
+    name: "Snickers",
+    priceNok: 39,
+    note: "Body +5% · Mind +5% · 1 min. Klassisk sekkesnacks.",
+    food: {
+      kind: "ready",
+      huntTrips: 1,
+      staminaGain: 2,
+      bodyGain: 0.05,
+      mindGain: 0.05,
+      minutes: 1,
+      requiresBoil: false,
+    },
+  },
+  {
+    id: "food-instant-kaffe",
+    category: "food",
+    brand: "Nescafé",
+    name: "Instant kaffe",
+    priceNok: 89,
+    note: "Body +5% · Mind +15% · 10 min. Samme kick som termos — tar litt lenger.",
+    food: {
+      kind: "ready",
+      huntTrips: 1,
+      staminaGain: 3,
+      bodyGain: 0.05,
+      mindGain: 0.15,
+      minutes: 10,
+      requiresBoil: false,
+    },
+  },
+  {
+    id: "food-redbull",
+    category: "food",
+    brand: "Red Bull",
+    name: "Energy Drink",
+    priceNok: 39,
+    note: "Mind → 100% i 30 min spilltid, deretter crash tilbake til før. 1 min å drikke.",
+    food: {
+      kind: "ready",
+      huntTrips: 1,
+      staminaGain: 5,
+      bodyGain: 0,
+      mindGain: 0,
+      minutes: 1,
+      requiresBoil: false,
+      temporaryMindFullMinutes: 30,
+    },
+  },
+  {
+    id: "misc-thermos-jula",
+    category: "food",
+    brand: "Jula",
+    name: "Termos 1L",
+    priceNok: 149,
+    note: "Kaffe er også kit. 5 kopper per tur. Weight + Endurance-offset.",
+    food: {
+      kind: "thermos",
+      huntTrips: 999,
+      staminaGain: 0,
+      bodyGain: 0,
+      mindGain: 0,
+      minutes: 0,
+      requiresBoil: false,
+    },
+  },
 
-  // --- Misc kult kit (rest) ---
-  // Every misc item: weightGrams + misc.enduranceGrams (felt ≈ weight − endurance).
+  // --- Outdoors ---
   {
     id: "misc-suunto-a-10",
-    category: "misc",
+    category: "outdoors",
     brand: "Suunto",
     name: "A-10 Speilkompass",
     priceNok: 0,
@@ -3333,25 +3448,16 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   },
   {
     id: "misc-sittpute-biltema",
-    category: "misc",
+    category: "outdoors",
     brand: "Biltema",
     name: "Sittpute / sitteunderlag",
     priceNok: 79,
-    note: "Tørr rumpe = mer tålmodighet på post.",
-    misc: { enduranceGrams: 400 },
-  },
-  {
-    id: "misc-thermos-jula",
-    category: "misc",
-    brand: "Jula",
-    name: "Termos 1L",
-    priceNok: 149,
-    note: "Kaffe er også kit. 5 kopper per tur. Weight + Endurance-offset.",
-    misc: { enduranceGrams: 2000 },
+    note: "Tørr rumpe = mer tålmodighet. ×1.2 body på 10-min pause og tyribål.",
+    misc: { enduranceGrams: 400, isSitPad: true },
   },
   {
     id: "misc-nightcore-nu21",
-    category: "misc",
+    category: "outdoors",
     brand: "Nitecore",
     name: "NU21",
     priceNok: 349,
@@ -3360,7 +3466,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
   },
   {
     id: "misc-nightcore-hc60",
-    category: "misc",
+    category: "outdoors",
     brand: "Nitecore",
     name: "HC60",
     priceNok: 1099,
@@ -3368,12 +3474,41 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     misc: { enduranceGrams: 150, isHeadlamp: true },
   },
   {
+    id: "outdoors-opptenningsbrikker",
+    category: "outdoors",
+    brand: "Tenn-Fix",
+    name: "Opptenningsbrikker",
+    priceNok: 199,
+    note: "Sparer 15 min på tyribål. Holder til 5 bål.",
+    unitLabel: "pakke 5 bål",
+    misc: {
+      enduranceGrams: 0,
+      isFireStarter: true,
+      tyribalMinutesSaved: 15,
+      fireStarterUsesPerPack: 5,
+    },
+  },
+
+  // --- Ballistics/misc (rest) ---
+  // Every misc item: weightGrams + misc.enduranceGrams (felt ≈ weight − endurance).
+  {
     id: "misc-triggercam",
     category: "misc",
     brand: "Triggercam",
     name: "Triggercam TC-2",
     priceNok: 9690,
-    note: "After-action replay: se nøyaktig hvor skuddet traff (og bommet). Strammer også ettersøk-retning kraftig.",
+    note:
+      "After-action replay: se nøyaktig hvor skuddet traff (og bommet). Strammer også ettersøk-retning kraftig. På jakt: Start Triggercam (+5 % nervøsitet) før skudd. Kun én av Triggercam/Scopemate i kit.",
+    misc: { enduranceGrams: 0 },
+  },
+  {
+    id: "misc-scopemate",
+    category: "misc",
+    brand: "Scopemate",
+    name: "Scopemate",
+    priceNok: 5990,
+    note:
+      "Billigere Triggercam-alternativ: samme AAR-replay og skuddpar-hjelp. På jakt: Start Scopemate (+7 % nervøsitet) før skudd. Kun én av Triggercam/Scopemate i kit.",
     misc: { enduranceGrams: 0 },
   },
   {
@@ -3929,54 +4064,6 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       slot: "boots",
       terrainSpeed: 7,
       stamina: 7,
-    },
-  },
-  {
-    id: "camo-ski-boots-budget",
-    category: "camo",
-    brand: "Budget",
-    name: "Skistøvler 1 (plast/NNN-ish)",
-    priceNok: 1490,
-    note: "Må ha skistøvler for å gå på ski. Budget — verkende tær.",
-    camo: {
-      birdSpotSnow: 0.55,
-      birdSpotNoSnow: 0.55,
-      bestTerrains: ["snow"],
-      slot: "ski_boots",
-      terrainSpeed: 4,
-      stamina: 4,
-    },
-  },
-  {
-    id: "camo-ski-boots-mid",
-    category: "camo",
-    brand: "Åsnes / Rottefella",
-    name: "Skistøvler 2 (fjell)",
-    priceNok: 3490,
-    note: "Ordentlige fjellskistøvler — kreves med ski i kit.",
-    camo: {
-      birdSpotSnow: 0.5,
-      birdSpotNoSnow: 0.52,
-      bestTerrains: ["snow", "snow_broken"],
-      slot: "ski_boots",
-      terrainSpeed: 7,
-      stamina: 7,
-    },
-  },
-  {
-    id: "camo-ski-boots-pro",
-    category: "camo",
-    brand: "Crispi / Scarpa",
-    name: "Skistøvler 3 (pro)",
-    priceNok: 5990,
-    note: "Premium skistøvel. Best fart/stamina på ski.",
-    camo: {
-      birdSpotSnow: 0.48,
-      birdSpotNoSnow: 0.5,
-      bestTerrains: ["snow", "open_mountain"],
-      slot: "ski_boots",
-      terrainSpeed: 9,
-      stamina: 9,
     },
   },
 ];

@@ -45,7 +45,8 @@ import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
-import { isAmmoItem, isFoodItem, isStockItem } from "@/lib/shop/types";
+import { isAmmoItem, isFoodItem, isMiscItem, isStockItem } from "@/lib/shop/types";
+import { isFireStarterMisc } from "@/lib/misc/spec";
 
 /** Live home-load lots for resolvePlayerItem (synced from save state). */
 let homeLotCache: readonly HomeLoadedLot[] = [];
@@ -1202,6 +1203,9 @@ export function formatInventoryQuantity(itemId: string, qty: number): string {
   const item = getShopItem(itemId);
   if (item && isAmmoItem(item)) {
     return `${qty} patron${qty === 1 ? "" : "er"}`;
+  }
+  if (item && isMiscItem(item) && isFireStarterMisc(item.misc)) {
+    return `${qty} bål`;
   }
   if (isSpentBrassItemId(itemId)) {
     return `${qty} hylse${qty === 1 ? "" : "r"}`;

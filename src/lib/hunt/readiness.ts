@@ -7,6 +7,7 @@ import {
 } from "@/lib/player";
 import {
   isAmmoItem,
+  isBackpackItem,
   isRifleItem,
   isScopeItem,
   type ShopItem,
@@ -45,8 +46,8 @@ export function kitHasVerifiedHuntZero(input: {
 }
 
 /**
- * Minimum kit to leave Home for a hunt: rifle, scope, ammo, verified zero,
- * and a valid jaktkort.
+ * Minimum kit to leave Home for a hunt: rifle, scope, ammo, backpack,
+ * verified zero, and a valid jaktkort.
  */
 export function huntReadyCheck(input: {
   kitItems: ShopItem[];
@@ -83,6 +84,9 @@ export function huntReadyCheck(input: {
   }
   if (!input.kitItems.some(isScopeItem)) {
     blockers.push("Ta med kikkert i kit");
+  }
+  if (!input.kitItems.some(isBackpackItem)) {
+    blockers.push("Ta med sekk (backpack) i kit");
   }
 
   const ammoInKit = input.kitItems.filter(isAmmoItem);

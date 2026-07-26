@@ -24,6 +24,7 @@ import {
   isSkiItem,
   isBipodItem,
   isFoodItem,
+  isSuppressorItem,
   isBundleItem,
   type ShopCategory,
   type ShopItem,
@@ -40,6 +41,7 @@ import { miscFeltWeightGrams } from "@/lib/misc/spec";
 import {
   SUPPRESSOR_CALM_WEIGHT_FACTOR,
   suppressorWeaponCalmGrams,
+  suppressorShotFlushChance,
 } from "@/lib/suppressor/spec";
 import {
   formatInventoryQuantity,
@@ -133,7 +135,13 @@ export function XxlShop({
   const [lrfBallisticsOnly, setLrfBallisticsOnly] = useState(false);
 
   const items = useMemo(() => {
-    let list = getCatalogByCategory(category);
+    let list =
+      category === "ballistics"
+        ? [
+            ...getCatalogByCategory("ballistics"),
+            ...getCatalogByCategory("misc"),
+          ]
+        : getCatalogByCategory(category);
 
     if (category === "ammo") {
       list = list.filter((item) => {
@@ -448,7 +456,10 @@ export function XxlShop({
           const canAfford = !unobtainable && balance >= item.priceNok;
           const stackable =
             isAmmoItem(item) ||
-            (isFoodItem(item) && item.food.kind !== "stove");
+            (isFoodItem(item) &&
+              (isPackableFoodKind(item.food.kind) ||
+                item.food.kind === "fuel")) ||
+            (isMiscItem(item) && !!item.misc.isFireStarter);
           const isUniqueGear = !unobtainable && !stackable && qty > 0;
           const needsLicense = isRifleItem(item) && !canBuyRifle;
           const ammo = isAmmoItem(item) ? item.ammo : null;
@@ -510,8 +521,7 @@ export function XxlShop({
                 {carry ? (
                   <span className="shop-row-ballistics">
                     comfort {formatScore10(carry.carryComfort)} · QR{" "}
-                    {formatScore10(carry.quickRelease)} · optics{" "}
-                    {formatScore10(carry.opticsAccess)}
+                    {formatScore10(carry.quickRelease)}
                   </span>
                 ) : null}
                 {misc ? (
@@ -520,6 +530,12 @@ export function XxlShop({
                     {misc.enduranceGrams} · felt{" "}
                     {miscFeltWeightGrams(item.weightGrams, misc)} g
                     {misc.isHeadlamp ? " · hodelykt (nattgåing etter 17:00)" : ""}
+                    {misc.isFireStarter
+                      ? ` · −${misc.tyribalMinutesSaved ?? 15} min tyribål · ${misc.fireStarterUsesPerPack ?? 5} bål`
+                      : ""}
+                    {misc.isSitPad
+                      ? " · ×1.2 body på pause / tyribål"
+                      : ""}
                     {misc.isRangeFan
                       ? " · bordvifte (blåser bort mirage på banen)"
                       : ""}
@@ -599,8 +615,9 @@ export function XxlShop({
                 ) : null}
                 {ski ? (
                   <span className="shop-row-ballistics">
-                    max {formatScore10(ski.maxSpeed)} · flyt/kg{" "}
-                    {formatScore10(ski.flowPerKg)} · bredde {ski.widthMm} mm
+                    {ski.isBoots
+                      ? `skistøvler · speed ${formatScore10(ski.maxSpeed)} · stam ${formatScore10(ski.flowPerKg)}`
+                      : `max ${formatScore10(ski.maxSpeed)} · flyt/kg ${formatScore10(ski.flowPerKg)} · bredde ${ski.widthMm} mm`}
                   </span>
                 ) : null}
                 {bipod ? (
@@ -618,13 +635,20 @@ export function XxlShop({
                       ? "brenner — kreves for Real"
                       : food.kind === "fuel"
                         ? `gass · ${food.huntTrips} jaktturer`
-                        : food.requiresBoil
-                          ? `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min · krever koking`
-                          : `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min`}
+                        : food.kind === "thermos"
+                          ? "termos · 5 kaffekopper per tur"
+                          : food.temporaryMindFullMinutes
+                            ? `Mind → 100% i ${food.temporaryMindFullMinutes} min · deretter crash · ${food.minutes} min`
+                            : food.requiresBoil
+                              ? `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min · krever koking`
+                              : `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min`}
                   </span>
                 ) : null}
                 {isSuppressor ? (
                   <span className="shop-row-ballistics">
+                    {isSuppressorItem(item)
+                      ? `${item.suppressor.soundReductionDb} dB · flush ~${Math.round(suppressorShotFlushChance(item.suppressor.soundReductionDb) * 100)}% · `
+                      : ""}
                     bære +{item.weightGrams} g · calm +
                     {suppressorWeaponCalmGrams(item.weightGrams)} g (×
                     {SUPPRESSOR_CALM_WEIGHT_FACTOR} fremme)

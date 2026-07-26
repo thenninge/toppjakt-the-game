@@ -22,6 +22,7 @@ import {
   type SpotPerch,
 } from "@/lib/hunt/spotPerches";
 import { weightedSpawnCells } from "@/lib/hunt/mapPlacements";
+import { suppressorShotStayChance } from "@/lib/suppressor/spec";
 import {
   HABROK_GREEN_MIN_ZOOM,
   HABROK_YELLOW_MIN_ZOOM,
@@ -122,14 +123,22 @@ export const ORRHANE_COMPANION_CHANCE = 0.8;
  */
 export const SPOT_PERCH_FAR_BAND_CHANCE = 0.65;
 
+/**
+ * Without suppressor: 95 % fly.
+ * With suppressor (supersonic): flush from dB (0 dB → 100 %, −40 dB → 65 %).
+ * Silent (subsonic .22 / .300 BLK + suppressor): no flush.
+ */
 export function postShotStayChance(
   hasSuppressor: boolean,
   silentShot = false,
+  soundReductionDb?: number | null,
 ): number {
   if (silentShot) return 1;
-  return hasSuppressor
-    ? 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED
-    : 1 - POST_SHOT_FLUSH_CHANCE_OPEN;
+  if (!hasSuppressor) return 1 - POST_SHOT_FLUSH_CHANCE_OPEN;
+  if (soundReductionDb != null && Number.isFinite(soundReductionDb)) {
+    return suppressorShotStayChance(soundReductionDb);
+  }
+  return 1 - POST_SHOT_FLUSH_CHANCE_SUPPRESSED;
 }
 
 export function companionChanceForSpecies(species: BirdSpecies): number {
@@ -961,7 +970,8 @@ export type PostShotFlushResult = {
 
 /**
  * After a shot: every bird still in `cell` rolls stay vs flush.
- * Without suppressor: 95 % fly. With suppressor: 85 % fly.
+ * Without suppressor: 95 % fly.
+ * With suppressor: flush chance from soundReductionDb (0 dB → 100 %, −40 → 65 %).
  * Silent (subsonic + suppressor): no flush.
  * Applies to the shot-at bird (on miss) and any companions in the cell.
  */
@@ -975,13 +985,19 @@ export function applyPostShotBirdFlush(input: {
   hasSuppressor?: boolean;
   /** Subsonic ammo + suppressor — birds do not flush. */
   silentShot?: boolean;
+  /** Suppressor peak dB cut (negative). Used when not silent. */
+  soundReductionDb?: number | null;
   stayChance?: number;
   random?: () => number;
 }): PostShotFlushResult {
   const random = input.random ?? Math.random;
   const stayChance =
     input.stayChance ??
-    postShotStayChance(!!input.hasSuppressor, !!input.silentShot);
+    postShotStayChance(
+      !!input.hasSuppressor,
+      !!input.silentShot,
+      input.soundReductionDb,
+    );
   let next = input.birds.map((b) => ({ ...b, cell: { ...b.cell } }));
   const stayedIds: string[] = [];
   const flushedIds: string[] = [];

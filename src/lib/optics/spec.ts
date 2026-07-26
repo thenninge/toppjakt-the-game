@@ -46,6 +46,19 @@ export function applyScopeClickError(
   return dialedMmAt100 * (1 + (random() * 2 - 1) * err);
 }
 
+/**
+ * Stable click-size scale for one tracking-test axis (or similar).
+ * Perfect scopes (0%) → 1. Cheap ±10% → one roll in [0.9, 1.1] kept for the session.
+ */
+export function rollScopeClickScale(
+  clickErrorPercent: number,
+  random: () => number = Math.random,
+): number {
+  const err = Math.max(0, clickErrorPercent) / 100;
+  if (err <= 0) return 1;
+  return 1 + (random() * 2 - 1) * err;
+}
+
 export type LrfSpec = {
   /**
    * True if the unit has onboard ballistic solver / holds
@@ -61,7 +74,7 @@ export type LrfSpec = {
   /**
    * Symmetric range-measurement error band as percent of true distance.
    * Engine samples uniformly in ±rangeErrorPercent.
-   * Premium (Sig / Leupold / Vortex / …) ≈ 1; Biltema / Jula ≈ 3.
+   * Premium (Sig / Leupold / Vortex / …) ≈ 1; Biltema ≈ 5; Jula ≈ 10.
    * Reason to upgrade: a 3% miss at 300 m is ~±9 m hold error.
    */
   rangeErrorPercent: number;
@@ -70,6 +83,11 @@ export type LrfSpec = {
    * Omit or 1 for laser-only handheld rangefinders.
    */
   magnification?: number;
+  /**
+   * Clear circular aperture % override (dorulleffekt).
+   * When set, replaces the price-tier default from {@link opticAperturePercent}.
+   */
+  aperturePercent?: number;
 };
 
 export type ThermalSpec = {
@@ -125,6 +143,17 @@ export function opticAperturePercent(priceNok: number): number {
   if (p <= 7000) return 65;
   if (p <= 15000) return 75;
   return 95;
+}
+
+/** Price-tier aperture, or explicit LRF override when set. */
+export function resolveOpticAperturePercent(
+  priceNok: number,
+  override?: number | null,
+): number {
+  if (override != null && Number.isFinite(override) && override > 0) {
+    return Math.min(100, Math.max(1, override));
+  }
+  return opticAperturePercent(priceNok);
 }
 
 /** Resolve optical zoom for spotting (name like 10x42 if spec omits it). */

@@ -67,6 +67,19 @@ export type MiscSpec = {
    * When true, weaponCalmGrams only applies with a suppressor mounted.
    */
   weaponCalmRequiresSuppressor?: boolean;
+  /**
+   * Fire starters — each inventory unit is one bål/use.
+   * Pack purchase grants {@link fireStarterUsesPerPack} units.
+   */
+  isFireStarter?: boolean;
+  /** Minutes shaved off tyribål when a use is available (e.g. 15). */
+  tyribalMinutesSaved?: number;
+  /** Uses granted per shop purchase (e.g. 5). */
+  fireStarterUsesPerPack?: number;
+  /**
+   * Sit pad — 1.2× body recovery on short rest and tyribål.
+   */
+  isSitPad?: boolean;
 };
 
 /** Placeholder net contribution to felt load (can be negative = net help). */
@@ -95,6 +108,14 @@ export function isRangeFanMisc(misc: MiscSpec): boolean {
 
 export function isChamberCoolerMisc(misc: MiscSpec): boolean {
   return !!misc.isChamberCooler;
+}
+
+export function isFireStarterMisc(misc: MiscSpec): boolean {
+  return !!misc.isFireStarter;
+}
+
+export function isSitPadMisc(misc: MiscSpec): boolean {
+  return !!misc.isSitPad;
 }
 
 /** Combined mirage multiplier from packed misc (default 1). */

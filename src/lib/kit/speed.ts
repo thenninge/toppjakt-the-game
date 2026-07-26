@@ -8,7 +8,7 @@ import type { CarrySpec } from "@/lib/carry/spec";
 import {
   DEFAULT_CARRY,
   combineCarrySpecs,
-  scoreToWeightPenaltyFactor,
+  scoreToBackpackFeltFraction,
 } from "@/lib/carry/spec";
 import type { SkiSpec } from "@/lib/ski/spec";
 
@@ -31,9 +31,10 @@ export function computeKitTopSpeedKmh(opts: {
     opts.carryPieces.length > 0
       ? combineCarrySpecs(opts.carryPieces)
       : DEFAULT_CARRY;
+  // Display speed uses backpack-style comfort (never below 75 % felt at 10/10).
   const feltKg =
     (opts.totalWeightGrams / 1000) *
-    scoreToWeightPenaltyFactor(carry.carryComfort);
+    scoreToBackpackFeltFraction(carry.carryComfort);
 
   const ski = opts.ski ?? BOOTS_ONLY_SKI;
   const speed = ski.maxSpeed / 10;

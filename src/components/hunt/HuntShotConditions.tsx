@@ -13,6 +13,14 @@ import {
 } from "@/lib/player";
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import { LapuaBallisticsApp } from "@/components/hunt/LapuaBallisticsApp";
+import {
+  isSigKilo3000Bdx,
+  SigBdxBallisticsApp,
+} from "@/components/hunt/SigBdxBallisticsApp";
+import {
+  ElRangeBallisticsApp,
+  isSwarovskiElRange,
+} from "@/components/hunt/ElRangeBallisticsApp";
 import { ZeissVictoryEnviroPanel } from "@/components/hunt/lrf/ZeissVictoryEnviroPanel";
 import { isZeissVictoryLrf } from "@/components/hunt/lrf/ZeissVictoryLrfHud";
 import { POWDER_TEMP_REFERENCE_C } from "@/lib/ballistics/powderTemp";
@@ -28,6 +36,8 @@ type HuntShotConditionsProps = {
   windSpeedMs: number;
   /** Live air temperature (°C) — shown in Enviro; Lapua prefills Temp dial. */
   temperatureC?: number;
+  /** Forecast / værmelding temp — EL Range atmosphere. */
+  forecastTemperatureC?: number;
   /** When false, remind player to compute windage themselves. */
   hasKestrel?: boolean;
   dopeCard?: DopeCardEntry[];
@@ -45,7 +55,7 @@ type HuntShotConditionsProps = {
   dopeDialDisabled?: boolean;
   /** Equipped scope click unit for DOPE / app readouts. */
   clickUnit?: ScopeClickUnit;
-  /** Equipped LRF — Zeiss Victory replaces Lapua with RF emulation. */
+  /** Equipped LRF — Zeiss Victory / Sig BDX replace Lapua with device UI. */
   lrfId?: string | null;
   lrfBrand?: string | null;
   lrfLabel?: string | null;
@@ -54,7 +64,7 @@ type HuntShotConditionsProps = {
 };
 
 /**
- * Enviro/App split: live field + DOPE (left) · LRF emulation or Lapua (right).
+ * Enviro/App split: live field + DOPE (left) · LRF / BDX / Lapua (right).
  */
 export function HuntShotConditions({
   rangeM,
@@ -63,6 +73,7 @@ export function HuntShotConditions({
   windFromDeg,
   windSpeedMs,
   temperatureC = POWDER_TEMP_REFERENCE_C,
+  forecastTemperatureC,
   hasKestrel = false,
   dopeCard = [],
   ammoId = null,
@@ -80,11 +91,17 @@ export function HuntShotConditions({
   const tempC = Number.isFinite(temperatureC)
     ? temperatureC
     : POWDER_TEMP_REFERENCE_C;
+  const forecastTempC = Number.isFinite(forecastTemperatureC)
+    ? (forecastTemperatureC as number)
+    : tempC;
   const bearing = ((Math.round(shotBearingDeg) % 360) + 360) % 360;
   const windFrom = ((Math.round(windFromDeg) % 360) + 360) % 360;
   const shotCompass = compassLabelFromDeg(bearing);
   const windCompass = formatWindCompass(windFrom);
   const useZeissLrf = isZeissVictoryLrf({ id: lrfId, brand: lrfBrand });
+  const useSigBdx = !useZeissLrf && isSigKilo3000Bdx({ id: lrfId });
+  const useElRange =
+    !useZeissLrf && !useSigBdx && isSwarovskiElRange({ id: lrfId });
 
   const nearest =
     rifleId && ammoId
@@ -168,7 +185,16 @@ export function HuntShotConditions({
           <p className="hunt-shot-cond-hint">
             {useZeissLrf
               ? "Zeiss Victory RF: avstand → elev-klikk i LRF-displayet."
-              : "Uten Kestrel: App starter blank — knote range/vind/temp selv. Tid går ×5 her; fuglen blir nervøs."}
+              : useSigBdx
+                ? "Sig BDX: range fra LRF. Mål enviro med Kestrel i Aware for auto vind/temp, eller still manuelt (huskes). Tid går ×5 her; fuglen blir nervøs."
+                : useElRange
+                  ? "EL Range: temp/trykk/fukt fra værmelding. Sett vindstyrke og crosswind angle selv. Tid går ×5 her; fuglen blir nervøs."
+                  : "Uten Kestrel: App starter blank — knote range/vind/temp selv. Tid går ×5 her; fuglen blir nervøs."}
+          </p>
+        ) : useSigBdx ? (
+          <p className="hunt-shot-cond-hint">
+            Sig BDX: range fra LRF. Kestrel-måling fyller vind, vindretning og
+            temp (dV/dT).
           </p>
         ) : (
           <p className="hunt-shot-cond-hint">
@@ -243,6 +269,26 @@ export function HuntShotConditions({
             rangeM={rangeM}
             elevClicks={lrfElevClicks}
             label={lrfLabel ?? "Zeiss Victory RF"}
+          />
+        ) : useSigBdx && ammo ? (
+          <SigBdxBallisticsApp
+            ammo={ammo}
+            ammoLabel={ammoLabel}
+            initialRangeM={rangeM}
+            shotBearingDeg={shotBearingDeg}
+            liveWindSpeedMs={windSpeedMs}
+            liveWindFromDeg={windFromDeg}
+            liveTemperatureC={tempC}
+            autoPrefill={hasKestrel}
+            rifleId={rifleId}
+          />
+        ) : useElRange && ammo ? (
+          <ElRangeBallisticsApp
+            ammo={ammo}
+            ammoLabel={ammoLabel}
+            initialRangeM={rangeM}
+            shotBearingDeg={shotBearingDeg}
+            forecastTemperatureC={forecastTempC}
           />
         ) : ammo ? (
           <LapuaBallisticsApp
