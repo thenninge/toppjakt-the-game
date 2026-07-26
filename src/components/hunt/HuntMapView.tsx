@@ -3776,6 +3776,7 @@ export function HuntMapView({
         hasThermal={hasThermal}
         hasLrf={!!lrfSpec}
         hasKestrel={!!kestrelItem}
+        scopeClickUnit={scopeClickUnit}
         binosLabel={binosLabel}
         thermalLabel={thermalLabel}
         thermalBatteryGameSec={thermalBatteryGameSec}

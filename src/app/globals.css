@@ -8792,6 +8792,177 @@ body {
   color: #f33;
 }
 
+.sig-kilo-label {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #e22;
+  line-height: 1;
+}
+
+.sig-kilo-label--last {
+  position: absolute;
+  /* Same lateral band as right stack, mirrored left; vertically mid ring. */
+  right: calc(50% + 4.25rem);
+  top: 50%;
+  left: auto;
+  transform: translateY(-50%);
+}
+
+.sig-kilo-label--ang-unit {
+  /* Same horizontal as ABU / right stack; fixed for elev + wind. */
+  position: absolute;
+  left: calc(50% + 4.25rem);
+  top: calc(50% - 2.55rem);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  line-height: 1.45rem;
+}
+
+.sig-kilo-label--hold-unit {
+  display: none;
+}
+
+.sig-kilo-label--unit-dist {
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+
+.sig-kilo-right-stack {
+  position: absolute;
+  left: calc(50% + 4.25rem);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.sig-kilo-battery {
+  display: inline-block;
+  width: 1.15rem;
+  height: 0.55rem;
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
+  box-sizing: border-box;
+  position: relative;
+  color: #e22;
+}
+
+.sig-kilo-battery::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  bottom: 2px;
+  width: 55%;
+  background: currentColor;
+  border-radius: 0.5px;
+}
+
+.sig-kilo-battery::before {
+  content: "";
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 0.28rem;
+  background: currentColor;
+  border-radius: 0 1px 1px 0;
+}
+
+.sig-kilo-top-blank,
+.sig-kilo-bottom-blank {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: "Courier New", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.28em;
+  color: #e22;
+  line-height: 1;
+}
+
+.sig-kilo-top-blank {
+  top: calc(50% - 2.55rem);
+}
+
+.sig-kilo-bottom-blank {
+  top: calc(50% + 1.85rem);
+}
+
+.sig-kilo-incline {
+  /* Same height (and lateral slot) as MRAD on elev/wind. */
+  position: absolute;
+  left: calc(50% + 1.85rem);
+  top: calc(50% - 2.55rem);
+  font-family: "Courier New", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: #f33;
+  line-height: 1.45rem;
+}
+
+.sig-kilo-arrow {
+  display: block;
+  flex: 0 0 auto;
+  color: #e22;
+  overflow: visible;
+}
+
+.sig-kilo-arrow--up,
+.sig-kilo-arrow--down {
+  width: 0.75rem;
+  height: 1.15rem;
+}
+
+.sig-kilo-arrow--left,
+.sig-kilo-arrow--right {
+  width: 1.15rem;
+  height: 0.75rem;
+}
+
+.sig-kilo-range-block {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 1.85rem);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.sig-kilo-range {
+  font-size: 1.45rem;
+  letter-spacing: 0.18em;
+}
+
+/* Elev / wind — fixed slots above LRF circle (elev layout = wind layout). */
+.sig-kilo-hold-above {
+  position: absolute;
+  left: calc(50% - 2.9rem);
+  top: calc(50% - 2.55rem);
+  transform: none;
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  width: 4.5rem;
+}
+
+.sig-kilo-hold-num {
+  font-size: 1.45rem;
+  letter-spacing: 0.12em;
+  width: 2.6rem;
+  flex: 0 0 2.6rem;
+  text-align: left;
+}
+
+/* Legacy Sig-style HUD (Geovid / other AB) — holds below reticle. */
 .sig-kilo-unit {
   font-family: var(--font-ui, system-ui), sans-serif;
   font-size: 0.72rem;
@@ -8801,41 +8972,20 @@ body {
   margin-left: 0.2rem;
 }
 
-.sig-kilo-arrow {
-  font-size: 0.95rem;
-  line-height: 1;
-  color: #e22;
-}
-
-.sig-kilo-range-block {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + 2.35rem);
-  transform: translateX(-50%);
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  white-space: nowrap;
-}
-
-.sig-kilo-range {
-  font-size: 1.45rem;
-  letter-spacing: 0.18em;
-}
-
-.sig-kilo-incline {
+.generic-sig-incline {
   display: inline-flex;
   align-items: center;
   gap: 0.12rem;
   margin-left: 0.45rem;
 }
 
-.sig-kilo-incline-num {
+.generic-sig-arrow {
   font-size: 0.95rem;
-  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #e22;
 }
 
-.sig-kilo-hold-block {
+.generic-sig-hold-block {
   position: absolute;
   left: 50%;
   top: calc(50% + 2.2rem);
@@ -8847,26 +8997,26 @@ body {
   justify-content: space-between;
 }
 
-.sig-kilo-arrow--elev,
-.sig-kilo-arrow--wind {
-  font-size: 1.05rem;
-  flex: 0 0 auto;
-}
-
-.sig-kilo-hold-value {
+.generic-sig-hold-value {
   display: inline-flex;
   align-items: baseline;
   gap: 0.2rem;
 }
 
-.sig-kilo-hold-value .sig-kilo-digits {
+.generic-sig-hold-value .sig-kilo-digits {
   font-size: 1.45rem;
   letter-spacing: 0.12em;
 }
 
-.sig-kilo-hold-value .sig-kilo-unit {
+.generic-sig-hold-value .sig-kilo-unit {
   font-size: 0.78rem;
 }
+
+.sig-kilo-incline-num {
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+
 
 /* --- Swarovski EL Range companion app --- */
 

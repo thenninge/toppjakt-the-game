@@ -1,8 +1,18 @@
 "use client";
 
 import { isZeissVictoryLrf } from "@/components/hunt/lrf/ZeissVictoryLrfHud";
+import {
+  isSigKilo3000Bdx,
+  SIG_KILO3000_BDX_ID,
+} from "@/components/hunt/SigBdxBallisticsApp";
+import type { ScopeClickUnit } from "@/lib/optics/spec";
 
-export type SigKiloPhase = "idle" | "range" | "elev" | "wind" | "done";
+export type SigKiloPhase =
+  | "off"
+  | "status"
+  | "range"
+  | "elev"
+  | "wind";
 
 export type SigElevDir = "up" | "down";
 export type SigWindDir = "left" | "right";
@@ -12,24 +22,39 @@ export type SigSauerKilo3000LrfHudProps = {
   rangeM?: number | null;
   /** Signed incline degrees (+ = uphill / aim up, − = downhill). */
   inclineDeg?: number | null;
-  elevMrad?: number | null;
+  /** Hold in scope angular units (MRAD or MOA) — not clicks. */
+  elevAngular?: number | null;
   elevDir?: SigElevDir | null;
-  windMrad?: number | null;
+  windAngular?: number | null;
   windDir?: SigWindDir | null;
+  /** Kestrel linked → ABX; onboard ABU otherwise. */
+  hasKestrel?: boolean;
+  /** Rifle scope click unit — drives MOA vs MRAD label + hold scale. */
+  clickUnit?: ScopeClickUnit;
   className?: string;
 };
 
-/** Delay after LRF press before first readout. */
-export const SIG_KILO_ACQUIRE_MS = 200;
+/** Delay after 2nd F before first range readout. */
+export const SIG_KILO_ACQUIRE_MS = 150;
 /** Each phase (range / elev / wind) duration. */
-export const SIG_KILO_PHASE_MS = 2000;
+export const SIG_KILO_PHASE_MS = 1500;
 /** Full range→elev→wind loops before blank. */
-export const SIG_KILO_CYCLES = 2;
+export const SIG_KILO_CYCLES = 5;
+/** Splash (status) auto-off if F is not pressed again. */
+export const SIG_KILO_STATUS_TIMEOUT_MS = 30_000;
+
+export { SIG_KILO3000_BDX_ID };
+
+/** True only for the Sig Sauer KILO3000 BDX SKU. */
+export function isSigKilo3000Lrf(
+  meta: { id?: string | null } | null | undefined,
+): boolean {
+  return isSigKilo3000Bdx(meta);
+}
 
 /**
- * Sig-style MRAD hold HUD (KILO3000 layout).
- * Used for Sig, Leica Geovid, and other onboard-AB / Kestrel-linked LRFs.
- * Zeiss Victory keeps its own display.
+ * @deprecated Other AB LRFs use {@link usesGenericSigStyleLrfHud}.
+ * Prefer {@link isSigKilo3000Lrf} for the realistic KILO HUD.
  */
 export function usesSigStyleBallisticLrfHud(
   meta: {
@@ -41,125 +66,175 @@ export function usesSigStyleBallisticLrfHud(
 ): boolean {
   if (!meta) return false;
   if (isZeissVictoryLrf(meta)) return false;
+  if (isSigKilo3000Lrf(meta)) return true;
   if (meta.hasOnboardBallistics) return true;
   return !!opts?.hasKestrel;
 }
 
-/** @deprecated Prefer {@link usesSigStyleBallisticLrfHud}. */
-export function isSigKilo3000Lrf(meta: {
-  id?: string | null;
-  brand?: string | null;
-  hasOnboardBallistics?: boolean;
-} | null | undefined): boolean {
-  return usesSigStyleBallisticLrfHud(meta);
-}
-
-function formatMrad(n: number | null | undefined): string {
+function formatAngular(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "";
   const v = Math.max(0, Math.min(99.9, Math.abs(n)));
   return v.toFixed(1);
 }
 
 function formatRange(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "----";
+  const v = Math.max(0, Math.min(9999.9, Math.abs(n)));
+  return v.toFixed(1);
+}
+
+function formatIncline(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "";
-  return String(Math.max(0, Math.min(9999, Math.round(Math.abs(n)))));
+  const rounded = Math.round(n);
+  if (rounded === 0) return "0°";
+  return `${rounded}°`;
+}
+
+/** Shafted arrow (head + tail) — matches KILO OLED better than tip-only glyphs. */
+function SigKiloArrow({
+  dir,
+}: {
+  dir: SigElevDir | SigWindDir;
+}) {
+  const vertical = dir === "up" || dir === "down";
+  return (
+    <svg
+      className={`sig-kilo-arrow sig-kilo-arrow--${dir}`}
+      viewBox={vertical ? "0 0 12 18" : "0 0 18 12"}
+      width={vertical ? 12 : 18}
+      height={vertical ? 18 : 12}
+      aria-hidden
+    >
+      {dir === "up" ? (
+        <>
+          <polygon points="6,1 11,8 1,8" fill="currentColor" />
+          <rect x="4.5" y="7" width="3" height="10" fill="currentColor" />
+        </>
+      ) : null}
+      {dir === "down" ? (
+        <>
+          <rect x="4.5" y="1" width="3" height="10" fill="currentColor" />
+          <polygon points="6,17 11,10 1,10" fill="currentColor" />
+        </>
+      ) : null}
+      {dir === "left" ? (
+        <>
+          <polygon points="1,6 8,1 8,11" fill="currentColor" />
+          <rect x="7" y="4.5" width="10" height="3" fill="currentColor" />
+        </>
+      ) : null}
+      {dir === "right" ? (
+        <>
+          <rect x="1" y="4.5" width="10" height="3" fill="currentColor" />
+          <polygon points="17,6 10,1 10,11" fill="currentColor" />
+        </>
+      ) : null}
+    </svg>
+  );
 }
 
 /**
  * Sig Sauer KILO3000 BDX HUD — red OLED:
- * reticle; range+incline; elev MRAD + ↑/↓; wind MRAD + ←/→.
+ * 1 status → 2 range+incline → 3 elev → 4 wind (×5) → off.
  */
 export function SigSauerKilo3000LrfHud({
   phase,
   rangeM = null,
   inclineDeg = null,
-  elevMrad = null,
+  elevAngular = null,
   elevDir = null,
-  windMrad = null,
+  windAngular = null,
   windDir = null,
+  hasKestrel = false,
+  clickUnit = "MRAD",
   className,
 }: SigSauerKilo3000LrfHudProps) {
+  if (phase === "off") return null;
+
+  const showStatus = phase === "status";
   const showRange = phase === "range";
   const showElev = phase === "elev";
   const showWind = phase === "wind";
-
-  const inclineAbs =
-    inclineDeg != null && Number.isFinite(inclineDeg)
-      ? Math.abs(Math.round(inclineDeg))
-      : 0;
-  const inclineUp = (inclineDeg ?? 0) >= 0;
+  const abMode = hasKestrel ? "ABX" : "ABU";
 
   return (
     <div
-      className={
-        className
-          ? `sig-kilo-hud ${className}`
-          : "sig-kilo-hud"
-      }
+      className={className ? `sig-kilo-hud ${className}` : "sig-kilo-hud"}
       aria-hidden
     >
       <div className="sig-kilo-reticle">
         <span className="sig-kilo-reticle-ring" />
       </div>
 
+      {showStatus ? (
+        <>
+          <span className="sig-kilo-top-blank" aria-hidden>
+            ----
+          </span>
+          <span className="sig-kilo-label sig-kilo-label--last">LAST</span>
+          <div className="sig-kilo-right-stack">
+            <span className="sig-kilo-label">{abMode}</span>
+            <span className="sig-kilo-battery" title="Battery" />
+            <span className="sig-kilo-label sig-kilo-label--unit-dist">M</span>
+          </div>
+          <span className="sig-kilo-bottom-blank" aria-hidden>
+            ----
+          </span>
+        </>
+      ) : null}
+
       {showRange ? (
-        <div className="sig-kilo-range-block">
-          <span className="sig-kilo-digits sig-kilo-range">{formatRange(rangeM)}</span>
-          <span className="sig-kilo-unit">m</span>
-          <span className="sig-kilo-incline">
-            <span className="sig-kilo-arrow" aria-hidden>
-              {inclineUp ? "▲" : "▼"}
+        <>
+          <span className="sig-kilo-incline">{formatIncline(inclineDeg)}</span>
+          <div className="sig-kilo-range-block">
+            <span className="sig-kilo-digits sig-kilo-range">
+              {formatRange(rangeM)}
             </span>
-            <span className="sig-kilo-digits sig-kilo-incline-num">
-              {inclineAbs}°
-            </span>
-          </span>
-        </div>
+          </div>
+        </>
       ) : null}
 
-      {showElev ? (
-        <div className="sig-kilo-hold-block">
-          <span className="sig-kilo-arrow sig-kilo-arrow--elev" aria-hidden>
-            {elevDir === "down" ? "▼" : "▲"}
+      {showElev || showWind ? (
+        <>
+          <div className="sig-kilo-hold-above">
+            <SigKiloArrow
+              dir={
+                showElev
+                  ? elevDir === "down"
+                    ? "down"
+                    : "up"
+                  : windDir === "left"
+                    ? "left"
+                    : "right"
+              }
+            />
+            <span className="sig-kilo-digits sig-kilo-hold-num">
+              {formatAngular(showElev ? elevAngular : windAngular)}
+            </span>
+          </div>
+          {/* Fixed slot — same coords for elev and wind (elev layout). */}
+          <span className="sig-kilo-label sig-kilo-label--ang-unit">
+            {clickUnit}
           </span>
-          <span className="sig-kilo-hold-value">
-            <span className="sig-kilo-digits">{formatMrad(elevMrad)}</span>
-            <span className="sig-kilo-unit">MRAD</span>
-          </span>
-        </div>
-      ) : null}
-
-      {showWind ? (
-        <div className="sig-kilo-hold-block">
-          <span className="sig-kilo-arrow sig-kilo-arrow--wind" aria-hidden>
-            {windDir === "left" ? "◀" : "▶"}
-          </span>
-          <span className="sig-kilo-hold-value">
-            <span className="sig-kilo-digits">{formatMrad(windMrad)}</span>
-            <span className="sig-kilo-unit">MRAD</span>
-          </span>
-        </div>
+        </>
       ) : null}
     </div>
   );
 }
 
-/** Schedule timeouts for acquire + 2× (range → elev → wind). */
+/**
+ * After 2nd F: acquire delay, then 5× (range → elev → wind), then off.
+ * Always cycles elev + wind (0.0 when no ballistic solution).
+ */
 export function scheduleSigKiloSequence(
   setPhase: (p: SigKiloPhase) => void,
   pushTimer: (id: number) => void,
-  opts?: { skipWind?: boolean; skipElev?: boolean },
 ): void {
   const acquire = SIG_KILO_ACQUIRE_MS;
   const step = SIG_KILO_PHASE_MS;
-  const hasElev = !opts?.skipElev;
-  const hasWind = !opts?.skipWind && hasElev;
-  const phases: SigKiloPhase[] = ["range"];
-  if (hasElev) phases.push("elev");
-  if (hasWind) phases.push("wind");
+  const phases: SigKiloPhase[] = ["range", "elev", "wind"];
   const cycleLen = phases.length * step;
 
-  setPhase("idle");
   for (let c = 0; c < SIG_KILO_CYCLES; c++) {
     for (let i = 0; i < phases.length; i++) {
       const at = acquire + c * cycleLen + i * step;
@@ -169,7 +244,7 @@ export function scheduleSigKiloSequence(
   }
   pushTimer(
     window.setTimeout(
-      () => setPhase("done"),
+      () => setPhase("off"),
       acquire + SIG_KILO_CYCLES * cycleLen,
     ),
   );

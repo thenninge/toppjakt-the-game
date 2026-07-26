@@ -22,7 +22,9 @@ import {
   HABROK_GREEN_MIN_ZOOM,
   HABROK_YELLOW_MIN_ZOOM,
   type LrfSpec,
+  type ScopeClickUnit,
 } from "@/lib/optics/spec";
+import { mmAt100ToAngular } from "@/lib/optics/clicks";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
@@ -36,12 +38,19 @@ import {
 } from "@/components/hunt/lrf/ZeissVictoryLrfHud";
 import {
   SigSauerKilo3000LrfHud,
-  usesSigStyleBallisticLrfHud,
+  isSigKilo3000Lrf,
   scheduleSigKiloSequence,
+  SIG_KILO_STATUS_TIMEOUT_MS,
   type SigElevDir,
   type SigKiloPhase,
   type SigWindDir,
 } from "@/components/hunt/lrf/SigSauerKilo3000LrfHud";
+import {
+  GenericSigStyleLrfHud,
+  scheduleGenericSigLrfSequence,
+  usesGenericSigStyleLrfHud,
+  type GenericSigLrfPhase,
+} from "@/components/hunt/lrf/GenericSigStyleLrfHud";
 
 export type SpotMode = "eyes" | "binos" | "thermal";
 
@@ -113,6 +122,8 @@ type SpotViewProps = {
   hasLrf?: boolean;
   /** Kestrel in kit — enables Sig-style HUD on non-AB LRFs via BDX link. */
   hasKestrel?: boolean;
+  /** Equipped rifle scope click unit — Sig HUD MOA vs MRAD. */
+  scopeClickUnit?: ScopeClickUnit;
   /** Label for HUD, e.g. brand + name. */
   binosLabel?: string | null;
   thermalLabel?: string | null;
@@ -392,6 +403,7 @@ export function SpotView({
   hasThermal = false,
   hasLrf = false,
   hasKestrel = false,
+  scopeClickUnit = "MRAD",
   binosLabel,
   thermalLabel,
   thermalBatteryGameSec = 0,
@@ -557,11 +569,15 @@ export function SpotView({
   const [zeissPhase, setZeissPhase] = useState<ZeissVictoryLrfPhase>("idle");
   const [zeissRangeM, setZeissRangeM] = useState<number | null>(null);
   const [zeissElevClicks, setZeissElevClicks] = useState<number | null>(null);
-  const [sigPhase, setSigPhase] = useState<SigKiloPhase>("idle");
+  const [sigPhase, setSigPhase] = useState<SigKiloPhase>("off");
+  const [genericSigPhase, setGenericSigPhase] =
+    useState<GenericSigLrfPhase>("idle");
   const [sigRangeM, setSigRangeM] = useState<number | null>(null);
   const [sigInclineDeg, setSigInclineDeg] = useState<number | null>(null);
+  const [sigElevAngular, setSigElevAngular] = useState<number | null>(null);
   const [sigElevMrad, setSigElevMrad] = useState<number | null>(null);
   const [sigElevDir, setSigElevDir] = useState<SigElevDir | null>(null);
+  const [sigWindAngular, setSigWindAngular] = useState<number | null>(null);
   const [sigWindMrad, setSigWindMrad] = useState<number | null>(null);
   const [sigWindDir, setSigWindDir] = useState<SigWindDir | null>(null);
   const [rangedBird, setRangedBird] = useState<BirdObservedInfo | null>(null);
@@ -570,6 +586,8 @@ export function SpotView({
     activeLrf: SpotLrfMeta | null,
   ) => void>(() => {});
   const activeLrfRef = useRef<SpotLrfMeta | null>(null);
+  const sigPhaseRef = useRef<SigKiloPhase>("off");
+  sigPhaseRef.current = sigPhase;
   const onPlacePointRef = useRef(onPlacePoint);
   onPlacePointRef.current = onPlacePoint;
   const placeModeRef = useRef(!!onPlacePoint);
@@ -586,11 +604,14 @@ export function SpotView({
     setZeissPhase("idle");
     setZeissRangeM(null);
     setZeissElevClicks(null);
-    setSigPhase("idle");
+    setSigPhase("off");
+    setGenericSigPhase("idle");
     setSigRangeM(null);
     setSigInclineDeg(null);
+    setSigElevAngular(null);
     setSigElevMrad(null);
     setSigElevDir(null);
+    setSigWindAngular(null);
     setSigWindMrad(null);
     setSigWindDir(null);
   }
@@ -598,7 +619,8 @@ export function SpotView({
   function startZeissSequence(rangeM: number, elevClicks: number | null) {
     clearLrfTimers();
     setLrfReading(null);
-    setSigPhase("idle");
+    setSigPhase("off");
+    setGenericSigPhase("idle");
     setZeissRangeM(rangeM);
     setZeissElevClicks(elevClicks);
     setZeissPhase("idle");
@@ -621,7 +643,8 @@ export function SpotView({
     }
   }
 
-  function startSigSequence(
+  /** Realistic KILO3000 OLED cycle (status already shown). */
+  function startKilo3000Sequence(
     rangeM: number,
     inclineDeg: number,
     hold: SpotLrfHoldSolution | null,
@@ -629,14 +652,44 @@ export function SpotView({
     clearLrfTimers();
     setLrfReading(null);
     setZeissPhase("idle");
+    setGenericSigPhase("idle");
+    setSigRangeM(rangeM);
+    setSigInclineDeg(inclineDeg);
+    const elevAng =
+      hold != null
+        ? mmAt100ToAngular(hold.elevMrad * 100, scopeClickUnit)
+        : null;
+    const windAng =
+      hold != null
+        ? mmAt100ToAngular(hold.windMrad * 100, scopeClickUnit)
+        : null;
+    setSigElevAngular(elevAng ?? 0);
+    setSigElevDir(hold?.elevDir ?? "up");
+    setSigWindAngular(windAng ?? 0);
+    setSigWindDir(hold?.windDir ?? "right");
+    scheduleSigKiloSequence(setSigPhase, (id) => {
+      lrfTimersRef.current.push(id);
+    });
+  }
+
+  /** Legacy Sig-style HUD for Geovid / other AB LRFs. */
+  function startGenericSigSequence(
+    rangeM: number,
+    inclineDeg: number,
+    hold: SpotLrfHoldSolution | null,
+  ) {
+    clearLrfTimers();
+    setLrfReading(null);
+    setZeissPhase("idle");
+    setSigPhase("off");
     setSigRangeM(rangeM);
     setSigInclineDeg(inclineDeg);
     setSigElevMrad(hold?.elevMrad ?? null);
     setSigElevDir(hold?.elevDir ?? null);
     setSigWindMrad(hold?.windMrad ?? null);
     setSigWindDir(hold?.windDir ?? null);
-    scheduleSigKiloSequence(
-      setSigPhase,
+    scheduleGenericSigLrfSequence(
+      setGenericSigPhase,
       (id) => {
         lrfTimersRef.current.push(id);
       },
@@ -698,7 +751,8 @@ export function SpotView({
           setZeissPhase("idle");
           setZeissRangeM(null);
           setZeissElevClicks(null);
-          setSigPhase("idle");
+          setSigPhase("off");
+          setGenericSigPhase("idle");
           setRangedBird(null);
         }
       }
@@ -953,6 +1007,43 @@ export function SpotView({
 
   function fireLrf(activeLrf: SpotLrfMeta | null) {
     if (!landscapeReady) return;
+    const zeiss = isZeissVictoryLrf(activeLrf);
+    const kilo3000 = isSigKilo3000Lrf(activeLrf);
+    const genericSig = usesGenericSigStyleLrfHud(activeLrf, {
+      hasKestrel,
+      isSigKilo3000: kilo3000,
+    });
+
+    /**
+     * Sig KILO3000 only: 1st F → status HUD; 2nd F → range + elev/wind cycle.
+     * Place-mode (admin) skips status and measures immediately.
+     */
+    if (
+      kilo3000 &&
+      !placeModeRef.current &&
+      sigPhaseRef.current === "off"
+    ) {
+      clearLrfTimers();
+      setLrfReading(null);
+      setZeissPhase("idle");
+      setGenericSigPhase("idle");
+      setSigRangeM(null);
+      setSigInclineDeg(null);
+      setSigElevAngular(null);
+      setSigElevDir(null);
+      setSigWindAngular(null);
+      setSigWindDir(null);
+      setSigPhase("status");
+      lrfTimersRef.current.push(
+        window.setTimeout(() => {
+          if (sigPhaseRef.current === "status") {
+            setSigPhase("off");
+          }
+        }, SIG_KILO_STATUS_TIMEOUT_MS),
+      );
+      return;
+    }
+
     const visible = birdPlacements.filter((p) =>
       visibleInSpotMode(p.distanceM, mode, {
         habrokZoom: habrokZoomGate,
@@ -975,8 +1066,6 @@ export function SpotView({
       -25,
       Math.min(25, Math.round((45 - lookY) * 0.4)),
     );
-    const zeiss = isZeissVictoryLrf(activeLrf);
-    const sigStyle = usesSigStyleBallisticLrfHud(activeLrf, { hasKestrel });
 
     function resolveHold(distanceM: number): SpotLrfHoldSolution | null {
       if (!activeLrf) return null;
@@ -998,10 +1087,25 @@ export function SpotView({
       return null;
     }
 
+    function playHud(
+      measured: number,
+      hold: SpotLrfHoldSolution | null,
+    ) {
+      if (zeiss) {
+        startZeissSequence(measured, hold?.elevClicksAbs ?? null);
+      } else if (kilo3000) {
+        startKilo3000Sequence(measured, inclineDeg, hold);
+      } else if (genericSig) {
+        startGenericSigSequence(measured, inclineDeg, hold);
+      } else {
+        resetLrfHud();
+        setLrfReading(`${Math.round(measured)} m`);
+      }
+    }
+
     if (hit && activeLrf) {
-      const measured = Math.round(
-        measureDistanceWithLrf(hit.distanceM, activeLrf),
-      );
+      const measured =
+        Math.round(measureDistanceWithLrf(hit.distanceM, activeLrf) * 10) / 10;
       const hold = resolveHold(measured);
       const contact: BirdObservedInfo = {
         placement: hit,
@@ -1011,27 +1115,14 @@ export function SpotView({
       };
       setRangedBird(contact);
       onBirdRanged?.(contact);
-      if (zeiss) {
-        startZeissSequence(measured, hold?.elevClicksAbs ?? null);
-      } else if (sigStyle) {
-        startSigSequence(measured, inclineDeg, hold);
-      } else {
-        resetLrfHud();
-        setLrfReading(`${measured} m`);
-      }
+      playHud(measured, hold);
       return;
     }
 
-    const terrain = 80 + Math.floor(Math.random() * 420);
-    const hold = resolveHold(terrain);
-    if (zeiss) {
-      startZeissSequence(terrain, hold?.elevClicksAbs ?? null);
-    } else if (sigStyle) {
-      startSigSequence(terrain, inclineDeg, hold);
-    } else {
-      resetLrfHud();
-      setLrfReading(`${terrain} m`);
-    }
+    const terrain = 80 + Math.floor(Math.random() * 420) + Math.random();
+    const terrainRounded = Math.round(terrain * 10) / 10;
+    const hold = resolveHold(terrainRounded);
+    playHud(terrainRounded, hold);
   }
 
   /** Eyes / non-LRF bird lock → Aware immediately. */
@@ -1089,8 +1180,18 @@ export function SpotView({
         : null;
   const showLrf = !!activeLrf;
   const showZeissHud = showLrf && isZeissVictoryLrf(activeLrf);
-  const showSigHud =
-    showLrf && usesSigStyleBallisticLrfHud(activeLrf, { hasKestrel });
+  const isKilo3000Hud = showLrf && isSigKilo3000Lrf(activeLrf);
+  const showGenericSigHud =
+    showLrf &&
+    usesGenericSigStyleLrfHud(activeLrf, {
+      hasKestrel,
+      isSigKilo3000: isKilo3000Hud,
+    });
+  /** KILO OLED only while awake — off = bare binos, ingen LRF-ring. */
+  const showKiloHud = isKilo3000Hud && sigPhase !== "off";
+  /** Generic LRF ring — budget LRF without AB HUD. */
+  const showGenericLrfReticle =
+    showLrf && !showZeissHud && !isKilo3000Hud && !showGenericSigHud;
   fireLrfRef.current = fireLrf;
   activeLrfRef.current = activeLrf;
 
@@ -1485,9 +1586,21 @@ export function SpotView({
                 rangeM={zeissRangeM}
                 elevClicks={zeissElevClicks}
               />
-            ) : showSigHud ? (
+            ) : showKiloHud ? (
               <SigSauerKilo3000LrfHud
                 phase={sigPhase}
+                rangeM={sigRangeM}
+                inclineDeg={sigInclineDeg}
+                elevAngular={sigElevAngular}
+                elevDir={sigElevDir}
+                windAngular={sigWindAngular}
+                windDir={sigWindDir}
+                hasKestrel={hasKestrel}
+                clickUnit={scopeClickUnit}
+              />
+            ) : showGenericSigHud ? (
+              <GenericSigStyleLrfHud
+                phase={genericSigPhase}
                 rangeM={sigRangeM}
                 inclineDeg={sigInclineDeg}
                 elevMrad={sigElevMrad}
@@ -1495,10 +1608,14 @@ export function SpotView({
                 windMrad={sigWindMrad}
                 windDir={sigWindDir}
               />
-            ) : showLrf ? (
+            ) : showGenericLrfReticle ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
-            {!showZeissHud && !showSigHud && showLrf && lrfReading ? (
+            {!showZeissHud &&
+            !showKiloHud &&
+            !showGenericSigHud &&
+            showGenericLrfReticle &&
+            lrfReading ? (
               <span className="spot-lrf-readout">{lrfReading}</span>
             ) : null}
           </>
@@ -1558,9 +1675,21 @@ export function SpotView({
                 rangeM={zeissRangeM}
                 elevClicks={zeissElevClicks}
               />
-            ) : showSigHud ? (
+            ) : showKiloHud ? (
               <SigSauerKilo3000LrfHud
                 phase={sigPhase}
+                rangeM={sigRangeM}
+                inclineDeg={sigInclineDeg}
+                elevAngular={sigElevAngular}
+                elevDir={sigElevDir}
+                windAngular={sigWindAngular}
+                windDir={sigWindDir}
+                hasKestrel={hasKestrel}
+                clickUnit={scopeClickUnit}
+              />
+            ) : showGenericSigHud ? (
+              <GenericSigStyleLrfHud
+                phase={genericSigPhase}
                 rangeM={sigRangeM}
                 inclineDeg={sigInclineDeg}
                 elevMrad={sigElevMrad}
@@ -1568,10 +1697,14 @@ export function SpotView({
                 windMrad={sigWindMrad}
                 windDir={sigWindDir}
               />
-            ) : showLrf ? (
+            ) : showGenericLrfReticle ? (
               <span className="spot-lrf-reticle" aria-hidden />
             ) : null}
-            {!showZeissHud && !showSigHud && showLrf && lrfReading ? (
+            {!showZeissHud &&
+            !showKiloHud &&
+            !showGenericSigHud &&
+            showGenericLrfReticle &&
+            lrfReading ? (
               <span className="spot-lrf-readout">{lrfReading}</span>
             ) : null}
           </>
