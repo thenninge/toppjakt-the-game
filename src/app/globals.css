@@ -933,6 +933,19 @@ body {
   opacity: 0.45;
 }
 
+.admin-spot-bake {
+  min-width: 7.5rem;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-spot-bake .admin-spot-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .admin-spot-meta {
   margin: 0;
   font-size: 0.75rem;

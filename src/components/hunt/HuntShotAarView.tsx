@@ -126,7 +126,7 @@ export function HuntShotAarView({
               marginTop: -greenD / 2,
             }}
           />
-          {geom.headDiameterMm > 0 ? (
+          {isHeadshot && geom.headDiameterMm > 0 ? (
             <span
               className="triggercam-zone triggercam-zone--head"
               style={{
@@ -155,7 +155,7 @@ export function HuntShotAarView({
         <p className="spot-binos-hint">
           {isHeadshot
             ? "Gul sone — headshot · instant kill"
-            : "Gul = headshot · grønn = bryst · rød = vital · rødt hull = treffpunkt"}
+            : "Rød = vital · grønn = instant kill · rødt hull = treffpunkt"}
         </p>
         <button type="button" className="intro-button" onClick={onContinue}>
           {continueLabel}

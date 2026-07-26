@@ -6,17 +6,17 @@ import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
-  spriteIdsForSpecies,
-  type BirdSpriteId,
-} from "@/lib/hunt/birdSprites";
-import {
   BIRD_SPRITE_SCALE_DEFAULT,
   BIRD_SPRITE_SCALE_MAX,
   BIRD_SPRITE_SCALE_MIN,
+  applyBakedBirdSpriteScales,
+  exportEffectiveBirdSpriteScales,
   getBirdSpriteScalePercent,
+  isBirdSpriteSpeciesScaleDirty,
   setBirdSpriteScalePercent,
   subscribeBirdSpriteScales,
 } from "@/lib/hunt/birdSpriteScale";
+import { spriteIdsForSpecies, type BirdSpriteId } from "@/lib/hunt/birdSprites";
 import {
   isBirdSpriteAllowedInScene,
   setBirdSpriteAllowedInScene,
@@ -141,6 +141,85 @@ function UseInSceneField({
         </span>
       </span>
     </label>
+  );
+}
+
+function SpriteScaleBakeButton({
+  species,
+}: {
+  species: "tiur" | "orrhane";
+}) {
+  const [dirty, setDirty] = useState(() =>
+    isBirdSpriteSpeciesScaleDirty(species),
+  );
+  const [baking, setBaking] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sync = () => setDirty(isBirdSpriteSpeciesScaleDirty(species));
+    sync();
+    return subscribeBirdSpriteScales(sync);
+  }, [species]);
+
+  async function bakeToRepo() {
+    const all = exportEffectiveBirdSpriteScales();
+    const ids = spriteIdsForSpecies(species);
+    const scales = Object.fromEntries(
+      ids.map((id) => [id, all[id] ?? getBirdSpriteScalePercent(id)]),
+    );
+    setBaking(true);
+    setStatus("Skriver…");
+    try {
+      const res = await fetch("/api/admin/sprite-scales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ species, scales }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        sprites?: number;
+        path?: string;
+        scales?: Record<string, number>;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      applyBakedBirdSpriteScales(
+        (data.scales ?? scales) as Partial<Record<BirdSpriteId, number>>,
+      );
+      setDirty(false);
+      setStatus(
+        `OK ${data.sprites} → repo. Commit + push.`,
+      );
+    } catch (err) {
+      setStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBaking(false);
+    }
+  }
+
+  return (
+    <div className="admin-spot-field admin-spot-bake">
+      <span>Scale → repo</span>
+      <button
+        type="button"
+        className="intro-button admin-spot-btn"
+        disabled={!dirty || baking}
+        onClick={() => void bakeToRepo()}
+        title={
+          dirty
+            ? `Skriv ${species}-scale til birdSpriteScaleCatalog.ts`
+            : "Ingen lokale scale-endringer for denne arten"
+        }
+      >
+        {baking ? "Skriver…" : "Lagre til repo"}
+      </button>
+      {status ? <span className="admin-spot-allow-hint">{status}</span> : null}
+    </div>
   );
 }
 
@@ -512,6 +591,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
               spotImageSrc={imageSrc}
               spriteId={tiurSpriteId}
             />
+            <SpriteScaleBakeButton species="tiur" />
           </div>
 
           <div className="admin-spot-row">
@@ -535,6 +615,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
               spotImageSrc={imageSrc}
               spriteId={orreSpriteId}
             />
+            <SpriteScaleBakeButton species="orrhane" />
           </div>
 
           <div className="admin-spot-row admin-spot-perch-row">

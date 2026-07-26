@@ -214,10 +214,12 @@ const AIM_SPEED_MM_PER_SEC = 44;
 /** Landscape acquire: fraction of scope FOV panned per second (at hold start). */
 const LANDSCAPE_AIM_FOV_FRAC = 0.36;
 /**
- * While holding F: fine reticle placement.
- * Halved vs base so absolute F-speed stays the same after the 2× arrow bump.
+ * While holding F: fine reticle placement for continuous pan.
+ * Tap step uses {@link FOCUS_AIM_TAP_MULT} instead.
  */
 const FOCUS_AIM_SPEED_MULT = 0.14;
+/** Arrow tap while F held — fraction of the unfocused tap step. */
+const FOCUS_AIM_TAP_MULT = 0.3;
 const DEFAULT_SCOPE_ZOOM = 12;
 
 /** Aim (mm from vital) that puts landscape centre under the reticle. */
@@ -1051,7 +1053,9 @@ export function HuntShootView({
         e.preventDefault();
         if (keysRef.current[dir] != null) return;
         keysRef.current[dir] = performance.now();
-        const step = arrowTapMm();
+        const step =
+          arrowTapMm() *
+          (focusRef.current.held ? FOCUS_AIM_TAP_MULT : 1);
         if (dir === "up") nudgeAim(0, -step);
         if (dir === "down") nudgeAim(0, step);
         if (dir === "left") nudgeAim(-step, 0);
