@@ -30,7 +30,7 @@ export const HUNT_IMAGE_SCENES: HuntImageScene[] = [
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif)$/i;
 
 /** Spot landscapes — /public/images/spot/ */
-const SPOT_IMAGES: string[] = [
+export const SPOT_IMAGES: string[] = [
   "/images/spot/spot1.png",
   "/images/spot/spot2.png",
   "/images/spot/spot3.png",

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SpotView } from "@/components/hunt/SpotView";
 import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
+import { AdminSceneCreationPanel } from "@/components/town/AdminSceneCreationPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
   BIRD_SPRITE_SCALE_DEFAULT,
@@ -50,7 +51,7 @@ type AdminOfficeProps = {
   onLeave: () => void;
 };
 
-type AdminTab = "spotting" | "treff";
+type AdminTab = "spotting" | "scenes" | "treff";
 
 function spotLabel(src: string): string {
   const base = src.split("/").pop() ?? src;
@@ -236,6 +237,15 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
     );
   }
 
+  if (tab === "scenes") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminSceneCreationPanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
   return (
     <div className="admin-office-shell">
       <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
@@ -267,6 +277,19 @@ function AdminTabBar({
         onClick={() => onTab("spotting")}
       >
         Spotting
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "scenes"}
+        className={
+          tab === "scenes"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("scenes")}
+      >
+        Scene creation
       </button>
       <button
         type="button"

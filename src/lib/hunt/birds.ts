@@ -720,37 +720,38 @@ export function bindBirdsToSpotImage(
 
 export type AdminSpotSpeciesMode = "tiur" | "orrhane" | "both";
 
+function stableFlipFromId(id: string): boolean {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return (h & 1) === 0;
+}
+
 /**
- * Admin calibration: fill every perch on `imageSrc` (optionally filtered by
- * species) with fixed tiur/orre sprites — ignores kit and hunt bird state.
+ * Admin: fill given perches with fixed tiur/orre sprites (ignores hunt birds).
+ * `stableDistance` uses mid of min/max + id-based flip (scene editor).
  */
-export function adminPlacementsForSpotImage(
-  imageSrc: string,
+export function adminPlacementsFromPerches(
+  perches: readonly SpotPerch[],
   opts: {
-    speciesMode: AdminSpotSpeciesMode;
     tiurSpriteId: BirdSpriteId;
     orreSpriteId: BirdSpriteId;
+    stableDistance?: boolean;
     random?: () => number;
   },
 ): BirdVisualPlacement[] {
   const random = opts.random ?? Math.random;
-  let perches = perchesForSpotImage(imageSrc);
-  if (opts.speciesMode === "tiur") {
-    perches = perches.filter((p) => p.species === "tiur");
-  } else if (opts.speciesMode === "orrhane") {
-    perches = perches.filter((p) => p.species === "orrhane");
-  } else {
-    perches = perches.filter(
-      (p) => p.species === "tiur" || p.species === "orrhane",
-    );
-  }
+  const seats = perches.filter(
+    (p) => p.species === "tiur" || p.species === "orrhane",
+  );
 
-  return perches.map((perch, i) => {
+  return seats.map((perch, i) => {
     const spriteId =
       perch.species === "orrhane" ? opts.orreSpriteId : opts.tiurSpriteId;
     const sprite = getBirdSprite(spriteId);
-    const distanceM = rollPerchDistanceM(perch, random);
     const perchId = perch.id ?? `p${i}`;
+    const distanceM = opts.stableDistance
+      ? Math.round((perch.distanceMinM + perch.distanceMaxM) / 2)
+      : rollPerchDistanceM(perch, random);
     return {
       birdId: `admin-${perchId}`,
       perchId,
@@ -766,8 +767,41 @@ export function adminPlacementsForSpotImage(
         spriteId,
         perch.scalePercent ?? 100,
       ),
-      flip: random() < 0.5,
+      flip: opts.stableDistance
+        ? stableFlipFromId(perchId)
+        : random() < 0.5,
     };
+  });
+}
+
+/**
+ * Admin calibration: fill every perch on `imageSrc` (optionally filtered by
+ * species) with fixed tiur/orre sprites — ignores kit and hunt bird state.
+ */
+export function adminPlacementsForSpotImage(
+  imageSrc: string,
+  opts: {
+    speciesMode: AdminSpotSpeciesMode;
+    tiurSpriteId: BirdSpriteId;
+    orreSpriteId: BirdSpriteId;
+    random?: () => number;
+  },
+): BirdVisualPlacement[] {
+  let perches = perchesForSpotImage(imageSrc);
+  if (opts.speciesMode === "tiur") {
+    perches = perches.filter((p) => p.species === "tiur");
+  } else if (opts.speciesMode === "orrhane") {
+    perches = perches.filter((p) => p.species === "orrhane");
+  } else {
+    perches = perches.filter(
+      (p) => p.species === "tiur" || p.species === "orrhane",
+    );
+  }
+
+  return adminPlacementsFromPerches(perches, {
+    tiurSpriteId: opts.tiurSpriteId,
+    orreSpriteId: opts.orreSpriteId,
+    random: opts.random,
   });
 }
 

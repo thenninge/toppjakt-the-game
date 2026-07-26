@@ -159,6 +159,13 @@ type SpotViewProps = {
    * gate) so calibration of the checkbox is visible immediately.
    */
   adminEyesFlagPreview?: boolean;
+  /**
+   * Scene editor: F/Space (and LRF button) reports landscape % under reticle
+   * even with no bird — for placing/moving perches.
+   */
+  onPlacePoint?: (pt: { x: number; y: number }) => void;
+  /** Extra nodes inside the landscape world (perch draft markers, etc.). */
+  worldOverlay?: React.ReactNode;
 };
 
 /** Single arrow tap — landscape % step. */
@@ -398,6 +405,8 @@ export function SpotView({
   belowFrame,
   showPerchLabels = false,
   adminEyesFlagPreview = false,
+  onPlacePoint,
+  worldOverlay,
 }: SpotViewProps) {
   const binoZoom = Math.max(1, magnification);
   const thermalZoom = Math.max(1, thermalMagnification);
@@ -558,6 +567,10 @@ export function SpotView({
     activeLrf: SpotLrfMeta | null,
   ) => void>(() => {});
   const activeLrfRef = useRef<SpotLrfMeta | null>(null);
+  const onPlacePointRef = useRef(onPlacePoint);
+  onPlacePointRef.current = onPlacePoint;
+  const placeModeRef = useRef(!!onPlacePoint);
+  placeModeRef.current = !!onPlacePoint;
 
   function clearLrfTimers() {
     for (const id of lrfTimersRef.current) window.clearTimeout(id);
@@ -723,13 +736,24 @@ export function SpotView({
 
       const optic =
         modeRef.current === "binos" || modeRef.current === "thermal";
-      if (!optic) return;
-
       const lrfKey =
         e.key === "f" ||
         e.key === "F" ||
         e.key === " " ||
         e.code === "Space";
+      // Scene editor: F places at lens/frame centre even in eyes mode.
+      if (lrfKey && placeModeRef.current) {
+        e.preventDefault();
+        if (e.repeat) return;
+        if (optic) {
+          fireLrfRef.current(activeLrfRef.current);
+        } else {
+          onPlacePointRef.current?.({ x: 50, y: 50 });
+        }
+        return;
+      }
+      if (!optic) return;
+
       if (lrfKey && activeLrfRef.current) {
         e.preventDefault();
         if (e.repeat) return;
@@ -936,6 +960,10 @@ export function SpotView({
     const hit = findBirdUnderLrfReticle(visible, pan, zoom);
     const lookX = landscapeAtLensCenter(pan.x, zoom);
     const lookY = landscapeAtLensCenter(pan.y, zoom);
+    onPlacePoint?.({
+      x: Math.round(lookX * 10) / 10,
+      y: Math.round(lookY * 10) / 10,
+    });
     const bearing = ((Math.round(
       bearingFromSpotFrame(viewBearingDeg, lookX),
     ) % 360) + 360) % 360;
@@ -1074,6 +1102,17 @@ export function SpotView({
   }
 
   function onFrameClick(e: MouseEvent<HTMLDivElement>) {
+    if (onPlacePoint && mode === "eyes") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      onPlacePoint({
+        x: Math.round(xPct * 10) / 10,
+        y: Math.round(yPct * 10) / 10,
+      });
+      return;
+    }
     if (!birdClickEnabled || mode !== "eyes") return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -1412,6 +1451,7 @@ export function SpotView({
                   onSelect={birdClickEnabled ? onBirdClick : undefined}
                 />
               ))}
+              {worldOverlay}
             </div>
           </>
         ) : mode === "binos" ? (
@@ -1433,6 +1473,7 @@ export function SpotView({
                   onSelect={birdClickEnabled ? onBirdClick : undefined}
                 />
               ))}
+              {worldOverlay}
             </div>
             <div className="spot-optic-vignette" aria-hidden />
             {showZeissHud ? (
@@ -1478,6 +1519,7 @@ export function SpotView({
                     onSelect={undefined}
                   />
                 ))}
+                {worldOverlay}
               </div>
             ) : null}
             <ThermalCanvas

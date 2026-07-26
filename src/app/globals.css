@@ -584,6 +584,20 @@ body {
   max-width: 36rem;
 }
 
+.jegerprove-lang-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.jegerprove-lang-segment {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.jegerprove-lang-segment .range-seg-value {
+  font-size: 0.85rem;
+}
+
 .jegerprove-progress {
   margin: 0;
   font-size: 0.85rem;
@@ -944,6 +958,64 @@ body {
 .admin-spot-bake .admin-spot-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.admin-scene-create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0 1rem;
+}
+
+.scene-perch-marker {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.scene-perch-marker:active {
+  cursor: grabbing;
+}
+
+.scene-perch-marker-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #f4efe4;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  background: #c45c26;
+}
+
+.scene-perch-marker[data-species="orrhane"] .scene-perch-marker-dot {
+  background: #3d7ea6;
+}
+
+.scene-perch-marker.is-selected .scene-perch-marker-dot {
+  width: 18px;
+  height: 18px;
+  box-shadow:
+    0 0 0 2px #f0d080,
+    0 0 0 3px rgba(0, 0, 0, 0.65);
+}
+
+.scene-perch-marker-id {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 2px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #f4efe4;
+  text-shadow: 0 1px 2px #000;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .admin-spot-meta {
