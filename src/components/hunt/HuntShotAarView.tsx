@@ -32,6 +32,8 @@ type HuntShotAarViewProps = {
   birdFlip?: boolean;
   /** Topp/target pair — AAR shows the topp sprite (not the target guide). */
   birdSpriteId?: BirdSpriteId;
+  /** Extra class on the bird img (e.g. IMPACT orange figure). */
+  birdClassName?: string;
   onContinue: () => void;
 };
 
@@ -46,6 +48,7 @@ export function HuntShotAarView({
   continueLabel = "Fortsett",
   birdFlip = false,
   birdSpriteId = "tiur-1",
+  birdClassName,
   onContinue,
 }: HuntShotAarViewProps) {
   const geom = birdShotGeom(birdSpriteId);
@@ -108,7 +111,11 @@ export function HuntShotAarView({
           <img
             src={geom.displaySrc}
             alt="Fugl"
-            className="triggercam-aar-bird"
+            className={
+              birdClassName
+                ? `triggercam-aar-bird ${birdClassName}`
+                : "triggercam-aar-bird"
+            }
             width={geom.nativeW * aarScale}
             height={geom.nativeH * aarScale}
             draggable={false}

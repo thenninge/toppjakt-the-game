@@ -169,6 +169,10 @@ type AwareAppViewProps = {
   onShotPairsChange: (pairs: ShotPair[]) => void;
   onGameSeconds: (sec: number) => void;
   /**
+   * Real seconds spent sneaking (arrows / hold-to-sneak) — raises pulse.
+   */
+  onAwareSneakRealSec?: (realSec: number) => void;
+  /**
    * Track effort: body/mind fatigue + distance travelled for ettersøk /
    * tree recovery (clock is still via onGameSeconds).
    */
@@ -385,6 +389,7 @@ export function AwareAppView({
   focusPairId = null,
   onShotPairsChange,
   onGameSeconds,
+  onAwareSneakRealSec,
   onEttersokEffort,
   onProceedToShoot,
   onBirdFlushed,
@@ -491,6 +496,8 @@ export function AwareAppView({
 
   const onGameSecondsRef = useRef(onGameSeconds);
   onGameSecondsRef.current = onGameSeconds;
+  const onAwareSneakRealSecRef = useRef(onAwareSneakRealSec);
+  onAwareSneakRealSecRef.current = onAwareSneakRealSec;
   const onBirdFlushedRef = useRef(onBirdFlushed);
   onBirdFlushedRef.current = onBirdFlushed;
   const camoRef = useRef(camoSneakPct);
@@ -662,6 +669,7 @@ export function AwareAppView({
         const moving = arrowMoving || sneakBtnMoving;
         if (moving) {
           moveHoldRef.current += dt;
+          onAwareSneakRealSecRef.current?.(dt);
           const step = MOVE_PCT_PER_SEC * dt;
           let next = hunterRef.current;
           if (dest && (sneakBtnMoving || arrowMoving)) {

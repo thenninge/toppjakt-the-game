@@ -315,6 +315,46 @@ amp_mm = (18 / max(0.35, calm)) × (distanceM / 100)
 POA = aimMm + wobbleMm + triggerPullOffsetMm
 ```
 
+### 5.4 Puls (BPM) → vertikal heartbeat-shake
+
+Kilde: `src/lib/hunt/pulse.ts` · state i `HuntMapView` · runtime i `HuntShootView`.
+
+Reell puls **50–180 BPM** (hvilepuls 60; mind-calming kan ned til 50). BODY påvirker fortsatt `fatigueCalmFactor` (isotropisk wobble); puls er **egen vertikal kanal**.
+
+**Target BPM:**
+
+```
+target = 60
+  + physicalFatigue × 45
+  + exertion01 × 55          // nylig gange (pace × strain)
+  + awareSneak01 × 35        // sniking mot trygt Aware-sete
+  + stimPulseBpm             // koffein-stim (når ikke mind-snap)
+```
+
+**Spikes / calm:**
+
+| Hendelse | Effekt |
+|----------|--------|
+| Spot orre | +20 BPM |
+| Spot tiur | +30 BPM |
+| Tyribål | → hvilepuls 60 (clear load) |
+| Mind-mat (gain) | −50 × mindGain (20 % → −10) |
+| Mind → 100 % (Red Bull / tyribål mind) | → 50 BPM |
+| Spotting (binos/øyne) tid | raskere ease ned |
+| Hold pust (F) | pulse-shake ×0.35 |
+
+- Speedy / høy `physicalStrain` → høy `exertion01`; extreme caution → nesten ingen bump.
+- Aware: bevegelse (piler / hold-to-sneak) hever `awareSneak01`; stille / rest / camp demper.
+
+**Vertikal shake (Gun):**
+
+```
+pulseAmpMm = 22 × max(0,(bpm−60)/120)² × (distanceM/100)
+y += sin(2π · (bpm/60) · t) × pulseAmpMm
+```
+
+Bipod/sekk-anlegg ×0.45; fokus (F) ×0.35. X-aksen er uendret av puls.
+
 ### 5.5 Avtrekk (hold/slipp Space)
 
 Når **F** trykkes, rulles et tilfeldig **merke** på avtrekksbaren (0.5–2.5 s inn i en **3 s** bar). Spilleren holder Space (fyll) og **slipper** nær merket.
@@ -448,16 +488,16 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
   mat / hvile ─────┴── senker fatigue
 
               ▼
-     physicalFatigue / mentalFatigue
+     physicalFatigue / mentalFatigue / heartRateBpm
               │
-      ┌───────┼────────────────┐
-      ▼       ▼                ▼
- forced   fatigueCalm     fatigueDispersion
-  rest    Factor (BODY)   Factor (MIND → MOA ×)
-              │                │
-   gearCalm × focus(F) × calm    envelopeMoa × scale
-              ▼                │
-         wobble → POA ─────────┘
+      ┌───────┼────────────────┬─────────────────┐
+      ▼       ▼                ▼                 ▼
+ forced   fatigueCalm     fatigueDispersion   pulse Y-shake
+  rest    Factor (BODY)   Factor (MIND → MOA)  (BPM heartbeat)
+              │                │                 │
+   gearCalm × focus(F) × calm    envelopeMoa     sin(2π·Hz·t)
+              ▼                │                 │
+         wobble + pulseY → POA ─┘─────────────────┘
               ▼
          sampleShot (drop/v0/vind) → treffsone
               ▼
@@ -496,6 +536,7 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 | Spook / gone mind-hit | `src/lib/hunt/birds.ts` |
 | Mat + short rest restore | `src/lib/food/spec.ts` |
 | Calm / wobble / BODY→calm / MIND→MOA | `src/lib/range/precision.ts` |
+| Puls 60–180 + vertikal heartbeat-shake | `src/lib/hunt/pulse.ts` |
 | Treffsone / vital kill-roll | `src/lib/hunt/shoot.ts` |
 | meatRuin / marketValue | `src/lib/hunt/carcass.ts` |
 | damageFactor-filosofi | `src/lib/ammo/spec.ts` |

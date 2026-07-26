@@ -56,6 +56,8 @@ type HuntStaminaBarsProps = {
    * Bird nervousness 0–1 (1 = flush). Shown left of BATT/BODY after LRF/click lock.
    */
   birdNerve?: number | null;
+  /** Heart rate BPM (60–180). */
+  heartRateBpm?: number | null;
 };
 
 export function HuntStaminaBars({
@@ -63,7 +65,12 @@ export function HuntStaminaBars({
   mental,
   thermalBattery = null,
   birdNerve = null,
+  heartRateBpm = null,
 }: HuntStaminaBarsProps) {
+  const bpm =
+    heartRateBpm != null && Number.isFinite(heartRateBpm)
+      ? Math.round(heartRateBpm)
+      : null;
   return (
     <div className="hunt-stamina-bars" aria-label="Stamina">
       {birdNerve != null ? (
@@ -82,6 +89,23 @@ export function HuntStaminaBars({
       ) : null}
       <StaminaBar label="BODY" value={physical} />
       <StaminaBar label="MIND" value={mental} />
+      {bpm != null ? (
+        <div
+          className="hunt-stamina-pulse"
+          role="meter"
+          aria-label="Puls"
+          aria-valuemin={50}
+          aria-valuemax={180}
+          aria-valuenow={bpm}
+          aria-valuetext={`${bpm} slag i minuttet`}
+          title={`Puls ${bpm}`}
+        >
+          <span className="hunt-stamina-pulse-value">{bpm}</span>
+          <span className="hunt-stamina-pulse-label" aria-hidden>
+            PULS
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

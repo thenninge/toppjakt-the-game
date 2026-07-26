@@ -124,6 +124,19 @@ import { ShotVideoView } from "@/components/hunt/ShotVideoView";
 import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
 import type { HuntShootRest } from "@/lib/hunt/shootRest";
 import {
+  applyMindCalmToPulse,
+  applyPulseStim,
+  bumpHeartRateBpm,
+  exertionAfterWalk,
+  initialPulseState,
+  PULSE_SPOT_ORRE_BPM,
+  PULSE_SPOT_TIUR_BPM,
+  riseAwareSneak01,
+  setPulseToResting,
+  tickPulseState,
+  type PulseState,
+} from "@/lib/hunt/pulse";
+import {
   kitCamoStatSum,
   clothingRestBodyGain,
 } from "@/lib/camo/spec";
@@ -234,6 +247,8 @@ export type HuntHudStatus = {
    * Null when no active bird encounter.
    */
   birdNerve: number | null;
+  /** Heart rate BPM (60–180). */
+  heartRateBpm: number;
 };
 
 type HuntMapViewProps = {
@@ -441,6 +456,9 @@ type EatSession = {
    * then snap back to fatigue captured at drink time.
    */
   mindStimMinutes?: number;
+  /** Temporary BPM boost (Red Bull / coffee). */
+  pulseBoostBpm?: number;
+  pulseBoostMinutes?: number;
 };
 
 type RedBullBuff = {
@@ -579,6 +597,9 @@ export function HuntMapView({
   const [distanceTravelledM, setDistanceTravelledM] = useState(0);
   const [mentalFatigue, setMentalFatigue] = useState(0);
   const [physicalFatigue, setPhysicalFatigue] = useState(0);
+  const [pulse, setPulse] = useState<PulseState>(() => initialPulseState(0));
+  const pulseRef = useRef(pulse);
+  pulseRef.current = pulse;
   const [redBullBuff, setRedBullBuff] = useState<RedBullBuff | null>(null);
   const redBullBuffRef = useRef<RedBullBuff | null>(null);
   const [selected, setSelected] = useState<HuntGridCell | null>(null);
@@ -589,6 +610,8 @@ export function HuntMapView({
   );
   const [walkSession, setWalkSession] = useState<WalkSession | null>(null);
   const [spotSession, setSpotSession] = useState<SpotSession | null>(null);
+  const spotSessionRef = useRef(spotSession);
+  spotSessionRef.current = spotSession;
   /**
    * After «Til spotting» from Aware: keep Engage live so the player can
    * re-open the same encounter without a new LRF (re-range after moving).
@@ -1027,11 +1050,45 @@ export function HuntMapView({
     setLog("Red Bull-effekten er over — mind tilbake til før.");
   }
 
-  function advanceClockMinutes(deltaMin: number) {
+  function tickPulse(opts: {
+    gameMinutes: number;
+    physicalFatigue: number;
+    resting?: boolean;
+    spotting?: boolean;
+  }) {
+    const clockMin = Math.floor(clockSecondsRef.current / 60);
+    setPulse((prev) =>
+      tickPulseState(prev, {
+        gameMinutes: opts.gameMinutes,
+        physicalFatigue: opts.physicalFatigue,
+        clockMinutes: clockMin,
+        resting: opts.resting,
+        spotting: opts.spotting,
+      }),
+    );
+  }
+
+  function advanceClockMinutes(
+    deltaMin: number,
+    opts?: {
+      physicalFatigue?: number;
+      resting?: boolean;
+      skipPulse?: boolean;
+      spotting?: boolean;
+    },
+  ) {
     if (!Number.isFinite(deltaMin)) return;
     clockSecondsRef.current += deltaMin * 60;
     syncClockFromRef();
     checkRedBullExpiry();
+    if (!opts?.skipPulse) {
+      tickPulse({
+        gameMinutes: Math.max(0, deltaMin),
+        physicalFatigue: opts?.physicalFatigue ?? physicalFatigue,
+        resting: opts?.resting,
+        spotting: opts?.spotting,
+      });
+    }
   }
 
   function addGameSeconds(sec: number) {
@@ -1039,6 +1096,27 @@ export function HuntMapView({
     clockSecondsRef.current += sec;
     syncClockFromRef();
     checkRedBullExpiry();
+    tickPulse({
+      gameMinutes: Math.abs(sec) / 60,
+      physicalFatigue,
+      resting: false,
+      spotting: !!spotSessionRef.current,
+    });
+  }
+
+  function onAwareSneakRealSec(realSec: number) {
+    if (!(realSec > 0)) return;
+    setPulse((prev) => {
+      const awareSneak01 = riseAwareSneak01(prev.awareSneak01, realSec);
+      return tickPulseState(
+        { ...prev, awareSneak01 },
+        {
+          gameMinutes: realSec / 60,
+          physicalFatigue,
+          clockMinutes: Math.floor(clockSecondsRef.current / 60),
+        },
+      );
+    });
   }
 
   // Prefetch Supabase spotting scenes into the perch/image pool.
@@ -1058,6 +1136,7 @@ export function HuntMapView({
     setDistanceTravelledM(0);
     setMentalFatigue(0);
     setPhysicalFatigue(0);
+    setPulse(initialPulseState(0));
     setSelected(null);
     setPanel("arrived");
     setWalkSession(null);
@@ -1353,12 +1432,14 @@ export function HuntMapView({
               ),
             )
           : null,
+      heartRateBpm: pulse.heartRateBpm,
     });
   }, [
     clockMinutes,
     distanceTravelledM,
     effectiveMentalFatigue,
     physicalFatigue,
+    pulse.heartRateBpm,
     thermalBatteryGameSec,
     thermalBatteryMaxGameSec,
     hasThermal,
@@ -1612,13 +1693,28 @@ export function HuntMapView({
   function finishWalk() {
     if (!walkSession) return;
     const usedPace = getHuntPace(walkSession.paceId);
-    advanceClockMinutes(walkSession.minutes);
+    advanceClockMinutes(walkSession.minutes, { skipPulse: true });
     setDistanceTravelledM(
       (d) => d + walkSession.path.length * CELL_WIDTH_M,
     );
     const nextFatigue = fatigueAfterPath(walkSession.path, usedPace);
     setMentalFatigue(nextFatigue.mental);
     setPhysicalFatigue(nextFatigue.physical);
+    setPulse((prev) => {
+      const exertion01 = exertionAfterWalk(prev.exertion01, {
+        physicalStrain: usedPace.physicalStrain,
+        speed: usedPace.speed,
+        pathCells: walkSession.path.length,
+      });
+      return tickPulseState(
+        { ...prev, exertion01 },
+        {
+          gameMinutes: walkSession.minutes,
+          physicalFatigue: nextFatigue.physical,
+          clockMinutes: Math.floor(clockSecondsRef.current / 60),
+        },
+      );
+    });
     const arrivedAt = { ...walkSession.to };
     setPos(arrivedAt);
     const nowMins = Math.floor(clockSecondsRef.current / 60);
@@ -2156,6 +2252,15 @@ export function HuntMapView({
             Math.max(1, lookMin),
       ),
     );
+    const spotPulse =
+      info.placement.species === "tiur"
+        ? PULSE_SPOT_TIUR_BPM
+        : info.placement.species === "orrhane"
+          ? PULSE_SPOT_ORRE_BPM
+          : 0;
+    if (spotPulse > 0) {
+      setPulse((prev) => bumpHeartRateBpm(prev, spotPulse));
+    }
     const birdId = info.placement.birdId;
     const prior = birdMapContacts[birdId];
     const stand = recalledAwareStand();
@@ -3529,6 +3634,10 @@ export function HuntMapView({
       mindGain: entry.recovery.mindGain,
       minutes: entry.recovery.minutes,
       mindStimMinutes: entry.item.food.temporaryMindFullMinutes,
+      pulseBoostBpm: entry.item.food.pulseBoostBpm,
+      pulseBoostMinutes:
+        entry.item.food.pulseBoostMinutes ??
+        entry.item.food.temporaryMindFullMinutes,
     });
   }
 
@@ -3591,6 +3700,61 @@ export function HuntMapView({
     });
   }
 
+  function applyEatPulseBoost(
+    session: EatSession,
+    nextPhysical: number,
+  ) {
+    const isTyribal = session.label === TYRIBAL_RECOVERY.label;
+    const clockMin = Math.floor(clockSecondsRef.current / 60);
+
+    if (isTyribal) {
+      setPulse((prev) =>
+        tickPulseState(setPulseToResting(prev), {
+          gameMinutes: 0,
+          physicalFatigue: nextPhysical,
+          clockMinutes: clockMin,
+          resting: true,
+        }),
+      );
+      return;
+    }
+
+    const mindToFull =
+      !!session.mindToFull ||
+      !!(session.mindStimMinutes && session.mindStimMinutes > 0);
+    const mindGain = mindToFull ? 1 : Math.max(0, session.mindGain);
+
+    setPulse((prev) => {
+      let next = prev;
+      if (mindGain > 0 || mindToFull) {
+        next = applyMindCalmToPulse(next, {
+          mindGain,
+          mindToFull,
+        });
+      }
+      const boost = session.pulseBoostBpm ?? 0;
+      const mins =
+        session.pulseBoostMinutes ??
+        session.mindStimMinutes ??
+        0;
+      // Caffeine stim only when mind did not snap to floor (Red Bull → 50).
+      if (boost > 0 && mins > 0 && !mindToFull) {
+        next = applyPulseStim(next, {
+          boostBpm: boost,
+          durationGameMin: mins,
+          clockMinutes: clockMin,
+          physicalFatigue: nextPhysical,
+        });
+      }
+      return tickPulseState(next, {
+        gameMinutes: 0,
+        physicalFatigue: nextPhysical,
+        clockMinutes: clockMin,
+        resting: true,
+      });
+    });
+  }
+
   function finishEat() {
     if (!eatSession) return;
     if (eatSession.itemId) {
@@ -3617,8 +3781,14 @@ export function HuntMapView({
       // Drop active buff without crashing — refreshing the stim window.
       redBullBuffRef.current = null;
       setRedBullBuff(null);
-      advanceClockMinutes(eatSession.minutes);
-      setPhysicalFatigue((p) => clampFatigue(p - eatSession.bodyGain));
+      advanceClockMinutes(eatSession.minutes, {
+        resting: true,
+        skipPulse: true,
+      });
+      const nextPhysical = clampFatigue(
+        physicalFatigue - eatSession.bodyGain,
+      );
+      setPhysicalFatigue(nextPhysical);
       const afterMin = Math.floor(clockSecondsRef.current / 60);
       const buff: RedBullBuff = {
         restoreMentalFatigue: restore,
@@ -3627,21 +3797,28 @@ export function HuntMapView({
       redBullBuffRef.current = buff;
       setRedBullBuff(buff);
       setMentalFatigue(0);
+      applyEatPulseBoost(eatSession, nextPhysical);
+      const pulseNote = " · Puls → 50 (mind 100%)";
       setLog(
-        `${eatSession.label}: Mind → 100% i ${eatSession.mindStimMinutes} min · deretter crash tilbake · ${eatSession.minutes} min.`,
+        `${eatSession.label}: Mind → 100% i ${eatSession.mindStimMinutes} min · deretter crash tilbake · ${eatSession.minutes} min${pulseNote}.`,
       );
       setEatSession(null);
       setPanel("arrived");
       return;
     }
 
-    advanceClockMinutes(eatSession.minutes);
-    setPhysicalFatigue((p) => clampFatigue(p - eatSession.bodyGain));
+    advanceClockMinutes(eatSession.minutes, {
+      resting: true,
+      skipPulse: true,
+    });
+    const nextPhysical = clampFatigue(physicalFatigue - eatSession.bodyGain);
+    setPhysicalFatigue(nextPhysical);
     if (eatSession.mindToFull) {
       setMentalFatigue(0);
     } else {
       setMentalFatigue((m) => clampFatigue(m - eatSession.mindGain));
     }
+    applyEatPulseBoost(eatSession, nextPhysical);
     const bodyTxt = formatStaminaPct(eatSession.bodyGain);
     const mindTxt = eatSession.mindToFull
       ? "Mind 100%"
@@ -3657,8 +3834,18 @@ export function HuntMapView({
       coffeeLeft != null
         ? ` (${coffeeLeft}/${THERMOS_CUPS_PER_FILL} kaffe igjen).`
         : "";
+    const pulseNote =
+      eatSession.label === TYRIBAL_RECOVERY.label
+        ? " · Puls → hvilepuls"
+        : eatSession.mindToFull || eatSession.mindGain > 0
+          ? eatSession.mindToFull
+            ? " · Puls → 50"
+            : ` · Puls −${Math.round(eatSession.mindGain * 50)}`
+          : eatSession.pulseBoostBpm && eatSession.pulseBoostBpm > 0
+            ? ` · Puls +${eatSession.pulseBoostBpm}`
+            : "";
     setLog(
-      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.${fireNote}${coffeeNote}`,
+      `${eatSession.label}: Body +${bodyTxt} · ${mindTxt} · ${eatSession.minutes} min.${fireNote}${coffeeNote}${pulseNote}`,
     );
     setEatSession(null);
     setPanel("arrived");
@@ -3666,7 +3853,10 @@ export function HuntMapView({
 
   function finishForcedRest() {
     if (!forcedRest) return;
-    advanceClockMinutes(FORCED_REST_MINUTES);
+    advanceClockMinutes(FORCED_REST_MINUTES, {
+      physicalFatigue: 0.15,
+      resting: true,
+    });
     setPhysicalFatigue(0.15);
     setMentalFatigue((m) => clampFatigue(m - 0.25));
     setLog(
@@ -3699,8 +3889,12 @@ export function HuntMapView({
   function finishCampOvernight() {
     if (!campOvernight) return;
     const session = campOvernight;
-    advanceClockMinutes(session.durationMinutes);
-    setPhysicalFatigue((p) => clampFatigue(p - 0.35));
+    const nextPhysical = clampFatigue(physicalFatigue - 0.35);
+    advanceClockMinutes(session.durationMinutes, {
+      physicalFatigue: nextPhysical,
+      resting: true,
+    });
+    setPhysicalFatigue(nextPhysical);
     setMentalFatigue((m) => clampFatigue(m - 0.2));
     const mins = Math.floor(clockSecondsRef.current / 60);
     setCampOvernight(null);
@@ -4015,6 +4209,7 @@ export function HuntMapView({
         musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={effectiveMentalFatigue}
+        heartRateBpm={pulse.heartRateBpm}
         birdFlip={!!shootSession.bird.flip}
         birdSpriteId={shootSession.bird.spriteId}
         landscapeSrc={shootSession.imageSrc}
@@ -4121,6 +4316,7 @@ export function HuntMapView({
         focusPairId={awareSession.ettersokPairId ?? null}
         onShotPairsChange={setShotPairs}
         onGameSeconds={addGameSeconds}
+        onAwareSneakRealSec={onAwareSneakRealSec}
         onEttersokEffort={applyEttersokEffort}
         onProceedToShoot={proceedFromAware}
         onBirdFlushed={onAwareBirdFlushed}

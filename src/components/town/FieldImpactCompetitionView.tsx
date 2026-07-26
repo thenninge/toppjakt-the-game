@@ -61,6 +61,7 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
+  formatHuntImpactOffsetMm,
   SCOPE_VIEWPORT_REF_PX,
 } from "@/lib/hunt/shoot";
 import {
@@ -85,8 +86,10 @@ import {
   type FieldImpactHoldCard,
   type FieldImpactResult,
   type FieldImpactRoundLayout,
+  type FieldImpactStageHit,
   type FieldImpactStageLayout,
 } from "@/lib/range/fieldImpactComp";
+import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 
 type FieldImpactCompetitionViewProps = {
   balance: number;
@@ -122,7 +125,7 @@ type Keys = {
   right: boolean;
 };
 
-type Phase = "lobby" | "shooting" | "result";
+type Phase = "lobby" | "shooting" | "result" | "aar";
 
 const LANDSCAPE_AIM_FOV_FRAC = 0.36;
 const FOCUS_AIM_SPEED_MULT = 0.14;
@@ -220,6 +223,9 @@ export function FieldImpactCompetitionView({
   const [startMs, setStartMs] = useState<number | null>(null);
   const [elapsedUiMs, setElapsedUiMs] = useState(0);
   const [result, setResult] = useState<FieldImpactResult | null>(null);
+  const [stageHits, setStageHits] = useState<FieldImpactStageHit[]>([]);
+  const [aarIndex, setAarIndex] = useState(0);
+  const stageHitsRef = useRef<FieldImpactStageHit[]>([]);
   const [impactFlash, setImpactFlash] = useState(false);
   const [lastImpact, setLastImpact] = useState<{
     xMm: number;
@@ -501,6 +507,9 @@ export function FieldImpactCompetitionView({
     setStartMs(now);
     setElapsedUiMs(0);
     setResult(null);
+    setStageHits([]);
+    stageHitsRef.current = [];
+    setAarIndex(0);
     setLastImpact(null);
     setImpactFlash(false);
     setAimMm(aim0);
@@ -629,7 +638,7 @@ export function FieldImpactCompetitionView({
     setShotsFired(nextShots);
     setLastImpact(impact);
 
-    const { zone } = classifyHuntShot(
+    const { zone, kind } = classifyHuntShot(
       impact.xMm,
       impact.yMm,
       selectedAmmo.ammo.damageFactor,
@@ -644,6 +653,25 @@ export function FieldImpactCompetitionView({
       return;
     }
 
+    const st = fieldImpactStageFromLayout(
+      roundLayoutRef.current,
+      stageIndexRef.current,
+    );
+    if (st) {
+      const logged: FieldImpactStageHit = {
+        distanceM: st.distanceM,
+        spriteId: st.spriteId,
+        species: st.species,
+        xMm: impact.xMm,
+        yMm: impact.yMm,
+        diameterMm: impact.diameterMm,
+        zone,
+        kind,
+      };
+      stageHitsRef.current = [...stageHitsRef.current, logged];
+      setStageHits(stageHitsRef.current);
+    }
+
     advancingRef.current = true;
     setImpactFlash(true);
     if (impactFlashClearRef.current != null) {
@@ -655,10 +683,12 @@ export function FieldImpactCompetitionView({
     if (finishNow) {
       const started = startMsRef.current ?? performance.now();
       const elapsed = performance.now() - started;
+      const hits = stageHitsRef.current;
       const fin = finalizeFieldImpact({
         elapsedMs: elapsed,
         shotsFired: nextShots,
         stagesHit: FIELD_IMPACT_STAGE_COUNT,
+        stageHits: hits,
       });
       // Stop clock on last hit; show IMPACT briefly, then result.
       impactFlashClearRef.current = window.setTimeout(() => {
@@ -1197,6 +1227,39 @@ export function FieldImpactCompetitionView({
     );
   }
 
+  if (phase === "aar" && result && result.stageHits.length > 0) {
+    const hit =
+      result.stageHits[aarIndex] ?? result.stageHits[0]!;
+    const n = result.stageHits.length;
+    return (
+      <div className="field-impact-comp field-impact-aar">
+        <HuntShotAarView
+          title={`Fasit · hold ${aarIndex + 1}/${n} · ${hit.distanceM} m`}
+          subtitle={`Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} · sone ${hit.zone} · ${speciesLabelNb(hit.species)}`}
+          continueLabel={
+            aarIndex + 1 < n ? "Neste hold →" : "Tilbake til resultat"
+          }
+          birdSpriteId={hit.spriteId}
+          birdClassName="field-impact-target-orange"
+          hit={{
+            xMm: hit.xMm,
+            yMm: hit.yMm,
+            diameterMm: hit.diameterMm,
+            zone: hit.zone,
+            kind: hit.kind,
+          }}
+          onContinue={() => {
+            if (aarIndex + 1 < n) {
+              setAarIndex((i) => i + 1);
+            } else {
+              setPhase("result");
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   if (phase === "result" && result) {
     return (
       <div className="field-impact-comp">
@@ -1219,13 +1282,47 @@ export function FieldImpactCompetitionView({
           </p>
         </header>
 
+        {result.stageHits.length > 0 ? (
+          <ul className="field-impact-hit-log" aria-label="Treffpunkt per hold">
+            {result.stageHits.map((h, i) => (
+              <li key={`${h.distanceM}-${i}`}>
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary field-impact-hit-log-btn"
+                  onClick={() => {
+                    setAarIndex(i);
+                    setPhase("aar");
+                  }}
+                >
+                  Hold {i + 1} · {h.distanceM} m · {speciesLabelNb(h.species)} ·{" "}
+                  {formatHuntImpactOffsetMm(h.xMm, h.yMm)} · {h.zone}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
         <div className="range-actions">
+          {result.stageHits.length > 0 ? (
+            <button
+              type="button"
+              className="intro-button"
+              onClick={() => {
+                setAarIndex(0);
+                setPhase("aar");
+              }}
+            >
+              Se fasit (alle hold)
+            </button>
+          ) : null}
           <button
             type="button"
             className="intro-button"
             onClick={() => {
               setPhase("lobby");
               setResult(null);
+              setStageHits([]);
+              stageHitsRef.current = [];
               setStatus("Klar for ny runde?");
             }}
           >
@@ -1350,7 +1447,7 @@ export function FieldImpactCompetitionView({
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        className="scope-target hunt-tiur-target"
+                        className="scope-target hunt-tiur-target field-impact-target-orange"
                         src={shotGeom.displaySrc}
                         alt="Feltfigur"
                         draggable={false}

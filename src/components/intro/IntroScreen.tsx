@@ -1382,6 +1382,7 @@ export function IntroScreen() {
               mental={huntHud.mentalStamina}
               thermalBattery={huntHud.thermalBattery}
               birdNerve={huntHud.birdNerve}
+              heartRateBpm={huntHud.heartRateBpm}
             />
           ) : phase === "hunt" ? (
             <span className="intro-header-side" aria-hidden />

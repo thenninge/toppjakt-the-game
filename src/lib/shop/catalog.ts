@@ -3635,7 +3635,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Red Bull",
     name: "Energy Drink",
     priceNok: 39,
-    note: "Mind → 100% i 30 min spilltid, deretter crash tilbake til før. 1 min å drikke.",
+    note: "Mind → 100% i 30 min spilltid, deretter crash tilbake til før. Puls +35. 1 min å drikke.",
     food: {
       kind: "ready",
       huntTrips: 1,
@@ -3645,6 +3645,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       minutes: 1,
       requiresBoil: false,
       temporaryMindFullMinutes: 30,
+      pulseBoostBpm: 35,
+      pulseBoostMinutes: 30,
     },
   },
   {

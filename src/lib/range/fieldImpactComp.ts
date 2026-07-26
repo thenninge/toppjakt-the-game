@@ -15,6 +15,7 @@ import {
   pickBirdSpriteId,
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
+import type { HuntShotResultKind, HuntShotZone } from "@/lib/hunt/shoot";
 import { milClicksToScopeClicks } from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
@@ -113,6 +114,18 @@ export type FieldImpactHoldCard = {
   dopeDistanceM?: number;
 };
 
+/** Logged impact on a stage figure (IMPACT hit that advanced the round). */
+export type FieldImpactStageHit = {
+  distanceM: number;
+  spriteId: BirdSpriteId;
+  species: BirdSpecies;
+  xMm: number;
+  yMm: number;
+  diameterMm: number;
+  zone: HuntShotZone;
+  kind: HuntShotResultKind;
+};
+
 export type FieldImpactResult = {
   elapsedMs: number;
   stagesHit: number;
@@ -121,6 +134,8 @@ export type FieldImpactResult = {
   tierLabel: string | null;
   entryFeeNok: number;
   netNok: number;
+  /** Winning impact per stage (for AAR). */
+  stageHits: FieldImpactStageHit[];
 };
 
 /** One rolled stage for a competition run. */
@@ -272,6 +287,7 @@ export function finalizeFieldImpact(opts: {
   elapsedMs: number;
   shotsFired: number;
   stagesHit: number;
+  stageHits?: FieldImpactStageHit[];
   entryFeeNok?: number;
 }): FieldImpactResult {
   const entry = opts.entryFeeNok ?? FIELD_IMPACT_ENTRY_FEE_NOK;
@@ -284,5 +300,6 @@ export function finalizeFieldImpact(opts: {
     tierLabel,
     entryFeeNok: entry,
     netNok: payoutNok - entry,
+    stageHits: opts.stageHits ?? [],
   };
 }

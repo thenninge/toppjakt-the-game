@@ -31,6 +31,16 @@ export type FoodSpec = {
    * then mental fatigue snaps back to the pre-consume value.
    */
   temporaryMindFullMinutes?: number;
+  /**
+   * Temporary heart-rate boost (BPM above the fatigue/exertion target)
+   * while the stim window is active.
+   */
+  pulseBoostBpm?: number;
+  /**
+   * Duration of {@link pulseBoostBpm}. Defaults to
+   * {@link temporaryMindFullMinutes} when unset.
+   */
+  pulseBoostMinutes?: number;
 };
 
 export function isCookGear(food: FoodSpec): boolean {
@@ -107,7 +117,9 @@ export function isThermosFood(food: FoodSpec): boolean {
   return food.kind === "thermos";
 }
 
-export const COFFEE_RECOVERY: FoodRecovery & { label: string } = {
+export const COFFEE_RECOVERY: FoodRecovery & {
+  label: string;
+} = {
   label: "Kaffekopp (termos)",
   bodyGain: 0.05,
   mindGain: 0.15,

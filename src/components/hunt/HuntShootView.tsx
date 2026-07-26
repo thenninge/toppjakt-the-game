@@ -19,6 +19,11 @@ import {
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
+import {
+  formatPulseBpm,
+  pulseHz,
+  pulseVerticalAmpMm,
+} from "@/lib/hunt/pulse";
 import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import {
   rifleSpecWithCustomBarrel,
@@ -200,6 +205,8 @@ type HuntShootViewProps = {
   physicalFatigue?: number;
   /** Hunt MIND fatigue 0–1 (1 = exhausted). Widens MOA envelope up to 2×. */
   mentalFatigue?: number;
+  /** Heart rate BPM (60–180) — marked vertical gun shake. */
+  heartRateBpm?: number;
   /** Same horizontal flip as spotting (placement.flip). */
   birdFlip?: boolean;
   /** Topp/target pair chosen at spot time. */
@@ -325,6 +332,7 @@ export function HuntShootView({
   musicEnabled,
   physicalFatigue = 0,
   mentalFatigue = 0,
+  heartRateBpm = 60,
   birdFlip = false,
   birdSpriteId = "tiur-1",
   landscapeSrc,
@@ -531,6 +539,8 @@ export function HuntShootView({
     physicalFatigue: physicalFatigue,
     mentalFatigue: mentalFatigue,
   });
+  const heartRateBpmRef = useRef(heartRateBpm);
+  const shootRestRef = useRef(shootRest);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
@@ -609,6 +619,12 @@ export function HuntShootView({
   useEffect(() => {
     fatigueRef.current = { physicalFatigue, mentalFatigue };
   }, [physicalFatigue, mentalFatigue]);
+  useEffect(() => {
+    heartRateBpmRef.current = heartRateBpm;
+  }, [heartRateBpm]);
+  useEffect(() => {
+    shootRestRef.current = shootRest;
+  }, [shootRest]);
   useEffect(() => {
     distanceRef.current = trueDistanceM;
   }, [trueDistanceM]);
@@ -1238,6 +1254,18 @@ export function HuntShootView({
       const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
+      const fPhase = focusPhase(focusRef.current, now);
+      const pulseAmp = pulseVerticalAmpMm(
+        heartRateBpmRef.current,
+        distanceRef.current,
+        {
+          rest:
+            shootRestRef.current === "bipod" ||
+            shootRestRef.current === "backpack",
+          focused: fPhase === "focused",
+        },
+      );
+      const hz = pulseHz(heartRateBpmRef.current);
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
@@ -1246,7 +1274,8 @@ export function HuntShootView({
         y:
           Math.cos(t * 1.7 + ph.b) * amp * 0.55 +
           Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
-          Math.sin(t * 9.5 + 1) * amp * 0.15,
+          Math.sin(t * 9.5 + 1) * amp * 0.15 +
+          Math.sin(t * Math.PI * 2 * hz) * pulseAmp,
       };
 
       paintScopeWorld();
@@ -1261,7 +1290,6 @@ export function HuntShootView({
         }
       }
 
-      const fPhase = focusPhase(focusRef.current, now);
       if (fPhase === "focused") {
         paintFocusProgress(focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS);
         setFocusBarFatigued(false);
@@ -1461,6 +1489,8 @@ export function HuntShootView({
               ) : (
                 <> · Estimat {measuredDistanceM} m</>
               )}
+              {" · "}
+              Puls {formatPulseBpm(heartRateBpm)}
               {" · "}
               vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
               {shotGeom.vitalDiameterMm} mm

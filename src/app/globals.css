@@ -332,6 +332,32 @@ body {
   background: linear-gradient(180deg, #e8a060 0%, #a04028 100%);
 }
 
+.hunt-stamina-pulse {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.12rem;
+  min-width: 1.85rem;
+  padding-bottom: 0.05rem;
+}
+
+.hunt-stamina-pulse-value {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--canyon-sand);
+  letter-spacing: 0.02em;
+}
+
+.hunt-stamina-pulse-label {
+  font-size: 0.48rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--canyon-dust);
+}
+
 .hunt-stamina-bar-label {
   display: flex;
   flex-direction: column;
@@ -5400,6 +5426,31 @@ body {
     rgba(0, 0, 0, 0.35) 70%
   );
   animation: field-impact-flash-in 0.9s ease-out both;
+}
+
+/* Knall-oransje feltfigur (fugle-silhuett). */
+.field-impact-target-orange {
+  filter: sepia(1) saturate(12) hue-rotate(-18deg) brightness(1.12)
+    contrast(1.05);
+}
+
+.field-impact-hit-log {
+  list-style: none;
+  margin: 0.75rem 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.field-impact-hit-log-btn {
+  width: 100%;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.field-impact-aar .shooting-range {
+  min-height: 0;
 }
 
 @keyframes field-impact-flash-in {
