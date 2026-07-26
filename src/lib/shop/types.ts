@@ -43,6 +43,8 @@ export type ShopItemBase = {
   unitLabel?: string;
   /** Listed but not buyable (grayed — "Sold out"). */
   soldOut?: boolean;
+  /** Listed in XXL but only VIP names can buy. */
+  vipOnly?: boolean;
   /**
    * Shop bundle: buying this grants these item ids (not the bundle SKU).
    * Price is typically a discounted package deal.
@@ -367,6 +369,7 @@ export type CatalogDraft = {
   caliber?: string;
   unitLabel?: string;
   soldOut?: boolean;
+  vipOnly?: boolean;
   /** See {@link ShopItemBase.bundleItemIds}. */
   bundleItemIds?: string[];
   ammo?: AmmoSpec;

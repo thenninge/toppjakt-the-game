@@ -93,7 +93,7 @@ import {
   formatStaminaPct,
   kitCanBoil,
 } from "@/lib/food/spec";
-import { isCamcorderMisc, isChronographMisc, isFireStarterMisc, isHeadlampMisc } from "@/lib/misc/spec";
+import { isCamcorderMisc, isCamcorderTripodMisc, isChronographMisc, isFireStarterMisc, isHeadlampMisc } from "@/lib/misc/spec";
 import {
   createCarcassFromHarvest,
   formatWeightKg as formatCarcassWeightKg,
@@ -118,10 +118,13 @@ import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { ShotVideoView } from "@/components/hunt/ShotVideoView";
 import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
-import { kitBirdSpotFactor } from "@/lib/camo/spec";
+import {
+  kitCamoStatSum,
+  clothingRestBodyGain,
+} from "@/lib/camo/spec";
 import {
   EMPTY_CUSTOMS_MODS,
-  applyCustomCamoBirdSpot,
+  applyCustomCamoSneakPct,
   customsBeddingMoaDelta,
   customsCalmMultiplier,
   customsTriggerPullScale,
@@ -557,6 +560,11 @@ export function HuntMapView({
   );
   const [walkSession, setWalkSession] = useState<WalkSession | null>(null);
   const [spotSession, setSpotSession] = useState<SpotSession | null>(null);
+  /**
+   * After «Til spotting» from Aware: keep Engage live so the player can
+   * re-open the same encounter without a new LRF (re-range after moving).
+   */
+  const [engageResume, setEngageResume] = useState<AwareSession | null>(null);
   /** Spot image + bird seats sticky per cell for this hunt (until spooked / end hunt). */
   const [spotLayoutByCell, setSpotLayoutByCell] = useState<
     Record<string, SpotCellLayout>
@@ -710,7 +718,18 @@ export function HuntMapView({
   const kestrelItem = useMemo(
     () =>
       kitItems.find(
-        (i) => isBallisticsItem(i) && i.ballistics.measuresCrosswind,
+        (i) =>
+          isBallisticsItem(i) &&
+          i.ballistics.measuresCrosswind &&
+          !i.ballistics.windSpeedDisplayOnly,
+      ) ?? null,
+    [kitItems],
+  );
+  /** Clas Ohlson-class: local wind speed display only (no crosswind fasit). */
+  const windMeterItem = useMemo(
+    () =>
+      kitItems.find(
+        (i) => isBallisticsItem(i) && !!i.ballistics.windSpeedDisplayOnly,
       ) ?? null,
     [kitItems],
   );
@@ -867,16 +886,26 @@ export function HuntMapView({
     },
     [solveLrfHold],
   );
-  const camoBirdSpot = useMemo(
+  const camoPieces = useMemo(
+    () => kitItems.filter(isCamoItem).map((i) => i.camo),
+    [kitItems],
+  );
+  const camoSneakPct = useMemo(
     () =>
-      applyCustomCamoBirdSpot(
-        kitBirdSpotFactor(
-          kitItems.filter(isCamoItem).map((i) => i.camo),
-          false,
-        ),
-        customsMods,
-      ),
-    [kitItems, customsMods],
+      applyCustomCamoSneakPct(kitCamoStatSum(camoPieces, "sneakPct"), customsMods),
+    [camoPieces, customsMods],
+  );
+  const clothingSpeedPct = useMemo(
+    () => kitCamoStatSum(camoPieces, "speedPct"),
+    [camoPieces],
+  );
+  const clothingFocusPct = useMemo(
+    () => kitCamoStatSum(camoPieces, "focusPct"),
+    [camoPieces],
+  );
+  const clothingRecoveryPct = useMemo(
+    () => kitCamoStatSum(camoPieces, "recoveryPct"),
+    [camoPieces],
   );
   const customsMoaDelta = customsBeddingMoaDelta(customsMods);
   const customsCalmMult = customsCalmMultiplier(customsMods);
@@ -895,15 +924,22 @@ export function HuntMapView({
       ),
     [kitItems],
   );
-  const camcorderItem = useMemo(() => {
+  const camcorderBody = useMemo(() => {
     const found = kitItems.find(
       (i) => isMiscItem(i) && isCamcorderMisc(i.misc),
     );
     return found && isMiscItem(found) ? found : null;
   }, [kitItems]);
-  const hasCamcorder = !!camcorderItem;
-  const camcorderSetupNerve = camcorderItem
-    ? camcorderSetupNerveFromMisc(camcorderItem.misc)
+  const camcorderTripod = useMemo(() => {
+    const found = kitItems.find(
+      (i) => isMiscItem(i) && isCamcorderTripodMisc(i.misc),
+    );
+    return found && isMiscItem(found) ? found : null;
+  }, [kitItems]);
+  /** Deploy needs camera body + tripod. */
+  const hasCamcorder = !!camcorderBody && !!camcorderTripod;
+  const camcorderSetupNerve = camcorderTripod
+    ? camcorderSetupNerveFromMisc(camcorderTripod.misc)
     : CAMCORDER_SETUP_NERVE;
   const hasChronograph = useMemo(
     () =>
@@ -986,6 +1022,7 @@ export function HuntMapView({
     setPanel("arrived");
     setWalkSession(null);
     setSpotSession(null);
+    setEngageResume(null);
     setShootSession(null);
     setAwareSession(null);
     huntScopeTurretsRef.current = null;
@@ -1105,6 +1142,7 @@ export function HuntMapView({
     if (lostCatchReveal || campOvernight) return;
     midnightHandledRef.current = true;
     setSpotSession(null);
+    setEngageResume(null);
     setShootSession(null);
     setAwareSession(null);
     setBirdEncounter(null);
@@ -1145,6 +1183,7 @@ export function HuntMapView({
     }
     // Close hunt UIs — spotting / shooting ends with skuddlys.
     setSpotSession(null);
+    setEngageResume(null);
     setShootSession(null);
     setBirdEncounter(null);
     birdEncounterRef.current = null;
@@ -1307,7 +1346,7 @@ export function HuntMapView({
           distanceM,
           isMoving: false,
           moveHoldSec: 0,
-          camoBirdSpot,
+          camoSneakPct,
         });
         if (!tick.flushes) return { nerve: tick.nerve, flushed: false as const };
         const result = spookBird(birdsRef.current, birdId, map);
@@ -1371,7 +1410,7 @@ export function HuntMapView({
       setBirdEncounter(next);
     }, 200);
     return () => window.clearInterval(id);
-  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoBirdSpot, skuddlysOpen]);
+  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoSneakPct, skuddlysOpen]);
 
   if (!terrain || !map) {
     return (
@@ -1401,7 +1440,12 @@ export function HuntMapView({
     const loadFactor = packLoad.fatigueLoadFactor;
     for (const cell of path) {
       const effort = getCellEffort(activeMap.id, cell);
-      const gain = fatigueFromStep(effort, usedPace, loadFactor);
+      const gain = fatigueFromStep(
+        effort,
+        usedPace,
+        loadFactor,
+        clothingFocusPct,
+      );
       mental = clampFatigue(mental + gain.mental);
       physical = clampFatigue(physical + gain.physical);
     }
@@ -1425,6 +1469,7 @@ export function HuntMapView({
       opts.minutes,
       pace,
       packLoad.fatigueLoadFactor,
+      clothingFocusPct,
     );
     setMentalFatigue((m) => clampFatigue(m + gain.mental));
     setPhysicalFatigue((p) => {
@@ -1480,7 +1525,13 @@ export function HuntMapView({
     }
 
     const usedPace = getHuntPace(paceId);
-    const trip = pathTravelMinutes(activeMap.id, pos, selected, usedPace);
+    const trip = pathTravelMinutes(
+      activeMap.id,
+      pos,
+      selected,
+      usedPace,
+      clothingSpeedPct,
+    );
     if (trip.steps === 0) return;
 
     const destAtParking = isAtParking(selected, activeMap);
@@ -1610,7 +1661,10 @@ export function HuntMapView({
     }
 
     setLog(walkLog);
-    const prespotChance = prespotChanceForPace(walkSession.paceId);
+    const prespotChance = prespotChanceForPace(
+      walkSession.paceId,
+      clothingFocusPct,
+    );
     if (
       !nowDark &&
       prespotChance > 0 &&
@@ -1666,8 +1720,9 @@ export function HuntMapView({
    */
   function queueNervousFlush(event: FlushEvent | null) {
     setSpotSession(null);
-    setAwareSession(null);
+    setEngageResume(null);
     setShootSession(null);
+    setAwareSession(null);
     setBirdEncounter(null);
     birdEncounterRef.current = null;
     if (!event) {
@@ -1956,9 +2011,10 @@ export function HuntMapView({
   function finishSpot(info: { mode: SpotMode; gameSeconds: number }) {
     const lookMin = info.gameSeconds / 60;
     const strain =
-      info.mode === "binos" || info.mode === "thermal"
+      (info.mode === "binos" || info.mode === "thermal"
         ? 0.02 * pace.mentalStrain
-        : 0.015 * pace.mentalStrain;
+        : 0.015 * pace.mentalStrain) *
+      Math.max(0, 1 - clothingFocusPct / 100);
     setMentalFatigue((m) => clampFatigue(m + strain * Math.max(1, lookMin)));
 
     const timeLabel =
@@ -2007,6 +2063,7 @@ export function HuntMapView({
       );
     }
     setSpotSession(null);
+    setEngageResume(null);
     if (pendingForcedRestRef.current) {
       pendingForcedRestRef.current = false;
       setForcedRest({ imageSrc: REST_TIRED_IMAGE });
@@ -2023,6 +2080,7 @@ export function HuntMapView({
   }) {
     if (!canHuntAtTime(clockMinutes)) {
       setSpotSession(null);
+      setEngageResume(null);
       setLog("Skuddlys over — du rekker ikke å gå til skudd nå.");
       setPanel("arrived");
       return;
@@ -2050,7 +2108,13 @@ export function HuntMapView({
     }
     const lookMin = info.gameSeconds / 60;
     setMentalFatigue((m) =>
-      clampFatigue(m + 0.02 * pace.mentalStrain * Math.max(1, lookMin)),
+      clampFatigue(
+        m +
+          0.02 *
+            pace.mentalStrain *
+            Math.max(0, 1 - clothingFocusPct / 100) *
+            Math.max(1, lookMin),
+      ),
     );
     const birdId = info.placement.birdId;
     const prior = birdMapContacts[birdId];
@@ -2134,6 +2198,7 @@ export function HuntMapView({
     };
 
     setSpotSession(null);
+    setEngageResume(null);
     const resumedStand =
       Math.abs(stand.x - 50) > 0.5 || Math.abs(stand.y - 50) > 0.5;
     setAwareSession({
@@ -2233,12 +2298,13 @@ export function HuntMapView({
       return;
     }
     setAwareSession(null);
+    setEngageResume(null);
     setBirdEncounter(null);
     setLog("Du lukker Aware. Fuglen er fortsatt der.");
     setPanel("arrived");
   }
 
-  /** Leave Aware stalk back to Spot — nerve keeps running. */
+  /** Leave Aware stalk back to Spot — nerve keeps running; Engage stays live. */
   function backToSpotFromAware(opts?: { hunter?: CellPoint }) {
     rememberAwareStand(opts?.hunter);
     if (awareSession?.ettersokPairId) {
@@ -2280,13 +2346,121 @@ export function HuntMapView({
         distanceM: newDist,
         nerve,
       };
+      // Snapshot for sticky Engage — reopen Aware without a new LRF.
+      setEngageResume({
+        ...session,
+        hunterPos: hunter,
+        trueDistanceM: newDist,
+        bird: {
+          ...session.bird,
+          distanceM: newDist,
+          widthPct: rescaleSpriteWidthPct(
+            session.bird.widthPct,
+            fromDist,
+            newDist,
+          ),
+        },
+        returnNerve: nerve,
+      });
+    } else if (session) {
+      const nerve =
+        birdEncounterRef.current?.birdId === session.bird.birdId
+          ? birdEncounterRef.current.nerve
+          : (session.returnNerve ?? birdEncounterRef.current?.nerve ?? 0);
+      const enc: BirdEncounter = {
+        birdId: session.bird.birdId,
+        distanceM: session.trueDistanceM,
+        nerve,
+        discovered: true,
+      };
+      birdEncounterRef.current = enc;
+      setBirdEncounter(enc);
+      setEngageResume({
+        ...session,
+        hunterPos: hunter,
+        returnNerve: nerve,
+      });
     }
     setAwareSession(null);
     beginSpot({
       reuseImageSrc: session?.imageSrc,
       distanceByBirdId,
+      focusBirdId: session?.bird.birdId,
+      initialMode: "binos",
     });
-    setLog("Tilbake til spotting — fuglen er fortsatt nervøs.");
+    setLog(
+      "Til spotting — mål gjerne avstand på nytt. Engage er fortsatt aktiv.",
+    );
+  }
+
+  /** Re-open Aware from sticky Engage (after Til spotting). */
+  function resumeEngageFromSpot() {
+    const session = engageResume;
+    if (!session) return;
+    if (!canHuntAtTime(clockMinutes)) {
+      setLog("Skuddlys over — du rekker ikke å gå til skudd nå.");
+      return;
+    }
+    const hunter = recalledAwareStand();
+    let next: AwareSession = {
+      ...session,
+      hunterPos: hunter,
+    };
+    if (session.birdPos) {
+      const newDist = Math.max(
+        40,
+        Math.round(distanceMBetween(hunter, session.birdPos)),
+      );
+      const fromDist = session.trueDistanceM || session.bird.distanceM;
+      next = {
+        ...next,
+        trueDistanceM: newDist,
+        measuredDistanceM: session.measuredDistanceM,
+        bird: {
+          ...session.bird,
+          distanceM: newDist,
+          widthPct: rescaleSpriteWidthPct(
+            session.bird.widthPct,
+            fromDist,
+            newDist,
+          ),
+        },
+      };
+      const nerve =
+        birdEncounterRef.current?.birdId === session.bird.birdId
+          ? birdEncounterRef.current.nerve
+          : (session.returnNerve ?? 0);
+      const enc: BirdEncounter = {
+        birdId: session.bird.birdId,
+        distanceM: newDist,
+        nerve,
+        discovered: true,
+      };
+      birdEncounterRef.current = enc;
+      setBirdEncounter(enc);
+      next = { ...next, returnNerve: nerve };
+    } else {
+      const nerve =
+        birdEncounterRef.current?.birdId === session.bird.birdId
+          ? birdEncounterRef.current.nerve
+          : (session.returnNerve ?? 0);
+      setBirdEncounter({
+        birdId: session.bird.birdId,
+        distanceM: session.trueDistanceM,
+        nerve,
+        discovered: true,
+      });
+      birdEncounterRef.current = {
+        birdId: session.bird.birdId,
+        distanceM: session.trueDistanceM,
+        nerve,
+        discovered: true,
+      };
+    }
+    setSpotSession(null);
+    setEngageResume(null);
+    setAwareSession(next);
+    setLog("Tilbake til Aware — fortsett sneak / skudd.");
   }
 
   /**
@@ -2490,6 +2664,7 @@ export function HuntMapView({
 
   function abortShoot() {
     setShootSession(null);
+    setEngageResume(null);
     setBirdEncounter(null);
     setLog("Du senker våpenet. Fuglen er fortsatt der.");
     setPanel("arrived");
@@ -2735,6 +2910,7 @@ export function HuntMapView({
     const recoveryOnly =
       pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill";
     setPendingPostShot(null);
+    setEngageResume(null);
     setBirdEncounter(null);
     if (pair.cell.row !== pos.row || pair.cell.col !== pos.col) {
       setPos({ ...pair.cell });
@@ -2829,6 +3005,7 @@ export function HuntMapView({
       onHeadshotNickname?.();
     }
     setBirdEncounter(null);
+    setEngageResume(null);
     const id = shootSession.bird.birdId;
     const dist = result.measuredDistanceM;
     const stand = shootSession.hunterPos;
@@ -3159,12 +3336,19 @@ export function HuntMapView({
     });
   }
 
+  function restBodyGain(base: number): number {
+    return clothingRestBodyGain(
+      sitPadBodyGain(base, hasSitPad),
+      clothingRecoveryPct,
+    );
+  }
+
   function takeShortRest() {
     setEatSession({
       imageSrc: pickEatImage(),
       itemId: null,
       label: SHORT_REST_RECOVERY.label,
-      bodyGain: sitPadBodyGain(SHORT_REST_RECOVERY.bodyGain, hasSitPad),
+      bodyGain: restBodyGain(SHORT_REST_RECOVERY.bodyGain),
       mindGain: SHORT_REST_RECOVERY.mindGain,
       minutes: SHORT_REST_RECOVERY.minutes,
     });
@@ -3184,7 +3368,7 @@ export function HuntMapView({
       imageSrc: pickFireImage(),
       itemId: fireStarter?.itemId ?? null,
       label: TYRIBAL_RECOVERY.label,
-      bodyGain: sitPadBodyGain(TYRIBAL_RECOVERY.bodyGain, hasSitPad),
+      bodyGain: restBodyGain(TYRIBAL_RECOVERY.bodyGain),
       mindGain: 1,
       mindToFull: true,
       minutes,
@@ -3323,7 +3507,7 @@ export function HuntMapView({
 
   const inspectTrip =
     selected && map
-      ? pathTravelMinutes(map.id, pos, selected, pace)
+      ? pathTravelMinutes(map.id, pos, selected, pace, clothingSpeedPct)
       : null;
   const selectedEffort = selected
     ? getCellEffort(map.id, selected)
@@ -3580,6 +3764,14 @@ export function HuntMapView({
         rangeSource={shootSession.rangeSource}
         ballisticHold={shootSession.ballisticHold}
         hasKestrelInKit={!!kestrelItem}
+        hasWindMeterInKit={!!windMeterItem && !kestrelItem}
+        windMeterErrorPercent={
+          windMeterItem && isBallisticsItem(windMeterItem)
+            ? windMeterItem.ballistics.windErrorPercent
+            : 18
+        }
+        windMeterBrand={windMeterItem?.brand}
+        windMeterName={windMeterItem?.name}
         initialSessionZeroMm={huntScopeTurretsRef.current}
         onSessionZeroChange={(xMm, yMm) => {
           huntScopeTurretsRef.current = { x: xMm, y: yMm };
@@ -3612,7 +3804,7 @@ export function HuntMapView({
         landscapeFocusX={shootSession.bird.x}
         landscapeFocusY={shootSession.bird.y}
         landscapeBirdWidthPct={shootSession.bird.widthPct}
-        camoBirdSpot={camoBirdSpot}
+        camoSneakPct={camoSneakPct}
         birdNerve={shootSession.birdNerve}
         onAffinitiesChange={onAffinitiesChange}
         onConsumeAmmo={onConsumeAmmo}
@@ -3678,7 +3870,7 @@ export function HuntMapView({
         initialHunter={awareSession.hunterPos ?? null}
         initialBird={awareSession.birdPos ?? null}
         weather={weather}
-        camoBirdSpot={camoBirdSpot}
+        camoSneakPct={camoSneakPct}
         initialBirdNerve={
           awareSession.returnNerve ??
           birdEncounter?.nerve ??
@@ -3717,7 +3909,11 @@ export function HuntMapView({
           });
         }}
         abortLabel={
-          awareSession.postShotSkuddpar ? "Tilbake" : "Avbryt"
+          awareSession.postShotSkuddpar
+            ? "Tilbake"
+            : awareSession.ettersokPairId
+              ? "Avbryt"
+              : "Til spotting"
         }
         onAbort={
           awareSession.postShotSkuddpar
@@ -3737,7 +3933,8 @@ export function HuntMapView({
         postShotSkuddparMode={!!awareSession.postShotSkuddpar}
         postShotSkuddparSecLeft={postShotGhostSecLeft}
         onPostShotSkuddparSaved={onPostShotSkuddparSaved}
-        onPairFound={(pair) => {
+        onPairFound={(pair, opts) => {
+          if (opts?.hunter) rememberAwareStand(opts.hunter);
           setMentalFatigue((m) => clampFatigue(m - FIND_BIRD_MIND_GAIN));
           setFindReveal({
             imageSrc:
@@ -3797,6 +3994,10 @@ export function HuntMapView({
         solveLrfHold={solveLrfHold}
         solveElevClicks={solveElevClicks}
         onBirdObserved={onBirdObserved}
+        onResumeEngage={
+          engageResume ? () => resumeEngageFromSpot() : undefined
+        }
+        engageResumeActive={!!engageResume}
         onDone={finishSpot}
         initialMode={spotSession.initialMode}
         initialPan={spotSession.initialPan}
@@ -4003,7 +4204,13 @@ export function HuntMapView({
               <fieldset className="hunt-pace-fieldset">
                 <legend>Oppførsel / fart</legend>
                 {HUNT_PACES.map((p) => {
-                  const mins = pathTravelMinutes(map.id, pos, selected, p)
+                  const mins = pathTravelMinutes(
+                    map.id,
+                    pos,
+                    selected,
+                    p,
+                    clothingSpeedPct,
+                  )
                     .minutes;
                   return (
                     <label key={p.id} className="hunt-pace-option">
@@ -4240,7 +4447,13 @@ export function HuntMapView({
                   <fieldset className="hunt-pace-fieldset">
                     <legend>Oppførsel / fart</legend>
                     {HUNT_PACES.map((p) => {
-                      const mins = pathTravelMinutes(map.id, pos, selected, p)
+                      const mins = pathTravelMinutes(
+                    map.id,
+                    pos,
+                    selected,
+                    p,
+                    clothingSpeedPct,
+                  )
                         .minutes;
                       return (
                         <label key={p.id} className="hunt-pace-option">
@@ -4403,13 +4616,14 @@ export function HuntMapView({
                     </span>
                     <span className="hunt-eat-option-meta">
                       Body +
-                      {formatStaminaPct(
-                        sitPadBodyGain(SHORT_REST_RECOVERY.bodyGain, hasSitPad),
-                      )}{" "}
+                      {formatStaminaPct(restBodyGain(SHORT_REST_RECOVERY.bodyGain))}{" "}
                       · Mind +
                       {formatStaminaPct(SHORT_REST_RECOVERY.mindGain)} ·{" "}
                       {SHORT_REST_RECOVERY.minutes} min
                       {hasSitPad ? " · sittpute ×1.2 body" : ""}
+                      {clothingRecoveryPct !== 0
+                        ? ` · klær ${clothingRecoveryPct > 0 ? "+" : ""}${clothingRecoveryPct}% body`
+                        : ""}
                     </span>
                   </button>
                 </li>
@@ -4424,14 +4638,15 @@ export function HuntMapView({
                     </span>
                     <span className="hunt-eat-option-meta">
                       Mind → 100% · Body +
-                      {formatStaminaPct(
-                        sitPadBodyGain(TYRIBAL_RECOVERY.bodyGain, hasSitPad),
-                      )}{" "}
+                      {formatStaminaPct(restBodyGain(TYRIBAL_RECOVERY.bodyGain))}{" "}
                       ·{" "}
                       {fireStarter
                         ? `${TYRIBAL_RECOVERY.minutes - fireStarter.minutesSaved} min (−${fireStarter.minutesSaved} med brikker · ${fireStarter.qty} bål igjen)`
                         : `${TYRIBAL_RECOVERY.minutes} min`}
-                      {hasSitPad ? " · sittpute ×1.2 body" : ""} ·{" "}
+                      {hasSitPad ? " · sittpute ×1.2 body" : ""}
+                      {clothingRecoveryPct !== 0
+                        ? ` · klær ${clothingRecoveryPct > 0 ? "+" : ""}${clothingRecoveryPct}% body`
+                        : ""} ·{" "}
                       {TYRIBAL_RECOVERY.note}
                     </span>
                   </button>

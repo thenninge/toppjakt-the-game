@@ -13,7 +13,10 @@ import {
   migrateReloadingInventoryPieces,
   normalizePowderOpenGrains,
 } from "@/lib/reloading/componentStock";
-import { normalizeKestrelProfiles } from "@/lib/ballistics/kestrelProfile";
+import {
+  normalizeKestrelProfiles,
+  sanitizeKitWindMeters,
+} from "@/lib/ballistics/kestrelProfile";
 import { normalizeAwareHuntState } from "@/lib/aware/shotPairStorage";
 import { normalizeCustomBarrelsMap } from "@/lib/customs/customBarrel";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
@@ -22,6 +25,7 @@ import {
   normalizeJaktkort,
 } from "@/lib/hunt/jaktkort";
 import {
+  sanitizeKitCamcorderTripods,
   sanitizeKitCamcorders,
   sanitizeKitShotCams,
 } from "@/lib/hunt/shoot";
@@ -104,9 +108,13 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     raw.reloadingPiecesMigrated === true
       ? inventoryRaw
       : migrateReloadingInventoryPieces(inventoryRaw);
-  const kit = sanitizeKitCamcorders(
-    sanitizeKitShotCams(
-      Array.isArray(raw.kit) ? (raw.kit as string[]) : base.kit,
+  const kit = sanitizeKitWindMeters(
+    sanitizeKitCamcorderTripods(
+      sanitizeKitCamcorders(
+        sanitizeKitShotCams(
+          Array.isArray(raw.kit) ? (raw.kit as string[]) : base.kit,
+        ),
+      ),
     ),
   );
   const weaponLicenses = Array.isArray(raw.weaponLicenses)

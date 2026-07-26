@@ -27,6 +27,7 @@ const SECTIONS: GuideSection[] = [
     title: "Ballistikk & vær",
     bullets: [
       "Kestrel Elite måler lokal vind → beste løsning inkl. ekte sidevind.",
+      "Clas Ohlson vindmåler: fane «Vindmåler» viser bare ustabil vindstyrke fra der det blåser — ingen sidevindvinkel. Windage må du regne i Enviro/App.",
       "LRF med Applied Ballistics / BDX uten Kestrel bruker ofte prognose og «full-value» vind (antar 90°) — større feil.",
       "LRF med onboard ballistics (BDX) + Kestrel Elite → nøyaktig fasit (Kestrel/LRF); du skrur tårnene selv.",
       "Habrok (termisk binokular med LRF) + Kestrel Elite → samme fasit; manuell dial.",
@@ -65,7 +66,7 @@ const SECTIONS: GuideSection[] = [
       "Uten Triggercam og uten oppsatt camcorder: skuddpar autofylles ikke — still retning og avstand selv (unntak: Swarovski EL Range lagrer skuddpar eksakt automatisk). Fluktcue er grov (±~30° σ) og snapper til 8-kompass (N, NØ, …). Ingen landingsavstand.",
       "Swarovski EL Range i kit: skuddpar lagres eksakt automatisk. Ettersøk-fluktcue krever fortsatt Triggercam eller camcorder.",
       "Triggercam i kit: after-action replay av treffpunkt; autofyll skuddpar med ±~30 m støy; fluktretning ±~10° σ (finere enn nakent øye).",
-      "Camcorder: sett opp før skudd. Billig stål-stativ: +100 % nervøsitet (nesten alltid flush). Premium karbonstativ: +15 % nervøsitet. Gir beste cue alene — autofyll ±~10 m, fluktretning ±~5° σ, pluss observert landingsavstand (±~12 %). Kun én camcorder i kit.",
+      "Camcorder: Sony-kamera + stativ i kit, sett opp før skudd. Biltema stål: +20 % nervøsitet. Manfrotto karbon: +15 %. Triggerstick Gen3: +13 % (raskere oppsett). Gir beste cue alene — autofyll ±~10 m, fluktretning ±~5° σ, pluss observert landingsavstand (±~12 %).",
       "Camcorder + Triggercam: dobbelt så nøyaktige ettersøkshint — halv feil i vinkel (±~2.5° σ) og avstand (landingscue ±~6 %, skuddpar ±~5 m).",
       "Bare Triggercam uten camcorder: middels nøyaktighet (±~10° / ±~30 m).",
       "Ettersøk: følg fluktretningen fra der fuglen satt. Spor nær sann landing + riktig retning → høy funnsjanse. Feil vei / for langt unna → ofte «ikke funnet» — legg nytt spor.",
@@ -106,7 +107,7 @@ const SECTIONS: GuideSection[] = [
     bullets: [
       "Jegerprøven: nye jegere må bestå 18 av 20 før byen åpnes (fugl, patron, kamuflasje). Du får bevis med navn og nickname.",
       "Bygg kit hjemme: rifle, scope, ammo, optikk, camo, mat. Uten jaktkort (inatur.no) kommer du ikke ut.",
-      "Camo: lav birdSpot = fuglen bygger nerve saktere (snø- vs barmark-tall). Suit veier tyngst; buff/lue/hansker/støvler demper silhuetten. Feil mønster (snøkamo på bar mark) straffer deg. Custom camo hos CB hjelper litt mer.",
+      "Camo/klær: sneak % reduserer bird nerve (summeres). Speed % endrer gangtid. Focus % øker caution-prespot og demper Mind-drain. Recovery % øker Body i rest/pause. Ghillie eksklusiv mot jakke+bukse. Arc'teryx LEAF = VIP. Snøkamo/M05 kommer i sesong.",
       "Gange på kartet: pace + celle-effort styrer minutter. Kit «top speed» (Home) påvirkes av ski vs støvler, ski-max/flyt/bredde, sekk-vekt og carry comfort — skistøvler kreves hvis du har ski i kit.",
       "Chestrig: QR ved kikkert opp (10 = 0 %, 1 = +10 % bird-nerve). Comfort = andel av binovekt på Body (10 = 0 %, 1 = 100 %). Sekk: QR ved Klar til skudd (samme skala). Sekk-comfort: 10 = 25 % lettere felt last (20 kg → 15 kg), 1 = full vekt. Du må ha sekk i kit for å jakte.",
       "Google-innlogging synker save til skyen (samme konto som Aware) — last inn eller overskriv ved konflikt.",

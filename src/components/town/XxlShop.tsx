@@ -65,6 +65,8 @@ type XxlShopProps = {
   /** Unused weapon licenses — required to buy hunting rifles. */
   canBuyRifle: boolean;
   unusedLicenses: number;
+  /** VIP login — unlocks vipOnly catalog items (e.g. LEAF Alpha). */
+  isVip?: boolean;
   onBuy: (
     item: ShopItem,
     qty?: number,
@@ -114,6 +116,7 @@ export function XxlShop({
   inventory,
   canBuyRifle,
   unusedLicenses,
+  isVip = false,
   onBuy,
   onLeave,
 }: XxlShopProps) {
@@ -225,8 +228,12 @@ export function XxlShop({
   }
 
   function tryBuy(item: ShopItem, qty = 1) {
-    if (!isPurchasableInShop(item)) {
-      setMessage("Unobtainable — ikke til salgs i XXL.");
+    if (!isPurchasableInShop(item, { isVip })) {
+      setMessage(
+        item.vipOnly && !isVip
+          ? "VIP only — Arc'teryx LEAF Alpha krever VIP-konto."
+          : "Unobtainable — ikke til salgs i XXL.",
+      );
       return;
     }
     if (isRifleItem(item) && !canBuyRifle) {
@@ -451,8 +458,9 @@ export function XxlShop({
       <ul className="shop-list">
         {items.map((item) => {
           const qty = ownedQty(item.id);
-          const unobtainable = !isPurchasableInShop(item);
+          const unobtainable = !isPurchasableInShop(item, { isVip });
           const soldOut = !!item.soldOut;
+          const vipLocked = !!item.vipOnly && !isVip;
           const canAfford = !unobtainable && balance >= item.priceNok;
           const stackable =
             isAmmoItem(item) ||
@@ -512,10 +520,10 @@ export function XxlShop({
                 ) : null}
                 {camo ? (
                   <span className="shop-row-ballistics">
-                    {camo.slot} · bird snow {camo.birdSpotSnow.toFixed(2)} ·
-                    no-snow {camo.birdSpotNoSnow.toFixed(2)} · speed{" "}
-                    {formatScore10(camo.terrainSpeed)} · stam{" "}
-                    {formatScore10(camo.stamina)}
+                    {camo.slot} · sneak {camo.sneakPct}% · speed{" "}
+                    {camo.speedPct}% · focus {camo.focusPct}% · recovery{" "}
+                    {camo.recoveryPct}%
+                    {item.vipOnly ? " · VIP" : ""}
                   </span>
                 ) : null}
                 {carry ? (
@@ -605,9 +613,11 @@ export function XxlShop({
                 ) : null}
                 {ballistics ? (
                   <span className="shop-row-ballistics">
-                    {ballistics.measuresCrosswind
-                      ? "måler crosswind"
-                      : "forecast / ingen lokal crosswind"}{" "}
+                    {ballistics.windSpeedDisplayOnly
+                      ? "vindstyrke (ingen sidevind)"
+                      : ballistics.measuresCrosswind
+                        ? "måler crosswind"
+                        : "forecast / ingen lokal crosswind"}{" "}
                     · vind ±{ballistics.windErrorPercent}% · reading{" "}
                     {formatScore10(ballistics.readingAccuracy)}
                     {ballistics.solver ? ` · ${ballistics.solver}` : ""}
@@ -777,7 +787,9 @@ export function XxlShop({
                 >
                   {soldOut
                     ? "For tiden utsolgt"
-                    : unobtainable
+                    : vipLocked
+                      ? "VIP only"
+                      : unobtainable
                       ? "Unobtainable"
                       : isUniqueGear
                         ? "Owned"

@@ -303,7 +303,10 @@ export function ShootingRange({
   const hasKestrel = useMemo(
     () =>
       kitItems.some(
-        (i) => isBallisticsItem(i) && i.ballistics.measuresCrosswind,
+        (i) =>
+          isBallisticsItem(i) &&
+          i.ballistics.measuresCrosswind &&
+          !i.ballistics.windSpeedDisplayOnly,
       ),
     [kitItems],
   );

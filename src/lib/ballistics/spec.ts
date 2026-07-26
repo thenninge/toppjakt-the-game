@@ -19,6 +19,11 @@ export type BallisticsSpec = {
    */
   measuresCrosswind: boolean;
   /**
+   * Budget handheld wind meter: shows local wind *speed* only (no
+   * crosswind / AB fasit). Hunt HUD tab is labeled «Vindmåler».
+   */
+  windSpeedDisplayOnly?: boolean;
+  /**
    * ±% error on wind speed when this device is the wind source.
    * Kestrel Elite ≈ 3; budget ≈ 12–18; forecast-fed path is worse (see weather).
    */
@@ -36,3 +41,26 @@ export type BallisticsSpec = {
 /** Forecast-fed LRF/AB path (no handheld meter) — worse than Kestrel. */
 export const FORECAST_SOLVER_WIND_ERROR_PERCENT = 18;
 export const FORECAST_SOLVER_TEMP_ERROR_C = 2;
+
+/** Local wind / crosswind meter (Kestrel, Clas Ohlson, …). */
+export function isWindMeterBallistics(spec: BallisticsSpec): boolean {
+  return !!spec.measuresCrosswind || !!spec.windSpeedDisplayOnly;
+}
+
+export const CLAS_OHLSON_ANEMOMETER_ID = "misc-clas-ohlson-anemometer";
+
+/**
+ * Prefer AB Kestrel, then other crosswind meters, then speed-only anemometers.
+ */
+export function preferWindMeterItemId(ids: Iterable<string>): string | null {
+  const list = [...ids];
+  if (list.length === 0) return null;
+  const rank = (id: string): number => {
+    if (id === "misc-kestrel-5700-elite") return 0;
+    if (id === "misc-kestrel-5500") return 1;
+    if (id === "misc-vortex-ace-ballistic") return 2;
+    if (id === CLAS_OHLSON_ANEMOMETER_ID) return 90;
+    return 50;
+  };
+  return list.slice().sort((a, b) => rank(a) - rank(b))[0] ?? null;
+}

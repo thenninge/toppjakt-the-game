@@ -152,6 +152,13 @@ type SpotViewProps = {
   /** LRF Engage / eyes lock — parent enters Aware. */
   onBirdObserved: (info: BirdObservedInfo) => void;
   /**
+   * Sticky Engage after «Til spotting» from Aware — reopen the same
+   * encounter without a new LRF (player may re-range first).
+   */
+  onResumeEngage?: () => void;
+  /** Show Engage as active even without a fresh LRF lock. */
+  engageResumeActive?: boolean;
+  /**
    * Optional: called when LRF locks a bird (before Engage).
    * Admin uses this to select a perch without leaving Spot.
    */
@@ -413,6 +420,8 @@ export function SpotView({
   solveLrfHold,
   solveElevClicks,
   onBirdObserved,
+  onResumeEngage,
+  engageResumeActive = false,
   onBirdRanged,
   onDone,
   initialMode = "eyes",
@@ -1143,9 +1152,14 @@ export function SpotView({
   }
 
   function engageRangedBird() {
-    if (!rangedBird) return;
-    onBirdObserved(rangedBird);
+    if (rangedBird) {
+      onBirdObserved(rangedBird);
+      return;
+    }
+    onResumeEngage?.();
   }
+
+  const showEngage = !!rangedBird || !!engageResumeActive;
 
   const lookedClock = formatSpotLookedClock(lookedGameSec);
   const shortBinos = shortSpotOpticLabel(binosLabel);
@@ -1458,12 +1472,20 @@ export function SpotView({
                 LRF
               </button>
             ) : null}
-            {rangedBird ? (
+            {showEngage ? (
               <button
                 type="button"
-                className="intro-button spot-engage-btn"
+                className={
+                  engageResumeActive && !rangedBird
+                    ? "intro-button spot-engage-btn is-active"
+                    : "intro-button spot-engage-btn"
+                }
                 onClick={engageRangedBird}
-                title="Gå til Aware med ranged fugl"
+                title={
+                  rangedBird
+                    ? "Gå til Aware med ranged fugl"
+                    : "Tilbake til Aware (samme engagement)"
+                }
               >
                 Engage
               </button>

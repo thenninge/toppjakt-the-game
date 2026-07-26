@@ -31,9 +31,11 @@ import {
   impactFromShot,
 } from "@/lib/aware/ettersok";
 import {
+  shotPairAimPoint,
   type AwareAppMode,
   type ShotPair,
 } from "@/lib/aware/types";
+import type { BirdSpecies } from "@/lib/hunt/birds";
 import {
   birdMarkerOnAwareMap,
   densityRatioFromTempC,
@@ -116,7 +118,7 @@ type AwareAppViewProps = {
   initialHunter?: CellPoint | null;
   initialBird?: CellPoint | null;
   /** Kit camo bird-spot factor (lower = better). Used by nerve model. */
-  camoBirdSpot?: number;
+  camoSneakPct?: number;
   /**
    * Starting nerve for this encounter (e.g. already-spooked bird at 40%).
    * All player choices add on top of this baseline until flush.
@@ -167,7 +169,10 @@ type AwareAppViewProps = {
   /** Leave Aware; pass current stand so the next bird can resume here. */
   onAbort: (opts?: { hunter?: CellPoint }) => void;
   /** Called when a skuddpar is confirmed found (tree / ettersøk). */
-  onPairFound?: (pair: ShotPair) => void;
+  onPairFound?: (
+    pair: ShotPair,
+    opts?: { hunter?: CellPoint },
+  ) => void;
   /**
    * Post-shot: bird already hit — register skuddpar while aim marker is up.
    * Starts on Shoot tab; no Klar til skudd / nerve flush.
@@ -336,7 +341,7 @@ export function AwareAppView({
   weather,
   initialHunter = null,
   initialBird = null,
-  camoBirdSpot = 0.55,
+  camoSneakPct = 0,
   initialBirdNerve = 0,
   initialCamcorderReady = false,
   initialChronoReady = false,
@@ -360,7 +365,7 @@ export function AwareAppView({
   onProceedToShoot,
   onBirdFlushed,
   onNerveChange,
-  abortLabel = "Avbryt",
+  abortLabel = "Til spotting",
   onAbort,
   onPairFound,
   postShotSkuddparMode = false,
@@ -407,7 +412,7 @@ export function AwareAppView({
       pair?.resultKind === "instant_kill" ||
       pair?.resultKind === "vital_kill"
     ) {
-      return `Hent/søk — drept fugl i treet. Trykk «Hent ved treet» (${treeRecoveryMinutes(pair.distanceM)} min · ${TREE_RECOVERY_MINUTES_PER_100M} min/100 m).`;
+      return `Hent/søk — drept fugl i treet. «Hent ved treet» tar tid fra der du står (${TREE_RECOVERY_MINUTES_PER_100M} min/100 m).`;
     }
     if (pair?.resultKind === "ettersok" && pair.fleeObservation) {
       return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt + ${MINUTES_PER_100M} min/100 m), deretter utfør ettersøk.`;
@@ -458,8 +463,8 @@ export function AwareAppView({
   onGameSecondsRef.current = onGameSeconds;
   const onBirdFlushedRef = useRef(onBirdFlushed);
   onBirdFlushedRef.current = onBirdFlushed;
-  const camoRef = useRef(camoBirdSpot);
-  camoRef.current = camoBirdSpot;
+  const camoRef = useRef(camoSneakPct);
+  camoRef.current = camoSneakPct;
 
   /** Bird world position — fixed from LRF/init, or resumed for ettersøk. */
   const birdWorld = useMemo(
@@ -670,7 +675,7 @@ export function AwareAppView({
             distanceM: dist,
             isMoving: moving,
             moveHoldSec: moveHoldRef.current,
-            camoBirdSpot: camoRef.current,
+            camoSneakPct: camoRef.current,
             coverFactor,
           });
           nerveRef.current = result.nerve;
@@ -700,6 +705,18 @@ export function AwareAppView({
 
   const activePair =
     shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
+  /** Walk distance from current stand to this pair's tree (aim point). */
+  const recoveryWalkM =
+    activePair &&
+    (activePair.resultKind === "instant_kill" ||
+      activePair.resultKind === "vital_kill") &&
+    activePair.found !== true
+      ? Math.round(
+          distanceMBetween(hunter, shotPairAimPoint(activePair)),
+        )
+      : null;
+  const recoveryMinutes =
+    recoveryWalkM != null ? treeRecoveryMinutes(recoveryWalkM) : null;
   /**
    * Don't spoil exact land / bird seat during ettersøk or hent/søk — player
    * uses skuddpar (stand → aim) + flee cue. Hide on every tab (incl. Shoot).
@@ -1000,7 +1017,7 @@ export function AwareAppView({
         ? `FUNNET — ettersøk #${attemptNo} (+${searchMin} min). ${est.reason}`
         : `IKKE FUNNET — ettersøk #${attemptNo} (+${searchMin} min). ${est.reason} Søkespor #${attemptNo} ligger på kartet — legg et nytt spor i et annet område.`,
     );
-    if (est.found) onPairFound?.(updated);
+    if (est.found) onPairFound?.(updated, { hunter: { ...hunter } });
   }
 
   function markRecoveredAtTree() {
@@ -1011,29 +1028,69 @@ export function AwareAppView({
     ) {
       return;
     }
-    const recoverMin = treeRecoveryMinutes(activePair.distanceM);
+    const tree = shotPairAimPoint(activePair);
+    const walkM = Math.round(distanceMBetween(hunter, tree));
+    const recoverMin = treeRecoveryMinutes(walkM);
     onGameSeconds(recoverMin * 60);
     onEttersokEffort?.({
       minutes: recoverMin,
-      distanceM: Math.max(0, activePair.distanceM),
+      distanceM: Math.max(0, walkM),
     });
+    // Next hent starts from this tree (e.g. another bird 10 m away).
+    hunterRef.current = tree;
+    setHunter(tree);
     const updated: ShotPair = { ...activePair, found: true };
     const next = shotPairs.map((p) =>
       p.id === activePair.id ? updated : p,
     );
     onShotPairsChange(next);
     setStatus(
-      `Hentet ved treet (+${recoverMin} min) — fasit på treffpunkt.`,
+      walkM <= 5
+        ? `Hentet ved treet (+${recoverMin} min) — du står ved treet. Fasit på treffpunkt.`
+        : `Hentet ved treet (+${recoverMin} min · ${walkM} m fra der du sto). Fasit på treffpunkt.`,
     );
-    onPairFound?.(updated);
+    onPairFound?.(updated, { hunter: tree });
   }
 
-  function pairKindLabel(kind: ShotPair["resultKind"]): string {
-    if (kind === "instant_kill") return "instant";
-    if (kind === "vital_kill") return "vital";
-    if (kind === "ettersok") return "ettersøk";
-    if (kind === "miss") return "bom";
-    return kind;
+  function pairBirdShortNb(pair: ShotPair): string {
+    const s = pair.harvestDraft?.species as BirdSpecies | undefined;
+    if (s === "orrhane") return "Orre";
+    if (s === "ugle") return "Ugle";
+    return "Tiur";
+  }
+
+  /** Open tree-hent / ettersøk pairs the player can still work on. */
+  const actionableTrackPairs = useMemo(() => {
+    const open = shotPairs.filter(
+      (p) =>
+        p.found !== true &&
+        p.found !== false &&
+        (p.resultKind === "instant_kill" ||
+          p.resultKind === "vital_kill" ||
+          p.resultKind === "ettersok"),
+    );
+    const onCell = open.filter(
+      (p) => p.cell.row === cell.row && p.cell.col === cell.col,
+    );
+    return onCell.length > 0 ? onCell : open;
+  }, [shotPairs, cell.row, cell.col]);
+
+  useEffect(() => {
+    if (actionableTrackPairs.length === 0) return;
+    const stillOpen = actionableTrackPairs.some((p) => p.id === activePairId);
+    if (!stillOpen) {
+      setActivePairId(actionableTrackPairs[0]!.id);
+    }
+  }, [actionableTrackPairs, activePairId]);
+
+  function trackPairPickLabel(pair: ShotPair): string {
+    const bird = pairBirdShortNb(pair);
+    const walkM = Math.round(
+      distanceMBetween(hunter, shotPairAimPoint(pair)),
+    );
+    const verb =
+      pair.resultKind === "ettersok" ? "Søk" : "Hent";
+    return `${verb} ${bird} ${walkM}m`;
   }
 
   function proceed() {
@@ -1785,27 +1842,36 @@ export function AwareAppView({
                 </p>
               ) : (
                 <>
-                  <label className="shop-filter">
-                    Skuddpar
-                    <select
-                      value={activePair?.id ?? ""}
-                      onChange={(e) => setActivePairId(e.target.value)}
-                    >
-                      {shotPairs.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.cellLabel} · {p.distanceM} m ·{" "}
-                          {pairKindLabel(p.resultKind)}
-                          {p.found === true
-                            ? " · funnet"
-                            : p.found === false
-                              ? " · tapt"
-                              : (p.ettersokAttempts ?? 0) > 0
-                                ? ` · ${p.ettersokAttempts} søk`
-                                : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {actionableTrackPairs.length > 0 ? (
+                    <div className="aware-track-pick" role="group" aria-label="Velg fugl">
+                      {actionableTrackPairs.length > 1 ? (
+                        <p className="shop-row-note aware-track-pick-label">
+                          Velg hvilken fugl du skal hente / søke
+                        </p>
+                      ) : null}
+                      <div className="aware-track-pick-btns">
+                        {actionableTrackPairs.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={
+                              p.id === activePair?.id
+                                ? "intro-button aware-track-pick-btn is-active"
+                                : "intro-button sheriff-secondary aware-track-pick-btn"
+                            }
+                            aria-pressed={p.id === activePair?.id}
+                            onClick={() => setActivePairId(p.id)}
+                          >
+                            {trackPairPickLabel(p)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="shop-row-note">
+                      Ingen åpne hent/søk her — alle funnet eller avsluttet.
+                    </p>
+                  )}
 
                   {activePair?.resultKind === "ettersok" &&
                   activePair.fleeObservation ? (
@@ -1858,14 +1924,16 @@ export function AwareAppView({
                   ) : null}
 
                   {activePair &&
+                  recoveryMinutes != null &&
+                  recoveryWalkM != null &&
                   (activePair.resultKind === "instant_kill" ||
                     activePair.resultKind === "vital_kill") ? (
                     <>
                       <p className="shop-row-note">
-                        Drept fugl i treet. Gå ut og hent den —{" "}
-                        {treeRecoveryMinutes(activePair.distanceM)} min (
+                        Drept fugl i treet. Tid fra der du står nå —{" "}
+                        {recoveryMinutes} min (
                         {TREE_RECOVERY_MINUTES_PER_100M} min/100 m ·{" "}
-                        {activePair.distanceM} m).
+                        {recoveryWalkM} m).
                       </p>
                       <button
                         type="button"
@@ -1873,8 +1941,7 @@ export function AwareAppView({
                         disabled={activePair.found === true}
                         onClick={markRecoveredAtTree}
                       >
-                        Hent ved treet (
-                        {treeRecoveryMinutes(activePair.distanceM)} min)
+                        Hent ved treet ({recoveryMinutes} min)
                       </button>
                     </>
                   ) : activePair?.resultKind === "ettersok" ? (

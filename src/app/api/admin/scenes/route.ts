@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import {
+  ensureSpotImageListed,
   formatPerchCatalogEntry,
   maxBatchBSpottingIndex,
   nextBatchBSpottingPath,
+  upsertPerchCatalog,
 } from "@/lib/hunt/sceneAuthoring";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
 
@@ -49,70 +51,6 @@ function normalizePerches(raw: PerchBody[]): SpotPerch[] {
           : 100,
     };
   });
-}
-
-/**
- * Replace or insert a `"path": [ ... ]` entry inside SPOT_PERCHES = { ... };
- */
-function upsertPerchCatalog(file: string, imageSrc: string, entry: string): string {
-  const key = `"${imageSrc}"`;
-  const keyIdx = file.indexOf(key);
-  if (keyIdx >= 0) {
-    const afterKey = file.indexOf("[", keyIdx);
-    if (afterKey < 0) throw new Error("Malformed SPOT_PERCHES entry");
-    let depth = 0;
-    let end = -1;
-    for (let i = afterKey; i < file.length; i++) {
-      const ch = file[i];
-      if (ch === "[") depth++;
-      else if (ch === "]") {
-        depth--;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
-    }
-    if (end < 0) throw new Error("Unclosed perch array");
-    // Include from start of key through closing ]
-    const start = file.lastIndexOf("\n", keyIdx);
-    const sliceStart = start >= 0 ? start + 1 : keyIdx;
-    let sliceEnd = end + 1;
-    if (file[sliceEnd] === ",") sliceEnd++;
-    const before = file.slice(0, sliceStart);
-    const after = file.slice(sliceEnd);
-    const needsComma = after.trimStart().startsWith('"') || after.trimStart().startsWith("/");
-    return `${before}${entry}${needsComma || after.includes('"') ? "," : ""}${after}`;
-  }
-
-  // Insert before closing `};` of SPOT_PERCHES
-  const marker = "\n};\n\nexport function perchesForSpotImage";
-  const at = file.indexOf(marker);
-  if (at < 0) {
-    throw new Error("Could not find SPOT_PERCHES end marker");
-  }
-  // Ensure previous entry has trailing comma
-  let insertAt = at;
-  const before = file.slice(0, insertAt).replace(/\s+$/, "");
-  const needsComma = !before.endsWith(",") && !before.endsWith("{");
-  return `${before}${needsComma ? "," : ""}\n${entry}${marker}${file.slice(at + marker.length)}`;
-}
-
-function ensureSpotImageListed(file: string, imageSrc: string): string {
-  if (file.includes(`"${imageSrc}"`)) return file;
-  const marker = "\n];\n\n/**\n * Hand-composited spot photo";
-  const at = file.indexOf(marker);
-  if (at < 0) {
-    // fallback: end of SPOT_IMAGES array
-    const alt = file.indexOf("\n];\n\nexport const SPOT_TEST_IMAGE");
-    if (alt < 0) throw new Error("Could not find SPOT_IMAGES end");
-    const before = file.slice(0, alt).replace(/\s+$/, "");
-    const needsComma = !before.endsWith(",");
-    return `${before}${needsComma ? "," : ""}\n  "${imageSrc}",${file.slice(alt)}`;
-  }
-  const before = file.slice(0, at).replace(/\s+$/, "");
-  const needsComma = !before.endsWith(",");
-  return `${before}${needsComma ? "," : ""}\n  "${imageSrc}",${marker}${file.slice(at + marker.length)}`;
 }
 
 /**

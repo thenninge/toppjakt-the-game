@@ -8173,6 +8173,32 @@ body {
   gap: 0.4rem;
 }
 
+.aware-track-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.aware-track-pick-label {
+  margin: 0;
+}
+
+.aware-track-pick-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.aware-track-pick-btn {
+  flex: 1 1 auto;
+  min-width: 8.5rem;
+}
+
+.aware-track-pick-btn.is-active {
+  border-color: #5ecf70 !important;
+  box-shadow: 0 0 0 1px rgba(94, 207, 112, 0.4);
+}
+
 .aware-bearing-slider {
   display: flex;
   flex-direction: column;
@@ -8211,6 +8237,86 @@ body {
   align-self: center;
   pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+
+/* --- Budget wind meter (Clas Ohlson) --- */
+
+.wind-meter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: min(22rem, 100%);
+  margin: 0.35rem auto 0.55rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.35rem;
+  background: linear-gradient(160deg, #2a2e32 0%, #1a1d20 100%);
+  color: #c8d0d4;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.wind-meter-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.wind-meter-brand {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a9a9e;
+}
+
+.wind-meter-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8eef0;
+}
+
+.wind-meter-lcd {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.25rem;
+  background: #0d1a12;
+  color: #7dff9a;
+  font-family: "Courier New", ui-monospace, monospace;
+  text-align: center;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45);
+}
+
+.wind-meter-from {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+.wind-meter-from-deg {
+  opacity: 0.65;
+  font-size: 0.72rem;
+}
+
+.wind-meter-speed {
+  margin: 0.35rem 0 0.1rem;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.wind-meter-speed-hint {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.wind-meter-note {
+  margin: 0;
+  color: #a8b2b6;
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .kestrel-fasit-compact {
@@ -8692,6 +8798,12 @@ body {
   border-color: #2a6a3a !important;
   color: #b8f0c4 !important;
   background: linear-gradient(180deg, #1e3a28 0%, #122018 100%) !important;
+}
+
+.spot-engage-btn.is-active {
+  border-color: #5ecf70 !important;
+  color: #e8ffe8 !important;
+  box-shadow: 0 0 0 1px rgba(94, 207, 112, 0.45);
 }
 
 .spot-engage-btn:hover:not(:disabled) {

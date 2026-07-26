@@ -54,11 +54,14 @@ export {
 } from "@/lib/ammo/spec";
 export type { CamoSpec, CamoTerrain, CamoSlot } from "@/lib/camo/spec";
 export {
-  BIRD_SPOT_REFERENCE,
-  birdSpotForConditions,
-  kitBirdSpotFactor,
+  kitCamoStatSum,
+  clothingNerveMult,
+  clothingTravelTimeMult,
+  clothingPrespotMult,
+  clothingMindDrainMult,
+  clothingRestBodyGain,
   camoSlot,
-  apparelQualityFromPrice,
+  sneakPctToScore,
 } from "@/lib/camo/spec";
 export type { CarrySpec } from "@/lib/carry/spec";
 export {
@@ -77,6 +80,7 @@ export {
   miscFeltWeightGrams,
   isHeadlampMisc,
   isCamcorderMisc,
+  isCamcorderTripodMisc,
   isChronographMisc,
   isRangeFanMisc,
   isChamberCoolerMisc,
@@ -102,6 +106,7 @@ export type { BallisticsSpec } from "@/lib/ballistics/spec";
 export {
   FORECAST_SOLVER_WIND_ERROR_PERCENT,
   FORECAST_SOLVER_TEMP_ERROR_C,
+  isWindMeterBallistics,
 } from "@/lib/ballistics/spec";
 export type { DayWeather, WeatherSnapshot } from "@/lib/weather/spec";
 export {

@@ -44,9 +44,11 @@ type ScopeTurretsProps = {
    */
   chronoPanel?: ReactNode;
   /**
-   * Kestrel tab content. Only pass when Kestrel is in kit / solution exists.
+   * Kestrel / Vindmåler tab content. Only pass when a wind meter is in kit.
    */
   kestrelPanel?: ReactNode;
+  /** Tab label — «Kestrel» or «Vindmåler». */
+  meterTabLabel?: string;
   /** Fires when the active HUD tab changes (e.g. Enviro time pressure). */
   onHudTabChange?: (tab: ScopeHudTab) => void;
 };
@@ -545,6 +547,7 @@ export function ScopeTurrets({
   enviroPanel,
   chronoPanel,
   kestrelPanel,
+  meterTabLabel = "Kestrel",
   onHudTabChange,
 }: ScopeTurretsProps) {
   const hasEnviro = enviroPanel != null;
@@ -659,7 +662,7 @@ export function ScopeTurrets({
             disabled={disabled}
             onClick={() => setAndStoreTab("kestrel")}
           >
-            Kestrel
+            {meterTabLabel}
           </button>
         ) : null}
       </div>

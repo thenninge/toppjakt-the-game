@@ -45,6 +45,7 @@ import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
 import type { HuntRangeSource } from "@/components/hunt/HuntShotConditions";
 import { KestrelFasitView } from "@/components/hunt/KestrelFasitView";
+import { WindMeterView } from "@/components/hunt/WindMeterView";
 import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
@@ -118,10 +119,16 @@ type HuntShootViewProps = {
    */
   ballisticHold?: BallisticHoldSolution | null;
   /**
-   * Kestrel (any wind meter) in hunt kit — show Kestrel tab even without
-   * BDX fasit pairing.
+   * Kestrel (crosswind meter) in hunt kit — show Kestrel fasit tab.
    */
   hasKestrelInKit?: boolean;
+  /**
+   * Budget wind meter (Clas Ohlson) — «Vindmåler» tab, speed only.
+   */
+  hasWindMeterInKit?: boolean;
+  windMeterErrorPercent?: number;
+  windMeterBrand?: string;
+  windMeterName?: string;
   /** True local crosswind (m/s, +from left) for this shot bearing. */
   crosswindMs?: number;
   /** Atmosphere density ratio from live temperature. */
@@ -190,7 +197,7 @@ type HuntShootViewProps = {
   /** Bird width as % of landscape (same as SpotView placement.widthPct). */
   landscapeBirdWidthPct?: number;
   /** Kit camo bird-spot factor (Aware / Enviro nerve). */
-  camoBirdSpot?: number;
+  camoSneakPct?: number;
   /** Bird nerve carried from Aware (0–cap). */
   birdNerve?: number;
   onAbort: () => void;
@@ -266,6 +273,10 @@ export function HuntShootView({
   rangeSource = "estimated",
   ballisticHold = null,
   hasKestrelInKit = false,
+  hasWindMeterInKit = false,
+  windMeterErrorPercent = 18,
+  windMeterBrand,
+  windMeterName,
   crosswindMs = 0,
   densityRatio = 1,
   temperatureC = 15,
@@ -302,7 +313,7 @@ export function HuntShootView({
   landscapeFocusX = 50,
   landscapeFocusY = 50,
   landscapeBirdWidthPct,
-  camoBirdSpot = 0.5,
+  camoSneakPct = 0,
   birdNerve = 0,
   onAbort,
   onShotResult,
@@ -377,8 +388,8 @@ export function HuntShootView({
   const [nerveUi, setNerveUi] = useState(() =>
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
   );
-  const camoBirdSpotRef = useRef(camoBirdSpot);
-  camoBirdSpotRef.current = camoBirdSpot;
+  const camoSneakPctRef = useRef(camoSneakPct);
+  camoSneakPctRef.current = camoSneakPct;
   const onGameSecondsRef = useRef(onGameSeconds);
   onGameSecondsRef.current = onGameSeconds;
   const onBirdFlushedFromWaitRef = useRef(onBirdFlushedFromWait);
@@ -451,7 +462,7 @@ export function HuntShootView({
         distanceM: distanceRef.current,
         isMoving: false,
         moveHoldSec: 0,
-        camoBirdSpot: camoBirdSpotRef.current,
+        camoSneakPct: camoSneakPctRef.current,
       });
       birdNerveRef.current = tick.nerve;
       setNerveUi(tick.nerve);
@@ -1397,7 +1408,9 @@ export function HuntShootView({
             ? " · Kestrel AB fasit (skru tårn)"
             : hasKestrelInKit
               ? " · Kestrel i kit (fane)"
-              : null}
+              : hasWindMeterInKit
+                ? " · Vindmåler i kit (fane)"
+                : null}
         </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name} · {scope.brand} {scope.name} (
@@ -1434,6 +1447,9 @@ export function HuntShootView({
           disabled={fired}
           clickUnit={scope?.scope.clickUnit ?? "MRAD"}
           onHudTabChange={setHudTab}
+          meterTabLabel={
+            hasKestrelInKit ? "Kestrel" : hasWindMeterInKit ? "Vindmåler" : "Kestrel"
+          }
           enviroPanel={
             <HuntShotConditions
               rangeM={measuredDistanceM}
@@ -1543,6 +1559,14 @@ export function HuntShootView({
                   Kestrel i kit — velg ammo for fasit.
                 </p>
               )
+            ) : hasWindMeterInKit ? (
+              <WindMeterView
+                windFromDeg={windFromDeg}
+                windSpeedMs={windSpeedMs}
+                windErrorPercent={windMeterErrorPercent}
+                brand={windMeterBrand}
+                name={windMeterName}
+              />
             ) : undefined
           }
           actions={

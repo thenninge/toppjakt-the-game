@@ -3,7 +3,7 @@
  *
  * MOA improvements reduce the angular dispersion envelope (tighter groups).
  * Weight work lowers kit carry mass without changing precision.
- * Custom camo multiplies kit bird-spot (lower = harder for birds to see you).
+ * Custom camo adds sneak % so birds build nerve slower.
  */
 
 export type CustomsMods = {
@@ -71,10 +71,12 @@ export const FLUTING_WEIGHT_G = 500;
 /** Fraction of stock (or estimated stock) mass removed by slanking. */
 export const STOCK_SLIM_FRACTION = 0.25;
 /**
- * Multiplier on kit bird-spot after custom camo paint.
- * Lower = better concealment. ~15% harder for birds to pick you up.
+ * Multiplier on kit bird-spot after custom camo paint (legacy).
+ * Prefer {@link CUSTOM_CAMO_SNEAK_BONUS_PCT} with the % clothing model.
  */
 export const CUSTOM_CAMO_SPOT_MULT = 0.85;
+/** Extra sneak % from CB custom camo (~15 % less nerve pressure). */
+export const CUSTOM_CAMO_SNEAK_BONUS_PCT = 15;
 /**
  * Multiplier on trigger-pull POI error after trigger tuning.
  * 0.5 = half the miss distance from a bad release vs the trigger-bar mark.
@@ -139,7 +141,7 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     name: "Custom camo",
     priceNok: 1000,
     effect:
-      "Maling / finish tilpasset jakten — fuglen får litt vanskeligere for å spotte deg.",
+      "+15 % sneak — fuglen bygger nerve saktere (samme stack som klær).",
   },
   {
     id: "bagrider",
@@ -229,12 +231,22 @@ export function customsWeightReductionGrams(
   return cut;
 }
 
+/** @deprecated Prefer {@link applyCustomCamoSneakPct}. */
 export function applyCustomCamoBirdSpot(
   kitBirdSpot: number,
   mods: CustomsMods,
 ): number {
   if (!mods.customCamo) return kitBirdSpot;
   return Math.max(0.05, kitBirdSpot * CUSTOM_CAMO_SPOT_MULT);
+}
+
+/** Add CB custom-camo sneak bonus to kit clothing sneak %. */
+export function applyCustomCamoSneakPct(
+  kitSneakPct: number,
+  mods: CustomsMods,
+): number {
+  if (!mods.customCamo) return kitSneakPct;
+  return kitSneakPct + CUSTOM_CAMO_SNEAK_BONUS_PCT;
 }
 
 export function serviceOwned(

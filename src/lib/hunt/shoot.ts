@@ -38,45 +38,83 @@ export const PINK_MIST_NICKNAME = "Pink Mist";
 export const HEADSHOT_AAR_TEXT =
   'Brains is everywhere but in the cranium. Your new nickname is now "Pink Mist"';
 
-/** Premium tripod camcorder — lighter setup, lower bird nerve. */
+/** Sony hunt camcorder body — needs a tripod in kit to deploy. */
 export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
-/** Budget steel tripod camcorder — heavy / slow; full scare on deploy. */
-export const CAMCORDER_BUDGET_ITEM_ID = "misc-hunt-camcorder-budget";
+/** Biltema steel tripod — standard setup nerve (+20 %). */
+export const CAMCORDER_STEEL_TRIPOD_ID = "misc-hunt-camcorder-budget";
+/** Carbon tripod — lighter / faster; +15 % nerve. */
+export const CAMCORDER_CARBON_TRIPOD_ID = "misc-hunt-carbon-tripod";
+/** Triggerstick Gen3 — heavier than carbon but quicker setup; +13 % nerve. */
+export const CAMCORDER_TRIGGERSTICK_ID = "misc-hunt-triggerstick-gen3";
+/** @deprecated Use {@link CAMCORDER_STEEL_TRIPOD_ID}. */
+export const CAMCORDER_BUDGET_ITEM_ID = CAMCORDER_STEEL_TRIPOD_ID;
 
 /** Garmin Xero chronograph — muzzle velocity on shotlog / load development. */
 export const CHRONOGRAPH_ITEM_ID = "misc-garmin-xero-c1-pro";
 
-/** Default nerve bump (0–1) when camcorder omits `camcorderSetupNerve`. */
+/** Default / Biltema steel nerve bump (0–1). */
 export const CAMCORDER_SETUP_NERVE = 0.2;
-/** Premium carbon tripod: quicker setup → 15% nerve. */
+/** Manfrotto carbon: quicker setup → 15 % nerve. */
 export const CAMCORDER_PREMIUM_SETUP_NERVE = 0.15;
-/** Cheap heavy tripod: slow setup → 100% scare from a calm bird. */
-export const CAMCORDER_BUDGET_SETUP_NERVE = 1.0;
+/** Triggerstick Gen3: fast deploy → 13 % nerve. */
+export const CAMCORDER_TRIGGERSTICK_SETUP_NERVE = 0.13;
+/** @deprecated Steel uses {@link CAMCORDER_SETUP_NERVE}. */
+export const CAMCORDER_BUDGET_SETUP_NERVE = CAMCORDER_SETUP_NERVE;
 
 export function isCamcorderItemId(id: string): boolean {
-  return id === CAMCORDER_ITEM_ID || id === CAMCORDER_BUDGET_ITEM_ID;
+  return id === CAMCORDER_ITEM_ID;
 }
 
-/** Kit exclusivity — only one camcorder/tripod at a time. */
+export function isCamcorderTripodItemId(id: string): boolean {
+  return (
+    id === CAMCORDER_STEEL_TRIPOD_ID ||
+    id === CAMCORDER_CARBON_TRIPOD_ID ||
+    id === CAMCORDER_TRIGGERSTICK_ID
+  );
+}
+
+/** Kit exclusivity — one camcorder body. */
 export function camcorderKitSlot(id: string): "camcorder" | undefined {
   return isCamcorderItemId(id) ? "camcorder" : undefined;
 }
 
-/** Prefer premium if both somehow remain in kit (legacy saves). */
+/** Kit exclusivity — one tripod. */
+export function camcorderTripodKitSlot(
+  id: string,
+): "camcorderTripod" | undefined {
+  return isCamcorderTripodItemId(id) ? "camcorderTripod" : undefined;
+}
+
+/** Prefer lowest-nerve stick if extras remain (legacy saves). */
+export function resolveCamcorderTripodItemId(
+  itemIds: Iterable<string>,
+): string | null {
+  const set = itemIds instanceof Set ? itemIds : new Set(itemIds);
+  if (set.has(CAMCORDER_TRIGGERSTICK_ID)) return CAMCORDER_TRIGGERSTICK_ID;
+  if (set.has(CAMCORDER_CARBON_TRIPOD_ID)) return CAMCORDER_CARBON_TRIPOD_ID;
+  if (set.has(CAMCORDER_STEEL_TRIPOD_ID)) return CAMCORDER_STEEL_TRIPOD_ID;
+  return null;
+}
+
 export function resolveCamcorderItemId(
   itemIds: Iterable<string>,
 ): string | null {
   const set = itemIds instanceof Set ? itemIds : new Set(itemIds);
-  if (set.has(CAMCORDER_ITEM_ID)) return CAMCORDER_ITEM_ID;
-  if (set.has(CAMCORDER_BUDGET_ITEM_ID)) return CAMCORDER_BUDGET_ITEM_ID;
-  return null;
+  return set.has(CAMCORDER_ITEM_ID) ? CAMCORDER_ITEM_ID : null;
 }
 
-/** Drop extra camcorders so kit has at most one (premium wins). */
+/** At most one camcorder body. */
 export function sanitizeKitCamcorders(kit: string[]): string[] {
   const keepId = resolveCamcorderItemId(kit);
-  if (!keepId) return kit;
+  if (!keepId) return kit.filter((id) => !isCamcorderItemId(id));
   return kit.filter((id) => !isCamcorderItemId(id) || id === keepId);
+}
+
+/** At most one camcorder tripod (carbon wins). */
+export function sanitizeKitCamcorderTripods(kit: string[]): string[] {
+  const keepId = resolveCamcorderTripodItemId(kit);
+  if (!keepId) return kit.filter((id) => !isCamcorderTripodItemId(id));
+  return kit.filter((id) => !isCamcorderTripodItemId(id) || id === keepId);
 }
 
 /** Resolve deploy nerve from misc spec (clamped 0–1). */

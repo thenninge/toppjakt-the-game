@@ -1,21 +1,15 @@
 /**
- * Camouflage & apparel vs bird vision + movement.
+ * Camouflage & apparel — additive % mods on hunt systems.
  *
- * Full suits and small pieces (buff, beanie, gloves, boots) live in the
- * same shop category. Kit exclusivity is per *slot* (one buff, one boots…).
+ * Kit exclusivity is per slot (one jacket, one boots…). Ghillie (`suit`)
+ * is exclusive against jacket and pants (enforced in kit toggle).
  *
- * Birds (orrfugl/tiur) have excellent vision. Camo does not make you invisible —
- * it reduces how easily a bird spots the human outline / contrast.
- *
- * birdSpotSnow / birdSpotNoSnow: LOW = good for hunter.
- * terrainSpeed / stamina: Score10, HIGH = better (expensive ≈ better).
- *
- * Ski boots (slot ski_boots) were moved to the skis shop category
- * (`SkiSpec.isBoots`). This slot remains for legacy type compatibility.
+ * Stats are percent-of-current:
+ * - sneakPct → bird nerve rate × (1 − sum/100)
+ * - speedPct → travel time × 1/(1 + sum/100)  (−10 → +11 % tid)
+ * - focusPct → caution prespot × (1 + sum/100); mind drain × (1 − sum/100)
+ * - recoveryPct → rest/pause Body gain × (1 + sum/100)  (kan være negativ)
  */
-
-import type { Score10 } from "@/lib/shop/score";
-import { clampScore10 } from "@/lib/shop/score";
 
 export type CamoTerrain =
   | "snow"
@@ -28,6 +22,12 @@ export type CamoTerrain =
 
 export type CamoSlot =
   | "suit"
+  | "jacket"
+  | "pants"
+  | "vest"
+  | "down"
+  | "base_layer"
+  | "socks"
   | "buff"
   | "beanie"
   | "gloves"
@@ -35,86 +35,72 @@ export type CamoSlot =
   | "ski_boots";
 
 export type CamoSpec = {
-  /** Bird spot ease in snow. Lower = better concealment. */
-  birdSpotSnow: number;
-  /** Bird spot ease without snow. Lower = better concealment. */
-  birdSpotNoSnow: number;
-  /** Terrains where this pattern is intended to shine. */
+  /** % reduction on bird nerve rate. Higher = sneakier. */
+  sneakPct: number;
+  /** % change to field walking speed. Higher = faster (negative = slower). */
+  speedPct: number;
+  /** % boost to caution prespot + mind-drain reduction. */
+  focusPct: number;
+  /** % change to Body recovery on rest/pause (can be negative). */
+  recoveryPct: number;
+  /** Terrains where this pattern is intended (season / coaching). */
   bestTerrains: CamoTerrain[];
   /**
    * If false, item exists in game data but cannot be bought in XXL.
    * @default true
    */
   availableInShop?: boolean;
-  /** Kit slot — one item per slot. Default suit for full camo. */
+  /** Kit slot — one item per slot. */
   slot: CamoSlot;
-  /** 1–10. Higher = better movement speed in terrain. */
-  terrainSpeed: Score10;
-  /** 1–10. Higher = better stamina retention while hunting. */
-  stamina: Score10;
 };
 
 export function camoSlot(camo: CamoSpec): CamoSlot {
   return camo.slot ?? "suit";
 }
 
-/** Active bird-spot factor for current conditions. */
-export function birdSpotForConditions(
-  camo: CamoSpec,
-  snowOnGround: boolean,
-): number {
-  return snowOnGround ? camo.birdSpotSnow : camo.birdSpotNoSnow;
-}
-
-/**
- * Blend kit camo pieces into one bird-spot factor for nervousness.
- * Suit dominates; apparel pieces nudge the average. Lower = better.
- * No camo in kit → poor default (highly visible).
- */
-export function kitBirdSpotFactor(
+/** Sum of one clothing % stat across equipped camo pieces. */
+export function kitCamoStatSum(
   pieces: CamoSpec[],
-  snowOnGround: boolean,
+  key: "sneakPct" | "speedPct" | "focusPct" | "recoveryPct",
 ): number {
-  if (pieces.length === 0) return 0.85;
-  const suit = pieces.find((p) => (p.slot ?? "suit") === "suit");
-  const others = pieces.filter((p) => (p.slot ?? "suit") !== "suit");
-  const suitSpot = suit
-    ? birdSpotForConditions(suit, snowOnGround)
-    : 0.75;
-  if (others.length === 0) return suitSpot;
-  const otherAvg =
-    others.reduce((s, p) => s + birdSpotForConditions(p, snowOnGround), 0) /
-    others.length;
-  return suitSpot * 0.7 + otherAvg * 0.3;
+  return pieces.reduce((sum, p) => sum + (p[key] ?? 0), 0);
+}
+
+/** Bird nerve rate multiplier from sneak %. 10 → ×0.9. */
+export function clothingNerveMult(sneakPct: number): number {
+  return Math.max(0, 1 - sneakPct / 100);
 }
 
 /**
- * Simple “dyrere = bedre” mapping for apparel.
- * Returns Score10 terrain/stamina and a bird-spot floor hint.
+ * Travel time multiplier from speed %.
+ * −10 → ×≈1.111 (30 min → 33); +8 → ×≈0.926.
  */
-export function apparelQualityFromPrice(priceNok: number): {
-  terrainSpeed: Score10;
-  stamina: Score10;
-} {
-  if (priceNok >= 5000) return { terrainSpeed: 10, stamina: 10 };
-  if (priceNok >= 3500) return { terrainSpeed: 8, stamina: 8 };
-  if (priceNok >= 2500) return { terrainSpeed: 7, stamina: 7 };
-  if (priceNok >= 1000) return { terrainSpeed: 6, stamina: 6 };
-  if (priceNok >= 400) return { terrainSpeed: 5, stamina: 5 };
-  if (priceNok >= 150) return { terrainSpeed: 4, stamina: 4 };
-  if (priceNok >= 80) return { terrainSpeed: 3, stamina: 3 };
-  return { terrainSpeed: clampScore10(2), stamina: clampScore10(2) };
+export function clothingTravelTimeMult(speedPct: number): number {
+  const speedFactor = 1 + speedPct / 100;
+  if (speedFactor <= 0.05) return 20;
+  return 1 / speedFactor;
 }
 
-/** Rough reference scale (placeholders — tune with playtests). */
-export const BIRD_SPOT_REFERENCE = {
-  eliteSnow: 0.08,
-  excellentSnow: 0.1,
-  goodSnowVintage: 0.18,
-  premiumNoSnow: 0.22,
-  solidNoSnow: 0.28,
-  budgetNoSnow: 0.42,
-  snowCamoOffSeason: 0.82,
-  forestCamoOnSnow: 0.75,
-  noCamo: 0.85,
-} as const;
+/** Prespot chance multiplier from focus %. 3 → ×1.03. */
+export function clothingPrespotMult(focusPct: number): number {
+  return 1 + focusPct / 100;
+}
+
+/** Mind-drain multiplier from focus %. 3 → ×0.97. */
+export function clothingMindDrainMult(focusPct: number): number {
+  return Math.max(0, 1 - focusPct / 100);
+}
+
+/** Rest/pause Body gain from recovery %. −2 → ×0.98; +8 → ×1.08. */
+export function clothingRestBodyGain(
+  baseBodyGain: number,
+  recoveryPct: number,
+): number {
+  return baseBodyGain * (1 + recoveryPct / 100);
+}
+
+/** Score10 from sneak % sum for Home overview (0 → 1, ~35 → 10). */
+export function sneakPctToScore(sneakPct: number): number {
+  const raw = 1 + (Math.max(0, sneakPct) / 35) * 9;
+  return Math.max(1, Math.min(10, Math.round(raw)));
+}

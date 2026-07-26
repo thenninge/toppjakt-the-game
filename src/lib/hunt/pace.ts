@@ -78,8 +78,13 @@ export const EXTREME_CAUTION_PRESPOT_CHANCE = 0.32;
 export const CAUTION_PRESPOT_CHANCE = 0.15;
 
 /** Prespot chance for a walk pace, or 0 if that pace never auto-spots. */
-export function prespotChanceForPace(paceId: HuntPaceId): number {
-  if (paceId === "extreme-caution") return EXTREME_CAUTION_PRESPOT_CHANCE;
-  if (paceId === "caution") return CAUTION_PRESPOT_CHANCE;
-  return 0;
+export function prespotChanceForPace(
+  paceId: HuntPaceId,
+  clothingFocusPct = 0,
+): number {
+  let base = 0;
+  if (paceId === "extreme-caution") base = EXTREME_CAUTION_PRESPOT_CHANCE;
+  else if (paceId === "caution") base = CAUTION_PRESPOT_CHANCE;
+  if (base <= 0) return 0;
+  return Math.min(1, base * (1 + clothingFocusPct / 100));
 }

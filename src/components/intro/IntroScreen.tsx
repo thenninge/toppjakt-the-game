@@ -125,8 +125,10 @@ import {
 import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isThermalItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 import { skiKitSlot } from "@/lib/ski/spec";
-import { isHeadlampMisc, isFireStarterMisc, isCamcorderMisc } from "@/lib/misc/spec";
+import { isHeadlampMisc, isFireStarterMisc, isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
 import { shotCamKitSlot } from "@/lib/hunt/shoot";
+import { isBallisticsItem } from "@/lib/shop";
+import { isWindMeterBallistics } from "@/lib/ballistics/spec";
 import {
   getHuntingTerrain,
   type HuntingTerrainId,
@@ -1067,9 +1069,17 @@ export function IntroScreen() {
         },
         (id) => {
           const item = resolvePlayerItem(id);
-          if (!item || !isMiscItem(item)) return undefined;
+          if (!item) return undefined;
+          if (
+            isBallisticsItem(item) &&
+            isWindMeterBallistics(item.ballistics)
+          ) {
+            return "windmeter";
+          }
+          if (!isMiscItem(item)) return undefined;
           if (isHeadlampMisc(item.misc)) return "headlamp";
           if (isCamcorderMisc(item.misc)) return "camcorder";
+          if (isCamcorderTripodMisc(item.misc)) return "camcorderTripod";
           return shotCamKitSlot(id);
         },
         (id) => {
@@ -1497,6 +1507,7 @@ export function IntroScreen() {
             inventory={stats.inventory}
             canBuyRifle={canBuyHuntingRifle(stats)}
             unusedLicenses={unusedLicenseCount(stats)}
+            isVip={isVipPlayerName(stats.name)}
             onBuy={buyShopItem}
             onLeave={backToTown}
           />

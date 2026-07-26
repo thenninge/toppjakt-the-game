@@ -86,10 +86,10 @@ export type EncounterNerveContext = {
   /** Continuous real seconds the player has been holding move (0 when still). */
   moveHoldSec: number;
   /**
-   * Combined kit camo bird-spot factor (0 ≈ ghost, 1 ≈ blaze orange).
-   * Lower = better concealment. Typical kit blends ≈ 0.2–0.7.
+   * Combined kit clothing sneak % (additive). Higher = birds spook slower.
+   * Nerve rate is multiplied by (1 − sneakPct/100).
    */
-  camoBirdSpot: number;
+  camoSneakPct: number;
   /** Optional LOS / cover hooks for future tuning. */
   birdSeesPlayer?: number;
   coverFactor?: number;
@@ -134,13 +134,10 @@ export function proximityFactor(
 }
 
 /**
- * Camo multiplier on nerve rate. Higher birdSpot → bird spooked faster.
- * Reserved hook: terrain mismatch can multiply this later.
+ * Camo multiplier on nerve rate. Higher sneakPct → slower nerve build.
  */
-export function camoNerveMultiplier(camoBirdSpot: number): number {
-  const spot = Math.min(1.2, Math.max(0.05, camoBirdSpot));
-  // ~0.55 (great camo) … ~1.35 (poor)
-  return 0.45 + spot * 1.15;
+export function camoNerveMultiplier(camoSneakPct: number): number {
+  return Math.max(0, 1 - camoSneakPct / 100);
 }
 
 /**
@@ -150,8 +147,8 @@ export function camoNerveMultiplier(camoBirdSpot: number): number {
 export function encounterNerveRatePerSec(
   ctx: EncounterNerveContext,
 ): { rate: number; reason: EncounterNerveTickResult["reason"] } {
-  const { distanceM, isMoving, moveHoldSec, camoBirdSpot } = ctx;
-  const camo = camoNerveMultiplier(camoBirdSpot);
+  const { distanceM, isMoving, moveHoldSec, camoSneakPct } = ctx;
+  const camo = camoNerveMultiplier(camoSneakPct);
   const losBoost =
     1 +
     (ctx.losActive && (ctx.birdSeesPlayer ?? 0) > 0.4

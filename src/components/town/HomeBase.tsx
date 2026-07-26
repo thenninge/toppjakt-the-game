@@ -32,7 +32,8 @@ import {
 } from "@/lib/kit/speed";
 import { computeKitOverview } from "@/lib/kit/overview";
 import { computePackLoad } from "@/lib/kit/pack";
-import { isShotCamItemId, isCamcorderItemId } from "@/lib/hunt/shoot";
+import { isShotCamItemId, isCamcorderItemId, isCamcorderTripodItemId } from "@/lib/hunt/shoot";
+import { isWindMeterItemId } from "@/lib/ballistics/kestrelProfile";
 import {
   formatMarketKr,
   formatWeightKg as formatCarcassWeightKg,
@@ -75,7 +76,8 @@ const EXCLUSIVE_KIT_CATEGORIES = new Set([
   "suppressor",
   "backpack",
   "chestrig",
-  "ballistics",
+  // Wind meters (Kestrel / Clas Ohlson / …) share a slot via getMiscSlot —
+  // other ballistics (e.g. GPS) are not auto-exclusive.
   "lrf",
   "thermal",
   "bipod",
@@ -733,13 +735,16 @@ export function HomeBase({
                 {formatScore10(kitOverview.sneak.sneakScore)}
               </strong>
               {" · "}
-              bird-spot snitt {kitOverview.sneak.birdSpotAvg.toFixed(2)}
-              <span className="kit-overview-stat-note">
-                {" "}
-                (lavere spot = bedre · snø{" "}
-                {kitOverview.sneak.birdSpotSnow.toFixed(2)} / barmark{" "}
-                {kitOverview.sneak.birdSpotNoSnow.toFixed(2)})
-              </span>
+              nerve −{kitOverview.sneak.sneakPct}%
+              {kitOverview.sneak.speedPct !== 0
+                ? ` · speed ${kitOverview.sneak.speedPct > 0 ? "+" : ""}${kitOverview.sneak.speedPct}%`
+                : ""}
+              {kitOverview.sneak.focusPct !== 0
+                ? ` · focus +${kitOverview.sneak.focusPct}%`
+                : ""}
+              {kitOverview.sneak.recoveryPct !== 0
+                ? ` · recovery ${kitOverview.sneak.recoveryPct > 0 ? "+" : ""}${kitOverview.sneak.recoveryPct}%`
+                : ""}
             </p>
             <ul className="kit-overview-tips">
               {kitOverview.sneak.tips.map((tip) => (
@@ -886,21 +891,26 @@ export function HomeBase({
                                   item.thermal.isThermalBinocular
                                   ? " · erstatter bino+termisk"
                                   : " · én i kit"
-                                : isShotCamItemId(item.id)
+                                : isWindMeterItemId(item.id)
+                                  ? " · én vindmåler i kit"
+                                  : isShotCamItemId(item.id)
                                   ? " · én shotcam i kit"
                                   : isCamcorderItemId(item.id)
                                     ? " · én camcorder i kit"
-                                    : ""}
+                                    : isCamcorderTripodItemId(item.id)
+                                      ? " · ett stativ i kit"
+                                      : ""}
                               {finnDeal
                                 ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
                                 : ""}
                             </span>
                             {isCamoItem(item) ? (
                               <span className="shop-row-ballistics">
-                                {camoSlot(item.camo)} · bird snow{" "}
-                                {item.camo.birdSpotSnow.toFixed(2)} · speed{" "}
-                                {formatScore10(item.camo.terrainSpeed)} · stam{" "}
-                                {formatScore10(item.camo.stamina)}
+                                {camoSlot(item.camo)} · sneak{" "}
+                                {item.camo.sneakPct}% · speed{" "}
+                                {item.camo.speedPct}% · focus{" "}
+                                {item.camo.focusPct}% · recovery{" "}
+                                {item.camo.recoveryPct}%
                               </span>
                             ) : null}
                             {isSkiItem(item) ? (
@@ -1067,6 +1077,12 @@ export function toggleKitItem(
     const without = next.filter((id) => getSkiSlot?.(id) !== skiSlot);
     return [...without, itemId];
   }
+  // Shared kit slots (wind meter, camcorder, headlamp, …) before category exclusivity.
+  const miscSlot = getMiscSlot?.(itemId);
+  if (miscSlot) {
+    const without = next.filter((id) => getMiscSlot?.(id) !== miscSlot);
+    return [...without, itemId];
+  }
   if (category && EXCLUSIVE_KIT_CATEGORIES.has(category)) {
     const withoutSame = next.filter((id) => getCategory(id) !== category);
     return [...withoutSame, itemId];
@@ -1076,15 +1092,18 @@ export function toggleKitItem(
     const without = next.filter((id) => getFoodKind?.(id) !== foodKind);
     return [...without, itemId];
   }
-  const miscSlot = getMiscSlot?.(itemId);
-  if (miscSlot) {
-    const without = next.filter((id) => getMiscSlot?.(id) !== miscSlot);
-    return [...without, itemId];
-  }
-  // One per camo/apparel slot (suit, buff, beanie, gloves, boots).
+  // One per camo/apparel slot. Ghillie (suit) exclusive vs jacket + pants.
   const slot = getCamoSlot?.(itemId);
   if (slot) {
-    const without = next.filter((id) => getCamoSlot?.(id) !== slot);
+    let without = next.filter((id) => getCamoSlot?.(id) !== slot);
+    if (slot === "suit") {
+      without = without.filter((id) => {
+        const s = getCamoSlot?.(id);
+        return s !== "jacket" && s !== "pants";
+      });
+    } else if (slot === "jacket" || slot === "pants") {
+      without = without.filter((id) => getCamoSlot?.(id) !== "suit");
+    }
     return [...without, itemId];
   }
   return [...next, itemId];

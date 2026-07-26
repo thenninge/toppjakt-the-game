@@ -7,7 +7,7 @@
 
 import { combinedDispersionMoa } from "@/lib/ballistics/dispersion";
 import {
-  applyCustomCamoBirdSpot,
+  applyCustomCamoSneakPct,
   customsBeddingMoaDelta,
   type CustomsMods,
 } from "@/lib/customs/spec";
@@ -18,8 +18,8 @@ import {
 } from "@/lib/customs/customBarrel";
 import {
   camoSlot,
-  kitBirdSpotFactor,
-  type CamoSpec,
+  kitCamoStatSum,
+  sneakPctToScore,
 } from "@/lib/camo/spec";
 import {
   computeKitTopSpeedKmh,
@@ -70,13 +70,15 @@ export type KitOverview = {
     tips: string[];
   };
   sneak: {
-    /** Average of snow / no-snow bird-spot (lower = better). */
-    birdSpotAvg: number;
-    birdSpotSnow: number;
-    birdSpotNoSnow: number;
-    /** 1–10 player score (higher = harder for birds to see you). */
+    /** Additive clothing sneak % (custom camo included). */
+    sneakPct: number;
+    speedPct: number;
+    focusPct: number;
+    recoveryPct: number;
+    /** 1–10 player score from sneak %. */
     sneakScore: Score10;
     hasSuit: boolean;
+    hasJacketOrPants: boolean;
     apparelSlots: number;
     tips: string[];
   };
@@ -86,29 +88,8 @@ export type KitOverview = {
   summary: string;
 };
 
-function clamp01(n: number): number {
-  return Math.max(0, Math.min(1, n));
-}
-
-/** Invert bird-spot (0.08 elite … 0.85 naked) into Score10. */
-export function birdSpotToSneakScore(birdSpot: number): Score10 {
-  const spot = clamp01(birdSpot);
-  // 0.08 → ~10, 0.28 → ~7, 0.45 → ~5, 0.85 → ~1
-  const raw = 11 - spot * 11.5;
-  return clampScore10(Math.round(raw));
-}
-
 function formatMoa(moa: number): string {
   return `${moa.toFixed(2)} MOA`;
-}
-
-function avgCamoScore(
-  pieces: CamoSpec[],
-  key: "terrainSpeed" | "stamina",
-): number | null {
-  if (pieces.length === 0) return null;
-  const sum = pieces.reduce((s, p) => s + p[key], 0);
-  return sum / pieces.length;
 }
 
 /**
@@ -139,8 +120,12 @@ export function computeKitOverview(input: {
   const foodPieces = kitItems.filter(isFoodItem).map((i) => i.food);
   const canBoil = kitCanBoil(foodPieces);
   const hasSuit = camoPieces.some((c) => camoSlot(c) === "suit");
+  const hasJacketOrPants = camoPieces.some((c) => {
+    const s = camoSlot(c);
+    return s === "jacket" || s === "pants";
+  });
   const apparelSlots = new Set(
-    camoPieces.map((c) => camoSlot(c)).filter((s) => s !== "suit"),
+    camoPieces.map((c) => camoSlot(c)),
   ).size;
   const hasSkiBoots = kitItems.some((i) => isSkiItem(i) && !!i.ski.isBoots);
 
@@ -307,49 +292,67 @@ export function computeKitOverview(input: {
       );
     }
   }
-  const camoSpeed = avgCamoScore(camoPieces, "terrainSpeed");
-  if (camoSpeed != null && camoSpeed < 5) {
+  const clothingSpeedPct = kitCamoStatSum(camoPieces, "speedPct");
+  if (clothingSpeedPct < 0) {
     speedTips.push(
-      "Camo/klær har lav terrain-speed — dyrere dress/støvler er ment å gå bedre i terreng.",
+      `Klær gir ${clothingSpeedPct}% speed — turen tar lengre tid (ghillie er treg).`,
+    );
+  } else if (clothingSpeedPct > 0) {
+    speedTips.push(
+      `Støvler/klær: +${clothingSpeedPct}% felt-speed (kortere gangtid mellom ruter).`,
+    );
+  } else if (camoPieces.length > 0) {
+    speedTips.push(
+      "Ingen clothing speed ennå — Crispi/Härkila/M77 støvler øker gangfart i felt.",
     );
   }
   if (speedTips.length === 0) {
     speedTips.push("Speed-kittet ser solid ut — finpuss vekt vs. hva du faktisk trenger på tur.");
   }
 
-  // —— Sneak (season-agnostic average) ——
-  const birdSpotSnow = applyCustomCamoBirdSpot(
-    kitBirdSpotFactor(camoPieces, true),
+  // —— Sneak / clothing % ——
+  const sneakPct = applyCustomCamoSneakPct(
+    kitCamoStatSum(camoPieces, "sneakPct"),
     customsMods,
   );
-  const birdSpotNoSnow = applyCustomCamoBirdSpot(
-    kitBirdSpotFactor(camoPieces, false),
-    customsMods,
-  );
-  const birdSpotAvg = (birdSpotSnow + birdSpotNoSnow) / 2;
-  const sneakScore = birdSpotToSneakScore(birdSpotAvg);
+  const focusPct = kitCamoStatSum(camoPieces, "focusPct");
+  const recoveryPct = kitCamoStatSum(camoPieces, "recoveryPct");
+  const sneakScore = clampScore10(sneakPctToScore(sneakPct)) as Score10;
 
   const sneakTips: string[] = [];
   sneakTips.push(
-    "Sesong skilles ikke ennå — sneak bruker snitt av snø- og barmark-camo.",
+    "Sneak % reduserer bird nerve (10 % sneak → 30 % nerve blir 27 %). Tall summeres fra klær i kit.",
   );
-  if (!hasSuit) {
+  if (!hasSuit && !hasJacketOrPants) {
     sneakTips.push(
-      "Ingen camo-suit — fuglen ser deg lett. Start med dress til terrenget.",
+      "Ingen jakke/bukse eller ghillie — start med yttertøy for sneak.",
     );
-  } else if (birdSpotAvg > 0.45) {
+  } else if (hasSuit) {
     sneakTips.push(
-      "Camo passer dårlig til snitt-terreng — bytt mønster (snø vs skog) eller bedre suit.",
+      "Ghillie er på — eksklusiv mot jakke og bukse. Sterk sneak, tregere gang.",
     );
   }
-  if (apparelSlots < 3) {
+  if (sneakPct < 8) {
     sneakTips.push(
-      "Fullfør apparel (buff, lue, hansker, støvler) — småplagg demper silhuett.",
+      "Lav sneak-sum — buff, lue, hansker og bedre jakke/bukse hjelper nerve.",
+    );
+  }
+  if (apparelSlots < 4) {
+    sneakTips.push(
+      "Flere slots (buff, lue, hansker, sokker, ull, dunis) gir små % — fyll på.",
     );
   }
   if (!customsMods.customCamo) {
+    sneakTips.push("Custom camo hos CB gir +15 % sneak.");
+  }
+  if (focusPct > 0) {
     sneakTips.push(
-      "Custom camo hos CB gjør fuglen litt tregere til å spotte deg.",
+      `Focus +${focusPct}% — bedre caution/extreme-caution prespot, litt mindre Mind-drain.`,
+    );
+  }
+  if (recoveryPct !== 0) {
+    sneakTips.push(
+      `Recovery ${recoveryPct > 0 ? "+" : ""}${recoveryPct}% Body i rest/pause (dunis/ull/sokker).`,
     );
   }
   sneakTips.push(
@@ -371,7 +374,7 @@ export function computeKitOverview(input: {
     overall.push("Termisk er valgfritt men sterkt for å finne fugl raskt, spesielt i skumring.");
   }
   overall.push(
-    "Gå langt/fort: lav kit-vekt + høy carry comfort + ski (med støvler) + fornuftig pace. Top speed over er indikasjonen.",
+    "Gå langt/fort: lav kit-vekt + høy carry comfort + ski (med støvler) + clothing speed % + fornuftig pace.",
   );
   if (!canBoil) {
     overall.push(
@@ -382,10 +385,9 @@ export function computeKitOverview(input: {
       "Lite sliten: du er kokeklar — bruk mat/rest på tur, og unngå «speedy» når Body er lav.",
     );
   }
-  const camoStam = avgCamoScore(camoPieces, "stamina");
-  if (camoStam != null && camoStam < 5) {
+  if (recoveryPct < 4 && camoPieces.length > 0) {
     overall.push(
-      "Camo med høyere stamina-score er ment å holde deg friskere i felt.",
+      "Pause-recovery: ull, dunis og gode sokker øker Body-gevinst på rest/tyribål.",
     );
   }
   if (bestMoa != null) {
@@ -398,14 +400,14 @@ export function computeKitOverview(input: {
     );
   }
   overall.push(
-    `Ikke bli sett: sneak ${formatScore10(sneakScore)} (bird-spot snitt ${birdSpotAvg.toFixed(2)} — lavere spot = bedre). Camo + rolig pace + stå stille.`,
+    `Ikke bli sett: sneak −${sneakPct}% nerve (${formatScore10(sneakScore)}/10). Klær + rolig pace + stå stille.`,
   );
 
   const summaryParts: string[] = [];
   if (bestMoa != null) summaryParts.push(formatMoa(bestMoa));
   else summaryParts.push("MOA —");
   summaryParts.push(formatTopSpeed(topSpeedKmh));
-  summaryParts.push(`sneak ${formatScore10(sneakScore)}`);
+  summaryParts.push(`sneak −${sneakPct}%`);
 
   return {
     precision: {
@@ -426,11 +428,13 @@ export function computeKitOverview(input: {
       tips: speedTips,
     },
     sneak: {
-      birdSpotAvg,
-      birdSpotSnow,
-      birdSpotNoSnow,
+      sneakPct,
+      speedPct: clothingSpeedPct,
+      focusPct,
+      recoveryPct,
       sneakScore,
       hasSuit,
+      hasJacketOrPants,
       apparelSlots,
       tips: sneakTips,
     },

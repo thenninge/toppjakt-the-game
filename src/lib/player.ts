@@ -297,11 +297,12 @@ export const STARTER_HUNT_SUPPORT_IDS = [
   "misc-sittpute-biltema",
   "misc-triggercam",
   "misc-suunto-a-10",
-  "camo-pinewood-lappland",
-  "camo-buff-autumn-realtree",
-  "camo-beanie-forest-swedteam",
-  "camo-gloves-forest-swedteam",
-  "camo-boots-lowa",
+  "camo-jacket-norrona-kvinnherad-gtx",
+  "camo-pants-seeland-hawker-pro",
+  "camo-buff-3charlie-mesh",
+  "camo-cap-multicam",
+  "camo-gloves-mechanix-multicam",
+  "camo-boots-m77",
   "misc-kestrel-5700-elite",
 ] as const;
 

@@ -161,12 +161,18 @@ export function baseMinutesForEffort(effort: EffortScore): number {
   );
 }
 
-/** Travel time for one cell at given pace. */
+/** Travel time for one cell at given pace (+ optional clothing speed %). */
 export function travelMinutesForCell(
   effort: EffortScore,
   pace: HuntPace,
+  clothingSpeedPct = 0,
 ): number {
-  return Math.round(baseMinutesForEffort(effort) / pace.speed);
+  const speedFactor = 1 + clothingSpeedPct / 100;
+  const timeMult = speedFactor <= 0.05 ? 20 : 1 / speedFactor;
+  return Math.max(
+    1,
+    Math.round((baseMinutesForEffort(effort) / pace.speed) * timeMult),
+  );
 }
 
 /** Manhattan path of cells entered (excludes start, includes target). */
@@ -193,11 +199,16 @@ export function pathTravelMinutes(
   from: HuntGridCell,
   to: HuntGridCell,
   pace: HuntPace,
+  clothingSpeedPct = 0,
 ): { minutes: number; path: HuntGridCell[]; steps: number } {
   const path = manhattanPath(from, to);
   let minutes = 0;
   for (const cell of path) {
-    minutes += travelMinutesForCell(getCellEffort(mapId, cell), pace);
+    minutes += travelMinutesForCell(
+      getCellEffort(mapId, cell),
+      pace,
+      clothingSpeedPct,
+    );
   }
   return { minutes, path, steps: path.length };
 }
@@ -320,10 +331,13 @@ export function fatigueFromStep(
    * Carcasses raise this (e.g. 1.3 = 30 % more physical fatigue per step).
    */
   fatigueLoadFactor = 1,
+  /** Clothing focus % — reduces mental drain. */
+  clothingFocusPct = 0,
 ): { mental: number; physical: number } {
   const load = Math.max(1, fatigueLoadFactor);
+  const mindMult = Math.max(0, 1 - clothingFocusPct / 100);
   return {
-    mental: pace.mentalStrain * 0.035 * effort,
+    mental: pace.mentalStrain * 0.035 * effort * mindMult,
     physical: pace.physicalStrain * 0.045 * effort * load,
   };
 }
@@ -336,11 +350,17 @@ export function fatigueFromEttersokMinutes(
   minutes: number,
   pace: HuntPace,
   fatigueLoadFactor = 1,
+  clothingFocusPct = 0,
 ): { mental: number; physical: number } {
   const refEffort = 3 as EffortScore;
   const refMin = baseMinutesForEffort(refEffort);
   const cellsEquiv = Math.max(0, minutes) / Math.max(1, refMin);
-  const step = fatigueFromStep(refEffort, pace, fatigueLoadFactor);
+  const step = fatigueFromStep(
+    refEffort,
+    pace,
+    fatigueLoadFactor,
+    clothingFocusPct,
+  );
   return {
     mental: step.mental * cellsEquiv,
     physical: step.physical * cellsEquiv,

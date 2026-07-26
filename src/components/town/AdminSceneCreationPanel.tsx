@@ -160,6 +160,7 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
   const [battery, setBattery] = useState(ADMIN_BATTERY_SEC);
   const [baking, setBaking] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [syncingRepo, setSyncingRepo] = useState(false);
   const [canPublishCloud, setCanPublishCloud] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -540,6 +541,49 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
       setStatus(
         err instanceof Error ? err.message : "Eksport feilet.",
       );
+    }
+  }
+
+  async function syncRepoFromCloud() {
+    if (!canPublishCloud) {
+      setStatus(
+        authStatus !== "authenticated"
+          ? "Logg inn med Google først."
+          : "Krever ADMIN_GOOGLE_IDS (kun lokal dev).",
+      );
+      return;
+    }
+    setSyncingRepo(true);
+    setStatus("Henter cloud-scener til repo…");
+    try {
+      const res = await fetch("/api/admin/cloud-scenes/sync-to-repo", {
+        method: "POST",
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        added?: number;
+        updated?: number;
+        skipped?: number;
+        failed?: number;
+        hint?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      setStatus(
+        `Repo oppdatert fra sky: +${data.added ?? 0} nye, ${data.updated ?? 0} oppdatert` +
+          (data.skipped ? `, ${data.skipped} hoppet over` : "") +
+          (data.failed ? `, ${data.failed} feilet` : "") +
+          `. ${data.hint ?? "Commit + push."}`,
+      );
+    } catch (err) {
+      setStatus(
+        err instanceof Error ? err.message : "Sync feilet.",
+      );
+    } finally {
+      setSyncingRepo(false);
     }
   }
 
@@ -936,6 +980,22 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
               onClick={() => void exportScenePackage()}
             >
               Eksporter JSON+JPG
+            </button>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={
+                syncingRepo ||
+                baking ||
+                publishing ||
+                !canPublishCloud
+              }
+              title="Kun lokal dev: last ned alle published cloud-scener til batchB/cloud/ + katalog"
+              onClick={() => void syncRepoFromCloud()}
+            >
+              {syncingRepo
+                ? "Synker…"
+                : "Oppdater spotting-repo fra sky"}
             </button>
           </div>
 

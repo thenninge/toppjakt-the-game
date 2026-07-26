@@ -4,11 +4,16 @@
  */
 
 import type { AmmoSpec } from "@/lib/ammo/spec";
+import {
+  isWindMeterBallistics,
+  preferWindMeterItemId,
+} from "@/lib/ballistics/spec";
 import { exactBallisticHold } from "@/lib/ballistics/solver";
 import {
   POWDER_TEMP_REFERENCE_C,
   powderTempDvDtMpsPerC,
 } from "@/lib/ballistics/powderTemp";
+import { getShopItem, isBallisticsItem } from "@/lib/shop";
 
 /** Same as player ZERO_CLICK_MM — 0.1 mil ≈ 10 mm at 100 m. */
 const ZERO_CLICK_MM = 10;
@@ -74,6 +79,32 @@ export function ownsKestrelDevice(
 ): boolean {
   const owned = new Set([...inventoryItemIds, ...kitIds]);
   return KESTREL_ITEM_IDS.some((id) => owned.has(id));
+}
+
+/** Kit exclusivity — at most one wind meter (Kestrel / Clas Ohlson / …). */
+export function sanitizeKitWindMeters(kit: string[]): string[] {
+  const windIds = kit.filter((id) => {
+    const item = getShopItem(id);
+    return (
+      !!item &&
+      isBallisticsItem(item) &&
+      isWindMeterBallistics(item.ballistics)
+    );
+  });
+  if (windIds.length <= 1) return kit;
+  const keep = preferWindMeterItemId(windIds);
+  if (!keep) return kit;
+  const drop = new Set(windIds.filter((id) => id !== keep));
+  return kit.filter((id) => !drop.has(id));
+}
+
+export function isWindMeterItemId(id: string): boolean {
+  const item = getShopItem(id);
+  return (
+    !!item &&
+    isBallisticsItem(item) &&
+    isWindMeterBallistics(item.ballistics)
+  );
 }
 
 export function upsertKestrelProfile(

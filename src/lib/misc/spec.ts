@@ -29,12 +29,17 @@ export type MiscSpec = {
   /** Allows walking after skuddlys ends (17:00) when packed in kit. */
   isHeadlamp?: boolean;
   /**
-   * Hunt camcorder — deploy before shot for better ettersøk cues
-   * (direction + land distance), at a nervousness cost.
+   * Hunt camcorder body — needs a tripod in kit to deploy.
    */
   isCamcorder?: boolean;
   /**
-   * Nerve bump (0–1) when deploying this camcorder in Aware.
+   * Tripod for hunt camcorder. Nerve cost applies on deploy
+   * (steel = heavy/slow, carbon = light/fast).
+   */
+  isCamcorderTripod?: boolean;
+  /**
+   * Nerve bump (0–1) when deploying camcorder with this gear.
+   * On tripods: setup cost. On camcorder body: unused (tripod wins).
    * Defaults to {@link CAMCORDER_SETUP_NERVE} (0.2) when omitted.
    */
   camcorderSetupNerve?: number;
@@ -101,6 +106,10 @@ export function isHeadlampMisc(misc: MiscSpec): boolean {
 
 export function isCamcorderMisc(misc: MiscSpec): boolean {
   return !!misc.isCamcorder;
+}
+
+export function isCamcorderTripodMisc(misc: MiscSpec): boolean {
+  return !!misc.isCamcorderTripod;
 }
 
 export function isChronographMisc(misc: MiscSpec): boolean {
