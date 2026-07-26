@@ -677,8 +677,7 @@ export function XxlShop({
                 {bipod ? (
                   <span className="shop-row-ballistics">
                     calm {formatScore10(bipod.weaponCalm)} · deploy{" "}
-                    {formatScore10(bipod.deploySpeed)} · track{" "}
-                    {formatScore10(bipod.tracking)} · bære +
+                    {formatScore10(bipod.deploySpeed)} · bære +
                     {item.weightGrams} g · calm-mass +
                     {bipodWeaponCalmGrams(item.weightGrams, bipod)} g
                   </span>

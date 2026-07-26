@@ -28,7 +28,7 @@ import {
 } from "@/lib/hunt/cloudScenes";
 import { applyPerchDistanceOverrides } from "@/lib/hunt/perchDistanceOverrides";
 import {
-  defaultEyesVisibleForBracket,
+  resolveEyesVisible,
   spotColorBandFromBracket,
   type SpotColorBand,
 } from "@/lib/hunt/spotBands";
@@ -2571,9 +2571,11 @@ export function perchesForSpotImage(imageSrc: string): SpotPerch[] {
       ...p,
       id,
       colorBand,
-      eyesVisible:
-        p.eyesVisible ??
-        defaultEyesVisibleForBracket(p.distanceMinM, p.distanceMaxM),
+      eyesVisible: resolveEyesVisible(
+        p.eyesVisible,
+        p.distanceMinM,
+        p.distanceMaxM,
+      ),
       scalePercent: p.scalePercent ?? 100,
     };
   });
@@ -2594,9 +2596,11 @@ export function catalogPerchForId(
     ...p,
     id: p.id ?? `p${idx}`,
     colorBand,
-    eyesVisible:
-      p.eyesVisible ??
-      defaultEyesVisibleForBracket(p.distanceMinM, p.distanceMaxM),
+    eyesVisible: resolveEyesVisible(
+      p.eyesVisible,
+      p.distanceMinM,
+      p.distanceMaxM,
+    ),
     scalePercent: p.scalePercent ?? 100,
   };
 }

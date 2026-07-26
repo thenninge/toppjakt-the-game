@@ -158,6 +158,8 @@ type SpotViewProps = {
   onResumeEngage?: () => void;
   /** Show Engage as active even without a fresh LRF lock. */
   engageResumeActive?: boolean;
+  /** Open Aware overview (skuddpar / stand) without leaving hunt. */
+  onOpenAware?: () => void;
   /**
    * Optional: called when LRF locks a bird (before Engage).
    * Admin uses this to select a perch without leaving Spot.
@@ -252,18 +254,19 @@ function formatSpotLookedClock(totalSec: number): string {
 /** Minimum click/tap target as % of spot frame (sprites can be ~1% wide). */
 const BIRD_HIT_MIN_PCT = 4.5;
 /**
- * Floor for drawn sprite width (% of landscape). Gul band (~300–500 m) is
- * ~0.45–0.75% by 1/range — easy to lose in the photo / look “behind” it.
- * LRF / distance still use the true placement.widthPct.
+ * Floor for drawn sprite width (% of landscape). Kept modest so far birds
+ * under binos zoom are not inflated. LRF / distance still use true widthPct.
  */
-const BIRD_SPRITE_MIN_PCT = 0.85;
+const BIRD_SPRITE_MIN_PCT = 0.5;
 
 /**
- * Visual-only shrink vs angular size (beta feedback: birds looked too big).
- * Eyes −15%; binos / thermal spotter −30%. Hit/LRF still use widthPct.
+ * Visual-only shrink vs angular size.
+ * Scope-admin scales feed widthPct (Gun looks right). Spotting binos/thermal
+ * need extra shrink — same angular % feels larger in the circular FOV.
+ * Eyes −15%; binos / thermal −45%.
  */
 const SPOT_BIRD_VISUAL_SCALE_EYES = 0.85;
-const SPOT_BIRD_VISUAL_SCALE_OPTIC = 0.7;
+const SPOT_BIRD_VISUAL_SCALE_OPTIC = 0.55;
 
 function BirdOverlay({
   placement,
@@ -422,6 +425,7 @@ export function SpotView({
   onBirdObserved,
   onResumeEngage,
   engageResumeActive = false,
+  onOpenAware,
   onBirdRanged,
   onDone,
   initialMode = "eyes",
@@ -595,6 +599,8 @@ export function SpotView({
     activeLrf: SpotLrfMeta | null,
   ) => void>(() => {});
   const activeLrfRef = useRef<SpotLrfMeta | null>(null);
+  const engageRef = useRef<() => void>(() => {});
+  const canEngageRef = useRef(false);
   const sigPhaseRef = useRef<SigKiloPhase>("off");
   sigPhaseRef.current = sigPhase;
   const onPlacePointRef = useRef(onPlacePoint);
@@ -797,6 +803,12 @@ export function SpotView({
         if (!hasThermalRef.current) return;
         e.preventDefault();
         toggleThermalRef.current();
+        return;
+      }
+      if ((e.key === "e" || e.key === "E") && !e.repeat) {
+        if (!canEngageRef.current) return;
+        e.preventDefault();
+        engageRef.current();
         return;
       }
 
@@ -1160,6 +1172,8 @@ export function SpotView({
   }
 
   const showEngage = !!rangedBird || !!engageResumeActive;
+  engageRef.current = engageRangedBird;
+  canEngageRef.current = showEngage;
 
   const lookedClock = formatSpotLookedClock(lookedGameSec);
   const shortBinos = shortSpotOpticLabel(binosLabel);
@@ -1357,15 +1371,27 @@ export function SpotView({
             </button>
           ) : null}
           {mode === "eyes" ? (
-            <button
-              type="button"
-              className="intro-button"
-              onClick={() =>
-                onDone({ mode, gameSeconds: lookedRef.current })
-              }
-            >
-              Done
-            </button>
+            <>
+              {onOpenAware ? (
+                <button
+                  type="button"
+                  className="intro-button"
+                  onClick={() => onOpenAware()}
+                  title="Aware — skuddpar og siste stand"
+                >
+                  Aware
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() =>
+                  onDone({ mode, gameSeconds: lookedRef.current })
+                }
+              >
+                Done
+              </button>
+            </>
           ) : null}
         </div>
       </header>
@@ -1483,11 +1509,23 @@ export function SpotView({
                 onClick={engageRangedBird}
                 title={
                   rangedBird
-                    ? "Gå til Aware med ranged fugl"
-                    : "Tilbake til Aware (samme engagement)"
+                    ? "E — gå til Aware med ranged fugl"
+                    : "E — tilbake til Aware (samme engagement)"
                 }
               >
                 Engage
+              </button>
+            ) : null}
+            {onOpenAware ? (
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => {
+                  onOpenAware();
+                }}
+                title="Aware — skuddpar og siste stand"
+              >
+                Aware
               </button>
             ) : null}
             <button
@@ -1750,7 +1788,7 @@ export function SpotView({
           {isThermalBinocular && habrokBatteryDead
             ? "Habrok dagoptikk (batteri tomt) — ingen WH/BH/Outline/Fusion · piltaster / dra"
             : showLrf
-              ? "Sirkulært syn · piltaster / dra · LRF på fugl → Engage · F / Space / LRF"
+              ? "Sirkulært syn · piltaster / dra · LRF på fugl → Engage (E) · F / Space / LRF"
               : "Sirkulært syn · piltaster / dra · klikk på fuglen for å låse (ingen LRF)"}
           {isThermalBinocular
             ? habrokBatteryDead

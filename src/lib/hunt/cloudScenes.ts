@@ -4,6 +4,7 @@
  */
 
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
+import { resolveEyesVisible } from "@/lib/hunt/spotBands";
 
 export type CloudScenePerch = {
   x: number;
@@ -68,7 +69,11 @@ export function cloudPerchesForImage(imageSrc: string): SpotPerch[] | null {
     species: p.species,
     distanceMinM: p.distanceMinM,
     distanceMaxM: p.distanceMaxM,
-    eyesVisible: p.eyesVisible !== false,
+    eyesVisible: resolveEyesVisible(
+      p.eyesVisible,
+      p.distanceMinM,
+      p.distanceMaxM,
+    ),
     scalePercent: p.scalePercent ?? 100,
   }));
 }

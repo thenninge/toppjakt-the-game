@@ -90,6 +90,10 @@ import {
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
+import {
+  BAG_REST_BIPOD_SPEC,
+  type HuntShootRest,
+} from "@/lib/hunt/shootRest";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import {
   aimMmDeltaFromPointerDrag,
@@ -161,6 +165,15 @@ type HuntShootViewProps = {
   kestrelEnviroActive?: boolean;
   /** Triggercam started in Aware — AAR replay after the shot. */
   triggercamActive?: boolean;
+  /**
+   * Aware rest choice. Bipod calm only when `"bipod"`; backpack uses
+   * synthetic calm=20. Default `"none"` = no bipod/bag rest calm.
+   */
+  shootRest?: HuntShootRest;
+  /**
+   * Turret dial / prep only — no live bird shot (from map Aware overview).
+   */
+  gunPrepOnly?: boolean;
   /** Persist chronograph row (hunt shot with Xero set up). */
   onLogSeries?: (entry: ShotLogEntry) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
@@ -297,6 +310,8 @@ export function HuntShootView({
   chronoActive = false,
   kestrelEnviroActive = true,
   triggercamActive = false,
+  shootRest = "none",
+  gunPrepOnly = false,
   onLogSeries,
   customsMoaDelta = 0,
   customsCalmMult = 1,
@@ -451,7 +466,7 @@ export function HuntShootView({
 
   // Shoot HUD: same still-nerve rate as Aware (real seconds). Enviro only speeds the clock.
   useEffect(() => {
-    if (fired) return;
+    if (fired || gunPrepOnly) return;
     let last = performance.now();
     const id = window.setInterval(() => {
       const now = performance.now();
@@ -475,7 +490,7 @@ export function HuntShootView({
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [fired]);
+  }, [fired, gunPrepOnly]);
 
   function leaveToAware() {
     if (firedRef.current) return;
@@ -571,8 +586,13 @@ export function HuntShootView({
   const calmFactor = useMemo(
     () =>
       computeWeaponCalmFactor({
-        hasBipod: !!bipod,
-        bipod: bipod?.bipod,
+        hasBipod: shootRest === "bipod" || shootRest === "backpack",
+        bipod:
+          shootRest === "backpack"
+            ? BAG_REST_BIPOD_SPEC
+            : shootRest === "bipod"
+              ? bipod?.bipod
+              : null,
         suppressorWeightGrams: suppressor?.weightGrams,
         extraCalmGrams: miscKitWeaponCalmGrams(
           kitItems.filter(isMiscItem).map((i) => i.misc),
@@ -580,7 +600,7 @@ export function HuntShootView({
         ),
         customsCalmMult,
       }),
-    [bipod, suppressor, kitItems, customsCalmMult],
+    [shootRest, bipod, suppressor, kitItems, customsCalmMult],
   );
 
   useEffect(() => {
@@ -629,6 +649,10 @@ export function HuntShootView({
   }, [scope]);
 
   fireShotRef.current = () => {
+    if (gunPrepOnly) {
+      setStatus("Gun-prep — ingen skudd. Still tårn, deretter Back to Aware.");
+      return;
+    }
     if (!ready || !rifle || !selectedAmmo || !scope || firedRef.current) return;
     if (getInventoryQty(inventory, selectedAmmo.id) <= 0) {
       setStatus("Tom for ammo.");
@@ -1418,29 +1442,37 @@ export function HuntShootView({
       aria-label="Skytemodus"
     >
       <header className="shop-header">
-        <p className="intro-line intro-gift">Fugl observert — skyt!</p>
+        <p className="intro-line intro-gift">
+          {gunPrepOnly ? "Gun — tårn / prep" : "Fugl observert — skyt!"}
+        </p>
         <p className="shop-row-note">
           Kl {formatHuntClock(clockMinutes)}
-          {rangeSource === "lrf" ? (
-            <>
-              {" · "}
-              <span className="lrf-range-callout">
-                LRF: {measuredDistanceM} m
-              </span>
-            </>
+          {gunPrepOnly ? (
+            <> · Still tårn manuelt · Back to Aware lagrer dial (ingen skudd)</>
           ) : (
-            <> · Estimat {measuredDistanceM} m</>
+            <>
+              {rangeSource === "lrf" ? (
+                <>
+                  {" · "}
+                  <span className="lrf-range-callout">
+                    LRF: {measuredDistanceM} m
+                  </span>
+                </>
+              ) : (
+                <> · Estimat {measuredDistanceM} m</>
+              )}
+              {" · "}
+              vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
+              {shotGeom.vitalDiameterMm} mm
+              {abFasitHold
+                ? " · Kestrel AB fasit (skru tårn)"
+                : hasKestrelInKit
+                  ? " · Kestrel i kit (fane)"
+                  : hasWindMeterInKit
+                    ? " · Vindmåler i kit (fane)"
+                    : null}
+            </>
           )}
-          {" · "}
-          vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
-          {shotGeom.vitalDiameterMm} mm
-          {abFasitHold
-            ? " · Kestrel AB fasit (skru tårn)"
-            : hasKestrelInKit
-              ? " · Kestrel i kit (fane)"
-              : hasWindMeterInKit
-                ? " · Vindmåler i kit (fane)"
-                : null}
         </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name} · {scope.brand} {scope.name} (
@@ -1600,20 +1632,35 @@ export function HuntShootView({
             ) : undefined
           }
           actions={
-            <button
-              type="button"
-              className="intro-button sheriff-secondary"
-              disabled={fired}
-              onClick={leaveToAware}
-            >
-              Back to Aware
-            </button>
+            <>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                disabled={fired}
+                onClick={() => {
+                  setSessionZeroXMm(0);
+                  setSessionZeroYMm(0);
+                  setStatus("Tårn nullstilt (0 / 0).");
+                }}
+                title="Sett elev/windage til 0"
+              >
+                Nullstill tårn
+              </button>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                disabled={fired}
+                onClick={leaveToAware}
+              >
+                Back to Aware
+              </button>
+            </>
           }
         />
       </div>
 
       <div className="scope-stage" tabIndex={0}>
-        {!fired ? (
+        {!fired && !gunPrepOnly ? (
           <BirdNerveBar
             className="hunt-scope-nerve"
             nerve={nerveUi}
@@ -1694,45 +1741,47 @@ export function HuntShootView({
                         }
                       }}
                     />
-                    <div
-                      className="hunt-scope-bird-wrap"
-                      style={{
-                        left: `${landscapeFocusX}%`,
-                        top: `${landscapeFocusY}%`,
-                        width: `${birdWidthPct}%`,
-                        aspectRatio: `${shotGeom.nativeW} / ${shotGeom.nativeH}`,
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        className="scope-target hunt-tiur-target"
-                        src={shotGeom.displaySrc}
-                        alt="Fugl"
-                        draggable={false}
-                        width={shotGeom.nativeW}
-                        height={shotGeom.nativeH}
+                    {!gunPrepOnly ? (
+                      <div
+                        className="hunt-scope-bird-wrap"
                         style={{
-                          width: "100%",
-                          height: "100%",
-                          transform: birdFlip ? "scaleX(-1)" : undefined,
+                          left: `${landscapeFocusX}%`,
+                          top: `${landscapeFocusY}%`,
+                          width: `${birdWidthPct}%`,
+                          aspectRatio: `${shotGeom.nativeW} / ${shotGeom.nativeH}`,
                         }}
-                      />
-                      {lastImpact ? (
-                        <span
-                          className="bullet-hole"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          className="scope-target hunt-tiur-target"
+                          src={shotGeom.displaySrc}
+                          alt="Fugl"
+                          draggable={false}
+                          width={shotGeom.nativeW}
+                          height={shotGeom.nativeH}
                           style={{
-                            width: mmToPx(lastImpact.diameterMm),
-                            height: mmToPx(lastImpact.diameterMm),
-                            left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
-                            top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
-                            marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
-                            marginTop: -mmToPx(lastImpact.diameterMm) / 2,
+                            width: "100%",
+                            height: "100%",
+                            transform: birdFlip ? "scaleX(-1)" : undefined,
                           }}
                         />
-                      ) : null}
-                    </div>
+                        {lastImpact ? (
+                          <span
+                            className="bullet-hole"
+                            style={{
+                              width: mmToPx(lastImpact.diameterMm),
+                              height: mmToPx(lastImpact.diameterMm),
+                              left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
+                              top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
+                              marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
+                              marginTop: -mmToPx(lastImpact.diameterMm) / 2,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                ) : (
+                ) : gunPrepOnly ? null : (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -1778,30 +1827,32 @@ export function HuntShootView({
             />
           </div>
 
-          <div className="range-side-rail range-side-rail--trigger">
-            <span
-              className={
-                triggerUi.pending
-                  ? "range-side-rail-label is-trigger"
-                  : "range-side-rail-label"
-              }
-            >
-              Avtrekk
-            </span>
-            <div
-              className="range-trigger-bar"
-              style={
-                {
-                  ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-                } as CSSProperties
-              }
-            >
-              <div ref={triggerFillRef} className="range-trigger-fill" />
-              {triggerUi.targetPct > 0 ? (
-                <span className="range-trigger-mark" aria-hidden />
-              ) : null}
+          {!gunPrepOnly ? (
+            <div className="range-side-rail range-side-rail--trigger">
+              <span
+                className={
+                  triggerUi.pending
+                    ? "range-side-rail-label is-trigger"
+                    : "range-side-rail-label"
+                }
+              >
+                Avtrekk
+              </span>
+              <div
+                className="range-trigger-bar"
+                style={
+                  {
+                    ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                  } as CSSProperties
+                }
+              >
+                <div ref={triggerFillRef} className="range-trigger-fill" />
+                {triggerUi.targetPct > 0 ? (
+                  <span className="range-trigger-mark" aria-hidden />
+                ) : null}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">

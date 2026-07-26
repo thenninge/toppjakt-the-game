@@ -118,10 +118,10 @@ export const TIUR_COMPANION_CHANCE = 0.2;
 export const ORRHANE_COMPANION_CHANCE = 0.8;
 
 /**
- * When binding a bird to a spot perch: prefer binos-only seats (grønn/gul).
- * Eyes seats (rød/lilla) get the remainder.
+ * When binding a bird to a spot perch: prefer far seats (min >230 m)
+ * half the time; near seats (can be ≤230 m) get the remainder.
  */
-export const SPOT_PERCH_FAR_BAND_CHANCE = 0.65;
+export const SPOT_PERCH_FAR_BAND_CHANCE = 0.5;
 
 /**
  * Without suppressor: 95 % fly.
@@ -183,8 +183,8 @@ export type BirdVisualPlacement = {
   /** Stable perch id within the spotting image (`p0`, …). */
   perchId?: string;
   /**
-   * Synlig med bare øyne (rød/lilla kategori). When false, eyes mode hides
-   * the bird even if distance would otherwise allow it.
+   * Synlig med bare øyne — catalog/admin metadata only.
+   * Hunt eyes visibility is distance ≤230 m (not this flag).
    */
   eyesVisible?: boolean;
   /** Paired topp/target variant. */
@@ -242,9 +242,9 @@ export function visibleInSpotMode(
 ): boolean {
   if (mode === "eyes") {
     if (opts?.adminEyesFlagPreview) {
-      return opts.eyesVisible !== false;
+      return opts.eyesVisible === true;
     }
-    if (opts?.eyesVisible === false) return false;
+    // Hunt: eyes visibility is distance-only (≤ {@link EYES_MAX_DISTANCE_M}).
     return visibleWithEyes(distanceM);
   }
   if (opts?.habrokZoom != null && Number.isFinite(opts.habrokZoom)) {
@@ -511,7 +511,7 @@ function placementFromPerch(
     birdId: bird.id,
     species: perch.species,
     perchId: perch.id,
-    eyesVisible: perch.eyesVisible !== false,
+    eyesVisible: perch.eyesVisible === true,
     spriteId,
     imageSrc: sprite.toppSrc,
     distanceM,
@@ -526,18 +526,17 @@ function placementFromPerch(
   };
 }
 
+/** Near seats (can roll ≤230 m) vs far (always beyond eyes range). */
 function isEyesBandPerch(
-  perch: Pick<SpotPerch, "distanceMaxM" | "eyesVisible">,
+  perch: Pick<SpotPerch, "distanceMinM" | "distanceMaxM">,
 ): boolean {
-  if (typeof perch.eyesVisible === "boolean") return perch.eyesVisible;
-  return perch.distanceMaxM <= EYES_MAX_DISTANCE_M;
+  return Math.min(perch.distanceMinM, perch.distanceMaxM) <= EYES_MAX_DISTANCE_M;
 }
 
 function isFarBandPerch(
-  perch: Pick<SpotPerch, "distanceMinM" | "eyesVisible">,
+  perch: Pick<SpotPerch, "distanceMinM" | "distanceMaxM">,
 ): boolean {
-  if (typeof perch.eyesVisible === "boolean") return !perch.eyesVisible;
-  return perch.distanceMinM > EYES_MAX_DISTANCE_M;
+  return Math.min(perch.distanceMinM, perch.distanceMaxM) > EYES_MAX_DISTANCE_M;
 }
 
 function pickOneFromPool(
@@ -550,9 +549,9 @@ function pickOneFromPool(
 }
 
 /**
- * Pick `count` perches with band bias: 65 % grønn/gul (binos), 35 % rød/lilla
- * (eyes). Within a band, seats are uniform. Falls back to the other band if
- * one is empty.
+ * Pick `count` perches with band bias: 50 % far (>230 m min), 50 % near
+ * (can be ≤230 m). Within a band, seats are uniform. Falls back to the other
+ * band if one is empty.
  */
 function selectPerchesWeighted(
   perches: SpotPerch[],
@@ -666,7 +665,7 @@ export function bindBirdsToSpotImage(
     ? perches.length
     : Math.min(perches.length, Math.max(here.length, 0));
 
-  // 65 % grønn/gul (binos-only), 35 % rød/lilla (eyes). Eyes filter visibility later.
+  // 50 % far (>230 m), 50 % near (can be eyes-range). Visibility is distance-only.
   const ordered = opts.fillAllPerches
     ? [...perches]
     : selectPerchesWeighted(perches, perchCount, random);
@@ -758,13 +757,13 @@ export function adminPlacementsFromPerches(
       perch.species === "orrhane" ? opts.orreSpriteId : opts.tiurSpriteId;
     const sprite = getBirdSprite(spriteId);
     const perchId = perch.id ?? `p${i}`;
-    const distanceM = opts.stableDistance
+    let distanceM = opts.stableDistance
       ? Math.round((perch.distanceMinM + perch.distanceMaxM) / 2)
       : rollPerchDistanceM(perch, random);
     return {
       birdId: `admin-${perchId}`,
       perchId,
-      eyesVisible: perch.eyesVisible !== false,
+      eyesVisible: perch.eyesVisible === true,
       species: perch.species,
       spriteId,
       imageSrc: sprite.toppSrc,

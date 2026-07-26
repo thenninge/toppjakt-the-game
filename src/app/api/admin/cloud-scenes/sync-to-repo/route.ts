@@ -15,6 +15,7 @@ import {
   upsertPerchCatalog,
 } from "@/lib/hunt/sceneAuthoring";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
+import { resolveEyesVisible } from "@/lib/hunt/spotBands";
 import {
   getSupabaseAdmin,
   hasSupabaseAdminConfig,
@@ -44,7 +45,11 @@ function normalizePerches(raw: unknown): SpotPerch[] {
       species: o.species,
       distanceMinM: Math.round(lo),
       distanceMaxM: Math.round(hi),
-      eyesVisible: o.eyesVisible !== false,
+      eyesVisible: resolveEyesVisible(
+        typeof o.eyesVisible === "boolean" ? o.eyesVisible : undefined,
+        lo,
+        hi,
+      ),
       scalePercent:
         typeof o.scalePercent === "number"
           ? Math.max(1, Math.min(200, Math.round(o.scalePercent)))

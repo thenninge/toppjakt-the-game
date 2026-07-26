@@ -61,6 +61,12 @@ import {
   type ShotCamKind,
 } from "@/lib/hunt/shoot";
 import {
+  BAG_REST_NERVE,
+  bipodDeployNerve,
+  shootRestNerve,
+  type HuntShootRest,
+} from "@/lib/hunt/shootRest";
+import {
   cellLabel,
   type HuntGridCell,
   type HuntMapAsset,
@@ -102,6 +108,8 @@ export type AwareShootStance = {
   triggercamActive?: boolean;
   /** Bird nervousness carried into the shoot scene (0–cap). */
   birdNerve?: number;
+  /** Pack rest or deployed bipod — gates hunt weapon calm. */
+  rest?: HuntShootRest;
 };
 
 type AwareAppViewProps = {
@@ -132,6 +140,8 @@ type AwareAppViewProps = {
   initialKestrelEnviroReady?: boolean;
   /** Triggercam already started this encounter. */
   initialTriggercamReady?: boolean;
+  /** Rest choice restored when returning from shoot. */
+  initialRest?: HuntShootRest;
   /** Has LRF — Shoot-tab still useful, but less critical. */
   hasLrf?: boolean;
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
@@ -147,6 +157,12 @@ type AwareAppViewProps = {
   hasTriggercam?: boolean;
   /** Which shot-cam is active when {@link hasTriggercam} (Triggercam preferred). */
   shotCamKind?: ShotCamKind | null;
+  /** Backpack in kit — can use as shooting rest. */
+  hasBackpack?: boolean;
+  /** Bipod in kit — can deploy for calm (not auto). */
+  hasBipod?: boolean;
+  /** Kit bipod weaponCalm 1–10 (for nerve label). */
+  bipodWeaponCalm?: number;
   clockMinutes: number;
   shotPairs: ShotPair[];
   focusPairId?: string | null;
@@ -180,6 +196,10 @@ type AwareAppViewProps = {
   postShotSkuddparMode?: boolean;
   /** Seconds left in the register window (HUD). */
   postShotSkuddparSecLeft?: number;
+  /**
+   * No live engage — Gun opens for turret prep (bakgrunn not required).
+   */
+  gunPrepOnly?: boolean;
   /** Persist skuddpar after a post-shot Shoot registration. */
   onPostShotSkuddparSaved?: (draft: {
     stand: CellPoint;
@@ -347,6 +367,7 @@ export function AwareAppView({
   initialChronoReady = false,
   initialKestrelEnviroReady = false,
   initialTriggercamReady = false,
+  initialRest = "none",
   hasLrf = false,
   ammo = null,
   hasKestrel = false,
@@ -356,6 +377,9 @@ export function AwareAppView({
   hasChronograph = false,
   hasTriggercam = false,
   shotCamKind = null,
+  hasBackpack = false,
+  hasBipod = false,
+  bipodWeaponCalm = 5,
   clockMinutes,
   shotPairs,
   focusPairId = null,
@@ -370,6 +394,7 @@ export function AwareAppView({
   onPairFound,
   postShotSkuddparMode = false,
   postShotSkuddparSecLeft = 0,
+  gunPrepOnly = false,
   onPostShotSkuddparSaved,
 }: AwareAppViewProps) {
   const stalking = !focusPairId;
@@ -384,6 +409,11 @@ export function AwareAppView({
   const [triggercamReady, setTriggercamReady] = useState(
     initialTriggercamReady,
   );
+  const [rest, setRest] = useState<HuntShootRest>(() => {
+    if (initialRest === "bipod" && !hasBipod) return "none";
+    if (initialRest === "backpack" && !hasBackpack) return "none";
+    return initialRest;
+  });
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? { x: 50, y: 50 },
   );
@@ -668,7 +698,7 @@ export function AwareAppView({
           onGameSecondsRef.current(whole);
         }
 
-        if (!postShotSkuddparMode) {
+        if (!postShotSkuddparMode && !gunPrepOnly) {
           const dist = distanceMBetween(hunterRef.current, birdWorld);
           const nerveDt = moving ? dt * AWARE_SNEAK_NERVE_MULT : dt;
           const result = tickEncounterNerve(nerveRef.current, nerveDt, {
@@ -701,7 +731,7 @@ export function AwareAppView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode]);
+  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode, gunPrepOnly]);
 
   const activePair =
     shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
@@ -1108,7 +1138,58 @@ export function AwareAppView({
       kestrelEnviroActive: hasKestrel && kestrelEnviroReady,
       triggercamActive: hasTriggercam && triggercamReady,
       birdNerve: nerveRef.current,
+      rest,
     });
+  }
+
+  function applyRestChoice(next: HuntShootRest) {
+    if (flushedRef.current) return;
+    if (next === "backpack" && !hasBackpack) return;
+    if (next === "bipod" && !hasBipod) return;
+    if (next === rest) {
+      // Toggle off → none (revert nerve).
+      if (rest === "none") return;
+      const revert = shootRestNerve(rest, bipodWeaponCalm);
+      const cleared = Math.max(0, nerveRef.current - revert);
+      nerveRef.current = cleared;
+      flushSync(() => {
+        setNerve(cleared);
+        setRest("none");
+      });
+      onNerveChangeRef.current?.(cleared);
+      setStatus("Anlegg fjernet — skyter uten sekk/bipod-calm.");
+      return;
+    }
+    const prevCost = shootRestNerve(rest, bipodWeaponCalm);
+    const nextCost = shootRestNerve(next, bipodWeaponCalm);
+    const nextNerve = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      Math.max(0, nerveRef.current - prevCost + nextCost),
+    );
+    nerveRef.current = nextNerve;
+    flushSync(() => {
+      setNerve(nextNerve);
+      setRest(next);
+    });
+    onNerveChangeRef.current?.(nextNerve);
+    const pct = Math.round(nextCost * 100);
+    if (next === "backpack") {
+      setStatus(
+        nextNerve >= ENCOUNTER_NERVE.flushThreshold
+          ? `Sekk som anlegg — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `Sekk som anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.`,
+      );
+    } else if (next === "bipod") {
+      setStatus(
+        nextNerve >= ENCOUNTER_NERVE.flushThreshold
+          ? `Bipod nede — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `Bipod deployet (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.`,
+      );
+    }
+    if (nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
+      flushedRef.current = true;
+      onBirdFlushedRef.current(nextNerve);
+    }
   }
 
   function deployCamcorder() {
@@ -1240,7 +1321,7 @@ export function AwareAppView({
           <span className="aware-clock">{formatHuntClock(clockMinutes)}</span>
         </header>
 
-        {stalking && !postShotSkuddparMode ? (
+        {stalking && !postShotSkuddparMode && !gunPrepOnly ? (
           <BirdNerveBar
             nerve={nerve}
             threshold={ENCOUNTER_NERVE.flushThreshold}
@@ -1382,7 +1463,7 @@ export function AwareAppView({
                 style={{ left: `${hunter.x}%`, top: `${hunter.y}%` }}
                 title="Deg"
               />
-              {!hideTrueLand ? (
+              {!hideTrueLand && !gunPrepOnly ? (
                 <span
                   className="aware-bird-marker"
                   style={{ left: `${birdWorld.x}%`, top: `${birdWorld.y}%` }}
@@ -1542,19 +1623,21 @@ export function AwareAppView({
             <button
               type="button"
               className="intro-button"
-              disabled={!liveBakgrunnOk}
+              disabled={!gunPrepOnly && !liveBakgrunnOk}
               title={
-                liveBakgrunnOk
-                  ? planning
-                    ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
-                    : "Bakgrunn OK"
-                  : planning
-                    ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
-                    : "Flytt deg til sone uten farlig bakgrunn"
+                gunPrepOnly
+                  ? "Gun — still tårn / prep (ingen skudd)"
+                  : liveBakgrunnOk
+                    ? planning
+                      ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
+                      : "Gun · Skuddklar — bakgrunn OK"
+                    : planning
+                      ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
+                      : "Flytt deg til sone uten farlig bakgrunn"
               }
               onClick={proceed}
             >
-              Skuddklar
+              {gunPrepOnly ? "Gun · tårn" : "Gun · Skuddklar"}
             </button>
           )}
         </div>
@@ -1611,6 +1694,47 @@ export function AwareAppView({
 
           {mode === "aware" ? (
             <div className="aware-actions">
+              {hasBackpack ? (
+                <button
+                  type="button"
+                  className={
+                    rest === "backpack"
+                      ? "intro-button sheriff-secondary is-active"
+                      : "intro-button sheriff-secondary"
+                  }
+                  aria-pressed={rest === "backpack"}
+                  onClick={() => applyRestChoice("backpack")}
+                  title="Dobbelt calm vs beste bipod — +25% bird nerve"
+                >
+                  {rest === "backpack"
+                    ? "Sekk-anlegg aktiv"
+                    : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`}
+                </button>
+              ) : null}
+              {hasBipod ? (
+                <button
+                  type="button"
+                  className={
+                    rest === "bipod"
+                      ? "intro-button sheriff-secondary is-active"
+                      : "intro-button sheriff-secondary"
+                  }
+                  aria-pressed={rest === "bipod"}
+                  onClick={() => applyRestChoice("bipod")}
+                  title="Calm fra tofot bare når den er deployet"
+                >
+                  {rest === "bipod"
+                    ? "Bipod deployet"
+                    : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`}
+                </button>
+              ) : null}
+              {hasBackpack || hasBipod ? (
+                <p className="shop-row-note">
+                  Anlegg: sekk = maks calm (+25% nerve). Bipod = tofot-calm
+                  (nerve 5–15% etter kvalitet). Uten valg: ingen bipod/sekk-calm
+                  i skuddet.
+                </p>
+              ) : null}
               {hasCamcorder ? (
                 <button
                   type="button"

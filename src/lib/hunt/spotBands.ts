@@ -30,3 +30,17 @@ export function defaultEyesVisibleForBracket(
   const band = spotColorBandFromBracket(distanceMinM, distanceMaxM);
   return band === "rød" || band === "lilla";
 }
+
+/**
+ * Explicit flag wins; otherwise derive from distance bracket.
+ * Do not default omitted flags to `true` — that marked far (binos) seats
+ * as eyes-band while the ≤230 m gate still hid them in eyes mode.
+ */
+export function resolveEyesVisible(
+  eyesVisible: boolean | undefined,
+  distanceMinM: number,
+  distanceMaxM: number,
+): boolean {
+  if (typeof eyesVisible === "boolean") return eyesVisible;
+  return defaultEyesVisibleForBracket(distanceMinM, distanceMaxM);
+}

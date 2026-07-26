@@ -69,7 +69,9 @@ import {
 import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import {
   isAmmoItem,
+  isBackpackItem,
   isBallisticsItem,
+  isBipodItem,
   isCamoItem,
   isFoodItem,
   isLrfItem,
@@ -120,6 +122,7 @@ import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { ShotVideoView } from "@/components/hunt/ShotVideoView";
 import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
+import type { HuntShootRest } from "@/lib/hunt/shootRest";
 import {
   kitCamoStatSum,
   clothingRestBodyGain,
@@ -208,6 +211,7 @@ import {
 } from "@/lib/aware/shotPairStorage";
 import {
   distanceMBetween,
+  bearingDegFromTo,
   type CellPoint,
 } from "@/lib/aware/cellGeometry";
 
@@ -366,6 +370,13 @@ type ShootSession = {
   kestrelEnviroActive?: boolean;
   /** Triggercam started in Aware before this shot. */
   triggercamActive?: boolean;
+  /** Pack rest / deployed bipod for this shot. */
+  rest?: HuntShootRest;
+  /**
+   * Opened for turret dial / prep only — no live bird shot.
+   * Fire disabled; Back to Aware keeps turrets.
+   */
+  gunPrepOnly?: boolean;
   /** Where the displayed range came from. */
   rangeSource: "lrf" | "estimated";
   /** Bird nerve carried from Aware (distance/move/cam already baked in). */
@@ -401,6 +412,12 @@ type AwareSession = {
   returnKestrelEnviroActive?: boolean;
   /** Triggercam already started this encounter. */
   returnTriggercamActive?: boolean;
+  /** Rest choice already made this encounter. */
+  returnRest?: HuntShootRest;
+  /**
+   * Map/spot Aware without a live engage — Gun opens turret prep only.
+   */
+  gunPrepOnly?: boolean;
   /**
    * Post-shot: register skuddpar while bird aim marker is still visible
    * (60 s window). Shoot tab only — no Klar til skudd.
@@ -953,6 +970,16 @@ export function HuntMapView({
   const camcorderSetupNerve = camcorderTripod
     ? camcorderSetupNerveFromMisc(camcorderTripod.misc)
     : CAMCORDER_SETUP_NERVE;
+  const hasBackpack = useMemo(
+    () => kitItems.some(isBackpackItem),
+    [kitItems],
+  );
+  const kitBipod = useMemo(
+    () => kitItems.find(isBipodItem) ?? null,
+    [kitItems],
+  );
+  const hasBipod = !!kitBipod;
+  const bipodWeaponCalm = kitBipod?.bipod.weaponCalm ?? 5;
   const hasChronograph = useMemo(
     () =>
       kitItems.some((i) => isMiscItem(i) && isChronographMisc(i.misc)),
@@ -2534,7 +2561,7 @@ export function HuntMapView({
       abandonEttersok(awareSession.ettersokPairId);
       return;
     }
-    if (!canHuntAtTime(clockMinutes)) {
+    if (!canHuntAtTime(clockMinutes) && !awareSession.gunPrepOnly) {
       setAwareSession(null);
       setLog("Skuddlys over (17:00) — ingen skudd i mørket.");
       setPanel("arrived");
@@ -2591,7 +2618,9 @@ export function HuntMapView({
       });
     }
     setAwareSession(null);
-    const rifleQr = backpackRifleRaiseNerve(kitItems);
+    const rifleQr = session.gunPrepOnly
+      ? 0
+      : backpackRifleRaiseNerve(kitItems);
     const baseNerve = Math.max(
       0,
       stance?.birdNerve ?? birdEncounterRef.current?.nerve ?? 0,
@@ -2637,17 +2666,26 @@ export function HuntMapView({
       chronoActive: !!stance?.chronoActive,
       kestrelEnviroActive: !!stance?.kestrelEnviroActive,
       triggercamActive: !!stance?.triggercamActive,
+      rest: stance?.rest ?? "none",
+      gunPrepOnly: !!session.gunPrepOnly,
       rangeSource: session.rangeSource,
       birdNerve: nerve,
     });
+    const restNote =
+      stance?.rest === "backpack"
+        ? " · sekk-anlegg"
+        : stance?.rest === "bipod"
+          ? " · bipod"
+          : "";
+    const prepNote = session.gunPrepOnly ? " · Gun (tårn-prep)" : "";
     setLog(
       hold
-        ? `Bakgrunn OK · Kestrel fasit ${formatHoldClicks(hold)} — skru tårnene · ${Math.round(bearingDeg)}° · ${trueDistanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${rifleQr > 0 ? ` · sekk QR +${Math.round(rifleQr * 100)}% nerve` : ""}`
+        ? `Bakgrunn OK · Kestrel fasit ${formatHoldClicks(hold)} — skru tårnene · ${Math.round(bearingDeg)}° · ${trueDistanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${restNote}${prepNote}${rifleQr > 0 ? ` · sekk QR +${Math.round(rifleQr * 100)}% nerve` : ""}`
         : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${trueDistanceM} m${
             session.rangeSource === "lrf" && measuredDistanceM !== trueDistanceM
               ? ` (LRF ${measuredDistanceM} m)`
               : ""
-          } — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${rifleQr > 0 ? ` · sekk QR +${Math.round(rifleQr * 100)}% nerve` : ""}`,
+          } — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${restNote}${prepNote}${rifleQr > 0 ? ` · sekk QR +${Math.round(rifleQr * 100)}% nerve` : ""}`,
     );
   }
 
@@ -2692,23 +2730,34 @@ export function HuntMapView({
       Math.max(0, nerve),
     );
     setShootSession(null);
-    setBirdEncounter((prev) => {
-      const next: BirdEncounter = {
+    const isPrepReview = !!s.gunPrepOnly && s.bird.birdId === "aware-review";
+    if (!isPrepReview) {
+      setBirdEncounter((prev) => {
+        const next: BirdEncounter = {
+          birdId: s.bird.birdId,
+          distanceM: s.trueDistanceM,
+          nerve: nextNerve,
+          discovered: true,
+        };
+        return prev
+          ? {
+              ...prev,
+              distanceM: s.trueDistanceM,
+              nerve: nextNerve,
+              discovered: true,
+            }
+          : next;
+      });
+      birdEncounterRef.current = {
         birdId: s.bird.birdId,
         distanceM: s.trueDistanceM,
         nerve: nextNerve,
         discovered: true,
       };
-      return prev
-        ? { ...prev, distanceM: s.trueDistanceM, nerve: nextNerve, discovered: true }
-        : next;
-    });
-    birdEncounterRef.current = {
-      birdId: s.bird.birdId,
-      distanceM: s.trueDistanceM,
-      nerve: nextNerve,
-      discovered: true,
-    };
+    } else {
+      setBirdEncounter(null);
+      birdEncounterRef.current = null;
+    }
     setAwareSession({
       imageSrc: s.imageSrc,
       bird: s.bird,
@@ -2721,13 +2770,19 @@ export function HuntMapView({
       hunterPos: s.hunterPos,
       birdPos: s.birdPos,
       rangeSource: s.rangeSource,
-      returnNerve: nextNerve,
+      returnNerve: isPrepReview ? undefined : nextNerve,
       returnCamcorderActive: !!s.camcorderActive,
       returnChronoActive: !!s.chronoActive,
       returnKestrelEnviroActive: !!s.kestrelEnviroActive,
       returnTriggercamActive: !!s.triggercamActive,
+      returnRest: s.rest ?? "none",
+      gunPrepOnly: !!s.gunPrepOnly,
     });
-    setLog("Tilbake til Aware — fuglen er fortsatt der.");
+    setLog(
+      s.gunPrepOnly
+        ? "Tilbake til Aware — tårn lagret."
+        : "Tilbake til Aware — fuglen er fortsatt der.",
+    );
   }
 
   function openPendingPostShotTrack() {
@@ -2954,6 +3009,152 @@ export function HuntMapView({
       ettersokPairId: pair.id,
       recoveryOnly,
     });
+    setPanel("arrived");
+  }
+
+  /**
+   * Aware from map or Spot — skuddpar + last hunter stand.
+   * Prefers unfinished Hent/søk, then sticky Engage, then live contact,
+   * else field review (Gun = turret prep only).
+   */
+  function openAwareOverview() {
+    setSpotSession(null);
+    if (unfinishedShotPairs.length > 0) {
+      openAwareForPair(unfinishedShotPairs[0]!);
+      setLog("Aware — skuddpar klar for Hent/søk.");
+      return;
+    }
+    if (engageResume) {
+      resumeEngageFromSpot();
+      return;
+    }
+
+    const stand = recalledAwareStand();
+    const enc = birdEncounterRef.current;
+    const layoutKey = `${pos.row},${pos.col}`;
+    const layout = spotLayoutByCell[layoutKey];
+    const contactIds = Object.keys(birdMapContacts);
+    const birdId =
+      enc?.birdId && birds.some((b) => b.id === enc.birdId)
+        ? enc.birdId
+        : contactIds.find((id) => birds.some((b) => b.id === id)) ?? null;
+    const contact = birdId ? birdMapContacts[birdId] : null;
+    const placement = birdId
+      ? layout?.placements.find((p) => p.birdId === birdId)
+      : undefined;
+
+    if (birdId && contact && placement && layout) {
+      const dist = Math.max(
+        40,
+        Math.round(distanceMBetween(stand, contact.birdPos)),
+      );
+      const fromDist = placement.distanceM || enc?.distanceM || dist;
+      const cw = crosswindMs(
+        weather.live.windSpeedMs,
+        weather.live.windFromDeg,
+        contact.bearingDeg,
+      );
+      const density = densityRatioFromTempC(weather.live.temperatureC);
+      let hold: BallisticHoldSolution | null = null;
+      if (hasExactBallistics && primaryAmmo) {
+        const solve = kestrelSolveAmmo(
+          primaryAmmo.ammo,
+          primaryAmmo.id,
+          kestrelProfiles,
+        );
+        hold = exactBallisticHold(solve.ammo, dist, cw, {
+          densityRatio: density,
+          powderTempC: weather.live.temperatureC,
+          dvDtMpsPerC: solve.dvDtMpsPerC,
+        });
+      }
+      const nerve =
+        enc?.birdId === birdId
+          ? enc.nerve
+          : (latentSpotNerveRef.current[birdId]?.nerve ??
+            initialEncounterNerve(
+              birds.find((b) => b.id === birdId)?.spookCount ?? 0,
+            ));
+      setBirdEncounter({
+        birdId,
+        distanceM: dist,
+        nerve,
+        discovered: true,
+      });
+      birdEncounterRef.current = {
+        birdId,
+        distanceM: dist,
+        nerve,
+        discovered: true,
+      };
+      setAwareSession({
+        imageSrc: layout.imageSrc,
+        bird: {
+          ...placement,
+          distanceM: dist,
+          widthPct: rescaleSpriteWidthPct(
+            placement.widthPct,
+            fromDist,
+            dist,
+          ),
+        },
+        trueDistanceM: dist,
+        measuredDistanceM: dist,
+        ballisticHold: hold,
+        crosswindMs: cw,
+        densityRatio: density,
+        birdBearingDeg: contact.bearingDeg,
+        hunterPos: stand,
+        birdPos: contact.birdPos,
+        rangeSource: "estimated",
+      });
+      setLog(
+        "Aware — siste stand og fuglekontakt. Skuddklar / Gun når bakgrunn er OK.",
+      );
+      setPanel("arrived");
+      return;
+    }
+
+    // Field review: skuddpar + stand, no live engage / no fake bird in scope.
+    const birdPos = birdMarkerOnAwareMap(150, 0);
+    const bearing = bearingDegFromTo(stand, birdPos);
+    const dist = Math.max(40, Math.round(distanceMBetween(stand, birdPos)));
+    const sprite = getBirdSprite("tiur-1");
+    const reviewLandscape =
+      (layout?.imageSrc && layout.imageSrc.length > 0
+        ? layout.imageSrc
+        : null) ?? pickSpotImage();
+    setEngageResume(null);
+    setBirdEncounter(null);
+    birdEncounterRef.current = null;
+    setAwareSession({
+      imageSrc: reviewLandscape,
+      bird: {
+        birdId: "aware-review",
+        species: "tiur",
+        spriteId: "tiur-1",
+        imageSrc: sprite.toppSrc,
+        distanceM: dist,
+        x: 50,
+        y: 50,
+        widthPct: 0.01,
+      },
+      trueDistanceM: dist,
+      measuredDistanceM: dist,
+      ballisticHold: null,
+      crosswindMs: 0,
+      densityRatio: 1,
+      birdBearingDeg: bearing,
+      hunterPos: stand,
+      birdPos,
+      rangeSource: "estimated",
+      gunPrepOnly: true,
+    });
+    setLog(
+      shotPairs.length > 0
+        ? "Aware — skuddpar og siste stand. Gun · Skuddklar for tårn (prep)."
+        : "Aware — siste stand. Gun · Skuddklar for å stille tårn.",
+    );
     setPanel("arrived");
   }
 
@@ -3830,6 +4031,8 @@ export function HuntMapView({
         chronoActive={!!shootSession.chronoActive}
         kestrelEnviroActive={!!shootSession.kestrelEnviroActive}
         triggercamActive={!!shootSession.triggercamActive}
+        shootRest={shootSession.rest ?? "none"}
+        gunPrepOnly={!!shootSession.gunPrepOnly}
         onAbort={abortShoot}
         onBackToAware={returnToAwareFromShoot}
         onShotResult={onHuntShotResult}
@@ -3899,6 +4102,8 @@ export function HuntMapView({
         initialChronoReady={!!awareSession.returnChronoActive}
         initialKestrelEnviroReady={!!awareSession.returnKestrelEnviroActive}
         initialTriggercamReady={!!awareSession.returnTriggercamActive}
+        initialRest={awareSession.returnRest ?? "none"}
+        gunPrepOnly={!!awareSession.gunPrepOnly}
         hasLrf={hasBinos}
         ammo={primaryAmmo?.ammo ?? null}
         hasKestrel={!!kestrelItem}
@@ -3908,6 +4113,9 @@ export function HuntMapView({
         hasChronograph={hasChronograph}
         hasTriggercam={hasTriggercam}
         shotCamKind={shotCamKind}
+        hasBackpack={hasBackpack}
+        hasBipod={hasBipod}
+        bipodWeaponCalm={bipodWeaponCalm}
         clockMinutes={clockMinutes}
         shotPairs={shotPairs}
         focusPairId={awareSession.ettersokPairId ?? null}
@@ -4014,6 +4222,7 @@ export function HuntMapView({
           engageResume ? () => resumeEngageFromSpot() : undefined
         }
         engageResumeActive={!!engageResume}
+        onOpenAware={openAwareOverview}
         onDone={finishSpot}
         initialMode={spotSession.initialMode}
         initialPan={spotSession.initialPan}
@@ -4356,6 +4565,13 @@ export function HuntMapView({
                       disabled={!huntingAllowed}
                     >
                       Spot for birds
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={() => openAwareOverview()}
+                    >
+                      Aware
                     </button>
                     <button
                       type="button"

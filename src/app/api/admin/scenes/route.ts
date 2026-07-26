@@ -9,6 +9,7 @@ import {
   upsertPerchCatalog,
 } from "@/lib/hunt/sceneAuthoring";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
+import { resolveEyesVisible } from "@/lib/hunt/spotBands";
 
 type PerchBody = {
   x: number;
@@ -44,7 +45,7 @@ function normalizePerches(raw: PerchBody[]): SpotPerch[] {
       species: p.species,
       distanceMinM: Math.round(lo),
       distanceMaxM: Math.round(hi),
-      eyesVisible: p.eyesVisible !== false,
+      eyesVisible: resolveEyesVisible(p.eyesVisible, lo, hi),
       scalePercent:
         typeof p.scalePercent === "number"
           ? Math.max(1, Math.min(200, Math.round(p.scalePercent)))

@@ -113,7 +113,7 @@ export function ThermalCanvas({
   zoom,
   pixelFactor,
   polarity = "wh",
-  birdVisualScale = 0.7,
+  birdVisualScale = 0.55,
   className,
   onLandscapeReady,
 }: ThermalCanvasProps) {

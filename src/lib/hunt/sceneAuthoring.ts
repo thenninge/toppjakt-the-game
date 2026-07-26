@@ -6,6 +6,7 @@ import type { BirdSpecies } from "@/lib/hunt/birds";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
 import { SPOT_IMAGES } from "@/lib/hunt/images";
 import { SPOT_PERCHES } from "@/lib/hunt/spotPerches";
+import { resolveEyesVisible } from "@/lib/hunt/spotBands";
 
 export type SceneDraftPerch = {
   id: string;
@@ -57,7 +58,11 @@ export function draftPerchesFromCatalog(imageSrc: string): SceneDraftPerch[] {
     species: p.species === "orrhane" ? "orrhane" : "tiur",
     distanceMinM: p.distanceMinM,
     distanceMaxM: p.distanceMaxM,
-    eyesVisible: p.eyesVisible !== false,
+    eyesVisible: resolveEyesVisible(
+      p.eyesVisible,
+      p.distanceMinM,
+      p.distanceMaxM,
+    ),
     scalePercent: p.scalePercent ?? 100,
   }));
 }
