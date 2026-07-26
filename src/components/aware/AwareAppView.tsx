@@ -137,6 +137,8 @@ type AwareAppViewProps = {
   hasBdx?: boolean;
   /** Kit includes a deployable hunt camcorder. */
   hasCamcorder?: boolean;
+  /** Nerve bump (0–1) when deploying the equipped camcorder. */
+  camcorderSetupNerve?: number;
   /** Kit includes Garmin Xero chronograph. */
   hasChronograph?: boolean;
   /** Triggercam or Scopemate in kit — start in Aware for AAR / skuddpar autofill. */
@@ -345,6 +347,7 @@ export function AwareAppView({
   hasKestrel = false,
   hasBdx = false,
   hasCamcorder = false,
+  camcorderSetupNerve = CAMCORDER_SETUP_NERVE,
   hasChronograph = false,
   hasTriggercam = false,
   shotCamKind = null,
@@ -1053,9 +1056,11 @@ export function AwareAppView({
 
   function deployCamcorder() {
     if (!hasCamcorder || camcorderReady || flushedRef.current) return;
+    const setupNerve = camcorderSetupNerve;
+    const pct = Math.round(setupNerve * 100);
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
-      nerveRef.current + CAMCORDER_SETUP_NERVE,
+      nerveRef.current + setupNerve,
     );
     // Force paint now so the bar jumps before the next rAF tick.
     nerveRef.current = next;
@@ -1066,8 +1071,8 @@ export function AwareAppView({
     onNerveChangeRef.current?.(next);
     setStatus(
       next >= ENCOUNTER_NERVE.flushThreshold
-        ? "Camcorder oppe — men fuglen er svært urolig (+20% nervøsitet)!"
-        : "Camcorder satt opp mot standplass (+20% nervøsitet). Bedre ettersøk-oversikt etter skudd.",
+        ? `Camcorder oppe — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+        : `Camcorder satt opp mot standplass (+${pct}% nervøsitet). Bedre ettersøk-oversikt etter skudd.`,
     );
     if (next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
@@ -1558,7 +1563,7 @@ export function AwareAppView({
                 >
                   {camcorderReady
                     ? "Camcorder klar"
-                    : "Sett opp camcorder (+20% nervøsitet)"}
+                    : `Sett opp camcorder (+${Math.round(camcorderSetupNerve * 100)}% nervøsitet)`}
                 </button>
               ) : null}
               {hasChronograph ? (

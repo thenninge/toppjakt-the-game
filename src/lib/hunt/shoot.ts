@@ -38,14 +38,57 @@ export const PINK_MIST_NICKNAME = "Pink Mist";
 export const HEADSHOT_AAR_TEXT =
   'Brains is everywhere but in the cranium. Your new nickname is now "Pink Mist"';
 
-/** Tripod camcorder — better ettersøk overview; deploy costs nerve. */
+/** Premium tripod camcorder — lighter setup, lower bird nerve. */
 export const CAMCORDER_ITEM_ID = "misc-hunt-camcorder";
+/** Budget steel tripod camcorder — heavy / slow; full scare on deploy. */
+export const CAMCORDER_BUDGET_ITEM_ID = "misc-hunt-camcorder-budget";
 
 /** Garmin Xero chronograph — muzzle velocity on shotlog / load development. */
 export const CHRONOGRAPH_ITEM_ID = "misc-garmin-xero-c1-pro";
 
-/** Nerve bump (0–1 scale) when deploying camcorder before the shot. */
+/** Default nerve bump (0–1) when camcorder omits `camcorderSetupNerve`. */
 export const CAMCORDER_SETUP_NERVE = 0.2;
+/** Premium carbon tripod: quicker setup → 15% nerve. */
+export const CAMCORDER_PREMIUM_SETUP_NERVE = 0.15;
+/** Cheap heavy tripod: slow setup → 100% scare from a calm bird. */
+export const CAMCORDER_BUDGET_SETUP_NERVE = 1.0;
+
+export function isCamcorderItemId(id: string): boolean {
+  return id === CAMCORDER_ITEM_ID || id === CAMCORDER_BUDGET_ITEM_ID;
+}
+
+/** Kit exclusivity — only one camcorder/tripod at a time. */
+export function camcorderKitSlot(id: string): "camcorder" | undefined {
+  return isCamcorderItemId(id) ? "camcorder" : undefined;
+}
+
+/** Prefer premium if both somehow remain in kit (legacy saves). */
+export function resolveCamcorderItemId(
+  itemIds: Iterable<string>,
+): string | null {
+  const set = itemIds instanceof Set ? itemIds : new Set(itemIds);
+  if (set.has(CAMCORDER_ITEM_ID)) return CAMCORDER_ITEM_ID;
+  if (set.has(CAMCORDER_BUDGET_ITEM_ID)) return CAMCORDER_BUDGET_ITEM_ID;
+  return null;
+}
+
+/** Drop extra camcorders so kit has at most one (premium wins). */
+export function sanitizeKitCamcorders(kit: string[]): string[] {
+  const keepId = resolveCamcorderItemId(kit);
+  if (!keepId) return kit;
+  return kit.filter((id) => !isCamcorderItemId(id) || id === keepId);
+}
+
+/** Resolve deploy nerve from misc spec (clamped 0–1). */
+export function camcorderSetupNerveFromMisc(opts: {
+  camcorderSetupNerve?: number;
+}): number {
+  const raw = opts.camcorderSetupNerve;
+  if (raw != null && Number.isFinite(raw)) {
+    return Math.min(1, Math.max(0, raw));
+  }
+  return CAMCORDER_SETUP_NERVE;
+}
 
 /** Nerve bump when setting up chronograph in front of the bird (Aware). */
 export const CHRONO_SETUP_NERVE = 0.05;

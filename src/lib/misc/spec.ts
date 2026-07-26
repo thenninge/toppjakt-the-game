@@ -34,6 +34,11 @@ export type MiscSpec = {
    */
   isCamcorder?: boolean;
   /**
+   * Nerve bump (0–1) when deploying this camcorder in Aware.
+   * Defaults to {@link CAMCORDER_SETUP_NERVE} (0.2) when omitted.
+   */
+  camcorderSetupNerve?: number;
+  /**
    * Chronograph — measures real projectile velocity (muzzle / near-muzzle).
    * Gameplay wiring comes later; flag marks the kit item.
    */

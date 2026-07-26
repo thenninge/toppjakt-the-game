@@ -22,6 +22,10 @@
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
+import {
+  cloudPerchesForImage,
+  cloudSceneImageSrcs,
+} from "@/lib/hunt/cloudScenes";
 import { applyPerchDistanceOverrides } from "@/lib/hunt/perchDistanceOverrides";
 import {
   defaultEyesVisibleForBracket,
@@ -2555,7 +2559,8 @@ export const SPOT_PERCHES: SpotPerchCatalog = {
 };
 
 export function perchesForSpotImage(imageSrc: string): SpotPerch[] {
-  const raw = SPOT_PERCHES[imageSrc] ?? [];
+  const cloud = cloudPerchesForImage(imageSrc);
+  const raw = cloud ?? SPOT_PERCHES[imageSrc] ?? [];
   const withIds = raw.map((p, i) => {
     const id = p.id ?? `p${i}`;
     const colorBand = spotColorBandFromBracket(
@@ -2596,11 +2601,16 @@ export function catalogPerchForId(
   };
 }
 
-/** Spot landscapes that have hand-authored placement guides. */
+/** Spot landscapes that have hand-authored placement guides (repo + cloud). */
 export function spotImagesWithPerches(): string[] {
-  return Object.keys(SPOT_PERCHES).filter(
+  const repo = Object.keys(SPOT_PERCHES).filter(
     (src) => (SPOT_PERCHES[src]?.length ?? 0) > 0,
   );
+  const cloud = cloudSceneImageSrcs().filter((src) => {
+    const p = cloudPerchesForImage(src);
+    return (p?.length ?? 0) > 0;
+  });
+  return [...new Set([...repo, ...cloud])];
 }
 
 /** Roll a whole-meter distance inside a perch band. */

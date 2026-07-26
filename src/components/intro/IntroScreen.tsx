@@ -125,7 +125,7 @@ import {
 import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isThermalItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 import { skiKitSlot } from "@/lib/ski/spec";
-import { isHeadlampMisc, isFireStarterMisc } from "@/lib/misc/spec";
+import { isHeadlampMisc, isFireStarterMisc, isCamcorderMisc } from "@/lib/misc/spec";
 import { shotCamKitSlot } from "@/lib/hunt/shoot";
 import {
   getHuntingTerrain,
@@ -1069,6 +1069,7 @@ export function IntroScreen() {
           const item = resolvePlayerItem(id);
           if (!item || !isMiscItem(item)) return undefined;
           if (isHeadlampMisc(item.misc)) return "headlamp";
+          if (isCamcorderMisc(item.misc)) return "camcorder";
           return shotCamKitSlot(id);
         },
         (id) => {

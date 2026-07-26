@@ -8,6 +8,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useSession } from "next-auth/react";
 import { SpotView } from "@/components/hunt/SpotView";
 import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { adminPlacementsFromPerches } from "@/lib/hunt/birds";
@@ -19,6 +20,8 @@ import {
   BIRD_SPRITE_SCALE_MIN,
 } from "@/lib/hunt/birdSpriteScale";
 import { spriteIdsForSpecies, type BirdSpriteId } from "@/lib/hunt/birdSprites";
+import { compressImageForCloudScene } from "@/lib/hunt/compressCloudSceneImage";
+import { ensureCloudScenesLoaded } from "@/lib/hunt/cloudScenes";
 import { SPOT_IMAGES } from "@/lib/hunt/images";
 import { spotImagesWithPerches } from "@/lib/hunt/spotPerches";
 import {
@@ -103,7 +106,17 @@ function fileToBase64(file: File): Promise<{ base64: string; ext: string }> {
   });
 }
 
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProps) {
+  const { data: session, status: authStatus } = useSession();
   const lrfItems = useMemo(
     () => getCatalogByCategory("lrf").filter(isLrfItem),
     [],
@@ -146,6 +159,8 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
   const [thermalId, setThermalId] = useState(thermalItems[0]?.id ?? "");
   const [battery, setBattery] = useState(ADMIN_BATTERY_SEC);
   const [baking, setBaking] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [canPublishCloud, setCanPublishCloud] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
@@ -168,6 +183,26 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
       setScaleEpoch((n) => n + 1);
     });
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") {
+      setCanPublishCloud(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/cloud-scenes");
+        const data = (await res.json()) as { canPublish?: boolean };
+        if (!cancelled) setCanPublishCloud(!!data.canPublish);
+      } catch {
+        if (!cancelled) setCanPublishCloud(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus, session?.user?.googleId]);
 
   const birdPlacements = useMemo(() => {
     void scaleEpoch;
@@ -391,6 +426,120 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
       );
     } finally {
       setBaking(false);
+    }
+  }
+
+  async function resolveSceneImageBlob(): Promise<Blob> {
+    if (pendingUpload) {
+      const bin = atob(pendingUpload.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const mime =
+        pendingUpload.ext === "jpg" || pendingUpload.ext === "jpeg"
+          ? "image/jpeg"
+          : pendingUpload.ext === "webp"
+            ? "image/webp"
+            : "image/png";
+      return new Blob([bytes], { type: mime });
+    }
+    if (!imageSrc) throw new Error("Mangler bilde");
+    const res = await fetch(imageSrc);
+    if (!res.ok) throw new Error("Klarte ikke å hente bildet");
+    return res.blob();
+  }
+
+  async function publishToCloud() {
+    if (!imageSrc || perches.length === 0) {
+      setStatus("Trenger bilde og minst én perch.");
+      return;
+    }
+    if (!canPublishCloud) {
+      setStatus(
+        authStatus !== "authenticated"
+          ? "Logg inn med Google for å publisere til sky."
+          : "Ingen cloud-admin-tilgang (ADMIN_GOOGLE_IDS).",
+      );
+      return;
+    }
+    setPublishing(true);
+    setStatus("Komprimerer og publiserer til sky…");
+    try {
+      const raw = await resolveSceneImageBlob();
+      const compressed = await compressImageForCloudScene(raw);
+      const title = repoImageSrc
+        ? spotLabel(repoImageSrc)
+        : `scene-${new Date().toISOString().slice(0, 10)}`;
+      const res = await fetch("/api/admin/cloud-scenes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          imageBase64: compressed.base64,
+          perches: toSpotPerches(perches),
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        imageUrl?: string;
+        perches?: number;
+        bytes?: number;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      await ensureCloudScenesLoaded({ force: true });
+      setDirty(false);
+      const kb = data.bytes ? Math.round(data.bytes / 1024) : "?";
+      setStatus(
+        `Publisert til sky · ${data.perches ?? perches.length} perch · ${kb} KB JPEG. Synlig for spillere etter refresh.`,
+      );
+    } catch (err) {
+      setStatus(
+        err instanceof Error ? err.message : "Klarte ikke å publisere.",
+      );
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function exportScenePackage() {
+    if (!imageSrc || perches.length === 0) {
+      setStatus("Trenger bilde og minst én perch for eksport.");
+      return;
+    }
+    try {
+      const raw = await resolveSceneImageBlob();
+      const compressed = await compressImageForCloudScene(raw);
+      const base = repoImageSrc
+        ? spotLabel(repoImageSrc)
+        : `scene-${Date.now().toString(36)}`;
+      const scene = {
+        version: 1,
+        title: base,
+        exportedAt: new Date().toISOString(),
+        perches: toSpotPerches(perches),
+        image: {
+          filename: `${base}.jpg`,
+          mime: "image/jpeg",
+          bytes: compressed.bytes,
+        },
+      };
+      downloadBlob(
+        `${base}.scene.json`,
+        new Blob([JSON.stringify(scene, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      downloadBlob(`${base}.jpg`, compressed.blob);
+      setStatus(
+        `Eksportert ${base}.scene.json + ${base}.jpg (${Math.round(compressed.bytes / 1024)} KB).`,
+      );
+    } catch (err) {
+      setStatus(
+        err instanceof Error ? err.message : "Eksport feilet.",
+      );
     }
   }
 
@@ -754,10 +903,39 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
             <button
               type="button"
               className="intro-button admin-spot-btn"
-              disabled={!dirty || baking || perches.length === 0}
+              disabled={!dirty || baking || publishing || perches.length === 0}
               onClick={() => void bakeToRepo()}
             >
               {baking ? "Skriver…" : "Lagre til repo"}
+            </button>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={
+                publishing ||
+                baking ||
+                perches.length === 0 ||
+                !imageSrc ||
+                !canPublishCloud
+              }
+              title={
+                canPublishCloud
+                  ? "Publiser komprimert JPEG + perches til Supabase"
+                  : authStatus !== "authenticated"
+                    ? "Logg inn med Google først"
+                    : "Krever ADMIN_GOOGLE_IDS"
+              }
+              onClick={() => void publishToCloud()}
+            >
+              {publishing ? "Publiserer…" : "Publiser til sky"}
+            </button>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={publishing || baking || perches.length === 0 || !imageSrc}
+              onClick={() => void exportScenePackage()}
+            >
+              Eksporter JSON+JPG
             </button>
           </div>
 

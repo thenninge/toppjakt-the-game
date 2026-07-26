@@ -32,7 +32,7 @@ import {
 } from "@/lib/kit/speed";
 import { computeKitOverview } from "@/lib/kit/overview";
 import { computePackLoad } from "@/lib/kit/pack";
-import { isShotCamItemId } from "@/lib/hunt/shoot";
+import { isShotCamItemId, isCamcorderItemId } from "@/lib/hunt/shoot";
 import {
   formatMarketKr,
   formatWeightKg as formatCarcassWeightKg,
@@ -888,7 +888,9 @@ export function HomeBase({
                                   : " · én i kit"
                                 : isShotCamItemId(item.id)
                                   ? " · én shotcam i kit"
-                                  : ""}
+                                  : isCamcorderItemId(item.id)
+                                    ? " · én camcorder i kit"
+                                    : ""}
                               {finnDeal
                                 ? ` · Finn ~${finnDeal.payout.toLocaleString("nb-NO")} kr`
                                 : ""}

@@ -3512,13 +3512,32 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     misc: { enduranceGrams: 0 },
   },
   {
+    id: "misc-hunt-camcorder-budget",
+    category: "misc",
+    brand: "Biltema",
+    name: "Stativ-camcorder (stål)",
+    priceNok: 2490,
+    note:
+      "Billig, tungt stål-stativ + eldre kamera. Gir retning + landingsavstand — men tar lang tid å sette opp: +100 % nervøsitet (fuglen skremmes nesten alltid). Kun én camcorder i kit.",
+    misc: {
+      enduranceGrams: 0,
+      isCamcorder: true,
+      camcorderSetupNerve: 1,
+    },
+  },
+  {
     id: "misc-hunt-camcorder",
     category: "misc",
     brand: "Sony",
-    name: "FDR-AX43 (jakt-oppsett)",
+    name: "FDR-AX43 + karbonstativ",
     priceNok: 12490,
-    note: "Stativ-camcorder mot standplass. Gir retning + landingsavstand fra der fuglen satt — men tar tid å sette opp (fuglen blir nervøs).",
-    misc: { enduranceGrams: 0, isCamcorder: true },
+    note:
+      "Lett karbonstativ-oppsett mot standplass. Gir retning + landingsavstand; raskere oppsett → +15 % nervøsitet. Kun én camcorder i kit.",
+    misc: {
+      enduranceGrams: 0,
+      isCamcorder: true,
+      camcorderSetupNerve: 0.15,
+    },
   },
   {
     id: "misc-garmin-xero-c1-pro",

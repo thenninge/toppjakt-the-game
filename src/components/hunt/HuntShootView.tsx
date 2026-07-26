@@ -112,11 +112,14 @@ type HuntShootViewProps = {
   measuredDistanceM: number;
   /** LRF reading vs Aware Shoot estimate. */
   rangeSource?: HuntRangeSource;
-  /** Exact BDX+Kestrel hold from perfect zero (null if not equipped). */
+  /**
+   * Exact BDX+Kestrel hold from perfect zero (null if not equipped).
+   * Shown as fasit — player dials turrets manually.
+   */
   ballisticHold?: BallisticHoldSolution | null;
   /**
    * Kestrel (any wind meter) in hunt kit — show Kestrel tab even without
-   * BDX auto-dial pairing.
+   * BDX fasit pairing.
    */
   hasKestrelInKit?: boolean;
   /** True local crosswind (m/s, +from left) for this shot bearing. */
@@ -205,7 +208,7 @@ type HuntShootViewProps = {
   onBackToAware?: (nerve: number) => void;
   /**
    * Turret dial carried across engages in the same hunt (mm @ 100 m).
-   * When set, restores instead of resetting / re-auto-dialing Kestrel.
+   * When set, restores instead of resetting to zero.
    */
   initialSessionZeroMm?: { x: number; y: number } | null;
   /** Persist dial changes for the rest of this hunt. */
@@ -349,26 +352,20 @@ export function HuntShootView({
   const [sessionZeroXMm, setSessionZeroXMm] = useState(() =>
     initialSessionZeroMm
       ? clampTurretMm(Math.round(initialSessionZeroMm.x))
-      : ballisticHold
-        ? clampTurretMm(Math.round(ballisticHold.dialXMmAt100))
-        : 0,
+      : 0,
   );
   const [sessionZeroYMm, setSessionZeroYMm] = useState(() =>
     initialSessionZeroMm
       ? clampTurretMm(Math.round(initialSessionZeroMm.y))
-      : ballisticHold
-        ? clampTurretMm(Math.round(ballisticHold.dialYMmAt100))
-        : 0,
+      : 0,
   );
   const [status, setStatus] = useState(
     restoreTurrets
       ? "Tårn som sist · F = fokus+merke · slipp Space på merket."
       : ballisticHold
-        ? `Kestrel AB dialt: ${formatHoldClicks(ballisticHold)} · F = fokus+merke · slipp Space på merket.`
+        ? `Kestrel AB fasit: ${formatHoldClicks(ballisticHold)} — skru tårnene · F = fokus+merke · slipp Space på merket.`
         : "Skru elevation + windage · F = fokus+merke · slipp Space på merket.",
   );
-  /** Keep Kestrel from overwriting dials restored from earlier engages. */
-  const skipKestrelAutoDialRef = useRef(restoreTurrets);
   const onSessionZeroChangeRef = useRef(onSessionZeroChange);
   onSessionZeroChangeRef.current = onSessionZeroChange;
   const [hudTab, setHudTab] = useState<ScopeHudTab>("shooter");
@@ -588,30 +585,6 @@ export function HuntShootView({
   useEffect(() => {
     powderTempRef.current = temperatureC;
   }, [temperatureC]);
-
-  /** Kestrel AB auto-dials elev + windage from fasit (first engage only). */
-  useEffect(() => {
-    if (skipKestrelAutoDialRef.current) return;
-    if (!ballisticHold || !selectedAmmo || fired) return;
-    const hold = exactBallisticHold(
-      selectedAmmo.ammo,
-      measuredDistanceM,
-      crosswindMs,
-      { densityRatio, powderTempC: temperatureC },
-    );
-    setSessionZeroXMm(clampTurretMm(Math.round(hold.dialXMmAt100)));
-    setSessionZeroYMm(clampTurretMm(Math.round(hold.dialYMmAt100)));
-    setStatus(`Kestrel AB dialt: ${formatHoldClicks(hold)} · hold F · Space.`);
-  }, [
-    ammoId,
-    selectedAmmo,
-    measuredDistanceM,
-    crosswindMs,
-    densityRatio,
-    temperatureC,
-    ballisticHold,
-    fired,
-  ]);
 
   useEffect(() => {
     onSessionZeroChangeRef.current?.(sessionZeroXMm, sessionZeroYMm);
@@ -1330,7 +1303,7 @@ export function HuntShootView({
     : shotGeom.nativeW;
   const sceneH = landscapeSrc ? sceneW / landAspect : shotGeom.nativeH;
 
-  const autoDialHold =
+  const abFasitHold =
     ballisticHold && selectedAmmo
       ? (() => {
           const solve = kestrelSolveAmmo(
@@ -1350,9 +1323,9 @@ export function HuntShootView({
           );
         })()
       : null;
-  /** Kestrel LCD: auto-dial hold, or reference solution when meter is in kit only. */
+  /** Kestrel LCD: AB fasit when paired, else reference solution with meter only. */
   const kestrelDisplayHold =
-    autoDialHold ??
+    abFasitHold ??
     (hasKestrelInKit && selectedAmmo
       ? (() => {
           const solve = kestrelSolveAmmo(
@@ -1372,7 +1345,6 @@ export function HuntShootView({
           );
         })()
       : null);
-  const activeHold = autoDialHold;
 
   if (replay && lastImpact) {
     return (
@@ -1421,7 +1393,11 @@ export function HuntShootView({
           {" · "}
           vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
           {shotGeom.vitalDiameterMm} mm
-          {activeHold ? " · Kestrel AB auto-dial" : hasKestrelInKit ? " · Kestrel i kit (fane)" : null}
+          {abFasitHold
+            ? " · Kestrel AB fasit (skru tårn)"
+            : hasKestrelInKit
+              ? " · Kestrel i kit (fane)"
+              : null}
         </p>
         <p className="shop-row-note">
           {rifle.brand} {rifle.name} · {scope.brand} {scope.name} (
@@ -1519,9 +1495,9 @@ export function HuntShootView({
                     )
                   : null
               }
-              dopeDialDisabled={!!activeHold || fired}
+              dopeDialDisabled={fired}
               onUseDope={(entry) => {
-                if (fired || activeHold) return;
+                if (fired) return;
                 const unit = scope?.scope.clickUnit ?? "MRAD";
                 setSessionZeroXMm(
                   clampTurretMm(dopeClicksToMmAt100(entry.windageClicks)),
@@ -1543,12 +1519,17 @@ export function HuntShootView({
             hasKestrelInKit ? (
               kestrelDisplayHold ? (
                 <div className="hunt-kestrel-panel">
-                  {!activeHold ? (
+                  {!abFasitHold ? (
                     <p className="shop-row-note">
                       Kestrel i kit — ingen BDX/AB-kobling til LRF. Fasit vises;
                       dial Enviro/tårn manuelt.
                     </p>
-                  ) : null}
+                  ) : (
+                    <p className="shop-row-note">
+                      Kestrel AB fasit — skru elevation/windage manuelt (ingen
+                      auto-dial).
+                    </p>
+                  )}
                   <KestrelFasitView
                     hold={kestrelDisplayHold}
                     shotBearingDeg={shotBearingDeg}

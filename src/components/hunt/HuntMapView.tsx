@@ -54,6 +54,11 @@ import {
 import { getCellSeatCounts } from "@/lib/hunt/mapPlacements";
 import { spotImagesWithPerches } from "@/lib/hunt/spotPerches";
 import {
+  ensureCloudScenesLoaded,
+  isCloudSpotImage,
+  subscribeCloudScenes,
+} from "@/lib/hunt/cloudScenes";
+import {
   getInventoryQty,
   getRifleRoundCount,
   type DopeCardEntry,
@@ -147,7 +152,8 @@ import {
 } from "@/lib/hunt/birds";
 import { getBirdSprite } from "@/lib/hunt/birdSprites";
 import {
-  CAMCORDER_ITEM_ID,
+  CAMCORDER_SETUP_NERVE,
+  camcorderSetupNerveFromMisc,
   resolveShotCamKind,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
@@ -720,9 +726,10 @@ export function HuntMapView({
     [kitItems],
   );
   /**
-   * Exact auto-dial: AB meter (Kestrel Elite) + LRF that pairs for holds —
+   * Exact AB fasit: AB meter (Kestrel Elite) + LRF that pairs for holds —
    * BDX / onboard-AB binos (Sig KILO3000, Geovid, …), or Habrok thermal binos.
    * Condor/other thermal spotters with LRF do not count as BDX pairing.
+   * Fasit is shown; player dials turrets manually.
    */
   const hasExactBallistics = !!(
     abMeterItem &&
@@ -888,15 +895,16 @@ export function HuntMapView({
       ),
     [kitItems],
   );
-  const hasCamcorder = useMemo(
-    () =>
-      kitItems.some(
-        (i) =>
-          i.id === CAMCORDER_ITEM_ID ||
-          (isMiscItem(i) && isCamcorderMisc(i.misc)),
-      ),
-    [kitItems],
-  );
+  const camcorderItem = useMemo(() => {
+    const found = kitItems.find(
+      (i) => isMiscItem(i) && isCamcorderMisc(i.misc),
+    );
+    return found && isMiscItem(found) ? found : null;
+  }, [kitItems]);
+  const hasCamcorder = !!camcorderItem;
+  const camcorderSetupNerve = camcorderItem
+    ? camcorderSetupNerveFromMisc(camcorderItem.misc)
+    : CAMCORDER_SETUP_NERVE;
   const hasChronograph = useMemo(
     () =>
       kitItems.some((i) => isMiscItem(i) && isChronographMisc(i.misc)),
@@ -956,6 +964,15 @@ export function HuntMapView({
     syncClockFromRef();
     checkRedBullExpiry();
   }
+
+  // Prefetch Supabase spotting scenes into the perch/image pool.
+  useEffect(() => {
+    void ensureCloudScenesLoaded();
+    return subscribeCloudScenes(() => {
+      // Reshuffle on next draw so newly loaded cloud URLs enter the pool.
+      spotImageDeckRef.current = [];
+    });
+  }, []);
 
   useEffect(() => {
     if (!map) return;
@@ -1775,7 +1792,8 @@ export function HuntMapView({
     const isUsableSpotSrc = (src: string) =>
       marked.length === 0 ||
       marked.includes(src) ||
-      src.startsWith("/images/spot/");
+      src.startsWith("/images/spot/") ||
+      isCloudSpotImage(src);
     const preferred =
       opts?.reuseImageSrc && isUsableSpotSrc(opts.reuseImageSrc)
         ? opts.reuseImageSrc
@@ -2437,7 +2455,7 @@ export function HuntMapView({
     });
     setLog(
       hold
-        ? `Bakgrunn OK · Kestrel dialt inn ${formatHoldClicks(hold)} · ${Math.round(bearingDeg)}° · ${trueDistanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${rifleQr > 0 ? ` · sekk QR +${Math.round(rifleQr * 100)}% nerve` : ""}`
+        ? `Bakgrunn OK · Kestrel fasit ${formatHoldClicks(hold)} — skru tårnene · ${Math.round(bearingDeg)}° · ${trueDistanceM} m${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${rifleQr > 0 ? ` · sekk QR +${Math.round(rifleQr * 100)}% nerve` : ""}`
         : `Bakgrunn OK · skyteretning ${Math.round(bearingDeg)}° · ${trueDistanceM} m${
             session.rangeSource === "lrf" && measuredDistanceM !== trueDistanceM
               ? ` (LRF ${measuredDistanceM} m)`
@@ -3678,6 +3696,7 @@ export function HuntMapView({
         hasKestrel={!!kestrelItem}
         hasBdx={hasBdxOrHabrokLrf}
         hasCamcorder={hasCamcorder}
+        camcorderSetupNerve={camcorderSetupNerve}
         hasChronograph={hasChronograph}
         hasTriggercam={hasTriggercam}
         shotCamKind={shotCamKind}

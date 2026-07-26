@@ -180,6 +180,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "outdoors-opptenningsbrikker": 180,
   "misc-triggercam": 460,
   "misc-scopemate": 420,
+  "misc-hunt-camcorder-budget": 3200,
   "misc-hunt-camcorder": 890,
   "misc-garmin-xero-c1-pro": 108,
   "misc-fx-true-ballistic": 820,
