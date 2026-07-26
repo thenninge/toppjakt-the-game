@@ -334,12 +334,12 @@ export function computeKitOverview(input: {
   }
   if (sneakPct < 8) {
     sneakTips.push(
-      "Lav sneak-sum — buff, lue, hansker og bedre jakke/bukse hjelper nerve.",
+      "Lav sneak-sum — buff, lue, cap, hansker og bedre jakke/bukse hjelper nerve.",
     );
   }
   if (apparelSlots < 4) {
     sneakTips.push(
-      "Flere slots (buff, lue, hansker, sokker, ull, dunis) gir små % — fyll på.",
+      "Flere slots (buff, lue, cap, hansker, sokker, ull, dunis) gir små % — fyll på.",
     );
   }
   if (!customsMods.customCamo) {

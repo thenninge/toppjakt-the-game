@@ -30,6 +30,7 @@ export type CamoSlot =
   | "socks"
   | "buff"
   | "beanie"
+  | "cap"
   | "gloves"
   | "boots"
   | "ski_boots";

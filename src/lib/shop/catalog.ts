@@ -3761,14 +3761,14 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "Cap onesize",
     priceNok: 299,
     weightGrams: 150,
-    note: "Litt focus — lettere å spotte før fuglen ser deg.",
+    note: "Litt focus — lettere å spotte før fuglen ser deg. Kan brukes sammen med lue.",
     camo: {
       sneakPct: 3,
       speedPct: 0,
       focusPct: 3,
       recoveryPct: 0,
       bestTerrains: ["general", "pine_forest"],
-      slot: "beanie",
+      slot: "cap",
     },
   },
 
