@@ -1576,6 +1576,14 @@ export function HuntMapView({
 
       const enc = birdEncounterRef.current;
       if (!enc?.discovered) return;
+      const stillHere = birdsInCell(birdsRef.current, pos).some(
+        (b) => b.id === enc.birdId,
+      );
+      if (!stillHere) {
+        birdEncounterRef.current = null;
+        setBirdEncounter(null);
+        return;
+      }
       const outcome = flushOne(enc.birdId, enc.distanceM, enc.nerve);
       if (outcome.flushed) return;
       const next: BirdEncounter = { ...enc, nerve: outcome.nerve };
@@ -1583,7 +1591,7 @@ export function HuntMapView({
       setBirdEncounter(next);
     }, 200);
     return () => window.clearInterval(id);
-  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoSneakPct, skuddlysOpen]);
+  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoSneakPct, skuddlysOpen, pos]);
 
   if (!terrain || !map) {
     return (
@@ -1817,6 +1825,19 @@ export function HuntMapView({
         }
         return changed ? next : prev;
       });
+    }
+
+    // Discovered encounter + HUD BIRD bar must not follow you into another cell.
+    setEngageResume(null);
+    const encAfterWalk = birdEncounterRef.current;
+    if (encAfterWalk) {
+      const stillHere = birdsInCell(flush.birds, arrivedAt).some(
+        (b) => b.id === encAfterWalk.birdId,
+      );
+      if (!stillHere) {
+        setBirdEncounter(null);
+        birdEncounterRef.current = null;
+      }
     }
 
     const walkLog =
@@ -3192,11 +3213,12 @@ export function HuntMapView({
     const enc = birdEncounterRef.current;
     const layoutKey = `${pos.row},${pos.col}`;
     const layout = spotLayoutByCell[layoutKey];
+    const hereIds = new Set(birdsInCell(birds, pos).map((b) => b.id));
     const contactIds = Object.keys(birdMapContacts);
     const birdId =
-      enc?.birdId && birds.some((b) => b.id === enc.birdId)
+      enc?.birdId && hereIds.has(enc.birdId)
         ? enc.birdId
-        : contactIds.find((id) => birds.some((b) => b.id === id)) ?? null;
+        : (contactIds.find((id) => hereIds.has(id)) ?? null);
     const contact = birdId ? birdMapContacts[birdId] : null;
     const placement = birdId
       ? layout?.placements.find((p) => p.birdId === birdId)

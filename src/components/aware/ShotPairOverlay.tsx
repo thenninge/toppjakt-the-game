@@ -189,6 +189,31 @@ export function ShotPairPreview({ stand, aim }: ShotPairPreviewProps) {
   );
 }
 
+type ShotPairRangeRingProps = {
+  stand: { x: number; y: number };
+  distanceM: number;
+};
+
+/** Distance circle from stand while dialing skuddpar range. */
+export function ShotPairRangeRing({ stand, distanceM }: ShotPairRangeRingProps) {
+  const d = Math.max(0, distanceM);
+  if (d < 1) return null;
+  const ringPct = (d / AWARE_METERS_PER_PCT) * 2;
+  return (
+    <div
+      className="aware-skuddpar-range-ring"
+      style={{
+        left: `${stand.x}%`,
+        top: `${stand.y}%`,
+        width: `${ringPct}%`,
+        height: `${ringPct}%`,
+      }}
+      title={`${Math.round(d)} m`}
+      aria-hidden
+    />
+  );
+}
+
 function pointAlongBearing(
   origin: { x: number; y: number },
   bearingDeg: number,

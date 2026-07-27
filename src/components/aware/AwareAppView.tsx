@@ -44,6 +44,7 @@ import {
 import {
   ShotPairOverlay,
   ShotPairPreview,
+  ShotPairRangeRing,
   SearchTrackOverlay,
   FleeDirectionCue,
 } from "@/components/aware/ShotPairOverlay";
@@ -229,11 +230,11 @@ const AWARE_IDLE_TIME_FACTOR = 8;
 /** Extra nerve while moving — stalking was too safe. */
 const AWARE_SNEAK_NERVE_MULT = 2;
 
-/** Aware Shoot wizard: stand → skuddretning → avstand → lagre. */
+/** Aware Shoot wizard: stand → avstand (sirkel) → skuddretning → lagre. */
 type ShootWizard =
   | { phase: "idle" }
   | {
-      phase: "direction" | "range";
+      phase: "range" | "direction";
       stand: CellPoint;
       rangeM: number;
       bearingDeg: number;
@@ -845,25 +846,25 @@ export function AwareAppView({
       );
       const bearingDeg = normalizeBearingDeg(exactBearing);
       setShootWizard({
-        phase: "direction",
+        phase: "range",
         stand,
         rangeM,
         bearingDeg,
       });
       setStatus(
-        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster ved behov, deretter lagre.`,
+        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
       );
       return;
     }
-    // No cam: blank dials — player must knote direction/range from memory.
+    // No cam: blank dials — player must knote range/direction from memory.
     setShootWizard({
-      phase: "direction",
+      phase: "range",
       stand,
       rangeM: 200,
       bearingDeg: 0,
     });
     setStatus(
-      "Skuddpar: stand låst. Uten Triggercam/Scopemate/camcorder må du stille retning og avstand selv — ingen autofyll.",
+      "Skuddpar: stand låst. Sett avstand (sirkel), deretter skuddretning — ingen autofyll uten cam.",
     );
   }
 
@@ -1447,22 +1448,30 @@ export function AwareAppView({
                 />
               ))}
               {mode === "shoot" &&
-              shootWizard.phase !== "idle" &&
-              shootPreviewImpact ? (
+              shootWizard.phase !== "idle" ? (
                 <>
-                  <ShotPairPreview
+                  <ShotPairRangeRing
                     stand={shootWizard.stand}
-                    aim={shootPreviewImpact}
+                    distanceM={shootWizard.rangeM}
                   />
-                  <div
-                    className="aware-bearing-needle aware-shot-bearing"
-                    style={{
-                      left: `${shootWizard.stand.x}%`,
-                      top: `${shootWizard.stand.y}%`,
-                      transform: `translate(-50%, -100%) rotate(${shootWizard.bearingDeg}deg) scale(var(--aware-marker-inv-zoom, 1))`,
-                    }}
-                    aria-hidden
-                  />
+                  {shootWizard.phase === "direction" &&
+                  shootPreviewImpact ? (
+                    <>
+                      <ShotPairPreview
+                        stand={shootWizard.stand}
+                        aim={shootPreviewImpact}
+                      />
+                      <div
+                        className="aware-bearing-needle aware-shot-bearing"
+                        style={{
+                          left: `${shootWizard.stand.x}%`,
+                          top: `${shootWizard.stand.y}%`,
+                          transform: `translate(-50%, -100%) rotate(${shootWizard.bearingDeg}deg) scale(var(--aware-marker-inv-zoom, 1))`,
+                        }}
+                        aria-hidden
+                      />
+                    </>
+                  ) : null}
                 </>
               ) : null}
               {/* Hunter always shown. Bird/land hidden on wounded ettersøk (use cue). */}
@@ -1844,8 +1853,8 @@ export function AwareAppView({
                 {postShotSkuddparMode
                   ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen). Fugleprikken er der du siktet.`
                   : skuddparAutofill
-                    ? "Cam i bruk: retning/avstand prefylles fra fugleprikken — juster ved behov."
-                    : "Uten Triggercam/Scopemate/oppsatt camcorder: still retning og avstand selv (ingen autofyll)."}
+                    ? "Cam i bruk: avstand/retning prefylles fra fugleprikken — juster ved behov."
+                    : "Uten Triggercam/Scopemate/oppsatt camcorder: sett avstand (sirkel), deretter retning selv."}
               </p>
 
               {shootWizard.phase === "idle" ? (
@@ -1858,11 +1867,56 @@ export function AwareAppView({
                 </button>
               ) : null}
 
+              {shootWizard.phase === "range" ? (
+                <>
+                  <p className="shop-row-note aware-shoot-step">
+                    1/2 — Sett skuddavstand (sirkel fra stand)
+                    {wizardBirdDistanceM != null
+                      ? ` · fugl ${Math.round(wizardBirdDistanceM)} m`
+                      : ""}
+                  </p>
+                  <label className="shop-filter aware-shoot-slider">
+                    Avstand {shootWizard.rangeM} m
+                    <input
+                      type="range"
+                      min={50}
+                      max={450}
+                      step={5}
+                      value={shootWizard.rangeM}
+                      onChange={(e) =>
+                        setShootWizard({
+                          ...shootWizard,
+                          rangeM: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="aware-shoot-nav">
+                    <button
+                      type="button"
+                      className="intro-button sheriff-secondary"
+                      onClick={cancelShootWizard}
+                    >
+                      Avbryt
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={() =>
+                        setShootWizard({ ...shootWizard, phase: "direction" })
+                      }
+                    >
+                      Neste: retning
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
               {shootWizard.phase === "direction" ? (
                 <>
                   <p className="shop-row-note aware-shoot-step">
-                    1/2 — Sett skuddretning ({compassLabel(shootWizard.bearingDeg)}
-                    )
+                    2/2 — Sett skuddretning (
+                    {compassLabel(shootWizard.bearingDeg)})
                     {wizardBirdBearingDeg != null
                       ? ` · fugl ${normalizeBearingDeg(wizardBirdBearingDeg)}°`
                       : ""}
@@ -1886,51 +1940,6 @@ export function AwareAppView({
                       }
                     />
                   </label>
-                  <div className="aware-shoot-nav">
-                    <button
-                      type="button"
-                      className="intro-button sheriff-secondary"
-                      onClick={cancelShootWizard}
-                    >
-                      Avbryt
-                    </button>
-                    <button
-                      type="button"
-                      className="intro-button"
-                      onClick={() =>
-                        setShootWizard({ ...shootWizard, phase: "range" })
-                      }
-                    >
-                      Neste: avstand
-                    </button>
-                  </div>
-                </>
-              ) : null}
-
-              {shootWizard.phase === "range" ? (
-                <>
-                  <p className="shop-row-note aware-shoot-step">
-                    2/2 — Sett skuddavstand
-                    {wizardBirdDistanceM != null
-                      ? ` · fugl ${Math.round(wizardBirdDistanceM)} m`
-                      : ""}
-                  </p>
-                  <label className="shop-filter aware-shoot-slider">
-                    Avstand {shootWizard.rangeM} m
-                    <input
-                      type="range"
-                      min={50}
-                      max={450}
-                      step={5}
-                      value={shootWizard.rangeM}
-                      onChange={(e) =>
-                        setShootWizard({
-                          ...shootWizard,
-                          rangeM: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
                   <p className="shop-row-note">
                     Forhåndsvisning: {shootWizard.rangeM} m /{" "}
                     {compassLabel(shootWizard.bearingDeg)}
@@ -1940,7 +1949,7 @@ export function AwareAppView({
                       type="button"
                       className="intro-button sheriff-secondary"
                       onClick={() =>
-                        setShootWizard({ ...shootWizard, phase: "direction" })
+                        setShootWizard({ ...shootWizard, phase: "range" })
                       }
                     >
                       Tilbake
