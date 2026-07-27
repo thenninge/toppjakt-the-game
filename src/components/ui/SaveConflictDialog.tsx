@@ -35,10 +35,13 @@ function summarize(save: PlayerSaveV1): string {
   const rate = formatBirdsPerKm(birdsPerKm(s));
   const shots = totalBarrelShots(save);
   const maxR = s.maxRange > 0 ? `${s.maxRange} m` : "—";
+  const realN = Array.isArray(s.realLoadProfiles) ? s.realLoadProfiles.length : 0;
   return (
     `${s.name || "?"} · ${s.balance.toLocaleString("nb-NO")} kr · kit ${s.kit.length}\n` +
     `${km} gått · ${birds} fugl · ${rate}/km · ${shots} pipeskudd · max ${maxR}\n` +
-    when
+    `Real data: ${realN} våpen` +
+    (s.useRealDataInSimulation ? " · CB Real på" : "") +
+    `\n${when}`
   );
 }
 
@@ -66,8 +69,8 @@ export function SaveConflictDialog({
         <div className="game-confirm-body">
           <p className="shop-row-note">
             Du har progress både lokalt og i skyen. Velg hvilken save som skal
-            gjelde for inventar/penger/kit — livstids-km, fugl, max range og
-            pipeskudd merges alltid (høyeste tall vinner).
+            gjelde for inventar/penger/kit — livstids-km, fugl, max range,
+            pipeskudd og Real data merges alltid (nyeste/høyeste vinner).
           </p>
           <p className="shop-row-note" style={{ whiteSpace: "pre-line" }}>
             <strong>Lokal:</strong>

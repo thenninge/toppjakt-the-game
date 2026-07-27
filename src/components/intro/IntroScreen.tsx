@@ -37,8 +37,9 @@ import {
   getInventoryQty,
   sellInventoryOnFinn,
   resetRifleBarrel,
-  clearCustomBarrel,
   installCustomBarrel,
+  reinstallFactoryBarrel,
+  reinstallSpareCustomBarrel,
   fluteInstalledCustomBarrel,
   armHomeLoadedLot,
   disarmLoadPlan,
@@ -54,6 +55,11 @@ import {
   upsertKestrelProfile as mergeKestrelProfile,
   type KestrelGunProfile,
 } from "@/lib/ballistics/kestrelProfile";
+import {
+  removeRealLoadProfile,
+  upsertRealLoadProfile,
+  type RealLoadProfile,
+} from "@/lib/ballistics/realLoad";
 import { applyMeasuredSeriesToLoadDevRow } from "@/lib/reloading/loadDevTable";
 import {
   buildLoadBookEntry,
@@ -414,7 +420,7 @@ export function IntroScreen() {
     };
     enterWithSave(
       merged,
-      "Lastet inn save fra sky (livstids-km/fugl/skudd merget fra lokal).",
+      "Lastet inn save fra sky (livstids-km/fugl/skudd/Real data merget fra lokal).",
     );
     void putCloudSave(merged.stats, merged.savedAtMs).catch((err) => {
       console.warn("Cloud save after merge failed", err);
@@ -435,7 +441,7 @@ export function IntroScreen() {
       await putCloudSave(merged.stats, merged.savedAtMs);
       enterWithSave(
         merged,
-        "Lokal save lastet opp — sky overskrevet (livstids-stats merget).",
+        "Lokal save lastet opp — sky overskrevet (livstids-stats + Real data merget).",
       );
     } catch (err) {
       console.warn(err);
@@ -787,6 +793,9 @@ export function IntroScreen() {
       } else if (id === "cheek_riser") {
         if (mods.cheekRiser) return prev;
         mods.cheekRiser = true;
+      } else if (id === "buttpad") {
+        if (mods.buttpad) return prev;
+        mods.buttpad = true;
       } else if (id === "barrel_crown") {
         if (mods.barrelCrown) return prev;
         mods.barrelCrown = true;
@@ -819,19 +828,12 @@ export function IntroScreen() {
 
   function replaceCustomsBarrel(rifleId: string) {
     setStats((prev) => {
-      if (prev.balance < BARREL_REPLACE_NOK) return prev;
       const item = resolvePlayerItem(rifleId);
       if (!item || item.category !== "rifle") return prev;
       const rounds = prev.rifleRoundCounts[rifleId] ?? 0;
       const hasCustom = prev.customBarrels[rifleId] != null;
       if (rounds <= 0 && !hasCustom) return prev;
-      return resetRifleBarrel(
-        clearCustomBarrel(
-          { ...prev, balance: prev.balance - BARREL_REPLACE_NOK },
-          rifleId,
-        ),
-        rifleId,
-      );
+      return reinstallFactoryBarrel(prev, rifleId, BARREL_REPLACE_NOK);
     });
   }
 
@@ -847,6 +849,10 @@ export function IntroScreen() {
       const barrel = buildInstalledCustomBarrel(config, rifleId, priceNok);
       return installCustomBarrel(prev, rifleId, barrel, priceNok);
     });
+  }
+
+  function reinstallCustomsSpareBarrel(rifleId: string, storageId: string) {
+    setStats((prev) => reinstallSpareCustomBarrel(prev, rifleId, storageId));
   }
 
   function fluteCustomsBarrel(rifleId: string, priceNok: number) {
@@ -946,6 +952,64 @@ export function IntroScreen() {
       kestrelProfiles: mergeKestrelProfile(prev.kestrelProfiles, profile),
     }));
   }, []);
+
+  /** Persist Real data immediately (local + cloud) — don't wait for debounce. */
+  const commitRealDataStats = useCallback((next: PlayerStats) => {
+    savePlayerStats(next);
+    if (authStatus === "authenticated") {
+      void putCloudSave(next).catch((err) => {
+        console.warn("Cloud save (Real data) failed", err);
+      });
+    }
+  }, [authStatus]);
+
+  const saveRealLoad = useCallback(
+    (profile: RealLoadProfile) => {
+      setStats((prev) => {
+        const next: PlayerStats = {
+          ...prev,
+          realLoadProfiles: upsertRealLoadProfile(
+            prev.realLoadProfiles ?? [],
+            profile,
+          ),
+        };
+        commitRealDataStats(next);
+        return next;
+      });
+    },
+    [commitRealDataStats],
+  );
+
+  const removeRealLoad = useCallback(
+    (id: string) => {
+      setStats((prev) => {
+        const next: PlayerStats = {
+          ...prev,
+          realLoadProfiles: removeRealLoadProfile(
+            prev.realLoadProfiles ?? [],
+            id,
+          ),
+        };
+        commitRealDataStats(next);
+        return next;
+      });
+    },
+    [commitRealDataStats],
+  );
+
+  const setUseRealData = useCallback(
+    (enabled: boolean) => {
+      setStats((prev) => {
+        const next: PlayerStats = {
+          ...prev,
+          useRealDataInSimulation: enabled,
+        };
+        commitRealDataStats(next);
+        return next;
+      });
+    },
+    [commitRealDataStats],
+  );
 
   const logRangeSeries = useCallback((entry: ShotLogEntry) => {
     setStats((prev) => {
@@ -1574,7 +1638,13 @@ export function IntroScreen() {
           />
         )}
 
-        {phase === "location" && location === "cb-customs" && (
+        {phase === "location" && location === "cb-customs" && (() => {
+          const kitRifle = stats.kit
+            .map((id) => resolvePlayerItem(id))
+            .find((x) => x?.category === "rifle");
+          const spareForKit =
+            kitRifle != null ? stats.spareBarrels[kitRifle.id] ?? [] : [];
+          return (
           <CbCustoms
             balance={stats.balance}
             customsMods={stats.customsMods}
@@ -1584,14 +1654,17 @@ export function IntroScreen() {
             inventory={stats.inventory}
             rifleRoundCounts={stats.rifleRoundCounts}
             customBarrels={stats.customBarrels}
+            spareBarrels={spareForKit}
             onBuyService={buyCustomsService}
             onOrderHomeLoads={orderCustomsHomeLoads}
             onReplaceBarrel={replaceCustomsBarrel}
             onInstallCustomBarrel={installCustomsCustomBarrel}
+            onReinstallSpareBarrel={reinstallCustomsSpareBarrel}
             onFluteCustomBarrel={fluteCustomsBarrel}
             onLeave={backToTown}
           />
-        )}
+          );
+        })()}
 
         {phase === "location" && location === "meat-market" && (
           <MeatMarket
@@ -1696,6 +1769,11 @@ export function IntroScreen() {
             )}
             kestrelProfiles={stats.kestrelProfiles}
             onUpsertKestrelProfile={upsertKestrelProfile}
+            realLoadProfiles={stats.realLoadProfiles}
+            useRealDataInSimulation={stats.useRealDataInSimulation}
+            onSaveRealLoad={saveRealLoad}
+            onRemoveRealLoad={removeRealLoad}
+            onSetUseRealData={setUseRealData}
             onStartHunt={startHunt}
             onLeave={backToTown}
           />
@@ -1714,9 +1792,10 @@ export function IntroScreen() {
             customBarrels={stats.customBarrels}
             dopeCard={stats.dopeCard}
             kestrelProfiles={stats.kestrelProfiles}
+            realLoadProfiles={stats.realLoadProfiles}
+            useRealDataInSimulation={stats.useRealDataInSimulation}
             customsMods={stats.customsMods}
             weather={weather}
-            musicEnabled={musicEnabled}
             onAffinitiesChange={(next) =>
               setStats((prev) => ({ ...prev, ammoAffinities: next }))
             }
@@ -1822,6 +1901,8 @@ export function IntroScreen() {
             onPersistHomeLotMeasure={persistHomeLotMeasure}
             kestrelProfiles={stats.kestrelProfiles}
             onUpsertKestrelProfile={upsertKestrelProfile}
+            realLoadProfiles={stats.realLoadProfiles}
+            useRealDataInSimulation={stats.useRealDataInSimulation}
             loadBenchRecipe={stats.loadBenchRecipe}
             homeLoadedLots={stats.homeLoadedLots}
             armedLoadPlan={stats.armedLoadPlan}
@@ -1831,7 +1912,6 @@ export function IntroScreen() {
             onDisarmLoadPlan={() =>
               setStats((prev) => disarmLoadPlan(prev))
             }
-            musicEnabled={musicEnabled}
             favoriteKitIds={stats.favoriteKitIds}
             onPackFavoriteKit={packFavoriteKit}
             onRemoveFavoriteItem={(itemId) => toggleFavoriteItem(itemId, false)}

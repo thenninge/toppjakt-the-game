@@ -1626,6 +1626,51 @@ body {
   color: var(--accent-gold);
 }
 
+.current-rig-factors {
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid rgba(107, 82, 56, 0.65);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.current-rig-factors-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #d4c4a8;
+}
+
+.current-rig-factors-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.current-rig-factors-list li {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: 0.88rem;
+}
+
+.current-rig-factors-key {
+  color: #b8a888;
+}
+
+.current-rig-factors-val {
+  color: #f0e6d2;
+}
+
+.current-rig-factors-note {
+  margin: 0.4rem 0 0;
+}
+
 .kit-overview {
   display: flex;
   flex-direction: column;
@@ -1754,7 +1799,8 @@ body {
 
 .shot-log--embedded .shop-header,
 .dope-card-home--embedded .shop-header,
-.chrono-dvdt--embedded .shop-header {
+.chrono-dvdt--embedded .shop-header,
+.real-data-home--embedded .shop-header {
   margin-top: 0;
 }
 
@@ -4544,6 +4590,11 @@ body {
   .current-rig-clear.is-placeholder {
     display: none;
   }
+
+  .current-rig-factors-list li {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
 }
 
 /* --- XXL Shop --- */
@@ -4817,7 +4868,7 @@ body {
   top: calc(100% + 0.25rem);
   right: 0;
   z-index: 20;
-  min-width: 10.5rem;
+  min-width: 12rem;
   padding: 0.3rem;
   border: 1px solid #5a4030;
   background: #1a1410;
@@ -4873,6 +4924,42 @@ body {
 
 .stats-menu-lang {
   margin: 0 0 0.25rem;
+}
+
+.stats-menu-volume {
+  margin: 0 0 0.35rem;
+  padding: 0 0.35rem 0.2rem;
+}
+
+.stats-volume-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0 0 0.4rem;
+  cursor: pointer;
+}
+
+.stats-volume-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: var(--canyon-sand);
+}
+
+.stats-volume-pct {
+  font-size: 0.68rem;
+  color: rgba(196, 165, 116, 0.75);
+  letter-spacing: 0.04em;
+}
+
+.stats-volume-slider {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent-gold);
+  cursor: pointer;
 }
 
 .stats-menu-lang-row {
@@ -5483,6 +5570,38 @@ body {
   color: var(--accent-gold);
 }
 
+.range-cb-real-drops {
+  margin: 0.45rem 0 0;
+}
+
+.range-cb-real-drops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.range-cb-real-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.4rem;
+  border: 1px solid rgba(90, 64, 48, 0.7);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.72rem;
+  color: rgba(196, 165, 116, 0.85);
+}
+
+.range-cb-real-drop strong {
+  font-size: 0.85rem;
+  color: var(--canyon-sand);
+}
+
+.range-cb-real-drop.is-active {
+  border-color: var(--accent-gold);
+  background: rgba(196, 165, 116, 0.12);
+}
+
 .range-setup {
   display: flex;
   flex-direction: column;
@@ -5613,6 +5732,40 @@ body {
   color: var(--prompt-green);
   border-color: #4a7a3a;
   background: rgba(143, 239, 106, 0.12);
+}
+
+.range-scope-10x-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+  padding-block: 1.15rem 0;
+  box-sizing: border-box;
+  align-self: stretch;
+}
+
+.range-easy10x-by-scope {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.6rem;
+  min-height: 2.1rem;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-width: 2px;
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.range-easy10x-by-scope:hover {
+  border-color: #8a6a48;
+}
+
+.range-easy10x-by-scope.is-active:hover {
+  border-color: #5a9a4a;
 }
 
 .range-ammo-list {
@@ -6462,13 +6615,41 @@ body {
   gap: 0.55rem;
 }
 
+/**
+ * One viewport truth: glass diameter = --scope-viewport-ref-px (448).
+ * Premium FOV expands the circle by --scope-fov-premium (1.15).
+ * Narrow layouts scale the whole optic row via .scope-optic-fit (uniform).
+ */
+:root {
+  --scope-viewport-ref-px: 448;
+  --scope-fov-premium: 1.15;
+  --scope-optic-pad: 1.15rem;
+}
+
+.scope-optic-fit {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  /* Height set inline when scaled so layout collapses with the glass. */
+  overflow: visible;
+}
+
+.scope-optic-fit-inner {
+  width: max-content;
+  max-width: none;
+  transform-origin: top center;
+  will-change: transform;
+}
+
 .scope-stage-optic-row {
   display: flex;
   flex-direction: row;
   align-items: stretch;
   justify-content: center;
   gap: 0.45rem;
-  width: min(100%, 34rem);
+  width: max-content;
+  max-width: none;
 }
 
 .range-side-rail {
@@ -6480,7 +6661,7 @@ body {
   flex: 0 0 auto;
   width: auto;
   /* Align with glass (scope-optic padding) */
-  padding-block: 1.15rem;
+  padding-block: var(--scope-optic-pad);
   box-sizing: border-box;
 }
 
@@ -6517,24 +6698,24 @@ body {
 
 .scope-optic {
   position: relative;
-  width: min(100%, 28rem);
-  flex: 1 1 auto;
-  max-width: 28rem;
-  aspect-ratio: 1;
+  width: max-content;
+  flex: 0 0 auto;
+  max-width: none;
   /* Room for the power-ring knob outside the glass */
-  padding: 1.15rem;
+  padding: var(--scope-optic-pad);
   box-sizing: border-box;
 }
 
-/** Premium glass (ZCO / Kahles / NF / SB / Razor): +15 % felt FOV diameter. */
-.scope-optic.is-fov-premium {
-  width: min(100%, calc(28rem * 1.15));
-  max-width: calc(28rem * 1.15);
+/** Premium glass: larger circle — same as SCOPE_FOV_DIAMETER_PREMIUM. */
+.scope-optic.is-fov-premium .scope-viewport {
+  width: calc(var(--scope-viewport-ref-px) * var(--scope-fov-premium) * 1px);
+  height: calc(var(--scope-viewport-ref-px) * var(--scope-fov-premium) * 1px);
 }
 
 .scope-viewport {
   position: relative;
-  width: 100%;
+  width: calc(var(--scope-viewport-ref-px) * 1px);
+  height: calc(var(--scope-viewport-ref-px) * 1px);
   aspect-ratio: 1;
   margin: 0;
   border-radius: 50%;
@@ -6655,6 +6836,7 @@ body {
 }
 
 .scope-viewport.is-recoiling {
+  --recoil-kick: 1;
   animation: scope-recoil 0.32s ease-out;
 }
 
@@ -6663,13 +6845,25 @@ body {
     transform: translate(0, 0) rotate(0deg);
   }
   12% {
-    transform: translate(-5px, 11px) rotate(-0.55deg);
+    transform: translate(
+        calc(-5px * var(--recoil-kick, 1)),
+        calc(11px * var(--recoil-kick, 1))
+      )
+      rotate(calc(-0.55deg * var(--recoil-kick, 1)));
   }
   28% {
-    transform: translate(4px, 7px) rotate(0.35deg);
+    transform: translate(
+        calc(4px * var(--recoil-kick, 1)),
+        calc(7px * var(--recoil-kick, 1))
+      )
+      rotate(calc(0.35deg * var(--recoil-kick, 1)));
   }
   55% {
-    transform: translate(-2px, 3px) rotate(-0.15deg);
+    transform: translate(
+        calc(-2px * var(--recoil-kick, 1)),
+        calc(3px * var(--recoil-kick, 1))
+      )
+      rotate(calc(-0.15deg * var(--recoil-kick, 1)));
   }
   100% {
     transform: translate(0, 0) rotate(0deg);
@@ -6857,11 +7051,7 @@ body {
 
 .range-focus-fill {
   background: var(--prompt-green);
-}
-
-.range-focus-bar.is-fatigued .range-focus-fill {
-  background: var(--danger-rust);
-  opacity: 0.55;
+  /* Colour overridden imperatively via focusBarFillColor while F is held. */
 }
 
 .range-trigger-fill {
@@ -7136,6 +7326,156 @@ body {
 .shot-log-stats dd {
   margin: 0;
   font-size: 1rem;
+}
+
+/* --- Real data (Home) --- */
+
+.real-data-home {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: min(52rem, 100%);
+}
+
+.real-data-use {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.2rem 0 0.5rem;
+  font-family: var(--font-terminal), ui-monospace, monospace;
+  font-size: 0.88rem;
+  color: var(--canyon-sand);
+  cursor: pointer;
+}
+
+.real-data-use input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent-gold);
+}
+
+.real-data-use-hint {
+  color: rgba(196, 165, 116, 0.7);
+  font-size: 0.78rem;
+}
+
+.real-data-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #5a4030;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.real-data-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: rgba(196, 165, 116, 0.85);
+}
+
+.real-data-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.real-data-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.real-data-drops {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.35rem;
+}
+
+.real-data-drop-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.real-data-drop-head .stats-menu-heading {
+  margin: 0;
+}
+
+.real-data-drop-unit {
+  min-width: 8rem;
+}
+
+.real-data-drop-hint {
+  margin: 0 0 0.15rem;
+}
+
+.real-data-drop-unit-tag {
+  margin-left: 0.25rem;
+  opacity: 0.65;
+  font-size: 0.65rem;
+}
+
+.real-data-drop-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: rgba(196, 165, 116, 0.8);
+}
+
+.real-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.real-data-move {
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(90, 64, 48, 0.65);
+}
+
+.real-data-move-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.real-data-move-row .stats-rename-input {
+  flex: 1 1 10rem;
+  margin: 0;
+}
+
+.real-data-move-row .intro-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.real-data-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: rgba(232, 220, 200, 0.88);
+}
+
+.real-data-list li {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid rgba(90, 64, 48, 0.7);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 640px) {
+  .real-data-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* --- DOPE card (Home) --- */
@@ -7486,17 +7826,7 @@ body {
 }
 
 @media (max-width: 520px) {
-  .scope-optic {
-    width: min(100%, 22rem);
-  }
-
-  .scope-optic.is-fov-premium {
-    width: min(100%, calc(22rem * 1.15));
-    max-width: calc(22rem * 1.15);
-  }
-
   .scope-stage-optic-row {
-    width: min(100%, 26rem);
     gap: 0.3rem;
   }
 
@@ -7508,6 +7838,16 @@ body {
   .range-trigger-bar {
     width: 0.45rem;
     min-height: 8rem;
+  }
+
+  .range-scope-10x-slot {
+    padding-block: 0.85rem 0;
+  }
+
+  .range-easy10x-by-scope {
+    min-width: 2.3rem;
+    min-height: 1.9rem;
+    font-size: 0.85rem;
   }
 }
 

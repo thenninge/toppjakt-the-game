@@ -3,6 +3,12 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { PlayerStats } from "@/lib/player";
 import {
+  readMusicVolume,
+  readSfxVolume,
+  writeMusicVolume,
+  writeSfxVolume,
+} from "@/lib/audio/volumes";
+import {
   GAME_LANG_LABEL,
   GAME_LANGS,
   type GameLang,
@@ -19,6 +25,9 @@ const MENU_COPY: Record<
   GameLang,
   {
     language: string;
+    volume: string;
+    music: string;
+    sfx: string;
     edit: string;
     rename: string;
     deleteHunter: string;
@@ -29,6 +38,9 @@ const MENU_COPY: Record<
 > = {
   nb: {
     language: "Språk",
+    volume: "Volum",
+    music: "Musikk",
+    sfx: "Lydeffekter",
     edit: "Edit",
     rename: "Endre navn",
     deleteHunter: "Slett jeger",
@@ -38,6 +50,9 @@ const MENU_COPY: Record<
   },
   en: {
     language: "Language",
+    volume: "Volume",
+    music: "Music",
+    sfx: "Sound effects",
     edit: "Edit",
     rename: "Change name",
     deleteHunter: "Delete hunter",
@@ -47,6 +62,9 @@ const MENU_COPY: Record<
   },
   ja: {
     language: "言語",
+    volume: "音量",
+    music: "音楽",
+    sfx: "効果音",
     edit: "編集",
     rename: "名前を変更",
     deleteHunter: "ハンターを削除",
@@ -96,6 +114,8 @@ export function StatsFrame({
   const [renameError, setRenameError] = useState("");
   const [adminPin, setAdminPin] = useState("");
   const [adminPinError, setAdminPinError] = useState("");
+  const [musicVol, setMusicVol] = useState(1);
+  const [sfxVol, setSfxVol] = useState(1);
   const menuRef = useRef<HTMLDivElement>(null);
   const copy = MENU_COPY[stats.lang] ?? MENU_COPY.nb;
   const hasMenu =
@@ -105,6 +125,11 @@ export function StatsFrame({
     !!onGoogleLogin ||
     !!onGoogleLogout ||
     !!onAdminUnlock;
+
+  useEffect(() => {
+    setMusicVol(readMusicVolume());
+    setSfxVol(readSfxVolume());
+  }, []);
 
   useEffect(() => {
     if (menu === "closed") return;
@@ -235,6 +260,53 @@ export function StatsFrame({
             {menu === "edit" ? (
               <div className="stats-menu-panel" role="menu">
                 <p className="stats-menu-heading">{copy.edit}</p>
+                <div className="stats-menu-volume" role="group" aria-label={copy.volume}>
+                  <p className="stats-menu-heading">{copy.volume}</p>
+                  <label className="stats-volume-row">
+                    <span className="stats-volume-label">
+                      {copy.music}
+                      <span className="stats-volume-pct">
+                        {Math.round(musicVol * 100)}%
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      className="stats-volume-slider"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(musicVol * 100)}
+                      aria-label={copy.music}
+                      onChange={(e) => {
+                        const next = Number(e.target.value) / 100;
+                        setMusicVol(next);
+                        writeMusicVolume(next);
+                      }}
+                    />
+                  </label>
+                  <label className="stats-volume-row">
+                    <span className="stats-volume-label">
+                      {copy.sfx}
+                      <span className="stats-volume-pct">
+                        {Math.round(sfxVol * 100)}%
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      className="stats-volume-slider"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(sfxVol * 100)}
+                      aria-label={copy.sfx}
+                      onChange={(e) => {
+                        const next = Number(e.target.value) / 100;
+                        setSfxVol(next);
+                        writeSfxVolume(next);
+                      }}
+                    />
+                  </label>
+                </div>
                 {onLangChange ? (
                   <div className="stats-menu-lang" role="group" aria-label={copy.language}>
                     <p className="stats-menu-heading">{copy.language}</p>

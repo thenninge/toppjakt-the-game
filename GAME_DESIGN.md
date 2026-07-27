@@ -221,7 +221,9 @@ Vekt er det **primære** attributtet for lyddempere. Masse langt fremme på munn
 
 Tung demper = tyngre å gå med, men våpenet ligger roligere i skuddet. Lett titan = lettere kit, mindre calm-bidrag.
 
-Kode: `src/lib/suppressor/spec.ts` (`SUPPRESSOR_CALM_WEIGHT_FACTOR = 2`).
+**dB** demping: quieter cans → lavere felt rekyl (`suppressorRecoilDamping`) → lettere å følge fuglen i kikkerten etter skudd (ettersøk-cue uten cam).
+
+Kode: `src/lib/suppressor/spec.ts` (`SUPPRESSOR_CALM_WEIGHT_FACTOR = 2`, `suppressorRecoilDamping`).
 
 #### Bipods / tofot — vekt vs weapon calm
 
@@ -284,7 +286,7 @@ Kategorier:
 
 1. **LRF / Avstandsmålere** — Biltema-monokkel → Leica / Zeiss / Vortex Fury. Felt `hasOnboardBallistics` + `rangeErrorPercent` (±% randomizer på målt avstand; premium ≈ ±1%, Biltema/Jula ≈ ±3%). Filter: «kun m/intern ballistikk».  
 2. **Scopes** — sort/filter: pris, vekt, min/max zoom, MRAD vs MOA. Spec: `clickErrorPercent` (±% på dialte elev/windage-klikk ved skudd; premium NF/Kahles/ZCO/… = 0 %, Viper 3 %, budget Biltema/Jula/Clas 10 %). `zeroRetentionInaccuracy` (MOA) der relevant.  
-3. **Lyddempere** — kun vekt for nå (kit +1×, weapon calm +2×). Ingen ekstra dB/POI-styr.  
+3. **Lyddempere** — kit +1×, weapon calm +2×; `soundReductionDb` → flush + recoil damping.  
 3b. **Bipods / Tofot** — kit-vekt + `weaponCalm` (dyrere/tyngre → høyere calm). Score10: `weaponCalm`, `deploySpeed`, `tracking`. Calm gjelder når tofot er ute.  
 4. **Stokker** — GRS / MDT / McMillan + budget. Spec: `moaDelta` (additivt; f.eks. −0.05 MOA; aldri 0).  
 5. **Rifler** — `averageBestAccuracyMoa` (kjent gulv med matchende ammo). Tune-tabell: `RIFLE_AVERAGE_BEST_MOA`. Per-spiller ammo-affinity randomizer (uflaks) — må testes på range.  
@@ -370,7 +372,7 @@ Samme «trykk»-familie som dårlig kamo og mye bevegelse. Fuglen akkumulerer ne
 |----------|---------------------|
 | Sett opp **jakt-camcorder** før skudd | `+0.20` (`CAMCORDER_SETUP_NERVE`) — umiddelbart på baren |
 
-Camcorder gir bedre ettersøk-cue (retning + landingsavstand) etter treff, men kan trigge flush hvis nerve allerede er høy.
+Camcorder gir bedre ettersøk-cue (retning + landingsavstand) etter treff, men kan trigge flush hvis nerve allerede er høy. Lav **felt rekyl** (calm × demping fra can + CB bagrider/cheek/buttpad) gir også scope-track-cue uten cam.
 
 **Enviro / Lapua (skudd-HUD):** nerven fra Aware bæres inn. I hele skyte-view (Oversikt / Shooter / Enviro / Kestrel) tickes nerve med **samme still-rate som Aware** (`tickEncounterNerve` på real-tid, ikke bevegelse). Enviro-fanen alene kjører klokka ×5 (`ENVIRO_TIME_FACTOR`). «Back to Aware» returnerer til Aware med oppdatert nerve. Flush ved `ENCOUNTER_NERVE.flushThreshold`.
 

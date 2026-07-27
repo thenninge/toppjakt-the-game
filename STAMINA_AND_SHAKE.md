@@ -279,10 +279,16 @@ Rifle-/kit-totalvekt er **ikke** i calm.
 
 ### Fokus (F)
 
-| Konstant | Verdi |
-|----------|-------|
-| Rent vindu | 8000 ms → calm ×3 |
-| Etter 8 s fortsatt hold | calm ×0.65 (verre enn idle) |
+Kontinuerlig kurve (ingen hopp). Strain-ekstra = 0 i sweet-vinduet.
+
+| Tid | Calm |
+|-----|------|
+| 0–2.5 s | shake-excess `(1−u)²` → calm ease ×0.183 → ×3 (peak 3×) |
+| 2.5–4.5 s | ×3 flat (max for rigg/anlegg) |
+| 4.5–7 s | shake-excess `u²` → calm ease ×3 → ×0.183 (peak 3×) |
+| 7 s | auto-abort — slipp F, start på nytt |
+
+Fokusbaren teller ned til abort (7 s).
 
 ### Fatigue → calm (BODY) og MOA (MIND)
 
@@ -376,6 +382,26 @@ pullOffset = randomDirection × errorFactor × envelopeMm
 Rent avtrekk → kun vanlig Gaussian (maks rifle+ammo-presisjon).  
 Elendig avtrekk → opptil **100 %** av envelope som ekstra avvik fra siktepunkt.  
 Baren auto-slipper ved 3.0 s. Fokus må holdes under avtrekk.
+
+### 5.6 Recoil (felt rekyl) → ettersøk-cue
+
+Kilde: `src/lib/range/recoil.ts` · ettersøk: `src/lib/aware/ettersok.ts`.
+
+```
+Recoil = 1 / (effectiveCalm × recoilDamping)     // lavere = mykere
+```
+
+- `effectiveCalm` = weapon calm × BODY fatigue calm (samme stack som wobble)
+- `recoilDamping` = lyddemper-dB × CB bagrider/cheek/buttpad
+
+| Kilde | Demping |
+|-------|---------|
+| Lyddemper | 0 dB → ×1.0 · −40 dB → ×1.5 |
+| CB Bagrider | ×1.20 |
+| Cheek riser | ×1.12 |
+| Soft Buttpad | ×1.25 |
+
+**Ettersøk uten cam:** soft recoil (≤0.55) → peiling i kikkerten (grader, ikke bare 8-punkt); ≤0.35 → også landingsavstand. Cams tar fortsatt best-of (min σ).
 
 ---
 
@@ -536,7 +562,8 @@ Meat Market selger låst `marketValueNok` — ingen pruting.
 | Spook / gone mind-hit | `src/lib/hunt/birds.ts` |
 | Mat + short rest restore | `src/lib/food/spec.ts` |
 | Calm / wobble / BODY→calm / MIND→MOA | `src/lib/range/precision.ts` |
-| Puls 60–180 + vertikal heartbeat-shake | `src/lib/hunt/pulse.ts` |
+| Recoil (calm × demping) → ettersøk-cue | `src/lib/range/recoil.ts` |
+| Puls 50–180 + vertikal heartbeat-shake | `src/lib/hunt/pulse.ts` |
 | Treffsone / vital kill-roll | `src/lib/hunt/shoot.ts` |
 | meatRuin / marketValue | `src/lib/hunt/carcass.ts` |
 | damageFactor-filosofi | `src/lib/ammo/spec.ts` |

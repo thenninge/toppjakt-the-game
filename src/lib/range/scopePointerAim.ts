@@ -5,6 +5,28 @@
  * Scope paint: panPx = aimMm * pxPerMm * scale
  * Finger +dx → world +dx → panPx −dx → aimMm decreases.
  */
+
+/**
+ * Convert screen/client deltas into the element's local CSS px.
+ * Needed when an ancestor applies {@code transform: scale} (ScopeOpticFit).
+ */
+export function clientDeltaToLocalCssPx(
+  dxClientPx: number,
+  dyClientPx: number,
+  el: Pick<
+    HTMLElement,
+    "offsetWidth" | "offsetHeight" | "getBoundingClientRect"
+  >,
+): { dx: number; dy: number } {
+  const rect = el.getBoundingClientRect();
+  const sx = rect.width / Math.max(1e-6, el.offsetWidth);
+  const sy = rect.height / Math.max(1e-6, el.offsetHeight);
+  return {
+    dx: dxClientPx / sx,
+    dy: dyClientPx / sy,
+  };
+}
+
 export function aimMmDeltaFromPointerDrag(opts: {
   dxClientPx: number;
   dyClientPx: number;
@@ -12,12 +34,27 @@ export function aimMmDeltaFromPointerDrag(opts: {
   pxPerMm: number;
   /** 1 = normal; use focus slow-mult for fine drag. */
   sensitivity?: number;
+  /**
+   * Viewport (or any scaled element). When set, client deltas are converted
+   * to local CSS px before aim math (ScopeOpticFit uniform scale).
+   */
+  viewportEl?: Pick<
+    HTMLElement,
+    "offsetWidth" | "offsetHeight" | "getBoundingClientRect"
+  > | null;
 }): { x: number; y: number } {
   const sens = opts.sensitivity ?? 1;
+  let dx = opts.dxClientPx;
+  let dy = opts.dyClientPx;
+  if (opts.viewportEl) {
+    const local = clientDeltaToLocalCssPx(dx, dy, opts.viewportEl);
+    dx = local.dx;
+    dy = local.dy;
+  }
   const denom = Math.max(1e-6, opts.scale * opts.pxPerMm);
   return {
-    x: (-opts.dxClientPx * sens) / denom,
-    y: (-opts.dyClientPx * sens) / denom,
+    x: (-dx * sens) / denom,
+    y: (-dy * sens) / denom,
   };
 }
 

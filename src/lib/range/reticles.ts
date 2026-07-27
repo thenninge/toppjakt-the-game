@@ -10,7 +10,7 @@
  * CBA diamond tip in native px.
  *
  * ZCO MPCT3 ({@code zco527b.png}): full tree, FFP. In-game 27× (premium FOV)
- * ≈7 mrad centre→edge.
+ * ≈7.2 mrad centre→edge (real ZCO @ 27×).
  *
  * Measure `centerTo1MilPx` on the native PNG (center → 1.0 mil hash).
  * Optional `opticalCenterX/Y` if the crosshair is not at the image midpoint.
@@ -80,8 +80,8 @@ export const RETICLES: Record<string, ReticleDef> = {
    * ZCO 5-27 MPCT3-style mil tree ({@code zco527b.png}).
    * CALIBRATED reference reticle — see `.cursor/skills/scope-reticle-calibration`.
    * Full Christmas-tree hold grid; ~55.5 px/mil.
-   * Optical centre: −10.7 klikk X / +5 klikk Y (1 klikk = 0.1 mil) + 0.02° CW.
-   * FOV: ±7 mrad @ 27× (shared {@code SCOPE_FOV_*} + 16/14). Hold-over: CAL=1.
+   * Optical centre: −10.32 klikk X / +5.35 klikk Y (1 klikk = 0.1 mil) + 0.02° CW.
+   * FOV: ±7.2 mrad @ 27× (shared {@code SCOPE_FOV_CAL_HALF_MRAD}). Hold-over: CAL=1.
    */
   "zco-527-mpct": {
     id: "zco-527-mpct",
@@ -90,10 +90,10 @@ export const RETICLES: Record<string, ReticleDef> = {
     nativeWidth: 1792,
     nativeHeight: 1780,
     centerTo1MilPx: 55.5,
-    /** 967 − 10.7×0.1×55.5 — shift reticle 10.7 clicks right on glass. */
-    opticalCenterX: 907.615,
-    /** 865 + 5×0.1×55.5 — shift reticle 5 clicks up on glass. */
-    opticalCenterY: 892.75,
+    /** 967 − 10.32×0.1×55.5 — shift reticle 10.32 clicks right on glass. */
+    opticalCenterX: 909.724,
+    /** 865 + 5.35×0.1×55.5 — shift reticle 5.35 clicks up on glass. */
+    opticalCenterY: 894.6925,
     imageRotationDeg: 0.02,
   },
   /**

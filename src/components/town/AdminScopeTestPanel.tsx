@@ -8,6 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import {
   allBirdSpriteIds,
@@ -387,6 +388,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       scale: targetScaleRef.current,
       pxPerMm: pxPerMmRef.current,
       sensitivity: 1,
+      viewportEl: e.currentTarget,
     });
     const next = clampAimMm(
       drag.origX + delta.x,
@@ -639,6 +641,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       {scope ? (
         <div className="shooting-range admin-scope-test-range">
           <div className="scope-stage">
+            <ScopeOpticFit>
             <div className="scope-stage-optic-row">
               <div
                 className={
@@ -710,6 +713,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 />
               </div>
             </div>
+            </ScopeOpticFit>
           </div>
         </div>
       ) : null}

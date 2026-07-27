@@ -13,12 +13,20 @@ import {
   fatigueDispersionFactor,
   focusPhase,
   focusRemainingMs,
+  focusShouldAbort,
   rollTriggerTargetMs,
+  sampleRealSystemGroupMoa,
   sampleShotFromPoa,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
+import {
+  computeFeltRecoil,
+  recoilKickScale,
+  shoulderedWeaponWeightKg,
+} from "@/lib/range/recoil";
+import { resolveBulletWeightGrains, isSilentSuppressedShot } from "@/lib/ammo/spec";
 import {
   formatPulseBpm,
   pulseHz,
@@ -27,6 +35,7 @@ import {
 import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import {
   rifleSpecWithCustomBarrel,
+  barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
 import {
@@ -39,9 +48,16 @@ import {
 } from "@/lib/ballistics/solver";
 import { ammoAtPowderTemp } from "@/lib/ballistics/powderTemp";
 import { kestrelSolveAmmo, type KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
-import { isSilentSuppressedShot } from "@/lib/ammo/spec";
+import {
+  isRealDataActive,
+  realLoadForRifle,
+  interpolateRealDropCm,
+  displayAmmoBrandName,
+  type RealLoadProfile,
+} from "@/lib/ballistics/realLoad";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeTurrets, type ScopeHudTab } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
@@ -73,6 +89,7 @@ import {
   isBipodItem,
   isLrfItem,
   isMiscItem,
+  isMountItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
@@ -157,6 +174,8 @@ type HuntShootViewProps = {
   zeroingProfiles: Record<string, ZeroingProfile>;
   dopeCard?: DopeCardEntry[];
   kestrelProfiles?: Record<string, KestrelGunProfile>;
+  realLoadProfiles?: RealLoadProfile[];
+  useRealDataInSimulation?: boolean;
   /** Persist DOPE after a hit (rifle×ammo×distance upsert). */
   onAddDope?: (entry: Omit<DopeCardEntry, "id" | "atMs">) => void;
   /**
@@ -185,6 +204,8 @@ type HuntShootViewProps = {
   customsMoaDelta?: number;
   /** CB Customs calm multiplier (e.g. bagrider 1.15). */
   customsCalmMult?: number;
+  /** Combined recoil-damping multiplier (suppressor dB × CB rear gear). */
+  recoilDamping?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
   /** Barrel wear multiplier on rifle MOA (1 = fresh … 2 = worn). */
@@ -200,7 +221,6 @@ type HuntShootViewProps = {
   ) => ZeroingProfile;
   /** Hawke / budget mount: fixed ±2 click POI drift for this hunt. */
   mountHuntDriftMm?: { xMm: number; yMm: number };
-  musicEnabled: boolean;
   /** Hunt BODY fatigue 0–1 (1 = exhausted). Cuts calm → more weapon shake. */
   physicalFatigue?: number;
   /** Hunt MIND fatigue 0–1 (1 = exhausted). Widens MOA envelope up to 2×. */
@@ -260,7 +280,7 @@ const LANDSCAPE_AIM_FOV_FRAC = 0.36;
  */
 const FOCUS_AIM_SPEED_MULT = 0.14;
 /** Arrow tap while F held — fraction of the unfocused tap step. */
-const FOCUS_AIM_TAP_MULT = 0.3;
+const FOCUS_AIM_TAP_MULT = 0.15;
 const DEFAULT_SCOPE_ZOOM = 12;
 
 /** Aim (mm from vital) that puts landscape centre under the reticle. */
@@ -313,6 +333,8 @@ export function HuntShootView({
   zeroingProfiles,
   dopeCard = [],
   kestrelProfiles = {},
+  realLoadProfiles = [],
+  useRealDataInSimulation = false,
   onAddDope,
   chronoActive = false,
   kestrelEnviroActive = true,
@@ -322,6 +344,7 @@ export function HuntShootView({
   onLogSeries,
   customsMoaDelta = 0,
   customsCalmMult = 1,
+  recoilDamping = 1,
   customsTriggerPullScale = 1,
   barrelWearScale = 1,
   customBarrels = {},
@@ -329,7 +352,6 @@ export function HuntShootView({
   onConsumeAmmo,
   onEnsureZeroing,
   mountHuntDriftMm = { xMm: 0, yMm: 0 },
-  musicEnabled,
   physicalFatigue = 0,
   mentalFatigue = 0,
   heartRateBpm = 60,
@@ -370,6 +392,10 @@ export function HuntShootView({
   );
   const suppressor = useMemo(
     () => kitItems.find((i) => i.category === "suppressor") ?? null,
+    [kitItems],
+  );
+  const mount = useMemo(
+    () => kitItems.find(isMountItem) ?? null,
     [kitItems],
   );
   const ammoOptions = useMemo(
@@ -425,7 +451,7 @@ export function HuntShootView({
   const onBackToAwareRef = useRef(onBackToAware);
   onBackToAwareRef.current = onBackToAware;
   const [focusUi, setFocusUi] = useState<{
-    phase: "idle" | "focused" | "fatigued";
+    phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
   const [triggerUi, setTriggerUi] = useState({
@@ -438,7 +464,6 @@ export function HuntShootView({
     focusFillRef,
     focusBarRef,
     paintFocusProgress,
-    setFocusBarFatigued,
     resetFocusProgress,
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
@@ -556,9 +581,48 @@ export function HuntShootView({
   const barrelWearScaleRef = useRef(barrelWearScale);
   const recoilClearRef = useRef<number | null>(null);
 
-  const { playShot } = useRangeAudio({ enabled: musicEnabled, ambient: false });
+  const { playShot } = useRangeAudio({ enabled: true, ambient: false });
 
   const selectedAmmo = ammoOptions.find((a) => a.id === ammoId) ?? null;
+  const kitIds = useMemo(() => kitItems.map((i) => i.id), [kitItems]);
+  const inventoryItemIds = useMemo(
+    () => inventory.map((e) => e.itemId),
+    [inventory],
+  );
+  const realLoad = useMemo(
+    () => realLoadForRifle(realLoadProfiles, rifle?.id),
+    [realLoadProfiles, rifle],
+  );
+  const realSolveArg = useMemo(
+    () => ({
+      active: isRealDataActive({
+        useRealDataInSimulation,
+        kitIds,
+        inventoryItemIds,
+        realLoad,
+        ammoId: selectedAmmo?.id,
+      }),
+      profile: realLoad,
+    }),
+    [
+      useRealDataInSimulation,
+      kitIds,
+      inventoryItemIds,
+      realLoad,
+      selectedAmmo?.id,
+    ],
+  );
+  const ballisticsAmmo = useMemo(() => {
+    if (!selectedAmmo) return null;
+    return kestrelSolveAmmo(
+      selectedAmmo.ammo,
+      selectedAmmo.id,
+      kestrelProfiles,
+      realSolveArg,
+    );
+  }, [selectedAmmo, kestrelProfiles, realSolveArg]);
+  const ballisticsAmmoRef = useRef(ballisticsAmmo);
+  ballisticsAmmoRef.current = ballisticsAmmo;
   const ammoRemaining = selectedAmmo
     ? getInventoryQty(inventory, selectedAmmo.id)
     : 0;
@@ -616,6 +680,55 @@ export function HuntShootView({
   useEffect(() => {
     weaponCalmRef.current = calmFactor;
   }, [calmFactor]);
+
+  const feltRecoil = useMemo(() => {
+    const weaponKg =
+      rifle != null
+        ? shoulderedWeaponWeightKg({
+            rifleGrams: rifle.weightGrams,
+            scopeGrams: scope?.weightGrams,
+            mountGrams: mount?.weightGrams,
+            suppressorGrams: suppressor?.weightGrams,
+            bipodGrams:
+              shootRest === "bipod" || shootRest === "backpack"
+                ? bipod?.weightGrams
+                : 0,
+          })
+        : null;
+    const grains =
+      selectedAmmo != null
+        ? resolveBulletWeightGrains(
+            selectedAmmo.ammo,
+            `${selectedAmmo.brand} ${selectedAmmo.name}`,
+          )
+        : null;
+    const v0 =
+      selectedAmmo != null && rifle != null
+        ? selectedAmmo.ammo.v0 *
+          barrelV0FactorForRifle(rifle.id, customBarrels?.[rifle.id])
+        : null;
+    return computeFeltRecoil({
+      weaponCalm: calmFactor,
+      recoilDamping,
+      fatigue: { physicalFatigue },
+      bulletWeightGrains: grains,
+      v0Mps: v0,
+      weaponWeightKg: weaponKg,
+    });
+  }, [
+    calmFactor,
+    recoilDamping,
+    physicalFatigue,
+    rifle,
+    scope,
+    mount,
+    suppressor,
+    bipod,
+    shootRest,
+    selectedAmmo,
+    customBarrels,
+  ]);
+  const recoilKick = recoilKickScale(feltRecoil);
   useEffect(() => {
     fatigueRef.current = { physicalFatigue, mentalFatigue };
   }, [physicalFatigue, mentalFatigue]);
@@ -686,26 +799,52 @@ export function HuntShootView({
     );
     if (rolled) onAffinitiesChange(map);
 
+    const usingReal = !!realSolveArg.active;
     const w = wobbleRef.current;
+    const simAmmo = ballisticsAmmoRef.current?.ammo ?? selectedAmmo.ammo;
+    const simDvDt = ballisticsAmmoRef.current?.dvDtMpsPerC;
     const dispersionInput = {
       rifle: rifleSpecWithCustomBarrel(rifle.rifle, customBarrels[rifle.id]),
-      ammo: selectedAmmo.ammo,
+      ammo: simAmmo,
       stock: stock?.stock,
       affinity,
       customsMoaDelta,
       barrelWearScale: barrelWearScaleRef.current,
-      dispersionScale: fatigueDispersionFactor(fatigueRef.current),
+      dispersionScale: usingReal
+        ? 1
+        : fatigueDispersionFactor(fatigueRef.current),
+      mirageFactor: usingReal ? 0 : undefined,
+      // Measured real-load MV already includes this rifle's barrel.
+      barrelV0Factor: usingReal
+        ? 1
+        : barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]),
     };
-    const envelopeMoa = combinedDispersionMoa(dispersionInput);
-    const pull = triggerPullOffsetMm(
-      triggerPullRef.current * customsTriggerPullScale,
-      envelopeMoa,
-      distanceRef.current,
-    );
-    const poa = {
-      xMm: aimRef.current.x + w.x + pull.xMm,
-      yMm: aimRef.current.y + w.y + pull.yMm,
-    };
+    let poa: { xMm: number; yMm: number };
+    let seriesGroupEnvelopeMoa: number | null = null;
+    if (usingReal) {
+      poa = { xMm: aimRef.current.x, yMm: aimRef.current.y };
+      const mean = simAmmo.systemGroupMoaOverride;
+      const best = simAmmo.systemGroupMoaBest;
+      if (
+        mean != null &&
+        best != null &&
+        Number.isFinite(mean) &&
+        Number.isFinite(best)
+      ) {
+        seriesGroupEnvelopeMoa = sampleRealSystemGroupMoa(mean, best);
+      }
+    } else {
+      const envelopeMoa = combinedDispersionMoa(dispersionInput);
+      const pull = triggerPullOffsetMm(
+        triggerPullRef.current * customsTriggerPullScale,
+        envelopeMoa,
+        distanceRef.current,
+      );
+      poa = {
+        xMm: aimRef.current.x + w.x + pull.xMm,
+        yMm: aimRef.current.y + w.y + pull.yMm,
+      };
+    }
     const shot = sampleShotFromPoa(
       poa,
       dispersionInput,
@@ -714,16 +853,28 @@ export function HuntShootView({
       {
         densityRatio: densityRef.current,
         powderTempC: powderTempRef.current,
+        dvDtMpsPerC: simDvDt,
+        seriesGroupEnvelopeMoa,
+        skipMirage: usingReal,
       },
     );
+    let shotXMm = shot.xMm;
+    let shotYMm = shot.yMm;
+    if (usingReal && realLoad) {
+      const tableCm = interpolateRealDropCm(realLoad, distanceRef.current);
+      if (tableCm != null) {
+        shotYMm = shot.yMm - shot.dropBelowLosMm + tableCm * 10;
+      }
+    }
     // Spin is already in `shot`; add local wind drift separately.
     const windMm = exactBallisticHold(
-      selectedAmmo.ammo,
+      simAmmo,
       distanceRef.current,
       crosswindRef.current,
       {
         densityRatio: densityRef.current,
         powderTempC: powderTempRef.current,
+        dvDtMpsPerC: simDvDt,
       },
     ).windDriftMm;
     const clickErr = scope.scope.clickErrorPercent ?? 0;
@@ -747,12 +898,12 @@ export function HuntShootView({
         };
     const impact = {
       xMm:
-        shot.xMm +
+        shotXMm +
         realizedZero.xMm +
         angularMmAtDistance(mountHuntDriftMm.xMm, distanceRef.current) +
         windMm,
       yMm:
-        shot.yMm +
+        shotYMm +
         realizedZero.yMm +
         angularMmAtDistance(mountHuntDriftMm.yMm, distanceRef.current),
       diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
@@ -924,8 +1075,7 @@ export function HuntShootView({
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
-    paintFocusProgress(1);
-    setFocusBarFatigued(false);
+    paintFocusProgress(1, 0);
     setTriggerUi({
       pending: false,
       targetPct: markMs / TRIGGER_BAR_MS,
@@ -1010,6 +1160,7 @@ export function HuntShootView({
       scale: targetScaleRef.current,
       pxPerMm,
       sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
+      viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
       drag.origX + delta.x,
@@ -1245,6 +1396,11 @@ export function HuntShootView({
       y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
 
+      if (focusShouldAbort(focusRef.current, now)) {
+        endFocus();
+        setStatus("Fokus brutt etter 7 s — slipp F og start på nytt.");
+      }
+
       const calm = effectiveCalmWithFocus(
         weaponCalmRef.current,
         focusRef.current,
@@ -1290,15 +1446,14 @@ export function HuntShootView({
         }
       }
 
-      if (fPhase === "focused") {
-        paintFocusProgress(focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS);
-        setFocusBarFatigued(false);
-      } else if (fPhase === "fatigued") {
-        paintFocusProgress(1);
-        setFocusBarFatigued(true);
+      if (focusRef.current.held) {
+        const elapsed = now - focusRef.current.startedAtMs;
+        paintFocusProgress(
+          focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+          elapsed,
+        );
       } else {
         paintFocusProgress(0);
-        setFocusBarFatigued(false);
       }
 
       uiAccum += dt;
@@ -1395,46 +1550,32 @@ export function HuntShootView({
   const sceneH = landscapeSrc ? sceneW / landAspect : shotGeom.nativeH;
 
   const abFasitHold =
-    ballisticHold && selectedAmmo
-      ? (() => {
-          const solve = kestrelSolveAmmo(
-            selectedAmmo.ammo,
-            selectedAmmo.id,
-            kestrelProfiles,
-          );
-          return exactBallisticHold(
-            solve.ammo,
-            measuredDistanceM,
-            crosswindMs,
-            {
-              densityRatio,
-              powderTempC: temperatureC,
-              dvDtMpsPerC: solve.dvDtMpsPerC,
-            },
-          );
-        })()
+    ballisticHold && selectedAmmo && ballisticsAmmo
+      ? exactBallisticHold(
+          ballisticsAmmo.ammo,
+          measuredDistanceM,
+          crosswindMs,
+          {
+            densityRatio,
+            powderTempC: temperatureC,
+            dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+          },
+        )
       : null;
   /** Kestrel LCD: AB fasit when paired, else reference solution with meter only. */
   const kestrelDisplayHold =
     abFasitHold ??
-    (hasKestrelInKit && selectedAmmo
-      ? (() => {
-          const solve = kestrelSolveAmmo(
-            selectedAmmo.ammo,
-            selectedAmmo.id,
-            kestrelProfiles,
-          );
-          return exactBallisticHold(
-            solve.ammo,
-            measuredDistanceM,
-            crosswindMs,
-            {
-              densityRatio,
-              powderTempC: temperatureC,
-              dvDtMpsPerC: solve.dvDtMpsPerC,
-            },
-          );
-        })()
+    (hasKestrelInKit && selectedAmmo && ballisticsAmmo
+      ? exactBallisticHold(
+          ballisticsAmmo.ammo,
+          measuredDistanceM,
+          crosswindMs,
+          {
+            densityRatio,
+            powderTempC: temperatureC,
+            dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+          },
+        )
       : null);
 
   if (replay && lastImpact) {
@@ -1520,7 +1661,12 @@ export function HuntShootView({
           >
             {ammoOptions.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.brand} {a.name} · {getInventoryQty(inventory, a.id)} igjen
+                {displayAmmoBrandName({
+                  ammoId: a.id,
+                  brand: a.brand,
+                  name: a.name,
+                })}{" "}
+                · {getInventoryQty(inventory, a.id)} igjen
               </option>
             ))}
           </select>
@@ -1555,18 +1701,14 @@ export function HuntShootView({
               dopeCard={dopeCard}
               ammoId={ammoId}
               rifleId={rifle?.id ?? null}
-              ammo={
-                selectedAmmo
-                  ? kestrelSolveAmmo(
-                      selectedAmmo.ammo,
-                      selectedAmmo.id,
-                      kestrelProfiles,
-                    ).ammo
-                  : null
-              }
+              ammo={ballisticsAmmo?.ammo ?? null}
               ammoLabel={
                 selectedAmmo
-                  ? `${selectedAmmo.brand} ${selectedAmmo.name}`
+                  ? displayAmmoBrandName({
+                      ammoId: selectedAmmo.id,
+                      brand: selectedAmmo.brand,
+                      name: selectedAmmo.name,
+                    })
                   : "Ammo"
               }
               clickUnit={scope?.scope.clickUnit ?? "MRAD"}
@@ -1576,27 +1718,20 @@ export function HuntShootView({
                 lrfItem ? `${lrfItem.brand} ${lrfItem.name}` : null
               }
               lrfElevClicks={
-                lrfItem?.lrf.hasOnboardBallistics && selectedAmmo
+                lrfItem?.lrf.hasOnboardBallistics && ballisticsAmmo
                   ? Math.abs(
                       mmAt100ToScopeClicks(
                         (ballisticHold ??
-                          (() => {
-                            const solve = kestrelSolveAmmo(
-                              selectedAmmo.ammo,
-                              selectedAmmo.id,
-                              kestrelProfiles,
-                            );
-                            return exactBallisticHold(
-                              solve.ammo,
-                              measuredDistanceM,
-                              crosswindMs,
-                              {
-                                densityRatio,
-                                powderTempC: temperatureC,
-                                dvDtMpsPerC: solve.dvDtMpsPerC,
-                              },
-                            );
-                          })()
+                          exactBallisticHold(
+                            ballisticsAmmo.ammo,
+                            measuredDistanceM,
+                            crosswindMs,
+                            {
+                              densityRatio,
+                              powderTempC: temperatureC,
+                              dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+                            },
+                          )
                         ).dialYMmAt100,
                         scope?.scope.clickUnit ?? "MRAD",
                       ),
@@ -1697,30 +1832,30 @@ export function HuntShootView({
             threshold={ENCOUNTER_NERVE.flushThreshold}
           />
         ) : null}
+        <ScopeOpticFit>
         <div className="scope-stage-optic-row">
           <div className="range-side-rail range-side-rail--focus">
             <span
               className={
                 focusUi.phase === "focused"
                   ? "range-side-rail-label is-focused"
-                  : focusUi.phase === "fatigued"
+                  : focusUi.phase === "settling" ||
+                      focusUi.phase === "fatigued"
                     ? "range-side-rail-label is-fatigued"
                     : "range-side-rail-label"
               }
             >
               {focusUi.phase === "focused"
-                ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)}s`
-                : focusUi.phase === "fatigued"
-                  ? "Utmatt"
-                  : "Fokus"}
+                ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)}s`
+                : focusUi.phase === "settling"
+                  ? "Settler…"
+                  : focusUi.phase === "fatigued"
+                    ? "Ustabil"
+                    : "Fokus"}
             </span>
             <div
               ref={focusBarRef}
-              className={
-                focusUi.phase === "fatigued"
-                  ? "range-focus-bar is-fatigued"
-                  : "range-focus-bar"
-              }
+              className="range-focus-bar"
               aria-hidden
             >
               <div ref={focusFillRef} className="range-focus-fill" />
@@ -1743,6 +1878,11 @@ export function HuntShootView({
                   : aimDragging
                     ? "scope-viewport is-aim-dragging"
                     : "scope-viewport"
+              }
+              style={
+                {
+                  ["--recoil-kick" as string]: recoilKick,
+                } as CSSProperties
               }
               onPointerDown={onAimPointerDown}
               onPointerMove={onAimPointerMove}
@@ -1884,6 +2024,7 @@ export function HuntShootView({
             </div>
           ) : null}
         </div>
+        </ScopeOpticFit>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button
@@ -1891,7 +2032,8 @@ export function HuntShootView({
             className={
               focusUi.phase === "focused"
                 ? "range-touch-btn range-touch-btn--focus is-active"
-                : focusUi.phase === "fatigued"
+                : focusUi.phase === "settling" ||
+                    focusUi.phase === "fatigued"
                   ? "range-touch-btn range-touch-btn--focus is-fatigued"
                   : "range-touch-btn range-touch-btn--focus"
             }

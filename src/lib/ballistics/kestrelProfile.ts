@@ -4,6 +4,7 @@
  */
 
 import type { AmmoSpec } from "@/lib/ammo/spec";
+import { groupEsMoaToEnvelopeMoa } from "@/lib/ballistics/dispersion";
 import {
   isWindMeterBallistics,
   preferWindMeterItemId,
@@ -119,10 +120,61 @@ export function kestrelSolveAmmo(
   ammo: AmmoSpec,
   ammoId: string,
   profiles: Record<string, KestrelGunProfile> | undefined,
+  real?: {
+    active?: boolean;
+    /** Player real-load overrides (MV @ 15 °C, BC, SD, dV/dT). */
+    profile?: {
+      v0AvgMps: number;
+      v0SdMps: number;
+      bc: number;
+      bcModel: "G1" | "G7";
+      dvDtMpsPerC: number;
+      weightGrains?: number;
+      groupMoaAvg?: number;
+      groupMoaBest?: number;
+    } | null;
+  },
 ): {
   ammo: AmmoSpec;
   dvDtMpsPerC: number | undefined;
 } {
+  if (real?.active && real.profile) {
+    const p = real.profile;
+    const groupAvg =
+      typeof p.groupMoaAvg === "number" && p.groupMoaAvg > 0
+        ? p.groupMoaAvg
+        : undefined;
+    const groupBest =
+      typeof p.groupMoaBest === "number" && p.groupMoaBest > 0
+        ? p.groupMoaBest
+        : undefined;
+    const envelopeAvg =
+      groupAvg != null ? groupEsMoaToEnvelopeMoa(groupAvg) : undefined;
+    const envelopeBest =
+      groupBest != null && envelopeAvg != null
+        ? Math.min(groupEsMoaToEnvelopeMoa(groupBest), envelopeAvg)
+        : envelopeAvg;
+    return {
+      ammo: {
+        ...ammo,
+        v0: p.v0AvgMps,
+        bc: p.bc,
+        bcModel: p.bcModel,
+        v0SigmaMps: Math.max(0, p.v0SdMps),
+        ...(typeof p.weightGrains === "number" && p.weightGrains > 0
+          ? { bulletWeightGrains: p.weightGrains }
+          : {}),
+        ...(envelopeAvg != null
+          ? {
+              maxAchievableMoa: envelopeAvg,
+              systemGroupMoaOverride: envelopeAvg,
+              systemGroupMoaBest: envelopeBest,
+            }
+          : {}),
+      },
+      dvDtMpsPerC: p.dvDtMpsPerC,
+    };
+  }
   const profile = profiles?.[ammoId];
   return {
     ammo: applyKestrelProfileToAmmo(ammo, profile),

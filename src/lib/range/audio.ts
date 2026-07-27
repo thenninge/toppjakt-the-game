@@ -1,4 +1,7 @@
 /** Range ambience and shot SFX under /public/music/range/. */
+
+import { readSfxVolume } from "@/lib/audio/volumes";
+
 export const RANGE_AUDIO = {
   enter: "/music/range/to%20gunrange.mp3",
   shotNoSilencer: "/music/range/shot%20no%20silencer.mp3",
@@ -13,13 +16,19 @@ const SILENT_SHOT_VOLUME = 0.18;
 const AFTER_SHOT_VOLUME = 0.5;
 const SILENT_AFTER_SHOT_VOLUME = 0.12;
 
+function scaledVolume(base: number): number {
+  return Math.min(1, base * readSfxVolume());
+}
+
 function playOneShot(
   src: string,
   volume: number,
   onEnded?: () => void,
 ): HTMLAudioElement | null {
+  const vol = scaledVolume(volume);
+  if (vol <= 0) return null;
   const audio = new Audio(src);
-  audio.volume = volume;
+  audio.volume = vol;
   if (onEnded) {
     audio.addEventListener("ended", onEnded, { once: true });
   }
@@ -29,9 +38,11 @@ function playOneShot(
 
 /** Start range entry audio; returns stop function (cancels if still playing). */
 export function startRangeAmbient(): () => void {
+  const vol = scaledVolume(AMBIENT_VOLUME);
+  if (vol <= 0) return () => {};
   const audio = new Audio(RANGE_AUDIO.enter);
   audio.loop = false;
-  audio.volume = AMBIENT_VOLUME;
+  audio.volume = vol;
   void audio.play().catch(() => {});
   return () => {
     audio.pause();

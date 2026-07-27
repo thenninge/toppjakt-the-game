@@ -18,6 +18,8 @@ import {
   BARREL_LENGTH_MAX_IN,
   BARREL_LENGTH_MIN_IN,
   BARREL_MAKERS,
+  BARREL_ORDER_ACTION_TRUEING_NOK,
+  BARREL_ORDER_CROWN_NOK,
   CARBON_CONTOURS,
   FLUTING_LABOUR_NOK,
   FLUTING_RETROFIT_NOK,
@@ -25,12 +27,14 @@ import {
   SAUER_200STR_RIFLE_ID,
   STAINLESS_MOA_BONUS,
   STAINLESS_PRICE_MULT,
+  barrelLengthV0Factor,
   barrelMaker,
   canCustomProfile,
   createDefaultCustomBarrelConfig,
   defaultSteelStations,
   estimateCustomBarrelMoa,
   estimateCustomBarrelWeightGrams,
+  factoryBarrelLengthIn,
   materialLabelNb,
   materialsForMaker,
   quoteCustomBarrelNok,
@@ -39,6 +43,7 @@ import {
   type CarbonContourId,
   type CustomBarrelConfig,
   type InstalledCustomBarrel,
+  type StoredCustomBarrel,
 } from "@/lib/customs/customBarrel";
 import {
   barrelHeatFromCustomConfig,
@@ -51,8 +56,10 @@ import {
 import {
   BARREL_REPLACE_NOK,
   BARREL_WEAR_END_SHOTS,
-  BARREL_WEAR_START_SHOTS,
+  BARREL_WEAR_START_CRMo,
+  BARREL_WEAR_START_STAINLESS,
   barrelWearLabelNb,
+  barrelWearMaterialFromCustom,
   barrelWearMoaScale,
 } from "@/lib/rifle/barrelWear";
 import { getShopItem } from "@/lib/shop/catalog";
@@ -71,15 +78,17 @@ type CbCustomsProps = {
   inventory: { itemId: string; qty: number }[];
   rifleRoundCounts?: Record<string, number>;
   customBarrels?: Record<string, InstalledCustomBarrel>;
+  spareBarrels?: StoredCustomBarrel[];
   onBuyService: (id: CustomsServiceId) => void;
   onOrderHomeLoads: (ammoId: string, rounds: number) => void;
-  /** Standard factory-style rebarrel — clears custom blank. */
+  /** Standard factory-style rebarrel — stashes custom blank in inventory. */
   onReplaceBarrel: (rifleId: string) => void;
   onInstallCustomBarrel: (
     rifleId: string,
     config: CustomBarrelConfig,
     priceNok: number,
   ) => void;
+  onReinstallSpareBarrel?: (rifleId: string, storageId: string) => void;
   /** Retrofit fluting on an unfluted custom steel pipe (one-time). */
   onFluteCustomBarrel?: (rifleId: string, priceNok: number) => void;
   onLeave: () => void;
@@ -92,10 +101,12 @@ export function CbCustoms({
   inventory,
   rifleRoundCounts = {},
   customBarrels = {},
+  spareBarrels = [],
   onBuyService,
   onOrderHomeLoads,
   onReplaceBarrel,
   onInstallCustomBarrel,
+  onReinstallSpareBarrel,
   onFluteCustomBarrel,
   onLeave,
 }: CbCustomsProps) {
@@ -115,8 +126,25 @@ export function CbCustoms({
   const rifleRounds = rifle
     ? getRifleRoundCount(rifleRoundCounts, rifle.id)
     : 0;
-  const rifleWearScale = barrelWearMoaScale(rifleRounds);
   const installed = rifle ? customBarrels[rifle.id] : undefined;
+  const wearMaterial = barrelWearMaterialFromCustom(installed);
+  const rifleWearScale = barrelWearMoaScale(rifleRounds, wearMaterial);
+  const factoryLengthIn = rifle ? factoryBarrelLengthIn(rifle.id) : 24;
+  const kitAmmo = useMemo(
+    () => kitItems.find(isAmmoItem) ?? null,
+    [kitItems],
+  );
+  const previewV0Factor = useMemo(() => {
+    if (!rifle) return 1;
+    return barrelLengthV0Factor(barrelConfig.lengthIn, factoryLengthIn);
+  }, [rifle, barrelConfig.lengthIn, factoryLengthIn]);
+  const previewV0Mps =
+    kitAmmo && rifle
+      ? Math.max(
+          50,
+          Math.round(kitAmmo.ammo.v0 * previewV0Factor),
+        )
+      : null;
   const stock = useMemo(
     () => kitItems.find(isStockItem) ?? null,
     [kitItems],
@@ -147,7 +175,9 @@ export function CbCustoms({
       return {
         id,
         caliber,
-        label: item ? `${item.name}` : caliber,
+        label: item
+          ? `${item.brand} ${item.name}`
+          : `CB Real loads ${caliber}`,
       };
     });
   }, []);
@@ -267,7 +297,7 @@ export function CbCustoms({
     onReplaceBarrel(rifle.id);
     setStatus(
       `Standard pipe på ${rifle.brand} ${rifle.name} — ${formatPermitFee(BARREL_REPLACE_NOK)}. Skuddteller nullstilt` +
-        (installed ? ", custom blank fjernet." : "."),
+        (installed ? ", custom pipe i lager." : "."),
     );
   }
 
@@ -282,8 +312,14 @@ export function CbCustoms({
     }
     onInstallCustomBarrel(rifle.id, barrelConfig, quote.totalNok);
     setStatus(
-      `Custom ${makerMeta.name} ${materialLabelNb(barrelConfig.material)} montert på ${rifle.brand} ${rifle.name} — ${formatPermitFee(quote.totalNok)}. Gulv ${previewMoa.toFixed(2)} MOA.`,
+      `Custom ${makerMeta.name} ${materialLabelNb(barrelConfig.material)} montert på ${rifle.brand} ${rifle.name} — ${formatPermitFee(quote.totalNok)}. Gulv ${previewMoa.toFixed(2)} MOA. Home loads må bestilles på nytt.`,
     );
+  }
+
+  function reinstallSpare(storageId: string) {
+    if (!rifle || !onReinstallSpareBarrel) return;
+    onReinstallSpareBarrel(rifle.id, storageId);
+    setStatus("Custom pipe montert fra lager — home loads må bestilles på nytt.");
   }
 
   return (
@@ -304,6 +340,7 @@ export function CbCustoms({
         {customsMods.bagrider ? " · CB Bagrider" : ""}
         {customsMods.actionTrueing ? " · action trueing" : ""}
         {customsMods.cheekRiser ? " · cheek riser" : ""}
+        {customsMods.buttpad ? " · soft buttpad" : ""}
         {customsMods.barrelCrown ? " · barrel crown" : ""}
       </p>
 
@@ -314,13 +351,13 @@ export function CbCustoms({
         </div>
         <p className="shop-row-note">
           Enkel fabrikk-erstatning — nullstiller skuddteller (
-          {BARREL_WEAR_START_SHOTS}–{BARREL_WEAR_END_SHOTS} skudd til 2× MOA).
-          Fjerner eventuell custom blank.
+          {BARREL_WEAR_START_CRMo}–{BARREL_WEAR_END_SHOTS} skudd til 2× MOA, CrMo).
+          Custom blank legges i pipelager (kastes ikke).
         </p>
         {rifle ? (
           <p className="shop-row-note">
             {rifle.brand} {rifle.name}: {rifleRounds} skudd ·{" "}
-            {rifleWearScale.toFixed(2)}× — {barrelWearLabelNb(rifleRounds)}
+            {rifleWearScale.toFixed(2)}× — {barrelWearLabelNb(rifleRounds, wearMaterial)}
             {installed
               ? ` · custom: ${barrelMaker(installed.maker).name} ${materialLabelNb(installed.material)} (${installed.averageBestAccuracyMoa.toFixed(2)} MOA)`
               : ""}
@@ -341,6 +378,41 @@ export function CbCustoms({
           Bytt til standard pipe
         </button>
       </div>
+
+      {rifle && spareBarrels.length > 0 ? (
+        <div className="cb-customs-card cb-customs-spares">
+          <div className="cb-customs-card-head">
+            <strong>Pipelager</strong>
+            <span>{spareBarrels.length} lagret</span>
+          </div>
+          <p className="shop-row-note">
+            Gamle custom piper beholdes — bytt tilbake uten ny bestilling.
+          </p>
+          <ul className="cb-customs-quote-list">
+            {spareBarrels.map((b) => {
+              const maker = barrelMaker(b.maker).name;
+              return (
+                <li key={b.storageId}>
+                  {maker} {materialLabelNb(b.material)} · {b.lengthIn}" ·{" "}
+                  {b.averageBestAccuracyMoa.toFixed(2)} MOA
+                  {onReinstallSpareBarrel ? (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        className="intro-button intro-button--inline"
+                        onClick={() => reinstallSpare(b.storageId)}
+                      >
+                        Monter
+                      </button>
+                    </>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       <ul className="cb-customs-list">
         {CUSTOMS_SERVICES.map((svc) => {
@@ -467,6 +539,14 @@ export function CbCustoms({
                 }
               />
             </label>
+            {rifle && kitAmmo ? (
+              <p className="shop-row-note">
+                Fabrikk {factoryLengthIn}" → est. v0{" "}
+                {Math.round(kitAmmo.ammo.v0)} m/s · valgt{" "}
+                {barrelConfig.lengthIn}" → ~{previewV0Mps} m/s (
+                {(previewV0Factor * 100).toFixed(1)} %)
+              </p>
+            ) : null}
 
             {barrelConfig.material === "carbon" ? (
               <label className="sheriff-field">
@@ -656,6 +736,13 @@ export function CbCustoms({
             </p>
           ) : null}
 
+          <p className="shop-row-note">
+            Inkl. barrel crown og action trueing. Home loads i lager nullstilles
+            — må bestilles på nytt etter pipebytte. Slitasje: CrMo/carbon{" "}
+            {BARREL_WEAR_START_CRMo} skudd, stainless {BARREL_WEAR_START_STAINLESS}{" "}
+            skudd før MOA stiger.
+          </p>
+
           <div className="cb-customs-quote">
             <p className="shop-row-note">
               Est. gulv {previewMoa.toFixed(2)} MOA · ~{previewWeight} g
@@ -682,6 +769,8 @@ export function CbCustoms({
                 <li>Fluting: {formatPermitFee(quote.flutingNok)}</li>
               ) : null}
               <li>Montering: {formatPermitFee(quote.installNok)}</li>
+              <li>Barrel crown: {formatPermitFee(quote.crownNok)}</li>
+              <li>Action trueing: {formatPermitFee(quote.trueingNok)}</li>
               {quote.sauerNok > 0 ? (
                 <li>Sauer 200 STR: {formatPermitFee(quote.sauerNok)}</li>
               ) : null}
@@ -711,13 +800,14 @@ export function CbCustoms({
 
       {customsMods.homeLoadsSetup ? (
         <div className="cb-customs-homeload">
-          <p className="intro-line intro-gift">Bestill home loads</p>
+          <p className="intro-line intro-gift">Bestill CB Real loads</p>
           <p className="shop-row-note">
             {HOME_LOAD_PER_ROUND_NOK},-/skudd · du har {ownedHomeLoadQty}{" "}
             patroner av valgt type
             {rifle
               ? ` · kit-rifle: ${rifle.brand} ${rifle.name}`
               : " · ingen rifle i kit (velg kaliber manuelt)"}
+            . Bruker dine data fra Hjem → CB Real loads.
           </p>
           <label className="shop-filter">
             Kaliber / last

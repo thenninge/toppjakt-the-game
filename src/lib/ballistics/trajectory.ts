@@ -144,6 +144,8 @@ export type TrajectoryOptions = {
   twistInches?: number;
   /** Atmosphere density / ICAO sea level. */
   densityRatio?: number;
+  /** Pipe length vs factory reference — scales nominal muzzle velocity. */
+  v0Scale?: number;
 };
 
 export type TrajectorySample = {
@@ -288,7 +290,10 @@ export function sampleTrajectory(
   const zeroDistanceM = opts.zeroDistanceM ?? DEFAULT_ZERO_DISTANCE_M;
   const twistInches = opts.twistInches ?? DEFAULT_TWIST_INCHES;
   const densityRatio = opts.densityRatio ?? 1;
-  const v0 = Math.max(50, ammo.v0);
+  const v0Scale = opts.v0Scale != null && Number.isFinite(opts.v0Scale)
+    ? Math.max(0.5, opts.v0Scale)
+    : 1;
+  const v0 = Math.max(50, ammo.v0 * v0Scale);
   const maxX = Math.max(distanceM, zeroDistanceM) + 25;
 
   const samples = integrateHorizontal(

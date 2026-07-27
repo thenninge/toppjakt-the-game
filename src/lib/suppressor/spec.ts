@@ -10,12 +10,18 @@
  * rifle sits when shooting.
  *
  * Sound reduction (dB, negative) drives post-shot bird flush for
- * ordinary supersonic ammo. Subsonic + suppressor stays silent (0 % flush).
+ * ordinary supersonic ammo, and scales recoil damping (softer kick /
+ * better scope-track for ettersøk). Subsonic + suppressor stays silent
+ * (0 % flush).
  *
  * Flush scale (linear):
  *   0 dB  → 100 % flush
  *  −40 dB →  65 % flush
  *   flushChance = 1 + soundReductionDb * (0.35 / 40)
+ *
+ * Recoil damping (linear):
+ *   0 dB  → ×1.0
+ *  −40 dB → ×1.5
  */
 
 export type SuppressorSpec = {
@@ -61,4 +67,14 @@ export function suppressorShotFlushChance(soundReductionDb: number): number {
 /** Stay chance = 1 − flush chance for a suppressed supersonic shot. */
 export function suppressorShotStayChance(soundReductionDb: number): number {
   return 1 - suppressorShotFlushChance(soundReductionDb);
+}
+
+/**
+ * Recoil-damping multiplier from sound reduction.
+ * 0 dB → 1.0 (no extra). −40 dB → 1.5. Linear in attenuation.
+ */
+export function suppressorRecoilDamping(soundReductionDb: number): number {
+  if (!Number.isFinite(soundReductionDb)) return 1;
+  const atten = Math.max(0, -soundReductionDb);
+  return 1 + (atten / SUPPRESSOR_FLUSH_REF_ATTENUATION_DB) * 0.5;
 }

@@ -17,8 +17,9 @@ import {
   normalizeKestrelProfiles,
   sanitizeKitWindMeters,
 } from "@/lib/ballistics/kestrelProfile";
+import { normalizeRealLoadProfiles, mergeRealLoadProfiles } from "@/lib/ballistics/realLoad";
 import { normalizeAwareHuntState } from "@/lib/aware/shotPairStorage";
-import { normalizeCustomBarrelsMap } from "@/lib/customs/customBarrel";
+import { normalizeCustomBarrelsMap, normalizeSpareBarrelsMap } from "@/lib/customs/customBarrel";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
 import {
   createJaktkort,
@@ -187,6 +188,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       : base.zeroingProfiles,
     rifleRoundCounts: normalizeRifleRoundCounts(raw.rifleRoundCounts),
     customBarrels: normalizeCustomBarrelsMap(raw.customBarrels),
+    spareBarrels: normalizeSpareBarrelsMap(raw.spareBarrels),
     shotLog: shotLog as PlayerStats["shotLog"],
     dopeCard: dopeCard as PlayerStats["dopeCard"],
     customsMods: normalizeCustomsMods(raw.customsMods),
@@ -221,6 +223,8 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     powderOpenGrains: normalizePowderOpenGrains(raw.powderOpenGrains),
     reloadingPiecesMigrated: true,
     kestrelProfiles: normalizeKestrelProfiles(raw.kestrelProfiles),
+    realLoadProfiles: normalizeRealLoadProfiles(raw.realLoadProfiles),
+    useRealDataInSimulation: raw.useRealDataInSimulation === true,
     awareHunt: normalizeAwareHuntState(raw.awareHunt),
     jegerprovePassed: (() => {
       if (raw.jegerprovePassed === true) return true;
@@ -274,10 +278,13 @@ export function loadPlayerSave(): PlayerSaveV1 | null {
 export function savePlayerStats(stats: PlayerStats): void {
   if (typeof window === "undefined") return;
   try {
+    // Always persist a normalized blob so Real data / new fields round-trip
+    // identically to cloud (PUT /api/game/save also normalizes).
+    const normalized = normalizePlayerStats(stats);
     const payload: PlayerSaveV1 = {
       version: SAVE_VERSION,
       savedAtMs: Date.now(),
-      stats,
+      stats: normalized,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {
@@ -304,9 +311,10 @@ function mergeMaxCountMap(
 }
 
 /**
- * Keep the best lifetime hunter metrics from two saves.
+ * Keep the best lifetime hunter metrics (and Real data) from two saves.
  * Used when local + cloud both exist so picking one whole save does not
- * wipe km walked / bagged birds / barrel shots recorded on the other device.
+ * wipe km walked / bagged birds / barrel shots / real-load profiles recorded
+ * on the other device.
  */
 export function mergeLifetimeProgress(
   primary: PlayerStats,
@@ -336,6 +344,12 @@ export function mergeLifetimeProgress(
       secondary.rifleRoundCounts,
     ),
     owlLastOfferedMilestone,
+    realLoadProfiles: mergeRealLoadProfiles(
+      primary.realLoadProfiles,
+      secondary.realLoadProfiles,
+    ),
+    useRealDataInSimulation:
+      primary.useRealDataInSimulation || secondary.useRealDataInSimulation,
   };
 }
 

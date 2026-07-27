@@ -104,6 +104,7 @@ export function shopItemFromHomeLot(lot: HomeLoadedLot): AmmoShopItem {
       caliber,
       projectileType: "OTM",
       v0: lot.measuredV0Mps ?? lot.estimatedV0Mps,
+      bulletWeightGrains: bulletGr,
       bc: 0.5,
       bcModel: "G7",
       damageFactor: 0.25,

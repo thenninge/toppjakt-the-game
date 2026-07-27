@@ -16,12 +16,13 @@ import {
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
 import type { HuntShotResultKind, HuntShotZone } from "@/lib/hunt/shoot";
+import {
+  barrelV0FactorForRifle,
+  type InstalledCustomBarrel,
+} from "@/lib/customs/customBarrel";
 import { milClicksToScopeClicks } from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
-import {
-  nearestDopeEntry,
-  type DopeCardEntry,
-} from "@/lib/player";
+import type { DopeCardEntry } from "@/lib/player";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
 
 /** Clean Losby field-range photo (no seat markers). */
@@ -41,6 +42,10 @@ export const FIELD_IMPACT_ENTRY_FEE_NOK = 150;
 export const FIELD_IMPACT_SHOT_BEARING_DEG = 0;
 
 /** Prefer DOPE when nearest row is within this many metres. */
+/**
+ * @deprecated IMPACT hold cards always use live ballistics (same solver as the
+ * shot). Old DOPE-within-50 m path inflated elev vs real drop.
+ */
 export const FIELD_IMPACT_DOPE_MAX_DELTA_M = 50;
 
 /** Species pool — each square can be tiur, orre, or ugle. */
@@ -200,40 +205,23 @@ function formatWindNb(scopeClicks: number): string {
 }
 
 /**
- * Hold slip for one stage: DOPE when close enough, else solver with wind + dV/dT.
+ * Hold slip for one stage — always live solver (wind + dV/dT + barrel v0).
+ * Same stack as IMPACT `sampleShotFromPoa` / `exactBallisticHold` on the shot.
+ * DOPE is ignored so a stale card cannot claim e.g. 28 klikk when drop is 22.
  */
 export function buildFieldImpactHoldCard(opts: {
   rifleId: string;
   ammoId: string;
   ammo: AmmoSpec;
   distanceM: number;
-  dopeCard: readonly DopeCardEntry[];
+  /** Kept for call-site compat; unused (live ballistics only). */
+  dopeCard?: readonly DopeCardEntry[];
   weather: DayWeather;
   clickUnit: ScopeClickUnit;
   kestrelProfiles?: Record<string, KestrelGunProfile>;
+  customBarrel?: InstalledCustomBarrel | null;
 }): FieldImpactHoldCard {
-  const dope = nearestDopeEntry(opts.dopeCard, {
-    rifleId: opts.rifleId,
-    ammoId: opts.ammoId,
-    distanceM: opts.distanceM,
-  });
-  if (
-    dope &&
-    Math.abs(dope.distanceM - opts.distanceM) <= FIELD_IMPACT_DOPE_MAX_DELTA_M
-  ) {
-    const elev = milClicksToScopeClicks(dope.elevationClicks, opts.clickUnit);
-    const wind = milClicksToScopeClicks(dope.windageClicks, opts.clickUnit);
-    return {
-      distanceM: opts.distanceM,
-      elevClicks: elev,
-      windClicks: wind,
-      elevLabel: formatElevNb(elev),
-      windLabel: formatWindNb(wind),
-      source: "DOPE",
-      dopeDistanceM: dope.distanceM,
-    };
-  }
-
+  void opts.dopeCard;
   const solve = kestrelSolveAmmo(
     opts.ammo,
     opts.ammoId,
@@ -249,6 +237,7 @@ export function buildFieldImpactHoldCard(opts: {
     densityRatio,
     powderTempC: opts.weather.live.temperatureC,
     dvDtMpsPerC: solve.dvDtMpsPerC,
+    v0Scale: barrelV0FactorForRifle(opts.rifleId, opts.customBarrel ?? null),
   });
   const elev = milClicksToScopeClicks(hold.elevationClicks, opts.clickUnit);
   const wind = milClicksToScopeClicks(hold.windageClicks, opts.clickUnit);

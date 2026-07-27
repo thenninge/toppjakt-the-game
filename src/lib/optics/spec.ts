@@ -45,7 +45,7 @@ export type ScopeSpec = {
   /**
    * Scope-circle diameter multiplier vs medium glass (Element = 1).
    * Premium (ZCO/Kahles/NF/SB/Razor) = {@link SCOPE_FOV_DIAMETER_PREMIUM}.
-   * At in-game 27×, premium circle shows ≈7 mrad centre→edge (was ~19.8×).
+   * At in-game 27×, premium circle shows ±7.2 mrad centre→edge (real ZCO).
    */
   fovDiameterScale?: number;
 };

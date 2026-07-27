@@ -1,6 +1,6 @@
 /**
- * Per-sprite visual scale (0–200 %). Relative sizing between bird images —
- * independent of distance.
+ * Per-sprite scale (0–200 %). 100 % = {@link TIUR_SPRITE_HEIGHT_MM} tall on
+ * glass (holdover matches ballistics). Lower/higher scales visual + mm together.
  *
  * Defaults: {@link BIRD_SPRITE_SCALE_CATALOG} (repo).
  * Admin edits: localStorage overrides until baked with «Lagre til repo».

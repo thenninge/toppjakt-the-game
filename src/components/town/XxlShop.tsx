@@ -48,6 +48,7 @@ import {
   SUPPRESSOR_CALM_WEIGHT_FACTOR,
   suppressorWeaponCalmGrams,
   suppressorShotFlushChance,
+  suppressorRecoilDamping,
 } from "@/lib/suppressor/spec";
 import {
   formatInventoryQuantity,
@@ -700,7 +701,7 @@ export function XxlShop({
                 {isSuppressor ? (
                   <span className="shop-row-ballistics">
                     {isSuppressorItem(item)
-                      ? `${item.suppressor.soundReductionDb} dB · flush ~${Math.round(suppressorShotFlushChance(item.suppressor.soundReductionDb) * 100)}% · `
+                      ? `${item.suppressor.soundReductionDb} dB · flush ~${Math.round(suppressorShotFlushChance(item.suppressor.soundReductionDb) * 100)}% · rekyl ×${suppressorRecoilDamping(item.suppressor.soundReductionDb).toFixed(2)} · `
                       : ""}
                     bære +{item.weightGrams} g · calm +
                     {suppressorWeaponCalmGrams(item.weightGrams)} g (×

@@ -16,6 +16,11 @@ import {
   mmAt100ToScopeClicks,
 } from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
+import {
+  playTurretClick,
+  startTurretBurst,
+  stopTurretBurst,
+} from "@/lib/range/turretAudio";
 
 /** Field HUD tabs — Shooter dials + optional Enviro / Chrono / Kestrel. */
 export type ScopeHudTab = "shooter" | "enviro" | "chrono" | "kestrel";
@@ -110,7 +115,22 @@ function useHoldRepeat(action: () => void, disabled: boolean) {
   const pointerIdRef = useRef<number | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
+  function start() {
+    if (disabled) return;
+    clear();
+    holdingRef.current = true;
+    playTurretClick();
+    actionRef.current();
+    timersRef.current.delay = window.setTimeout(() => {
+      startTurretBurst();
+      timersRef.current.interval = window.setInterval(() => {
+        actionRef.current();
+      }, 70);
+    }, 380);
+  }
+
   function clear() {
+    stopTurretBurst();
     if (timersRef.current.delay != null) {
       window.clearTimeout(timersRef.current.delay);
     }
@@ -129,18 +149,6 @@ function useHoldRepeat(action: () => void, disabled: boolean) {
       }
     }
     pointerIdRef.current = null;
-  }
-
-  function start() {
-    if (disabled) return;
-    clear();
-    holdingRef.current = true;
-    actionRef.current();
-    timersRef.current.delay = window.setTimeout(() => {
-      timersRef.current.interval = window.setInterval(() => {
-        actionRef.current();
-      }, 70);
-    }, 380);
   }
 
   useEffect(() => () => clear(), []);
@@ -368,7 +376,9 @@ function ShooterDrum({
        scaleDir flips which way face value changes for a given drag. */
     const clicksMoved = Math.trunc((-delta * scaleDir) / SHOOTER_TICK_PX);
     if (clicksMoved !== drag.lastEmitted) {
-      onFaceDelta(clicksMoved - drag.lastEmitted);
+      const step = clicksMoved - drag.lastEmitted;
+      if (step !== 0) playTurretClick();
+      onFaceDelta(step);
       drag.lastEmitted = clicksMoved;
     }
   }

@@ -2015,7 +2015,8 @@ export function AwareAppView({
                       <span>
                         {activePair.fleeObservation.compassLabel}
                         {activePair.fleeObservation.hasTriggercam ||
-                        activePair.fleeObservation.hasCamcorder
+                        activePair.fleeObservation.hasCamcorder ||
+                        activePair.fleeObservation.fromScopeRecoil
                           ? ` (${Math.round(
                               activePair.fleeObservation.observedBearingDeg,
                             )}°)`

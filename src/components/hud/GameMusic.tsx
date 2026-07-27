@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import {
+  readMusicVolume,
+  subscribeAudioVolumes,
+} from "@/lib/audio/volumes";
 import { getMusicTrack, type MusicScene } from "@/lib/music/scenes";
 
-const MUSIC_VOLUME = 0.45;
+const MUSIC_BASE_VOLUME = 0.45;
 const STORAGE_KEY = "toppjakt-music-enabled";
 
 export function readMusicEnabled(): boolean {
@@ -15,6 +19,10 @@ export function readMusicEnabled(): boolean {
 
 export function writeMusicEnabled(enabled: boolean): void {
   window.localStorage.setItem(STORAGE_KEY, String(enabled));
+}
+
+function effectiveMusicGain(): number {
+  return MUSIC_BASE_VOLUME * readMusicVolume();
 }
 
 type GameMusicProps = {
@@ -51,7 +59,7 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
           .webkitAudioContext;
       const ctx = new Ctx();
       const gain = ctx.createGain();
-      gain.gain.value = MUSIC_VOLUME;
+      gain.gain.value = effectiveMusicGain();
       gain.connect(ctx.destination);
       eng = {
         ctx,
@@ -78,6 +86,10 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
       }
       eng.source = null;
       eng.trackHref = null;
+    }
+
+    function applyGain(eng: MusicEngine, playing: boolean) {
+      eng.gain.gain.value = playing ? effectiveMusicGain() : 0;
     }
 
     async function loadBuffer(
@@ -109,7 +121,7 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
       }
       const href = new URL(trackPath, window.location.href).href;
       if (eng.trackHref === href && eng.source) {
-        eng.gain.gain.value = MUSIC_VOLUME;
+        applyGain(eng, true);
         return;
       }
       const buf = await loadBuffer(eng, href);
@@ -119,7 +131,7 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
       source.buffer = buf;
       source.loop = true;
       source.connect(eng.gain);
-      eng.gain.gain.value = MUSIC_VOLUME;
+      applyGain(eng, true);
       try {
         source.start(0);
       } catch {
@@ -137,14 +149,21 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
       }
     }
 
+    function onVolumeChange() {
+      const eng = engineRef.current;
+      if (!eng?.source) return;
+      applyGain(eng, true);
+    }
+
     window.addEventListener("pointerdown", unlockOnGesture);
     window.addEventListener("keydown", unlockOnGesture);
+    const unsubVolume = subscribeAudioVolumes(onVolumeChange);
 
     if (!enabled || !scene) {
       const eng = engineRef.current;
       if (eng) {
         stopSource(eng);
-        eng.gain.gain.value = 0;
+        applyGain(eng, false);
       }
     } else {
       const track = getMusicTrack(scene);
@@ -158,6 +177,7 @@ export function GameMusic({ scene, enabled }: GameMusicProps) {
 
     return () => {
       cancelled = true;
+      unsubVolume();
       window.removeEventListener("pointerdown", unlockOnGesture);
       window.removeEventListener("keydown", unlockOnGesture);
       // Do not close the AudioContext — keep buffers warm across scene toggles.

@@ -6,6 +6,9 @@
  * Stainless is +15% price and −0.02 MOA vs the same blank in CrMo.
  */
 
+import type { RifleSpec } from "@/lib/rifle/spec";
+import { CUSTOMS_SERVICES, type CustomsMods } from "@/lib/customs/spec";
+
 export type BarrelMakerId = "lothar" | "krieger" | "bartlein" | "proof";
 
 /** Steel blanks — profilable. */
@@ -53,6 +56,44 @@ export type InstalledCustomBarrel = CustomBarrelConfig & {
   /** Estimated blank + contour mass (g). */
   weightGrams: number;
 };
+
+/** Custom pipe removed from the rifle but kept in the player's inventory. */
+export type StoredCustomBarrel = InstalledCustomBarrel & {
+  storageId: string;
+};
+
+/** Factory pipe length when no custom blank is installed (inches). */
+export const DEFAULT_FACTORY_BARREL_LENGTH_IN = 24;
+
+/**
+ * Reference factory barrel lengths (inches). Shorter pipes → lower v0.
+ * Rifles not listed use {@link DEFAULT_FACTORY_BARREL_LENGTH_IN}.
+ */
+export const RIFLE_FACTORY_BARREL_LENGTH_IN: Record<string, number> = {
+  "rifle-sauer-200str": 20,
+  "rifle-rem-700-sa-65cm": 25.6,
+  "rifle-rem-700-sa-hansen-custom": 26,
+  "rifle-tikka-t3x-lite": 22,
+  "rifle-tikka-t3x-super-varminter": 24,
+  "rifle-tikka-t3x-tac-a1": 24,
+  "rifle-cz457": 20,
+  "rifle-cz455": 20,
+  "rifle-cz452": 20,
+  "rifle-jula-youth-22": 18,
+  "rifle-ruger-american-ranch-300blk": 16.5,
+  "rifle-ruger-american-predator": 22,
+  "rifle-bergara-b14-hmr": 24,
+  "rifle-bergara-b14-ridge": 22,
+  "rifle-howa-1500-hs": 22,
+  "rifle-browning-xbolt-pro": 24,
+  "rifle-blaser-r8": 23,
+  "rifle-ai-at-x": 24,
+  "rifle-carbonwolf-berillium": 22,
+  "rifle-magasinet-budget-308": 22,
+};
+
+/** v0 ∝ (length/ref)^exp — shorter pipe loses velocity. */
+export const BARREL_LENGTH_V0_EXPONENT = 0.4;
 
 export const SAUER_200STR_RIFLE_ID = "rifle-sauer-200str";
 /** Extra CNC/chambering work for Sauer 200 STR actions. */
@@ -142,7 +183,7 @@ export const CARBON_CONTOURS: {
 
 /** CNC labour to cut a custom steel contour. */
 export const CNC_PROFILE_LABOUR_NOK = 3_500;
-/** Install / headspace / crowning labour (always). */
+/** Install / headspace labour (crown + action trueing bundled separately). */
 export const BARREL_INSTALL_LABOUR_NOK = 2_500;
 /** Fluting labour (steel only) — one-time per pipe. */
 export const FLUTING_LABOUR_NOK = 2_800;
@@ -304,6 +345,8 @@ export function quoteCustomBarrelNok(
   profileNok: number;
   flutingNok: number;
   installNok: number;
+  crownNok: number;
+  trueingNok: number;
   sauerNok: number;
   subtotalBeforeStainless: number;
   stainlessExtraNok: number;
@@ -326,11 +369,19 @@ export function quoteCustomBarrelNok(
   }
 
   const installNok = BARREL_INSTALL_LABOUR_NOK;
+  const crownNok = BARREL_ORDER_CROWN_NOK;
+  const trueingNok = BARREL_ORDER_ACTION_TRUEING_NOK;
   const sauerNok =
     rifleId === SAUER_200STR_RIFLE_ID ? SAUER_200STR_BARREL_SURCHARGE_NOK : 0;
 
   const subtotalBeforeStainless =
-    blankNok + profileNok + flutingNok + installNok + sauerNok;
+    blankNok +
+    profileNok +
+    flutingNok +
+    installNok +
+    crownNok +
+    trueingNok +
+    sauerNok;
 
   let totalNok = subtotalBeforeStainless;
   let stainlessExtraNok = 0;
@@ -347,6 +398,8 @@ export function quoteCustomBarrelNok(
     profileNok,
     flutingNok,
     installNok,
+    crownNok,
+    trueingNok,
     sauerNok,
     subtotalBeforeStainless,
     stainlessExtraNok,
@@ -461,7 +514,112 @@ export function normalizeCustomBarrelsMap(
   return out;
 }
 
-import type { RifleSpec } from "@/lib/rifle/spec";
+function customsServicePriceNok(id: string): number {
+  return CUSTOMS_SERVICES.find((s) => s.id === id)?.priceNok ?? 0;
+}
+
+/** Included in every custom pipe order (not sold again separately). */
+export const BARREL_ORDER_CROWN_NOK = customsServicePriceNok("barrel_crown");
+export const BARREL_ORDER_ACTION_TRUEING_NOK =
+  customsServicePriceNok("action_trueing");
+
+export function factoryBarrelLengthIn(rifleId: string): number {
+  const len = RIFLE_FACTORY_BARREL_LENGTH_IN[rifleId];
+  return len != null ? clampLengthIn(len) : DEFAULT_FACTORY_BARREL_LENGTH_IN;
+}
+
+export function effectiveBarrelLengthIn(
+  rifleId: string,
+  custom: InstalledCustomBarrel | null | undefined,
+): number {
+  if (custom) return clampLengthIn(custom.lengthIn);
+  return factoryBarrelLengthIn(rifleId);
+}
+
+/** Multiplier on catalog / nominal muzzle velocity (1 @ factory length). */
+export function barrelLengthV0Factor(
+  lengthIn: number,
+  refLengthIn: number,
+): number {
+  const len = clampLengthIn(lengthIn);
+  const ref = clampLengthIn(refLengthIn);
+  if (ref <= 0) return 1;
+  const ratio = len / ref;
+  return Math.pow(Math.max(0.55, ratio), BARREL_LENGTH_V0_EXPONENT);
+}
+
+export function barrelV0FactorForRifle(
+  rifleId: string,
+  custom: InstalledCustomBarrel | null | undefined,
+): number {
+  const ref = factoryBarrelLengthIn(rifleId);
+  const len = effectiveBarrelLengthIn(rifleId, custom);
+  return barrelLengthV0Factor(len, ref);
+}
+
+export function scaledBarrelV0Mps(
+  nominalV0Mps: number,
+  rifleId: string,
+  custom: InstalledCustomBarrel | null | undefined,
+): number {
+  return Math.max(
+    50,
+    Math.round(nominalV0Mps * barrelV0FactorForRifle(rifleId, custom)),
+  );
+}
+
+export function customsModsAfterPipeInstall(mods: CustomsMods): CustomsMods {
+  return {
+    ...mods,
+    barrelCrown: true,
+    actionTrueing: true,
+  };
+}
+
+export function newStoredBarrelId(): string {
+  return `pipe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function toStoredCustomBarrel(
+  barrel: InstalledCustomBarrel,
+): StoredCustomBarrel {
+  return {
+    ...barrel,
+    storageId: newStoredBarrelId(),
+  };
+}
+
+export function normalizeStoredCustomBarrel(
+  raw: unknown,
+): StoredCustomBarrel | null {
+  const installed = normalizeInstalledCustomBarrel(raw);
+  if (!installed) return null;
+  const o = raw as Record<string, unknown>;
+  const storageId =
+    typeof o.storageId === "string" && o.storageId.trim()
+      ? o.storageId.trim()
+      : newStoredBarrelId();
+  return { ...installed, storageId };
+}
+
+export function normalizeSpareBarrelsMap(
+  raw: unknown,
+): Record<string, StoredCustomBarrel[]> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, StoredCustomBarrel[]> = {};
+  for (const [rifleId, value] of Object.entries(
+    raw as Record<string, unknown>,
+  )) {
+    if (typeof rifleId !== "string" || !rifleId || !Array.isArray(value)) {
+      continue;
+    }
+    const list = value
+      .map((entry) => normalizeStoredCustomBarrel(entry))
+      .filter((b): b is StoredCustomBarrel => b != null);
+    if (list.length > 0) out[rifleId] = list;
+  }
+  return out;
+}
 
 /** RifleSpec MOA with installed custom blank, else factory. */
 export function applyCustomBarrelMoa(

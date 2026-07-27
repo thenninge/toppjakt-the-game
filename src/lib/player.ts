@@ -3,6 +3,7 @@ import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
 import type { GameLang } from "@/lib/i18n/lang";
 import {
   EMPTY_CUSTOMS_MODS,
+  HOME_LOAD_AMMO_BY_CALIBER,
   type CustomsMods,
 } from "@/lib/customs/spec";
 import { applyScopeClickError } from "@/lib/optics/spec";
@@ -18,7 +19,14 @@ import {
   createDefaultLoadBenchRecipe,
   type LoadBenchRecipe,
 } from "@/lib/reloading/recipe";
-import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
+import type {
+  InstalledCustomBarrel,
+  StoredCustomBarrel,
+} from "@/lib/customs/customBarrel";
+import {
+  customsModsAfterPipeInstall,
+  toStoredCustomBarrel,
+} from "@/lib/customs/customBarrel";
 import {
   type ArmedLoadPlan,
 } from "@/lib/reloading/loadPhysics";
@@ -42,6 +50,7 @@ import { removeLoadDevRow } from "@/lib/reloading/loadDevTable";
 import { powderGrainsPerBox } from "@/lib/reloading/componentStock";
 import { isPowderItem } from "@/lib/reloading/components";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
+import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
@@ -216,6 +225,10 @@ export type PlayerStats = {
    * Per-rifle custom CNC barrel from CB Customs (replaces factory MOA floor).
    */
   customBarrels: Record<string, InstalledCustomBarrel>;
+  /**
+   * Removed custom pipes kept in inventory — can be re-installed on the same rifle.
+   */
+  spareBarrels: Record<string, StoredCustomBarrel[]>;
   /** Chronological range series log (newest first). */
   shotLog: ShotLogEntry[];
   /** Field DOPE card from range (newest first). */
@@ -258,6 +271,16 @@ export type PlayerStats = {
    * Kestrel AB gun profiles per ammo id (calibrated MV / BC / dV/dT).
    */
   kestrelProfiles: Record<string, KestrelGunProfile>;
+  /**
+   * Player-entered real ballistic loads (per rifle) for simulator / procedure
+   * training — MV, BC, dV/dT, SD and drop card @ standard atmosphere.
+   */
+  realLoadProfiles: RealLoadProfile[];
+  /**
+   * When true (and kit has ballistic LRF or Kestrel), CB Real loads drive
+   * simulation for CB Customs home-load ammo only.
+   */
+  useRealDataInSimulation: boolean;
   /**
    * Open hunt Aware skuddpar — synced so unfinished recoveries survive
    * across devices for the same terrain/jaktkort day.
@@ -761,6 +784,7 @@ export function createInitialStats(): PlayerStats {
     zeroingProfiles: {},
     rifleRoundCounts: {},
     customBarrels: {},
+    spareBarrels: {},
     shotLog: [],
     dopeCard: [],
     customsMods: { ...EMPTY_CUSTOMS_MODS },
@@ -777,6 +801,8 @@ export function createInitialStats(): PlayerStats {
     powderOpenGrains: {},
     reloadingPiecesMigrated: true,
     kestrelProfiles: {},
+    realLoadProfiles: [],
+    useRealDataInSimulation: false,
     awareHunt: null,
     jegerprovePassed: false,
     lang: "nb",
@@ -1696,6 +1722,8 @@ export function applyLoadKaboom(
 
   const customBarrels = { ...stats.customBarrels };
   delete customBarrels[rifleId];
+  const spareBarrels = { ...stats.spareBarrels };
+  delete spareBarrels[rifleId];
   const rifleRoundCounts = { ...stats.rifleRoundCounts };
   delete rifleRoundCounts[rifleId];
 
@@ -1704,6 +1732,7 @@ export function applyLoadKaboom(
     inventory,
     kit,
     customBarrels,
+    spareBarrels,
     rifleRoundCounts,
     zeroingProfiles: clearZeroingForRifle(stats.zeroingProfiles, rifleId),
     customsMods: { ...EMPTY_CUSTOMS_MODS },
@@ -1762,6 +1791,47 @@ export function resetRifleBarrel(
   return { ...stats, rifleRoundCounts: next };
 }
 
+/** Clear developed + CB catalog home loads after a pipe swap. */
+export function clearHomeLoadsOnBarrelSwap(stats: PlayerStats): PlayerStats {
+  const cbIds = new Set(Object.values(HOME_LOAD_AMMO_BY_CALIBER));
+  const inventory = stats.inventory.filter(
+    (e) => !isHomeLoadAmmoId(e.itemId) && !cbIds.has(e.itemId),
+  );
+  const kit = stats.kit.filter(
+    (id) => !isHomeLoadAmmoId(id) && !cbIds.has(id),
+  );
+  syncHomeLoadedLotCache([]);
+  return {
+    ...stats,
+    homeLoadedLots: [],
+    loadDevTable: createEmptyLoadDevTable(),
+    loadBook: createEmptyLoadBook(),
+    armedLoadPlan: null,
+    inventory,
+    kit,
+  };
+}
+
+/** Move the installed custom pipe into spare inventory. */
+export function stashInstalledCustomBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+): PlayerStats {
+  const current = stats.customBarrels[rifleId];
+  if (!current) return stats;
+  const customBarrels = { ...stats.customBarrels };
+  delete customBarrels[rifleId];
+  const list = [
+    ...(stats.spareBarrels[rifleId] ?? []),
+    toStoredCustomBarrel(current),
+  ];
+  return {
+    ...stats,
+    customBarrels,
+    spareBarrels: { ...stats.spareBarrels, [rifleId]: list },
+  };
+}
+
 /** Install a custom CNC barrel and zero wear on that rifle. */
 export function installCustomBarrel(
   stats: PlayerStats,
@@ -1770,15 +1840,63 @@ export function installCustomBarrel(
   priceNok: number,
 ): PlayerStats {
   if (!rifleId || priceNok < 0 || stats.balance < priceNok) return stats;
-  return resetRifleBarrel(
-    {
-      ...stats,
-      balance: stats.balance - priceNok,
-      customBarrels: {
-        ...stats.customBarrels,
-        [rifleId]: barrel,
+  const stashed = stashInstalledCustomBarrel(stats, rifleId);
+  return clearHomeLoadsOnBarrelSwap(
+    resetRifleBarrel(
+      {
+        ...stashed,
+        balance: stashed.balance - priceNok,
+        customsMods: customsModsAfterPipeInstall(stashed.customsMods),
+        customBarrels: {
+          ...stashed.customBarrels,
+          [rifleId]: barrel,
+        },
       },
-    },
+      rifleId,
+    ),
+  );
+}
+
+/** Re-install a spare custom pipe (no charge — already paid). */
+export function reinstallSpareCustomBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+  storageId: string,
+): PlayerStats {
+  if (!rifleId || !storageId) return stats;
+  const spares = stats.spareBarrels[rifleId] ?? [];
+  const pick = spares.find((b) => b.storageId === storageId);
+  if (!pick) return stats;
+
+  let nextSpares = spares.filter((b) => b.storageId !== storageId);
+  const current = stats.customBarrels[rifleId];
+  if (current) {
+    nextSpares = [...nextSpares, toStoredCustomBarrel(current)];
+  }
+
+  const { storageId: _id, ...barrel } = pick;
+  return clearHomeLoadsOnBarrelSwap(
+    resetRifleBarrel(
+      {
+        ...stats,
+        customBarrels: { ...stats.customBarrels, [rifleId]: barrel },
+        spareBarrels: { ...stats.spareBarrels, [rifleId]: nextSpares },
+      },
+      rifleId,
+    ),
+  );
+}
+
+/** Standard factory pipe — stashes custom blank if present. */
+export function reinstallFactoryBarrel(
+  stats: PlayerStats,
+  rifleId: string,
+  priceNok: number,
+): PlayerStats {
+  if (!rifleId || priceNok < 0 || stats.balance < priceNok) return stats;
+  const stashed = stashInstalledCustomBarrel(stats, rifleId);
+  return resetRifleBarrel(
+    { ...stashed, balance: stashed.balance - priceNok },
     rifleId,
   );
 }
@@ -1886,6 +2004,7 @@ export function sellInventoryOnFinn(
       : stats.kit;
   let rifleRoundCounts = stats.rifleRoundCounts;
   let customBarrels = stats.customBarrels;
+  let spareBarrels = stats.spareBarrels;
   if (
     item.category === "rifle" &&
     getInventoryQty(inventory, itemId) === 0
@@ -1898,6 +2017,10 @@ export function sellInventoryOnFinn(
       customBarrels = { ...customBarrels };
       delete customBarrels[itemId];
     }
+    if (spareBarrels[itemId] != null) {
+      spareBarrels = { ...spareBarrels };
+      delete spareBarrels[itemId];
+    }
   }
   return {
     stats: {
@@ -1906,6 +2029,7 @@ export function sellInventoryOnFinn(
       kit,
       rifleRoundCounts,
       customBarrels,
+      spareBarrels,
       balance: stats.balance + deal.payout,
     },
     payout: deal.payout,

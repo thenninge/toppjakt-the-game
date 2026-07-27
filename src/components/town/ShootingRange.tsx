@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
@@ -10,11 +10,20 @@ import {
   isBipodItem,
   isLrfItem,
   isMiscItem,
+  isMountItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
+  isSuppressorItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
+import {
+  computeFeltRecoil,
+  computeRecoilDamping,
+  recoilKickScale,
+  shoulderedWeaponWeightKg,
+} from "@/lib/range/recoil";
 import {
   isChronographMisc,
   isRangeFanMisc,
@@ -38,7 +47,6 @@ import {
 import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import {
   FOCUS_HOLD_MS,
-  SHOTS_PER_SERIES,
   TRIGGER_BAR_MS,
   caliberBulletDiameterMm,
   clampScopeZoom,
@@ -48,11 +56,13 @@ import {
   ensureAmmoAffinity,
   focusPhase,
   focusRemainingMs,
+  focusShouldAbort,
   measureGroup,
   RANGE_DISTANCE_M,
   RANGE_DISTANCES_M,
   RANGE_EASY_ZERO_SCALE,
   rollTriggerTargetMs,
+  sampleRealSystemGroupMoa,
   sampleShotFromPoa,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
@@ -85,7 +95,6 @@ import type { ScopeClickUnit } from "@/lib/optics/spec";
 import { scopeFovDiameterScale } from "@/lib/optics/spec";
 import {
   DEFAULT_ZERO_DISTANCE_M,
-  dropBelowLosMm,
 } from "@/lib/ballistics/trajectory";
 import { SeriesMeasureView } from "@/components/town/SeriesMeasureView";
 import { ShotLogView } from "@/components/town/ShotLogView";
@@ -93,6 +102,7 @@ import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -128,12 +138,23 @@ import {
   profileFromChronoSeries,
   type KestrelGunProfile,
 } from "@/lib/ballistics/kestrelProfile";
+import {
+  isRealDataActive,
+  realLoadForRifle,
+  resolveZeroingDropMm,
+  applyRealLoadToAmmo,
+  interpolateRealDropCm,
+  displayV0MpsForAmmo,
+  displayAmmoBrandName,
+  type RealLoadProfile,
+} from "@/lib/ballistics/realLoad";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { crosswindMs, type DayWeather } from "@/lib/weather/spec";
-import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
+import { barrelWearMaterialFromCustom, barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import {
   rifleSpecWithCustomBarrel,
+  barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
 import {
@@ -202,13 +223,14 @@ type ShootingRangeProps = {
   /** Calibrated Kestrel AB gun profiles (MV / BC / dV/dT). */
   kestrelProfiles?: Record<string, KestrelGunProfile>;
   onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
+  realLoadProfiles?: RealLoadProfile[];
+  useRealDataInSimulation?: boolean;
   /** Laderommet — load-test lane. */
   loadBenchRecipe?: LoadBenchRecipe | null;
   homeLoadedLots?: HomeLoadedLot[];
   armedLoadPlan?: ArmedLoadPlan | null;
   onArmHomeLot?: (lotId: string) => void;
   onDisarmLoadPlan?: () => void;
-  musicEnabled: boolean;
   favoriteKitIds?: string[];
   onPackFavoriteKit?: () => void;
   onRemoveFavoriteItem?: (itemId: string) => void;
@@ -223,11 +245,20 @@ type AimKeys = {
 };
 
 const AIM_SPEED_MM_PER_SEC = 22;
+/**
+ * Old ±80 mm @ 100 m ≈ paper-only. Zeroing/load-test need free pan past the
+ * board (look around the lane). ~35 mil each way @ 100 m.
+ */
+const ZEROING_AIM_LIMIT_MM_AT_100M = 3500;
 /** While holding F: slower arrows for fine reticle placement. */
 const FOCUS_AIM_SPEED_MULT = 0.28;
 /** Arrow tap while F held — fraction of the unfocused tap step. */
-const FOCUS_AIM_TAP_MULT = 0.3;
+const FOCUS_AIM_TAP_MULT = 0.15;
 const DEFAULT_SCOPE_ZOOM = 12;
+
+function zeroingAimLimitMm(distanceM: number): number {
+  return ZEROING_AIM_LIMIT_MM_AT_100M * (distanceM / RANGE_DISTANCE_M);
+}
 
 export function ShootingRange({
   kitItems,
@@ -257,12 +288,13 @@ export function ShootingRange({
   onPersistHomeLotMeasure,
   kestrelProfiles = {},
   onUpsertKestrelProfile,
+  realLoadProfiles = [],
+  useRealDataInSimulation = false,
   loadBenchRecipe = null,
   homeLoadedLots = [],
   armedLoadPlan = null,
   onArmHomeLot,
   onDisarmLoadPlan,
-  musicEnabled,
   favoriteKitIds = [],
   onPackFavoriteKit,
   onRemoveFavoriteItem,
@@ -284,9 +316,12 @@ export function ShootingRange({
   const barrelWearScale = useMemo(
     () =>
       rifle
-        ? barrelWearMoaScale(getRifleRoundCount(rifleRoundCounts, rifle.id))
+        ? barrelWearMoaScale(
+            getRifleRoundCount(rifleRoundCounts, rifle.id),
+            barrelWearMaterialFromCustom(customBarrels[rifle.id]),
+          )
         : 1,
-    [rifle, rifleRoundCounts],
+    [rifle, rifleRoundCounts, customBarrels],
   );
   const scope = useMemo(
     () => kitItems.find(isScopeItem) ?? null,
@@ -301,7 +336,11 @@ export function ShootingRange({
     [kitItems],
   );
   const suppressor = useMemo(
-    () => kitItems.find((i) => i.category === "suppressor") ?? null,
+    () => kitItems.find(isSuppressorItem) ?? null,
+    [kitItems],
+  );
+  const mount = useMemo(
+    () => kitItems.find(isMountItem) ?? null,
     [kitItems],
   );
   const ammoOptions = useMemo(
@@ -412,8 +451,8 @@ export function ShootingRange({
   const reticleUnit: ScopeClickUnit = scope?.scope.clickUnit ?? "MRAD";
   const [paperUnit, setPaperUnit] = useState<ScopeClickUnit>(reticleUnit);
   /**
-   * 10× helper: larger paper (undo ×0.1 true-angular) + 10 clicks per turret
-   * nudge — easier innskyting. Off for tracking-test.
+   * 10× helper: larger paper (undo ×0.1 true-angular) for readable innskyting.
+   * Turret stays 1 klikk per knepp. Off for tracking-test.
    */
   const [easy10x, setEasy10x] = useState(false);
   const target = getRangeTarget(targetId);
@@ -429,7 +468,7 @@ export function ShootingRange({
     "Hold F (fokus) → merke på avtrekksbar. Hold Space, slipp på merket.",
   );
   const [focusUi, setFocusUi] = useState<{
-    phase: "idle" | "focused" | "fatigued";
+    phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
   const [triggerUi, setTriggerUi] = useState<{
@@ -443,7 +482,6 @@ export function ShootingRange({
     focusFillRef,
     focusBarRef,
     paintFocusProgress,
-    setFocusBarFatigued,
     resetFocusProgress,
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
@@ -497,13 +535,21 @@ export function ShootingRange({
     startedAtMs: number | null;
   }>({ held: false, startedAtMs: null });
   const triggerPullRef = useRef(0);
+  /** CB Real loads: one sampled series envelope for the whole group. */
+  const realSeriesEnvelopeMoaRef = useRef<number | null>(null);
   const fireShotRef = useRef(() => {});
   const playShotRef = useRef<
     (opts: boolean | RangeShotAudioOptions) => void
   >(() => {});
   const consumeAmmoRef = useRef(onConsumeAmmo);
 
-  const { playShot } = useRangeAudio({ enabled: musicEnabled });
+  const kitIds = useMemo(() => kitItems.map((i) => i.id), [kitItems]);
+  const inventoryItemIds = useMemo(
+    () => inventory.map((e) => e.itemId),
+    [inventory],
+  );
+
+  const { playShot } = useRangeAudio({ enabled: true });
 
   const selectedAmmo = ammoOptions.find((a) => a.id === ammoId) ?? null;
   const ammoRemaining = selectedAmmo
@@ -517,7 +563,21 @@ export function ShootingRange({
     [shots],
   );
   const kestrelAmmoSolve = selectedAmmo
-    ? kestrelSolveAmmo(selectedAmmo.ammo, selectedAmmo.id, kestrelProfiles)
+    ? kestrelSolveAmmo(
+        selectedAmmo.ammo,
+        selectedAmmo.id,
+        kestrelProfiles,
+        {
+          active: isRealDataActive({
+            useRealDataInSimulation,
+            kitIds,
+            inventoryItemIds,
+            realLoad: realLoadForRifle(realLoadProfiles, rifle?.id),
+            ammoId: selectedAmmo.id,
+          }),
+          profile: realLoadForRifle(realLoadProfiles, rifle?.id),
+        },
+      )
     : null;
   const comboKey =
     rifle && scope && selectedAmmo
@@ -547,7 +607,48 @@ export function ShootingRange({
       }),
     [bipod, suppressor, miscCalmGrams, customsCalmMult],
   );
-
+  const recoilDamping = useMemo(
+    () =>
+      computeRecoilDamping({
+        soundReductionDb: suppressor?.suppressor.soundReductionDb ?? null,
+        customsMods: customsMods ?? null,
+      }),
+    [suppressor, customsMods],
+  );
+  const recoilKick = useMemo(() => {
+    if (!rifle || !selectedAmmo) return 1;
+    const grains = resolveBulletWeightGrains(
+      selectedAmmo.ammo,
+      `${selectedAmmo.brand} ${selectedAmmo.name}`,
+    );
+    const v0 =
+      selectedAmmo.ammo.v0 *
+      barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]);
+    const felt = computeFeltRecoil({
+      weaponCalm: calmFactor,
+      recoilDamping,
+      bulletWeightGrains: grains,
+      v0Mps: v0,
+      weaponWeightKg: shoulderedWeaponWeightKg({
+        rifleGrams: rifle.weightGrams,
+        scopeGrams: scope?.weightGrams,
+        mountGrams: mount?.weightGrams,
+        suppressorGrams: suppressor?.weightGrams,
+        bipodGrams: bipod?.weightGrams,
+      }),
+    });
+    return recoilKickScale(felt);
+  }, [
+    rifle,
+    scope,
+    mount,
+    suppressor,
+    bipod,
+    selectedAmmo,
+    calmFactor,
+    recoilDamping,
+    customBarrels,
+  ]);
   useEffect(() => {
     weaponCalmRef.current = calmFactor;
   }, [calmFactor]);
@@ -607,15 +708,8 @@ export function ShootingRange({
       );
       return;
     }
-    if (
-      shotsLenRef.current >= SHOTS_PER_SERIES ||
-      measurementRef.current
-    ) {
-      if (measurementRef.current) {
-        setStatus("Målt ferdig — start ny serie for flere skudd.");
-      } else {
-        setStatus("Serien er full (5). Mål serie eller start ny.");
-      }
+    if (measurementRef.current) {
+      setStatus("Målt ferdig — start ny serie for flere skudd.");
       return;
     }
     if (!consumeAmmoRef.current(selectedAmmo.id, rifle.id)) {
@@ -628,9 +722,6 @@ export function ShootingRange({
     }
 
     setShots((prev) => {
-      if (prev.length >= SHOTS_PER_SERIES) {
-        return prev;
-      }
       if (measurementRef.current) {
         return prev;
       }
@@ -642,29 +733,78 @@ export function ShootingRange({
       );
       if (rolled) onAffinitiesChange(map);
 
-      const w = wobbleRef.current;
+      const realLoad = realLoadForRifle(realLoadProfiles, rifle.id);
+      const usingReal = isRealDataActive({
+        useRealDataInSimulation,
+        kitIds,
+        inventoryItemIds,
+        realLoad,
+        ammoId: selectedAmmo.id,
+      });
+      const sim = kestrelSolveAmmo(
+        selectedAmmo.ammo,
+        selectedAmmo.id,
+        kestrelProfiles,
+        {
+          active: usingReal,
+          profile: realLoad,
+        },
+      );
+      // Measured MV is already for this rifle — do not re-scale by barrel length.
+      const simAmmo =
+        usingReal && realLoad
+          ? applyRealLoadToAmmo(selectedAmmo.ammo, realLoad)
+          : sim.ammo;
+      const simDvDt = usingReal && realLoad ? realLoad.dvDtMpsPerC : sim.dvDtMpsPerC;
       const dispersionInput = {
         rifle: rifleSpecWithCustomBarrel(
           rifle.rifle,
           customBarrels[rifle.id],
         ),
-        ammo: selectedAmmo.ammo,
+        ammo: simAmmo,
         stock: stock?.stock,
         affinity,
         customsMoaDelta,
         barrelWearScale,
-        mirageFactor: mirageStrengthRef.current,
+        mirageFactor: usingReal ? 0 : mirageStrengthRef.current,
+        barrelV0Factor: usingReal
+          ? 1
+          : barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]),
       };
-      const envelopeMoa = combinedDispersionMoa(dispersionInput);
-      const pull = triggerPullOffsetMm(
-        triggerPullRef.current * customsTriggerPullScale,
-        envelopeMoa,
-        distanceRef.current,
-      );
-      const poa = {
-        xMm: aimRef.current.x + w.x + pull.xMm,
-        yMm: aimRef.current.y + w.y + pull.yMm,
-      };
+      let poa: { xMm: number; yMm: number };
+      let seriesGroupEnvelopeMoa: number | null = null;
+      if (usingReal) {
+        // Measured groups already include shooter error — no wobble/trigger on POA.
+        poa = { xMm: aimRef.current.x, yMm: aimRef.current.y };
+        const mean = simAmmo.systemGroupMoaOverride;
+        const best = simAmmo.systemGroupMoaBest;
+        if (
+          mean != null &&
+          best != null &&
+          Number.isFinite(mean) &&
+          Number.isFinite(best)
+        ) {
+          if (realSeriesEnvelopeMoaRef.current == null) {
+            realSeriesEnvelopeMoaRef.current = sampleRealSystemGroupMoa(
+              mean,
+              best,
+            );
+          }
+          seriesGroupEnvelopeMoa = realSeriesEnvelopeMoaRef.current;
+        }
+      } else {
+        const w = wobbleRef.current;
+        const envelopeMoa = combinedDispersionMoa(dispersionInput);
+        const pull = triggerPullOffsetMm(
+          triggerPullRef.current * customsTriggerPullScale,
+          envelopeMoa,
+          distanceRef.current,
+        );
+        poa = {
+          xMm: aimRef.current.x + w.x + pull.xMm,
+          yMm: aimRef.current.y + w.y + pull.yMm,
+        };
+      }
       const shot = sampleShotFromPoa(
         poa,
         dispersionInput,
@@ -673,8 +813,20 @@ export function ShootingRange({
         {
           densityRatio,
           powderTempC: weather.live.temperatureC,
+          dvDtMpsPerC: simDvDt,
+          seriesGroupEnvelopeMoa,
+          skipMirage: usingReal,
         },
       );
+      // Drop card @ 0 °C wins over live physics when filled.
+      let impactXMm = shot.xMm;
+      let impactYMm = shot.yMm;
+      if (usingReal && realLoad) {
+        const tableCm = interpolateRealDropCm(realLoad, distanceRef.current);
+        if (tableCm != null) {
+          impactYMm = shot.yMm - shot.dropBelowLosMm + tableCm * 10;
+        }
+      }
       const clickErr = scope.scope.clickErrorPercent ?? 0;
       const realizedZero = zeroProfile
         ? effectiveZeroOffsetMm(
@@ -695,8 +847,8 @@ export function ShootingRange({
             ),
           };
       const impact: ShotImpact = {
-        xMm: shot.xMm + realizedZero.xMm,
-        yMm: shot.yMm + realizedZero.yMm,
+        xMm: impactXMm + realizedZero.xMm,
+        yMm: impactYMm + realizedZero.yMm,
         diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
         v0Mps: shot.v0,
       };
@@ -714,7 +866,7 @@ export function ShootingRange({
           ? ` · ${chronographKind === "xero" ? "Xero" : "TB"} ${shot.v0.toFixed(0)} m/s`
           : "";
       setStatus(
-        `Skudd ${prev.length + 1}/${SHOTS_PER_SERIES} · ${pullNote}${chronoNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
+        `Skudd ${prev.length + 1} · ${pullNote}${chronoNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
       );
       playShotRef.current({
         hasSuppressor: !!suppressor,
@@ -787,8 +939,7 @@ export function ShootingRange({
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
-    paintFocusProgress(1);
-    setFocusBarFatigued(false);
+    paintFocusProgress(1, 0);
     setTriggerUi({
       pending: false,
       targetPct: markMs / TRIGGER_BAR_MS,
@@ -876,14 +1027,14 @@ export function ShootingRange({
       endAimDrag(e.currentTarget, e.pointerId);
       return;
     }
-    const distFactor = distanceRef.current / RANGE_DISTANCE_M;
-    const aimLimit = 80 * distFactor;
+    const aimLimit = zeroingAimLimitMm(distanceRef.current);
     const delta = aimMmDeltaFromPointerDrag({
       dxClientPx: e.clientX - drag.startX,
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: targetPxPerMmRef.current,
       sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
+      viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
       drag.origX + delta.x,
@@ -932,12 +1083,8 @@ export function ShootingRange({
 
   function beginTrigger(nowMs: number) {
     if (triggerRef.current.held) return;
-    if (shotsLenRef.current >= SHOTS_PER_SERIES || measurementRef.current) {
-      setStatus(
-        measurementRef.current
-          ? "Målt ferdig — start ny serie."
-          : "Serien er full (5).",
-      );
+    if (measurementRef.current) {
+      setStatus("Målt ferdig — start ny serie.");
       return;
     }
     if (!focusRef.current.held || triggerMarkRef.current == null) {
@@ -962,8 +1109,7 @@ export function ShootingRange({
     if (!ready) return;
 
     function nudgeAim(dxMm: number, dyMm: number) {
-      const distFactor = distanceRef.current / RANGE_DISTANCE_M;
-      const aimLimit = 80 * distFactor;
+      const aimLimit = zeroingAimLimitMm(distanceRef.current);
       aimRef.current = clampAimMm(
         aimRef.current.x + dxMm,
         aimRef.current.y + dyMm,
@@ -1118,11 +1264,15 @@ export function ShootingRange({
         if (mr > 0) x += speed * mr;
         if (mu > 0) y -= speed * mu;
         if (md > 0) y += speed * md;
-        const aimLimit = 80 * distFactor;
+        const aimLimit = zeroingAimLimitMm(distanceRef.current);
         x = Math.max(-aimLimit, Math.min(aimLimit, x));
         y = Math.max(-aimLimit, Math.min(aimLimit, y));
       }
       aimRef.current = { x, y };
+
+      if (focusShouldAbort(focusRef.current, now)) {
+        endFocus("Fokus brutt etter 7 s — slipp F og start på nytt.");
+      }
 
       const calm = effectiveCalmWithFocus(
         weaponCalmRef.current,
@@ -1200,25 +1350,21 @@ export function ShootingRange({
         }
       }
 
-      const fPhase = focusPhase(focusRef.current, now);
-      if (fPhase === "focused") {
+      if (focusRef.current.held) {
+        const elapsed = now - focusRef.current.startedAtMs;
         paintFocusProgress(
           focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+          elapsed,
         );
-        setFocusBarFatigued(false);
-      } else if (fPhase === "fatigued") {
-        paintFocusProgress(1);
-        setFocusBarFatigued(true);
       } else {
         paintFocusProgress(0);
-        setFocusBarFatigued(false);
       }
 
       uiAccum += dt;
       if (uiAccum > 0.05) {
         uiAccum = 0;
         setFocusUi({
-          phase: fPhase,
+          phase: focusPhase(focusRef.current, now),
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
         setBarrelHeat01(barrelHeatStateRef.current.heat01);
@@ -1256,21 +1402,62 @@ export function ShootingRange({
   targetPxPerMmRef.current = target.pxPerMm;
   targetPxPerMmYRef.current = target.pxPerMmY ?? target.pxPerMm;
 
+  const activeRealLoad = realLoadForRifle(realLoadProfiles, rifle?.id);
+  const usingCbRealLoads = !!(
+    selectedAmmo &&
+    isRealDataActive({
+      useRealDataInSimulation,
+      kitIds,
+      inventoryItemIds,
+      realLoad: activeRealLoad,
+      ammoId: selectedAmmo.id,
+    })
+  );
+
   const ballisticHint = selectedAmmo
     ? (() => {
-        const d = dropBelowLosMm(selectedAmmo.ammo, distanceM);
-        const clicks = clicksForDropMm(d, distanceM);
-        if (distanceM <= DEFAULT_ZERO_DISTANCE_M || Math.abs(clicks) < 0.3) {
+        const solveAmmo = kestrelAmmoSolve?.ammo ?? selectedAmmo.ammo;
+        const dropMm = resolveZeroingDropMm({
+          ammo: solveAmmo,
+          distanceM,
+          realLoad: activeRealLoad,
+          usingReal: usingCbRealLoads,
+          densityRatio,
+        });
+        // 0.1 mil clicks — not mm-at-100 (that is 10× larger).
+        const clicks = clicksForDropMm(dropMm, distanceM);
+        if (distanceM <= DEFAULT_ZERO_DISTANCE_M || Math.abs(clicks) < 0.05) {
           return `Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ 0 klikk`;
         }
-        const mil = Math.abs(clicks / 10).toFixed(1);
-        return `Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ ${Math.round(clicks)} klikk (${mil} mil / ${(d / 10).toFixed(0)} cm)`;
+        const mil = (Math.abs(dropMm) / Math.max(1, distanceM)).toFixed(2);
+        const tag = usingCbRealLoads ? "CB Real loads · " : "";
+        const clicksTxt = Math.abs(clicks)
+          .toFixed(1)
+          .replace(".", ",");
+        return `${tag}Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ ${clicksTxt} klikk (${mil} mil / ${(dropMm / 10).toFixed(0)} cm)`;
       })()
     : null;
 
+  const cbRealDropRows =
+    usingCbRealLoads && selectedAmmo
+      ? RANGE_DISTANCES_M.map((distanceMRow) => {
+          const solveAmmo = kestrelAmmoSolve?.ammo ?? selectedAmmo.ammo;
+          const dropMm = resolveZeroingDropMm({
+            ammo: solveAmmo,
+            distanceM: distanceMRow,
+            realLoad: activeRealLoad,
+            usingReal: true,
+            densityRatio,
+          });
+          const mmAt100 = (dropMm * 100) / Math.max(1, distanceMRow);
+          const clicks = mmAt100 / ZERO_CLICK_MM;
+          return { distanceM: distanceMRow, dropMm, clicks };
+        })
+      : null;
+
   function measureSeries() {
-    if (shots.length < SHOTS_PER_SERIES) {
-      setStatus(`Trenger ${SHOTS_PER_SERIES} skudd før måling.`);
+    if (shots.length < 1) {
+      setStatus("Skyt minst ett skudd før måling.");
       return;
     }
     if (!rifle || !scope || !selectedAmmo) return;
@@ -1333,11 +1520,16 @@ export function ShootingRange({
   function newSeries() {
     setShots([]);
     setMeasurement(null);
+    realSeriesEnvelopeMoaRef.current = null;
     abortTrigger("");
     setStatus("Ny serie — hold Fokus, piltaster, hold Avtrekk.");
     wobblePhase.current = { a: Math.random() * 10, b: Math.random() * 10 };
     miragePhaseRef.current = createMiragePhase();
   }
+
+  useEffect(() => {
+    if (shots.length === 0) realSeriesEnvelopeMoaRef.current = null;
+  }, [shots.length]);
 
   /**
    * Write current series stats onto a hjemmeladd lot so the Load test table
@@ -1370,15 +1562,12 @@ export function ShootingRange({
   }
 
   function nudgeZero(axis: "x" | "y", deltaMm: number) {
-    const step =
-      easy10x && lane !== "tracking-test"
-        ? deltaMm * RANGE_EASY_ZERO_SCALE
-        : deltaMm;
+    // 10× only scales the paper/reticle — never the turret click size.
     if (axis === "x") {
-      setSessionZeroXMm((prev) => clampTurretMm(prev + step));
+      setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
       return;
     }
-    setSessionZeroYMm((prev) => clampTurretMm(prev + step));
+    setSessionZeroYMm((prev) => clampTurretMm(prev + deltaMm));
   }
 
   function saveCurrentZero() {
@@ -1475,6 +1664,7 @@ export function ShootingRange({
       <ShotLogView
         entries={shotLog}
         rifleRoundCounts={rifleRoundCounts}
+        customBarrels={customBarrels}
         onBack={() => setView("range")}
         backLabel="← Tilbake til skytebanen"
       />
@@ -1605,7 +1795,6 @@ export function ShootingRange({
         };
     return {
       shotCount: shots.length,
-      shotsNeeded: SHOTS_PER_SERIES,
       ...chrono,
       groupMoa: prelim && shots.length >= 2 ? prelim.groupMoa : null,
     };
@@ -1677,7 +1866,6 @@ export function ShootingRange({
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
             customsTriggerPullScale={customsTriggerPullScale}
-            musicEnabled={musicEnabled}
             onAffinitiesChange={onAffinitiesChange}
             onConsumeAmmo={onConsumeAmmo}
             onEnsureZeroing={onEnsureZeroing}
@@ -1711,7 +1899,6 @@ export function ShootingRange({
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
             customsTriggerPullScale={customsTriggerPullScale}
-            musicEnabled={musicEnabled}
             onAffinitiesChange={onAffinitiesChange}
             onConsumeAmmo={onConsumeAmmo}
             onEnsureZeroing={onEnsureZeroing}
@@ -1835,10 +2022,12 @@ export function ShootingRange({
 
   const focusLabel =
     focusUi.phase === "focused"
-      ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)} s`
-      : focusUi.phase === "fatigued"
-        ? "Pust — ustabil (slipp fokus, prøv igjen)"
-        : "Ingen fokus (hold F / knapp)";
+      ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+      : focusUi.phase === "settling"
+        ? `Settler inn… ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+        : focusUi.phase === "fatigued"
+          ? "Ustabil — slipp før 7 s / start på nytt"
+          : "Ingen fokus (hold F / knapp)";
 
   function handleFocusPointerDown(e: PointerEvent<HTMLButtonElement>) {
     e.preventDefault();
@@ -1955,6 +2144,34 @@ export function ShootingRange({
             {ballisticHint ? (
               <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
             ) : null}
+            {cbRealDropRows ? (
+              <div className="range-cb-real-drops" aria-label="CB Real loads dropp">
+                <p className="range-setup-label">CB Real loads — dropp</p>
+                <div className="range-cb-real-drops-grid">
+                  {cbRealDropRows.map((row) => (
+                    <div
+                      key={row.distanceM}
+                      className={
+                        row.distanceM === distanceM
+                          ? "range-cb-real-drop is-active"
+                          : "range-cb-real-drop"
+                      }
+                    >
+                      <span>{row.distanceM} m</span>
+                      <strong>
+                        {row.distanceM <= DEFAULT_ZERO_DISTANCE_M
+                          ? "0"
+                          : Math.round(row.clicks)}{" "}
+                        klikk
+                      </strong>
+                      <span className="shop-row-note">
+                        {(row.dropMm / 10).toFixed(0)} cm
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </header>
@@ -2068,13 +2285,13 @@ export function ShootingRange({
                 }
                 disabled={setupLocked}
                 aria-pressed={easy10x}
-                title="10× større blink og 10× klikksteg per turret-knepp"
+                title="10× større blink (turret forblir 1 klikk per knepp)"
                 onClick={() => {
                   setEasy10x((v) => {
                     const next = !v;
                     setStatus(
                       next
-                        ? "10× på — blink ×10, hvert knepp = 10 klikk."
+                        ? "10× på — blink ×10, turret 1 klikk per knepp."
                         : "10× av — ekte vinkel og 1 klikk per knepp.",
                     );
                     return next;
@@ -2089,9 +2306,8 @@ export function ShootingRange({
             </div>
             {easy10x ? (
               <p className="shop-row-note range-moa-paper-hint">
-                Blink ×{RANGE_EASY_ZERO_SCALE} (lesbar) og turret ×
-                {RANGE_EASY_ZERO_SCALE} klikk per knepp. Slå av for finjustering
-                i ekte mil.
+                Blink ×{RANGE_EASY_ZERO_SCALE} (lesbar). Turret = 1 klikk per
+                knepp.
               </p>
             ) : null}
           </div>
@@ -2184,14 +2400,24 @@ export function ShootingRange({
                   >
                     <span className="range-ammo-main">
                       <span className="range-ammo-name">
-                        {a.brand} {a.name}
+                        {displayAmmoBrandName({
+                          ammoId: a.id,
+                          brand: a.brand,
+                          name: a.name,
+                        })}
                       </span>
                       <span className="range-ammo-meta">
                         {a.ammo.caliber}
                         {" · "}
                         {a.ammo.projectileType}
                         {" · "}
-                        v0 {a.ammo.v0}
+                        v0{" "}
+                        {displayV0MpsForAmmo({
+                          ammoId: a.id,
+                          catalogV0: a.ammo.v0,
+                          rifleId: rifle?.id,
+                          realLoadProfiles,
+                        })}
                       </span>
                     </span>
                     <span
@@ -2220,7 +2446,7 @@ export function ShootingRange({
 
       <div className="range-status-strip">
         <span className="range-shot-count">
-          Serie {shots.length}/{SHOTS_PER_SERIES}
+          Serie {shots.length} skudd
         </span>
         <span className="shop-row-note">
           Zero {effectiveZero.xMm.toFixed(0)} mm side /{" "}
@@ -2257,34 +2483,6 @@ export function ShootingRange({
         <span className="shop-row-note">
           Zoom {zoom.toFixed(1)}× ({scope.scope.minZoom}–{scope.scope.maxZoom}×)
           — dra i glasset for å sikte · dra ringen (kl. 8→12→4)
-          {lane !== "tracking-test" ? (
-            <>
-              {" · "}
-              <button
-                type="button"
-                className={
-                  easy10x
-                    ? "range-easy10x-chip is-active"
-                    : "range-easy10x-chip"
-                }
-                aria-pressed={easy10x}
-                title="10× større blink og 10× klikksteg"
-                onClick={() => {
-                  setEasy10x((v) => {
-                    const next = !v;
-                    setStatus(
-                      next
-                        ? "10× på — blink ×10, hvert knepp = 10 klikk."
-                        : "10× av — ekte vinkel og 1 klikk per knepp.",
-                    );
-                    return next;
-                  });
-                }}
-              >
-                10×
-              </button>
-            </>
-          ) : null}
         </span>
       </div>
 
@@ -2447,13 +2645,15 @@ export function ShootingRange({
             className="range-barrel-heat"
             heat01={barrelHeat01}
           />
+          <ScopeOpticFit>
           <div className="scope-stage-optic-row">
             <div className="range-side-rail range-side-rail--focus">
               <span
                 className={
                   focusUi.phase === "focused"
                     ? "range-side-rail-label is-focused"
-                    : focusUi.phase === "fatigued"
+                    : focusUi.phase === "settling" ||
+                        focusUi.phase === "fatigued"
                       ? "range-side-rail-label is-fatigued"
                       : "range-side-rail-label"
                 }
@@ -2462,11 +2662,7 @@ export function ShootingRange({
               </span>
               <div
                 ref={focusBarRef}
-                className={
-                  focusUi.phase === "fatigued"
-                    ? "range-focus-bar is-fatigued"
-                    : "range-focus-bar"
-                }
+                className="range-focus-bar"
                 aria-hidden
               >
                 <div ref={focusFillRef} className="range-focus-fill" />
@@ -2503,6 +2699,11 @@ export function ShootingRange({
                     : aimDragging
                       ? "scope-viewport is-aim-dragging"
                       : "scope-viewport"
+                }
+                style={
+                  {
+                    ["--recoil-kick" as string]: recoilKick,
+                  } as CSSProperties
                 }
                 onPointerDown={onAimPointerDown}
                 onPointerMove={onAimPointerMove}
@@ -2614,6 +2815,34 @@ export function ShootingRange({
               />
             </div>
 
+            {lane !== "tracking-test" ? (
+              <div className="range-scope-10x-slot">
+                <button
+                  type="button"
+                  className={
+                    easy10x
+                      ? "range-easy10x-chip range-easy10x-by-scope is-active"
+                      : "range-easy10x-chip range-easy10x-by-scope"
+                  }
+                  aria-pressed={easy10x}
+                  title="10× større blink (turret forblir 1 klikk per knepp)"
+                  onClick={() => {
+                    setEasy10x((v) => {
+                      const next = !v;
+                      setStatus(
+                        next
+                          ? "10× på — blink ×10, turret 1 klikk per knepp."
+                          : "10× av — ekte vinkel og 1 klikk per knepp.",
+                      );
+                      return next;
+                    });
+                  }}
+                >
+                  10×
+                </button>
+              </div>
+            ) : null}
+
             <div className="range-side-rail range-side-rail--trigger">
               <span
                 className={
@@ -2642,6 +2871,7 @@ export function ShootingRange({
               </div>
             </div>
           </div>
+          </ScopeOpticFit>
 
           <div className="range-touch-controls" aria-label="Mobilkontroller">
             <button
@@ -2649,7 +2879,8 @@ export function ShootingRange({
               className={
                 focusUi.phase === "focused"
                   ? "range-touch-btn range-touch-btn--focus is-active"
-                  : focusUi.phase === "fatigued"
+                  : focusUi.phase === "settling" ||
+                      focusUi.phase === "fatigued"
                     ? "range-touch-btn range-touch-btn--focus is-fatigued"
                     : "range-touch-btn range-touch-btn--focus"
               }
@@ -2703,7 +2934,7 @@ export function ShootingRange({
         <button
           type="button"
           className="intro-button"
-          disabled={shots.length < SHOTS_PER_SERIES || !!measurement}
+          disabled={shots.length < 1 || !!measurement}
           onClick={measureSeries}
         >
           Mål serie

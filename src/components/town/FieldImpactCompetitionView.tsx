@@ -1,16 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import {
   isAmmoItem,
   isBipodItem,
   isMiscItem,
+  isMountItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
+  isSuppressorItem,
   type ShopItem,
 } from "@/lib/shop/types";
-import { miscKitWeaponCalmGrams } from "@/lib/misc/spec";
+import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
+import {
+  computeFeltRecoil,
+  computeRecoilDamping,
+  recoilKickScale,
+  shoulderedWeaponWeightKg,
+} from "@/lib/range/recoil";
+import { miscKitWeaponCalmGrams, miscKitMirageMult, isChamberCoolerMisc } from "@/lib/misc/spec";
 import {
   FOCUS_HOLD_MS,
   TRIGGER_BAR_MS,
@@ -22,14 +31,29 @@ import {
   ensureAmmoAffinity,
   focusPhase,
   focusRemainingMs,
+  focusShouldAbort,
   rollTriggerTargetMs,
   sampleShotFromPoa,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
-import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
+import {
+  createMiragePhase,
+  mirageStrengthAtTime,
+  type MiragePhase,
+} from "@/lib/range/mirage";
+import {
+  bumpBarrelHeatTarget,
+  createBarrelHeatState,
+  tickBarrelHeat,
+  barrelHeatForRifle,
+  mirageFromBarrelHeat,
+  type BarrelHeatState,
+} from "@/lib/range/barrelHeat";
+import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
@@ -38,10 +62,8 @@ import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
   clampTurretMm,
-  effectiveZeroOffsetMm,
   getInventoryQty,
   getRifleRoundCount,
-  zeroingKey,
   type DopeCardEntry,
   type InventoryEntry,
   type ZeroingProfile,
@@ -52,23 +74,25 @@ import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import type { DayWeather } from "@/lib/weather/spec";
 import { crosswindMs } from "@/lib/weather/spec";
-import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
+import { barrelWearMaterialFromCustom, barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import { kestrelSolveAmmo } from "@/lib/ballistics/kestrelProfile";
 import {
   birdNativePxPerMm,
+  birdMmToNativePx,
   birdScopeImageScale,
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
   formatHuntImpactOffsetMm,
-  SCOPE_VIEWPORT_REF_PX,
 } from "@/lib/hunt/shoot";
+import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import {
   aimMmDeltaFromPointerDrag,
 } from "@/lib/range/scopePointerAim";
 import {
   rifleSpecWithCustomBarrel,
+  barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
 import {
@@ -105,7 +129,6 @@ type FieldImpactCompetitionViewProps = {
   customsMoaDelta?: number;
   customsCalmMult?: number;
   customsTriggerPullScale?: number;
-  musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -127,33 +150,21 @@ type Keys = {
 
 type Phase = "lobby" | "shooting" | "result" | "aar";
 
-const LANDSCAPE_AIM_FOV_FRAC = 0.36;
 const FOCUS_AIM_SPEED_MULT = 0.14;
+/** Aim pan without landscape — same as HuntShootView bare-bird path. */
+const AIM_SPEED_MM_PER_SEC = 44;
+/**
+ * Holdover room in mils (centre→edge of useful pan).
+ * Old 120×(D/100) mm capped ~1.2 mil @ 400 m — blocked 2.8 mil holds.
+ */
+const IMPACT_AIM_LIMIT_MILS = 12;
 const DEFAULT_SCOPE_ZOOM = 12;
 const IMPACT_FLASH_MS = 900;
-/** Losby photo aspect ≈ 1024×606. */
-const DEFAULT_LAND_ASPECT = 1024 / 606;
 
-/** Aim (mm from vital) that puts landscape centre under the reticle. */
-function aimMmForLandscapeCenter(opts: {
-  nativeW: number;
-  nativeH: number;
-  spriteHeightMm: number;
-  widthPct: number;
-  landAspect: number;
-  birdXPct: number;
-  birdYPct: number;
-  vitalOff: { x: number; y: number };
-}): { x: number; y: number } {
-  const sceneW = opts.nativeW * (100 / Math.max(0.05, opts.widthPct));
-  const sceneH = sceneW / Math.max(0.25, opts.landAspect);
-  const ox = (opts.birdXPct / 100) * sceneW - sceneW / 2;
-  const oy = (opts.birdYPct / 100) * sceneH - sceneH / 2;
-  const pxPerMm = opts.nativeH / opts.spriteHeightMm;
-  return {
-    x: -(ox + opts.vitalOff.x) / pxPerMm,
-    y: -(oy + opts.vitalOff.y) / pxPerMm,
-  };
+/** Max aim offset (mm on target) so FFP holdover can reach the hold card. */
+function impactAimLimitMm(distanceM: number): number {
+  const d = Math.max(1, distanceM);
+  return IMPACT_AIM_LIMIT_MILS * d;
 }
 
 function speciesLabelNb(species: FieldImpactStageLayout["species"]): string {
@@ -167,7 +178,7 @@ export function FieldImpactCompetitionView({
   kitItems,
   inventory,
   ammoAffinities,
-  zeroingProfiles,
+  zeroingProfiles: _zeroingProfiles,
   dopeCard,
   rifleRoundCounts = {},
   customBarrels = {},
@@ -176,7 +187,6 @@ export function FieldImpactCompetitionView({
   customsMoaDelta = 0,
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
-  musicEnabled,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -188,17 +198,21 @@ export function FieldImpactCompetitionView({
   const barrelWearScale = useMemo(
     () =>
       rifle
-        ? barrelWearMoaScale(getRifleRoundCount(rifleRoundCounts, rifle.id))
+        ? barrelWearMoaScale(
+            getRifleRoundCount(rifleRoundCounts, rifle.id),
+            barrelWearMaterialFromCustom(customBarrels[rifle.id]),
+          )
         : 1,
-    [rifle, rifleRoundCounts],
+    [rifle, rifleRoundCounts, customBarrels],
   );
   const scope = useMemo(() => kitItems.find(isScopeItem) ?? null, [kitItems]);
   const stock = useMemo(() => kitItems.find(isStockItem) ?? null, [kitItems]);
   const bipod = useMemo(() => kitItems.find(isBipodItem) ?? null, [kitItems]);
   const suppressor = useMemo(
-    () => kitItems.find((i) => i.category === "suppressor") ?? null,
+    () => kitItems.find(isSuppressorItem) ?? null,
     [kitItems],
   );
+  const mount = useMemo(() => kitItems.find(isMountItem) ?? null, [kitItems]);
   const ammoOptions = useMemo(() => kitItems.filter(isAmmoItem), [kitItems]);
   const ready = !!(rifle && scope && ammoOptions.length > 0);
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
@@ -218,7 +232,6 @@ export function FieldImpactCompetitionView({
     null,
   );
   const [stageIndex, setStageIndex] = useState(0);
-  const [landAspect, setLandAspect] = useState(DEFAULT_LAND_ASPECT);
   const [shotsFired, setShotsFired] = useState(0);
   const [startMs, setStartMs] = useState<number | null>(null);
   const [elapsedUiMs, setElapsedUiMs] = useState(0);
@@ -236,7 +249,7 @@ export function FieldImpactCompetitionView({
     "5 feltfigurer på Losby · tilfeldig sete + tiur/orre/ugle · kun tid.",
   );
   const [focusUi, setFocusUi] = useState<{
-    phase: "idle" | "focused" | "fatigued";
+    phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
   const [triggerUi, setTriggerUi] = useState<{
@@ -249,11 +262,6 @@ export function FieldImpactCompetitionView({
   const ammoRemaining = selectedAmmo
     ? getInventoryQty(inventory, selectedAmmo.id)
     : 0;
-  const comboKey =
-    rifle && scope && selectedAmmo
-      ? zeroingKey(rifle.id, scope.id, selectedAmmo.id)
-      : null;
-  const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
   const clickUnit = scope?.scope.clickUnit ?? "MRAD";
 
   const stage = fieldImpactStageFromLayout(roundLayout, stageIndex);
@@ -263,8 +271,6 @@ export function FieldImpactCompetitionView({
   );
   const distanceM = stage?.distanceM ?? 100;
   const birdWidthPct = stage?.widthPct ?? 2;
-  const landscapeFocusX = stage?.x ?? 50;
-  const landscapeFocusY = stage?.y ?? 50;
 
   const holdCard: FieldImpactHoldCard | null = useMemo(() => {
     if (!rifle || !selectedAmmo || !stage) return null;
@@ -277,6 +283,7 @@ export function FieldImpactCompetitionView({
       weather,
       clickUnit,
       kestrelProfiles,
+      customBarrel: customBarrels[rifle.id] ?? null,
     });
   }, [
     rifle,
@@ -286,6 +293,7 @@ export function FieldImpactCompetitionView({
     weather,
     clickUnit,
     kestrelProfiles,
+    customBarrels,
   ]);
 
   const lobbyCards = useMemo(() => {
@@ -300,9 +308,10 @@ export function FieldImpactCompetitionView({
         weather,
         clickUnit,
         kestrelProfiles,
+        customBarrel: customBarrels[rifle.id] ?? null,
       }),
     );
-  }, [rifle, selectedAmmo, dopeCard, weather, clickUnit, kestrelProfiles]);
+  }, [rifle, selectedAmmo, dopeCard, weather, clickUnit, kestrelProfiles, customBarrels]);
 
   const calmFactor = useMemo(
     () =>
@@ -318,6 +327,90 @@ export function FieldImpactCompetitionView({
       }),
     [bipod, suppressor, kitItems, customsCalmMult],
   );
+  const recoilKick = useMemo(() => {
+    if (!rifle || !selectedAmmo) return 1;
+    const damping = computeRecoilDamping({
+      soundReductionDb: suppressor?.suppressor.soundReductionDb ?? null,
+    });
+    const grains = resolveBulletWeightGrains(
+      selectedAmmo.ammo,
+      `${selectedAmmo.brand} ${selectedAmmo.name}`,
+    );
+    const v0 =
+      selectedAmmo.ammo.v0 *
+      barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]);
+    const felt = computeFeltRecoil({
+      weaponCalm: calmFactor,
+      recoilDamping: damping,
+      bulletWeightGrains: grains,
+      v0Mps: v0,
+      weaponWeightKg: shoulderedWeaponWeightKg({
+        rifleGrams: rifle.weightGrams,
+        scopeGrams: scope?.weightGrams,
+        mountGrams: mount?.weightGrams,
+        suppressorGrams: suppressor?.weightGrams,
+        bipodGrams: bipod?.weightGrams,
+      }),
+    });
+    return recoilKickScale(felt);
+  }, [
+    rifle,
+    scope,
+    mount,
+    suppressor,
+    bipod,
+    selectedAmmo,
+    calmFactor,
+    customBarrels,
+  ]);
+
+  const hasChamberCooler = useMemo(
+    () =>
+      inventory.some(
+        (e) => e.itemId === "misc-magnetospeed-riflekuhl" && e.qty > 0,
+      ) ||
+      kitItems.some((i) => isMiscItem(i) && isChamberCoolerMisc(i.misc)),
+    [inventory, kitItems],
+  );
+  const chamberCoolMult = hasChamberCooler ? 2 : 1;
+  const chamberCoolMultRef = useRef(chamberCoolMult);
+  chamberCoolMultRef.current = chamberCoolMult;
+  const gearMirageMult = useMemo(
+    () =>
+      miscKitMirageMult(
+        kitItems.filter(isMiscItem).map((i) => i.misc),
+        !!suppressor,
+      ),
+    [kitItems, suppressor],
+  );
+  const [barrelHeat01, setBarrelHeat01] = useState(0);
+  const barrelHeatStateRef = useRef<BarrelHeatState>(createBarrelHeatState());
+  const barrelHeatProfile = useMemo(
+    () =>
+      barrelHeatForRifle(
+        rifle?.id,
+        rifle ? customBarrels[rifle.id] : undefined,
+      ),
+    [rifle, customBarrels],
+  );
+  const barrelHeatProfileRef = useRef(barrelHeatProfile);
+  barrelHeatProfileRef.current = barrelHeatProfile;
+  const mirageOptsRef = useRef({
+    fanOn: false,
+    hasSuppressor: false,
+    gearMirageMult: 1,
+  });
+  mirageOptsRef.current = {
+    fanOn: false,
+    hasSuppressor: !!suppressor,
+    gearMirageMult,
+  };
+  const mirageStrengthRef = useRef(0);
+  const miragePhaseRef = useRef<MiragePhase>(createMiragePhase());
+  const weatherTempRef = useRef(weather.live.temperatureC);
+  weatherTempRef.current = weather.live.temperatureC;
+  const mirageSceneRef = useRef<HTMLDivElement>(null);
+  const mirageDisplaceRef = useRef<SVGFEDisplacementMapElement>(null);
 
   const keysRef = useRef<Keys>({
     up: false,
@@ -359,18 +452,6 @@ export function FieldImpactCompetitionView({
   geomRef.current = shotGeom;
   const distanceRef = useRef(distanceM);
   distanceRef.current = distanceM;
-  const birdSeatRef = useRef({
-    x: landscapeFocusX,
-    y: landscapeFocusY,
-    widthPct: birdWidthPct,
-  });
-  birdSeatRef.current = {
-    x: landscapeFocusX,
-    y: landscapeFocusY,
-    widthPct: Math.max(0.05, birdWidthPct),
-  };
-  const landAspectRef = useRef(landAspect);
-  landAspectRef.current = landAspect;
   const stageIndexRef = useRef(0);
   stageIndexRef.current = stageIndex;
   const shotsFiredRef = useRef(0);
@@ -392,10 +473,8 @@ export function FieldImpactCompetitionView({
   barrelWearScaleRef.current = barrelWearScale;
   const roundLayoutRef = useRef(roundLayout);
   roundLayoutRef.current = roundLayout;
-  /** False until the player pans — allows re-center when landAspect loads. */
-  const hasPannedRef = useRef(false);
 
-  const { playShot } = useRangeAudio({ enabled: musicEnabled });
+  const { playShot } = useRangeAudio({ enabled: true });
   const {
     fillRef: triggerFillRef,
     paintTriggerProgress,
@@ -405,7 +484,6 @@ export function FieldImpactCompetitionView({
     focusFillRef,
     focusBarRef,
     paintFocusProgress,
-    setFocusBarFatigued,
     resetFocusProgress,
   } = useFocusBarPaint();
 
@@ -444,44 +522,17 @@ export function FieldImpactCompetitionView({
     };
   }, []);
 
-  function aimForStageLayout(
-    st: FieldImpactStageLayout,
-    aspect: number,
-  ): { x: number; y: number } {
-    const g = birdShotGeom(st.spriteId);
-    const vitalOff = birdVitalOffsetFromImageCenterPx(g);
-    return aimMmForLandscapeCenter({
-      nativeW: g.nativeW,
-      nativeH: g.nativeH,
-      spriteHeightMm: g.spriteHeightMm,
-      widthPct: st.widthPct,
-      landAspect: aspect,
-      birdXPct: st.x,
-      birdYPct: st.y,
-      vitalOff,
-    });
-  }
-
   /** Keep rAF / fireShot refs aligned with a stage before React re-renders. */
   function applyStageToLiveRefs(st: FieldImpactStageLayout) {
-    const g = birdShotGeom(st.spriteId);
-    geomRef.current = g;
+    geomRef.current = birdShotGeom(st.spriteId);
     distanceRef.current = st.distanceM;
-    birdSeatRef.current = {
-      x: st.x,
-      y: st.y,
-      widthPct: Math.max(0.05, st.widthPct),
-    };
   }
 
-  /** Re-center POA on vital when landscape aspect resolves (same as hunt). */
-  useEffect(() => {
-    if (phase !== "shooting" || !stage) return;
-    if (hasPannedRef.current) return;
-    const aim0 = aimForStageLayout(stage, landAspect);
+  function resetAimToVital() {
+    const aim0 = { x: 0, y: 0 };
     setAimMm(aim0);
     aimRef.current = aim0;
-  }, [phase, stage, landAspect]);
+  }
 
   function startRound() {
     if (!ready || !selectedAmmo || !rifle) return;
@@ -497,9 +548,7 @@ export function FieldImpactCompetitionView({
     const first = layout.stages[0]!;
     applyStageToLiveRefs(first);
     roundLayoutRef.current = layout;
-    const aim0 = aimForStageLayout(first, landAspectRef.current);
     const now = performance.now();
-    hasPannedRef.current = false;
     setRoundLayout(layout);
     setPhase("shooting");
     setStageIndex(0);
@@ -512,11 +561,14 @@ export function FieldImpactCompetitionView({
     setAarIndex(0);
     setLastImpact(null);
     setImpactFlash(false);
-    setAimMm(aim0);
-    aimRef.current = aim0;
+    resetAimToVital();
     advancingRef.current = false;
     setSessionZeroXMm(0);
     setSessionZeroYMm(0);
+    barrelHeatStateRef.current = createBarrelHeatState();
+    miragePhaseRef.current = createMiragePhase();
+    mirageStrengthRef.current = 0;
+    setBarrelHeat01(0);
     setStatus(
       `Hold 1/5 · ${speciesLabelNb(first.species)} @ ${first.distanceM} m — dial etter kortet.`,
     );
@@ -562,6 +614,11 @@ export function FieldImpactCompetitionView({
       affinity,
       customsMoaDelta,
       barrelWearScale: barrelWearScaleRef.current,
+      mirageFactor: mirageStrengthRef.current,
+      barrelV0Factor: barrelV0FactorForRifle(
+        rifle.id,
+        customBarrels[rifle.id],
+      ),
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const dist = distanceRef.current;
@@ -577,7 +634,12 @@ export function FieldImpactCompetitionView({
     const shot = sampleShotFromPoa(poa, dispersionInput, dist, Math.random, {
       densityRatio: densityRef.current,
       powderTempC: powderTempRef.current,
+      dvDtMpsPerC: solve.dvDtMpsPerC,
     });
+    const barrelV0 = barrelV0FactorForRifle(
+      rifle.id,
+      customBarrels[rifle.id],
+    );
     const windMm = exactBallisticHold(
       solve.ammo,
       dist,
@@ -586,27 +648,22 @@ export function FieldImpactCompetitionView({
         densityRatio: densityRef.current,
         powderTempC: powderTempRef.current,
         dvDtMpsPerC: solve.dvDtMpsPerC,
+        v0Scale: barrelV0,
       },
     ).windDriftMm;
     const clickErr = scope.scope.clickErrorPercent ?? 0;
-    const realizedZero = zeroProfile
-      ? effectiveZeroOffsetMm(
-          zeroProfile,
-          sessionZeroXMm,
-          sessionZeroYMm,
-          dist,
-          { clickErrorPercent: clickErr },
-        )
-      : {
-          xMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroXMm, clickErr),
-            dist,
-          ),
-          yMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroYMm, clickErr),
-            dist,
-          ),
-        };
+    // Hold card assumes a perfect 100 m zero. Ignore profile base/saved so
+    // leftover range dials cannot turn "28 Ned" into a ~22-click real need.
+    const realizedZero = {
+      xMm: angularMmAtDistance(
+        applyScopeClickError(sessionZeroXMm, clickErr),
+        dist,
+      ),
+      yMm: angularMmAtDistance(
+        applyScopeClickError(sessionZeroYMm, clickErr),
+        dist,
+      ),
+    };
     const impact = {
       xMm: shot.xMm + realizedZero.xMm + windMm,
       yMm: shot.yMm + realizedZero.yMm,
@@ -617,6 +674,11 @@ export function FieldImpactCompetitionView({
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
+
+    barrelHeatStateRef.current = bumpBarrelHeatTarget(
+      barrelHeatStateRef.current,
+      barrelHeatProfileRef.current,
+    );
 
     playShotRef.current({
       hasSuppressor: !!suppressor,
@@ -716,16 +778,11 @@ export function FieldImpactCompetitionView({
       setLastImpact(null);
       if (next) {
         applyStageToLiveRefs(next);
-        hasPannedRef.current = false;
-        const aimNext = aimForStageLayout(next, landAspectRef.current);
-        setAimMm(aimNext);
-        aimRef.current = aimNext;
+        resetAimToVital();
         setStatus(
           `Hold ${nextStage + 1}/${FIELD_IMPACT_STAGE_COUNT} · ${speciesLabelNb(next.species)} @ ${next.distanceM} m — dial etter kortet.`,
         );
       } else {
-        setAimMm({ x: 0, y: 0 });
-        aimRef.current = { x: 0, y: 0 };
         setStatus(
           `Hold ${nextStage + 1}/${FIELD_IMPACT_STAGE_COUNT} · dial etter kortet.`,
         );
@@ -747,8 +804,7 @@ export function FieldImpactCompetitionView({
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
-    paintFocusProgress(1);
-    setFocusBarFatigued(false);
+    paintFocusProgress(1, 0);
     setTriggerUi({ pending: false, targetPct: markMs / TRIGGER_BAR_MS });
     setStatus("Fokus — hold pusten. Slipp Space på merket.");
   }
@@ -809,18 +865,13 @@ export function FieldImpactCompetitionView({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: birdNativePxPerMm(g),
+      viewportEl: e.currentTarget,
     });
-    const seat = birdSeatRef.current;
-    const sceneW = g.nativeW * (100 / seat.widthPct);
-    const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
-    const pxPerMm = birdNativePxPerMm(g);
-    const limitX = (sceneW * 0.55) / pxPerMm;
-    const limitY = (sceneH * 0.55) / pxPerMm;
+    const limit = impactAimLimitMm(distanceRef.current);
     aimRef.current = {
-      x: Math.max(-limitX, Math.min(limitX, drag.origX + delta.x)),
-      y: Math.max(-limitY, Math.min(limitY, drag.origY + delta.y)),
+      x: Math.max(-limit, Math.min(limit, drag.origX + delta.x)),
+      y: Math.max(-limit, Math.min(limit, drag.origY + delta.y)),
     };
-    hasPannedRef.current = true;
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
@@ -939,19 +990,12 @@ export function FieldImpactCompetitionView({
       const ax = aimRef.current.x + wobbleRef.current.x;
       const ay = aimRef.current.y + wobbleRef.current.y;
       const scale = targetScaleRef.current;
-      const pxPerMm = birdNativePxPerMm(g);
       const vo = birdVitalOffsetFromImageCenterPx(g);
-      const seat = birdSeatRef.current;
-      const sceneW = g.nativeW * (100 / seat.widthPct);
-      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
-      const birdCx = (seat.x / 100) * sceneW;
-      const birdCy = (seat.y / 100) * sceneH;
-      const ox = birdCx - sceneW / 2;
-      const oy = birdCy - sceneH / 2;
-      const aimPxX = ax * pxPerMm;
-      const aimPxY = ay * pxPerMm;
-      const panPxX = (ox + vo.x + aimPxX) * scale;
-      const panPxY = (oy + vo.y + aimPxY) * scale;
+      const aimPxX = birdMmToNativePx(ax, g);
+      const aimPxY = birdMmToNativePx(ay, g);
+      // Hunt no-landscape path: aim {0,0} ⇒ vital under reticle.
+      const panPxX = (vo.x + aimPxX) * scale;
+      const panPxY = (vo.y + aimPxY) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
     }
 
@@ -960,40 +1004,71 @@ export function FieldImpactCompetitionView({
       last = now;
       const k = keysRef.current;
       let { x, y } = aimRef.current;
-      const g = geomRef.current;
-      const seat = birdSeatRef.current;
-      const pxPerMm = g ? birdNativePxPerMm(g) : 1;
-      const scale = targetScaleRef.current;
-      const visibleScenePx = SCOPE_VIEWPORT_REF_PX / Math.max(0.01, scale);
-      let speed = ((visibleScenePx * LANDSCAPE_AIM_FOV_FRAC) / pxPerMm) * dt;
+      const distFactor = distanceRef.current / 100;
+      let speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
       if (focusRef.current.held) {
         speed *= FOCUS_AIM_SPEED_MULT;
       }
-      const sceneW = g
-        ? g.nativeW * (100 / seat.widthPct)
-        : 1000;
-      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
-      const limitX = (sceneW * 0.55) / pxPerMm;
-      const limitY = (sceneH * 0.55) / pxPerMm;
+      const limit = impactAimLimitMm(distanceRef.current);
       if (k.left) x -= speed;
       if (k.right) x += speed;
       if (k.up) y -= speed;
       if (k.down) y += speed;
-      if (k.left || k.right || k.up || k.down) {
-        hasPannedRef.current = true;
-      }
-      x = Math.max(-limitX, Math.min(limitX, x));
-      y = Math.max(-limitY, Math.min(limitY, y));
+      x = Math.max(-limit, Math.min(limit, x));
+      y = Math.max(-limit, Math.min(limit, y));
       aimRef.current = { x, y };
+
+      if (focusShouldAbort(focusRef.current, now)) {
+        endFocus("Fokus brutt etter 7 s — slipp F og start på nytt.");
+      }
 
       const calm = effectiveCalmWithFocus(
         weaponCalmRef.current,
         focusRef.current,
         now,
       );
-      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       const t = now / 1000;
       const ph = wobblePhase.current;
+
+      barrelHeatStateRef.current = tickBarrelHeat(
+        barrelHeatStateRef.current,
+        barrelHeatProfileRef.current,
+        weatherTempRef.current,
+        dt,
+        chamberCoolMultRef.current,
+      );
+      const mirageMid = mirageFromBarrelHeat(
+        barrelHeatStateRef.current.heat01,
+        mirageOptsRef.current,
+      );
+      const mirage = mirageStrengthAtTime(
+        mirageMid,
+        t,
+        miragePhaseRef.current,
+      );
+      mirageStrengthRef.current = mirage;
+      const scene = mirageSceneRef.current;
+      if (scene) {
+        if (mirage > 0.015) {
+          scene.style.setProperty("--mirage", mirage.toFixed(3));
+          scene.classList.add("is-mirage");
+          scene.classList.toggle("is-mirage-heavy", mirage > 1.1);
+          scene.classList.remove("is-mirage-porridge");
+        } else {
+          scene.classList.remove(
+            "is-mirage",
+            "is-mirage-heavy",
+            "is-mirage-porridge",
+          );
+          scene.style.removeProperty("--mirage");
+        }
+      }
+      const displace = mirageDisplaceRef.current;
+      if (displace) {
+        displace.setAttribute("scale", String(Math.round(mirage * 56)));
+      }
+
+      const amp = wobbleAmplitudeMm(calm, distanceRef.current);
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
@@ -1017,27 +1092,24 @@ export function FieldImpactCompetitionView({
         }
       }
 
-      const fPhase = focusPhase(focusRef.current, now);
-      if (fPhase === "focused") {
+      if (focusRef.current.held) {
+        const elapsed = now - focusRef.current.startedAtMs;
         paintFocusProgress(
           focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+          elapsed,
         );
-        setFocusBarFatigued(false);
-      } else if (fPhase === "fatigued") {
-        paintFocusProgress(1);
-        setFocusBarFatigued(true);
       } else {
         paintFocusProgress(0);
-        setFocusBarFatigued(false);
       }
 
       uiAccum += dt;
       if (uiAccum > 0.05) {
         uiAccum = 0;
         setFocusUi({
-          phase: fPhase,
+          phase: focusPhase(focusRef.current, now),
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
+        setBarrelHeat01(barrelHeatStateRef.current.heat01);
         const started = startMsRef.current;
         if (started != null) {
           setElapsedUiMs(now - started);
@@ -1050,37 +1122,36 @@ export function FieldImpactCompetitionView({
     return () => cancelAnimationFrame(raf);
   }, [phase, ready]);
 
-  const targetScale =
-    scope && shotGeom
-      ? birdScopeImageScale(
-          zoom,
-          scope.scope,
-          distanceM,
-          shotGeom.nativeW,
-          shotGeom.spriteId,
-          birdWidthPct,
-        )
-      : 1;
+  /** Same truth as hunt / admin: bird FOV scale + zoom-only FFP reticle. */
+  const targetScale = scope && shotGeom
+    ? birdScopeImageScale(
+        zoom,
+        scope.scope,
+        distanceM,
+        shotGeom.nativeW,
+        shotGeom.spriteId,
+        birdWidthPct,
+      )
+    : 1;
+  const reticleScale = scope
+    ? opticReticleImgScale(zoom, scope.scope)
+    : 1;
   targetScaleRef.current = targetScale;
-  /** FFP reticle: optic zoom only — not bird size/distance. */
-  const reticleScale = opticReticleImgScale(zoom, scope?.scope);
 
   const vitalOff = shotGeom
     ? birdVitalOffsetFromImageCenterPx(shotGeom)
     : { x: 0, y: 0 };
   const mmToPx = (mm: number) =>
     shotGeom ? mm * birdNativePxPerMm(shotGeom) : 0;
-  const sceneW = shotGeom
-    ? shotGeom.nativeW * (100 / Math.max(0.05, birdWidthPct))
-    : 0;
-  const sceneH = sceneW / Math.max(0.25, landAspect);
 
   const focusLabel =
     focusUi.phase === "focused"
-      ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)} s`
-      : focusUi.phase === "fatigued"
-        ? "Pust — ustabil"
-        : "Ingen fokus (hold F)";
+      ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+      : focusUi.phase === "settling"
+        ? `Settler inn… ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+        : focusUi.phase === "fatigued"
+          ? "Ustabil — slipp før 7 s / start på nytt"
+          : "Ingen fokus (hold F)";
 
   function handleFocusPointerDown(e: PointerEvent<HTMLButtonElement>) {
     e.preventDefault();
@@ -1368,13 +1439,19 @@ export function FieldImpactCompetitionView({
       ) : null}
 
       <div className="scope-stage" tabIndex={0} ref={scopeStageRef}>
+        <BarrelHeatBar
+          className="range-barrel-heat"
+          heat01={barrelHeat01}
+        />
+        <ScopeOpticFit>
         <div className="scope-stage-optic-row">
           <div className="range-side-rail range-side-rail--focus">
             <span
               className={
                 focusUi.phase === "focused"
                   ? "range-side-rail-label is-focused"
-                  : focusUi.phase === "fatigued"
+                  : focusUi.phase === "settling" ||
+                      focusUi.phase === "fatigued"
                     ? "range-side-rail-label is-fatigued"
                     : "range-side-rail-label"
               }
@@ -1383,11 +1460,7 @@ export function FieldImpactCompetitionView({
             </span>
             <div
               ref={focusBarRef}
-              className={
-                focusUi.phase === "fatigued"
-                  ? "range-focus-bar is-fatigued"
-                  : "range-focus-bar"
-              }
+              className="range-focus-bar"
               aria-hidden
             >
               <div ref={focusFillRef} className="range-focus-fill" />
@@ -1404,11 +1477,16 @@ export function FieldImpactCompetitionView({
             }
           >
             <div
-              className={
-                recoilActive
-                  ? "scope-viewport is-recoiling"
-                  : "scope-viewport"
-              }
+                className={
+                  recoilActive
+                    ? "scope-viewport is-recoiling"
+                    : "scope-viewport"
+                }
+                style={
+                  {
+                    ["--recoil-kick" as string]: recoilKick,
+                  } as CSSProperties
+                }
               onPointerDown={onAimPointerDown}
               onPointerMove={onAimPointerMove}
               onPointerUp={onAimPointerUp}
@@ -1417,34 +1495,9 @@ export function FieldImpactCompetitionView({
               onLostPointerCapture={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
-                {shotGeom ? (
-                  <div
-                    className="hunt-scope-scene"
-                    style={{ width: sceneW, height: sceneH }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      className="hunt-scope-landscape"
-                      src={FIELD_IMPACT_LANDSCAPE_SRC}
-                      alt=""
-                      draggable={false}
-                      aria-hidden
-                      onLoad={(e) => {
-                        const img = e.currentTarget;
-                        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-                          setLandAspect(img.naturalWidth / img.naturalHeight);
-                        }
-                      }}
-                    />
-                    <div
-                      className="hunt-scope-bird-wrap"
-                      style={{
-                        left: `${landscapeFocusX}%`,
-                        top: `${landscapeFocusY}%`,
-                        width: `${birdWidthPct}%`,
-                        aspectRatio: `${shotGeom.nativeW} / ${shotGeom.nativeH}`,
-                      }}
-                    >
+                <div ref={mirageSceneRef} className="scope-world-scene">
+                  {shotGeom ? (
+                    <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         className="scope-target hunt-tiur-target field-impact-target-orange"
@@ -1453,7 +1506,10 @@ export function FieldImpactCompetitionView({
                         draggable={false}
                         width={shotGeom.nativeW}
                         height={shotGeom.nativeH}
-                        style={{ width: "100%", height: "100%" }}
+                        style={{
+                          width: shotGeom.nativeW,
+                          height: shotGeom.nativeH,
+                        }}
                       />
                       {lastImpact ? (
                         <span
@@ -1468,10 +1524,51 @@ export function FieldImpactCompetitionView({
                           }}
                         />
                       ) : null}
-                    </div>
-                  </div>
-                ) : null}
+                    </>
+                  ) : null}
+                  <div className="scope-mirage-shimmer" aria-hidden />
+                </div>
               </div>
+              <svg
+                className="scope-mirage-defs"
+                width="0"
+                height="0"
+                aria-hidden
+              >
+                <defs>
+                  <filter
+                    id="range-mirage-distort"
+                    x="-8%"
+                    y="-8%"
+                    width="116%"
+                    height="116%"
+                    colorInterpolationFilters="sRGB"
+                  >
+                    <feTurbulence
+                      type="fractalNoise"
+                      baseFrequency="0.014 0.045"
+                      numOctaves="2"
+                      seed="3"
+                      result="noise"
+                    >
+                      <animate
+                        attributeName="baseFrequency"
+                        dur="2.8s"
+                        values="0.014 0.045;0.02 0.055;0.012 0.038;0.014 0.045"
+                        repeatCount="indefinite"
+                      />
+                    </feTurbulence>
+                    <feDisplacementMap
+                      ref={mirageDisplaceRef}
+                      in="SourceGraphic"
+                      in2="noise"
+                      scale={0}
+                      xChannelSelector="R"
+                      yChannelSelector="G"
+                    />
+                  </filter>
+                </defs>
+              </svg>
               <ScopeReticle
                 scope={scope!.scope}
                 zoom={zoom}
@@ -1514,6 +1611,7 @@ export function FieldImpactCompetitionView({
             </div>
           </div>
         </div>
+        </ScopeOpticFit>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button
@@ -1521,7 +1619,8 @@ export function FieldImpactCompetitionView({
             className={
               focusUi.phase === "focused"
                 ? "range-touch-btn range-touch-btn--focus is-active"
-                : focusUi.phase === "fatigued"
+                : focusUi.phase === "settling" ||
+                    focusUi.phase === "fatigued"
                   ? "range-touch-btn range-touch-btn--focus is-fatigued"
                   : "range-touch-btn range-touch-btn--focus"
             }

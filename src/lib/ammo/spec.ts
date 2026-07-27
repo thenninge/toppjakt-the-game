@@ -30,6 +30,11 @@ export type AmmoSpec = {
   projectileType: ProjectileType;
   /** Muzzle velocity (m/s). */
   v0: number;
+  /**
+   * Projectile mass (grains). Used for recoil impulse (m·v0 / rifle mass).
+   * Prefer explicit; {@link resolveBulletWeightGrains} falls back to label / caliber.
+   */
+  bulletWeightGrains?: number;
   /** Ballistic coefficient (paired with bcModel). */
   bc: number;
   bcModel: BallisticModel;
@@ -48,11 +53,65 @@ export type AmmoSpec = {
    */
   v0SigmaMps?: number;
   /**
+   * When set (Real data measured group), replaces rifle+ammo additive envelope
+   * in {@link combinedDispersionMoa} — mean of the player's 5-shot system MOA.
+   */
+  systemGroupMoaOverride?: number;
+  /**
+   * Best 5-shot group (MOA) = mean − 3σ. With {@link systemGroupMoaOverride}
+   * as mean, per-shot envelopes sample N(mean, σ).
+   */
+  systemGroupMoaBest?: number;
+  /**
    * True subsonic load (v0 under ~340 m/s by design).
    * With a suppressor the shot is quiet enough that birds do not flush.
    */
   subsonic?: boolean;
 };
+
+/** Typical hunting / match bullet weight by caliber when catalog omits grains. */
+const CALIBER_DEFAULT_BULLET_GRAINS: Record<string, number> = {
+  "6,5×55": 140,
+  "6,5 Creedmoor": 140,
+  ".223 Rem": 55,
+  ".300 BLK": 190,
+  ".22 LR": 40,
+  ".17 HMR": 17,
+  ".308 Win": 168,
+  ".30-06": 180,
+};
+
+/**
+ * Resolve projectile mass (grains) for recoil / energy.
+ * Order: explicit field → "139gr" / "10,1g" in label → caliber default → 140.
+ */
+export function resolveBulletWeightGrains(
+  ammo: Pick<AmmoSpec, "caliber" | "bulletWeightGrains">,
+  label?: string | null,
+): number {
+  if (
+    ammo.bulletWeightGrains != null &&
+    Number.isFinite(ammo.bulletWeightGrains) &&
+    ammo.bulletWeightGrains > 0
+  ) {
+    return ammo.bulletWeightGrains;
+  }
+  const text = label ?? "";
+  const gr = /(\d+(?:[.,]\d+)?)\s*gr\b/i.exec(text);
+  if (gr) {
+    const n = Number.parseFloat(gr[1]!.replace(",", "."));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  // Metric mass in name, e.g. "FMJ Training 6,5g" / "Oryx 10,1g"
+  const grams = /(\d+(?:[.,]\d+)?)\s*g\b(?!\s*r)/i.exec(text);
+  if (grams) {
+    const g = Number.parseFloat(grams[1]!.replace(",", "."));
+    if (Number.isFinite(g) && g > 0.5 && g < 50) {
+      return Math.round(g * 15.432);
+    }
+  }
+  return CALIBER_DEFAULT_BULLET_GRAINS[ammo.caliber] ?? 140;
+}
 
 /** Sort order for shop listing: caliber groups, then projectile type. */
 export const CALIBER_SORT_ORDER: string[] = [

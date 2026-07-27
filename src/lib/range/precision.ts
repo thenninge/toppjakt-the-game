@@ -9,6 +9,7 @@ import type { BipodSpec } from "@/lib/bipod/spec";
 import type { RifleSpec } from "@/lib/rifle/spec";
 import { rollAmmoAffinity } from "@/lib/rifle/spec";
 import type { ScopeSpec } from "@/lib/optics/spec";
+import { SCOPE_FOV_DIAMETER_PREMIUM } from "@/lib/optics/spec";
 import type { StockSpec } from "@/lib/stock/spec";
 import { suppressorWeaponCalmGrams } from "@/lib/suppressor/spec";
 import {
@@ -25,6 +26,7 @@ export {
   combinedDispersionMoa,
   dispersionSigmaMoa,
   moaToMmAtDistance,
+  sampleRealSystemGroupMoa,
   sampleShotFromPoa,
 } from "@/lib/ballistics/dispersion";
 
@@ -32,8 +34,6 @@ export const RANGE_DISTANCE_M = 100;
 /** Selectable lane distances on the zeroing range. */
 export const RANGE_DISTANCES_M = [100, 200, 300, 400, 500] as const;
 export type RangeDistanceM = (typeof RANGE_DISTANCES_M)[number];
-
-export const SHOTS_PER_SERIES = 5;
 
 /**
  * CBA detail image calibration (cba-detail.png, 949×1024).
@@ -57,29 +57,44 @@ export const CBA_DIAMOND_CENTER_TO_TIP_PX = 115;
 export const CBA_CENTER_DOT_DIAMETER_MM = 6;
 
 /**
- * Scope FOV ↔ zoom (premium glass, +15 % circle).
- * Empirically ±{@link SCOPE_FOV_CAL_HALF_MRAD} mrad appeared at
- * {@link SCOPE_FOV_MEASURED_ZOOM}×; remap so that same view is at
- * {@link SCOPE_FOV_CAL_ZOOM}× (ZCO max / real 27×).
+ * Reference scope glass diameter (px) — one viewport truth for hunt, IMPACT,
+ * admin, and range. Must match `--scope-viewport-ref-px` in globals.css.
+ * Bird image scale and FOV mil calibration both use this.
  */
-export const SCOPE_FOV_CAL_ZOOM = 27;
-/** In-game zoom where ±7 mrad was measured before this remap. */
-export const SCOPE_FOV_MEASURED_ZOOM = 19.8;
-export const SCOPE_FOV_CAL_HALF_MRAD = 7;
-/** Matches hunt `SCOPE_VIEWPORT_REF_PX` (448) × premium FOV 1.15. */
-const SCOPE_FOV_CAL_RADIUS_PX = (448 / 2) * 1.15;
-/**
- * After the 19.8→27 remap the glass still showed 16 mrad edge-to-edge at
- * 27×; scale by 16/14 so diameter = 14 mrad (±7).
- */
-export const SCOPE_FOV_DIAMETER_ZOOM_IN = 16 / 14;
+export const SCOPE_VIEWPORT_REF_PX = 448;
 
 /**
- * Engraved max power vs felt mag (ZCO): @ 27× glass felt ≈25× (too much
- * reticle in circle). Multiply shared image scale so 27× matches 27×.
- * Also applied to hunt birds ({@link birdScopeImageScale}) so sprites follow.
+ * Scope FOV ↔ zoom (premium glass, +15 % circle).
+ * Locked against real ZCO 5-27 @ engraved 27×: ±{@link SCOPE_FOV_CAL_HALF_MRAD} mrad
+ * centre→edge once the glass diameter is {@link SCOPE_VIEWPORT_REF_PX} (premium ×1.15).
  */
-export const SCOPE_ZOOM_MAG_CAL = 27 / 25;
+export const SCOPE_FOV_CAL_ZOOM = 27;
+/**
+ * Real ZCO 5-27 MPCT at 27× — measured on glass (±7.2 mrad centre→edge).
+ * In-game premium circle must show the same once viewport = design size.
+ */
+export const SCOPE_FOV_CAL_HALF_MRAD = 7.2;
+/** Premium glass radius at design size. */
+const SCOPE_FOV_CAL_RADIUS_PX =
+  (SCOPE_VIEWPORT_REF_PX / 2) * SCOPE_FOV_DIAMETER_PREMIUM;
+
+/**
+ * @deprecated Historical 19.8→27 remap; viewport is now design-locked.
+ * Kept at 1 so old call sites compiling against the name stay harmless.
+ */
+export const SCOPE_FOV_MEASURED_ZOOM = SCOPE_FOV_CAL_ZOOM;
+/**
+ * @deprecated Was 16/14 when glass was padded smaller than design size.
+ * Now 1 — FOV comes only from {@link SCOPE_FOV_CAL_HALF_MRAD}.
+ */
+export const SCOPE_FOV_DIAMETER_ZOOM_IN = 1;
+
+/**
+ * Extra mag on shared image scale + hunt birds. 1 = FOV is exactly
+ * {@link SCOPE_FOV_CAL_HALF_MRAD} at {@link SCOPE_FOV_CAL_ZOOM}×.
+ * (Old 27/25 compensated for padded CSS glass; no longer needed.)
+ */
+export const SCOPE_ZOOM_MAG_CAL = 1;
 
 /**
  * Live hold-over fine-tune vs dialed POI.
@@ -89,10 +104,8 @@ export const SCOPE_ZOOM_MAG_CAL = 27 / 25;
 export const RETICLE_SUBTENSION_CAL = 1;
 
 /**
- * Image CSS scale at 1× optical. Base formula targets ±7 mrad at
- * {@link SCOPE_FOV_CAL_ZOOM}×, then × measured/cal so the old
- * {@link SCOPE_FOV_MEASURED_ZOOM}× view lands on 27×, then ×
- * {@link SCOPE_FOV_DIAMETER_ZOOM_IN}, then × {@link SCOPE_ZOOM_MAG_CAL}.
+ * Image CSS scale at 1× optical. Targets ±{@link SCOPE_FOV_CAL_HALF_MRAD} mrad
+ * at {@link SCOPE_FOV_CAL_ZOOM}× on the design viewport (premium radius).
  */
 export const SCOPE_IMAGE_SCALE_PER_ZOOM =
   (SCOPE_FOV_CAL_RADIUS_PX /
@@ -360,15 +373,38 @@ export function computeWeaponCalmFactor(input: WeaponCalmInput): number {
 /** Peak wobble amplitude in mm on target at calm=1 (no bipod). */
 export const BASE_WOBBLE_MM = 18;
 
-/** Hold F: calm × this while breath window is open. */
-export const FOCUS_CALM_MULT = 3;
-/** Clean focus window after pressing F (ms). */
-export const FOCUS_HOLD_MS = 8000;
 /**
- * After FOCUS_HOLD_MS while still holding F: calm multiplier (worse than baseline).
- * Release F and press again to reset the window.
+ * Focus (hold F) calm timeline (continuous — no step jumps):
+ *   0–2.5 s  settling — shake excess (1−u)² from 3× max → 0
+ *   2.5–4.5 s  sweet — flat max calm (strain curve = 0)
+ *   4.5–7 s  strain — shake excess u² from 0 → 3× max
+ *   7 s    auto-abort — must release F and start over
+ *
+ * Peak shake amp (settle start & strain end) is 3× the old flat strain
+ * calm of 0.55, so peak calm = 0.55 / 3 (amp ∝ 1/calm).
  */
-export const FOCUS_FATIGUE_CALM_MULT = 0.65;
+export const FOCUS_SETTLE_MS = 2500;
+export const FOCUS_SWEET_END_MS = 4500;
+export const FOCUS_ABORT_MS = 7000;
+/** @deprecated Prefer {@link FOCUS_ABORT_MS}. */
+export const FOCUS_HOLD_MS = FOCUS_ABORT_MS;
+
+/** Calm × this during the 2.5–4.5 s sweet window (plateau). */
+export const FOCUS_CALM_MULT = 3;
+/**
+ * Old flat strain calm — reference for peak shake (3× amp → /3).
+ * @internal
+ */
+const FOCUS_REF_STRAIN_CALM_MULT = 0.55;
+/**
+ * Calm × this at settle start (t = 0) and strain abort (t = 7 s).
+ * Lower = more shake; amp is 3× the old flat strain.
+ */
+export const FOCUS_STRAIN_CALM_MULT = FOCUS_REF_STRAIN_CALM_MULT / 3;
+/** Calm × this at the start of settling — same peak shake as strain end. */
+export const FOCUS_SETTLE_CALM_MULT = FOCUS_STRAIN_CALM_MULT;
+/** @deprecated Prefer {@link FOCUS_STRAIN_CALM_MULT}. */
+export const FOCUS_FATIGUE_CALM_MULT = FOCUS_STRAIN_CALM_MULT;
 
 /**
  * Trigger bar length (real-time ms). Player holds Space; fill runs 0→1 over this.
@@ -505,9 +541,7 @@ export function effectiveCalmWithFocus(
 ): number {
   let calm = weaponCalm;
   if (focus.held) {
-    const elapsed = nowMs - focus.startedAtMs;
-    calm *=
-      elapsed < FOCUS_HOLD_MS ? FOCUS_CALM_MULT : FOCUS_FATIGUE_CALM_MULT;
+    calm *= focusCalmMultiplier(nowMs - focus.startedAtMs);
   }
   if (fatigue) {
     calm *= fatigueCalmFactor(fatigue);
@@ -515,15 +549,94 @@ export function effectiveCalmWithFocus(
   return calm;
 }
 
-export type FocusPhase = "idle" | "focused" | "fatigued";
+/**
+ * Focus calm multiplier from elapsed hold time (see {@link FOCUS_SETTLE_MS}).
+ *
+ * Shake-excess curve (0 = sweet plateau):
+ *   0–2.5 s  (1−u)² from 1 → 0  (peak 3× shake → sweet)
+ *   2.5–4.5 s  0
+ *   4.5–7 s  u² from 0 → 1 (sweet → peak 3× shake)
+ */
+export function focusCalmMultiplier(elapsedMs: number): number {
+  if (!(elapsedMs >= 0)) return 1;
+  if (elapsedMs < FOCUS_SETTLE_MS) {
+    // u: 0→1 over settle. Shake excess (1−u)²: max at press, 0 at sweet.
+    const u = clamp01(elapsedMs / FOCUS_SETTLE_MS);
+    const shakeExcess = (1 - u) * (1 - u);
+    return (
+      FOCUS_CALM_MULT +
+      (FOCUS_SETTLE_CALM_MULT - FOCUS_CALM_MULT) * shakeExcess
+    );
+  }
+  if (elapsedMs < FOCUS_SWEET_END_MS) {
+    return FOCUS_CALM_MULT;
+  }
+  // u: 0→1 over strain. Shake excess u²: 0 at sweet end, max at abort.
+  const strainSpan = FOCUS_ABORT_MS - FOCUS_SWEET_END_MS;
+  const u = clamp01((elapsedMs - FOCUS_SWEET_END_MS) / strainSpan);
+  const shakeExcess = u * u;
+  return (
+    FOCUS_CALM_MULT +
+    (FOCUS_STRAIN_CALM_MULT - FOCUS_CALM_MULT) * shakeExcess
+  );
+}
+
+/** Focus bar: dark rust at settle/strain peaks (matches fatigued bar). */
+const FOCUS_BAR_RED = { h: 15, s: 55, l: 38 };
+/** Focus bar: sweet-spot green (--prompt-green). */
+const FOCUS_BAR_GREEN = { h: 102, s: 78, l: 68 };
+
+function lerpHsl(
+  a: { h: number; s: number; l: number },
+  b: { h: number; s: number; l: number },
+  t: number,
+): string {
+  const u = clamp01(t);
+  const h = a.h + (b.h - a.h) * u;
+  const s = a.s + (b.s - a.s) * u;
+  const l = a.l + (b.l - a.l) * u;
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+/**
+ * Focus bar fill colour along the hold timeline:
+ * dark red → spectrum → green (sweet) → spectrum → dark red.
+ */
+export function focusBarFillColor(elapsedMs: number): string {
+  if (!(elapsedMs >= 0)) return lerpHsl(FOCUS_BAR_RED, FOCUS_BAR_GREEN, 0);
+  if (elapsedMs < FOCUS_SETTLE_MS) {
+    const t = clamp01(elapsedMs / FOCUS_SETTLE_MS);
+    return lerpHsl(FOCUS_BAR_RED, FOCUS_BAR_GREEN, t);
+  }
+  if (elapsedMs < FOCUS_SWEET_END_MS) {
+    return lerpHsl(FOCUS_BAR_RED, FOCUS_BAR_GREEN, 1);
+  }
+  const t = clamp01(
+    (elapsedMs - FOCUS_SWEET_END_MS) / (FOCUS_ABORT_MS - FOCUS_SWEET_END_MS),
+  );
+  return lerpHsl(FOCUS_BAR_GREEN, FOCUS_BAR_RED, t);
+}
+
+export type FocusPhase = "idle" | "settling" | "focused" | "fatigued";
 
 export function focusPhase(
   focus: { held: boolean; startedAtMs: number },
   nowMs: number,
 ): FocusPhase {
   if (!focus.held) return "idle";
-  if (nowMs - focus.startedAtMs < FOCUS_HOLD_MS) return "focused";
+  const elapsed = nowMs - focus.startedAtMs;
+  if (elapsed < FOCUS_SETTLE_MS) return "settling";
+  if (elapsed < FOCUS_SWEET_END_MS) return "focused";
   return "fatigued";
+}
+
+/** True when focus hold has hit the hard abort (7 s). */
+export function focusShouldAbort(
+  focus: { held: boolean; startedAtMs: number },
+  nowMs: number,
+): boolean {
+  if (!focus.held) return false;
+  return nowMs - focus.startedAtMs >= FOCUS_ABORT_MS;
 }
 
 export function focusRemainingMs(
@@ -531,7 +644,7 @@ export function focusRemainingMs(
   nowMs: number,
 ): number {
   if (!focus.held) return 0;
-  return Math.max(0, FOCUS_HOLD_MS - (nowMs - focus.startedAtMs));
+  return Math.max(0, FOCUS_ABORT_MS - (nowMs - focus.startedAtMs));
 }
 
 export type ScopeView = {

@@ -7,7 +7,8 @@
  *   Body  = wound / ettersøk
  *   Else  = miss
  *
- * Apparent size matches spotting binos FOV at same mag × distance.
+ * Scope apparent size: true angular vs FFP reticle (1 mil on glass ↔
+ * distanceM mm on the bird). Spotting still uses {@link spriteWidthPctForDistance}.
  */
 
 import type { ScopeSpec } from "@/lib/optics/spec";
@@ -18,7 +19,14 @@ import {
   type BirdSpriteId,
 } from "@/lib/hunt/birdSprites";
 import { getBirdHitZone } from "@/lib/hunt/birdHitZoneOverrides";
-import { SCOPE_ZOOM_MAG_CAL } from "@/lib/range/precision";
+import { getBirdSpriteScaleFactor } from "@/lib/hunt/birdSpriteScale";
+import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
+import {
+  CBA_DIAMOND_CENTER_TO_TIP_PX,
+  SCOPE_VIEWPORT_REF_PX,
+} from "@/lib/range/precision";
+
+export { SCOPE_VIEWPORT_REF_PX };
 
 /** @deprecated Prefer sprite.toppSrc via getBirdSprite. */
 export const TIUR_TARGET_SRC = "/images/birds/tiur/tiurtopp1.png";
@@ -184,14 +192,8 @@ export function shotCamLabel(kind: ShotCamKind): string {
 }
 
 /**
- * Reference scope viewport size (px) — matches `.scope-viewport` (~28rem).
- * Used to convert binos FOV-% into a CSS image scale.
- */
-export const SCOPE_VIEWPORT_REF_PX = 448;
-
-/**
- * Real-world height represented by the full topp sprite (zone mm math).
- * Independent of on-screen scale — only hit geometry.
+ * Real-world height represented by the full topp sprite at 100 % admin scale.
+ * Admin sprite-% multiplies this (and zone mm) so glass holdover stays matched.
  */
 export const TIUR_SPRITE_HEIGHT_MM = 480;
 
@@ -303,7 +305,12 @@ export type BirdShotGeom = {
 export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
   const s = getBirdSprite(spriteId);
   const zone = getBirdHitZone(spriteId);
-  const spriteHeightMm = TIUR_SPRITE_HEIGHT_MM;
+  /**
+   * Admin sprite-% scales both visual and mm so holdover stays matched
+   * (100 % = {@link TIUR_SPRITE_HEIGHT_MM} tall).
+   */
+  const scaleF = getBirdSpriteScaleFactor(spriteId);
+  const spriteHeightMm = TIUR_SPRITE_HEIGHT_MM * scaleF;
   const spriteWidthMm = spriteHeightMm * (s.toppW / s.toppH);
   return {
     spriteId,
@@ -319,20 +326,20 @@ export function birdShotGeom(spriteId: BirdSpriteId): BirdShotGeom {
     targetH: s.targetH,
     spriteHeightMm,
     spriteWidthMm,
-    instantDiameterMm: zone.instantDiameterMm,
-    vitalDiameterMm: zone.vitalDiameterMm,
+    instantDiameterMm: zone.instantDiameterMm * scaleF,
+    vitalDiameterMm: zone.vitalDiameterMm * scaleF,
     headCxPx: zone.headCxPx,
     headCyPx: zone.headCyPx,
-    headDiameterMm: zone.headDiameterMm,
+    headDiameterMm: zone.headDiameterMm * scaleF,
     neckCxPx: zone.neckCxPx,
     neckCyPx: zone.neckCyPx,
-    neckWidthMm: zone.neckWidthMm,
-    neckHeightMm: zone.neckHeightMm,
+    neckWidthMm: zone.neckWidthMm * scaleF,
+    neckHeightMm: zone.neckHeightMm * scaleF,
     neckRotationDeg: zone.neckRotationDeg,
-    bodyRxMm: zone.bodyRxMm,
-    bodyRyMm: zone.bodyRyMm,
-    bodyOffsetXMm: zone.bodyOffsetXMm,
-    bodyOffsetYMm: zone.bodyOffsetYMm,
+    bodyRxMm: zone.bodyRxMm * scaleF,
+    bodyRyMm: zone.bodyRyMm * scaleF,
+    bodyOffsetXMm: zone.bodyOffsetXMm * scaleF,
+    bodyOffsetYMm: zone.bodyOffsetYMm * scaleF,
     bodyRotationDeg: zone.bodyRotationDeg,
   };
 }
@@ -379,30 +386,45 @@ export function tiurVitalOffsetFromImageCenterPx(): { x: number; y: number } {
 /**
  * CSS scale for the bird sprite inside the rifle scope.
  *
- * Matches spotting binos circular FOV: bird width as fraction of the
- * visible circle ≈ spriteWidthPct(distance) × mag / 100.
- *
- * Pass `widthPct` from the placement when available so perch/sprite admin
- * scales match spotting (recomputing from distance alone drops those).
+ * One truth with FFP glass: 1 mil on the reticle ↔ `distanceM` mm on the bird
+ * ({@link TIUR_SPRITE_HEIGHT_MM} × admin sprite-%). Spotting keep using
+ * {@link spriteWidthPctForDistance}; only perch relative size is taken from
+ * `widthPctOverride` when provided.
  */
 export function birdScopeImageScale(
   zoom: number,
-  _scope: Pick<ScopeSpec, "minZoom" | "maxZoom"> | undefined,
+  scope: Pick<ScopeSpec, "minZoom" | "maxZoom"> | undefined,
   distanceM: number,
   nativeW: number,
   spriteId?: BirdSpriteId,
   widthPctOverride?: number,
 ): number {
-  const widthPct =
+  const s = spriteId ? getBirdSprite(spriteId) : null;
+  const nativeH = s?.toppH ?? TIUR_IMAGE_NATIVE_H;
+  const scaleF = spriteId ? getBirdSpriteScaleFactor(spriteId) : 1;
+  const heightMm = TIUR_SPRITE_HEIGHT_MM * scaleF;
+  const milScreenPx =
+    CBA_DIAMOND_CENTER_TO_TIP_PX *
+    opticReticleImgScale(Math.max(1, zoom), scope);
+  const pxPerMm = nativeH / Math.max(1e-6, heightMm);
+  let scale =
+    milScreenPx /
+    (Math.max(1, distanceM) * Math.max(1e-9, pxPerMm));
+
+  // Perch / placement relative to the default size at this distance+sprite.
+  if (
     widthPctOverride != null &&
     Number.isFinite(widthPctOverride) &&
     widthPctOverride > 0
-      ? widthPctOverride
-      : spriteWidthPctForDistance(distanceM, spriteId);
-  const widthFracOfFov = (widthPct * Math.max(1, zoom)) / 100;
-  const desiredWidthPx =
-    SCOPE_VIEWPORT_REF_PX * widthFracOfFov * SCOPE_ZOOM_MAG_CAL;
-  return Math.max(0.01, desiredWidthPx / Math.max(1, nativeW));
+  ) {
+    const expected = spriteWidthPctForDistance(distanceM, spriteId, 100);
+    const perch = widthPctOverride / Math.max(1e-9, expected);
+    scale *= perch;
+  }
+
+  // nativeW kept in signature for call-site compatibility; scale is height-driven.
+  void nativeW;
+  return Math.max(0.01, scale);
 }
 
 /** @deprecated Prefer birdScopeImageScale. */

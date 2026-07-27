@@ -33,7 +33,7 @@ import {
   computeKitTopSpeedKmh,
   formatTopSpeed,
 } from "@/lib/kit/speed";
-import { computeKitOverview } from "@/lib/kit/overview";
+import { computeKitOverview, computeWeaponRigFactors, formatFeltRecoil, formatWeaponRigCalm } from "@/lib/kit/overview";
 import { computePackLoad, itemCarryWeightGrams, itemCarryWeightNote } from "@/lib/kit/pack";
 import {
   isShotCamItemId,
@@ -72,6 +72,7 @@ import type { LoadDevTable } from "@/lib/reloading/loadDevTable";
 import type { LoadBookEntry } from "@/lib/reloading/loadBook";
 import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
+import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import {
   formatJaktkortStatusNb,
   type ActiveJaktkort,
@@ -181,6 +182,11 @@ type HomeBaseProps = {
   hasKestrel?: boolean;
   kestrelProfiles?: Record<string, KestrelGunProfile>;
   onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
+  realLoadProfiles?: RealLoadProfile[];
+  useRealDataInSimulation?: boolean;
+  onSaveRealLoad?: (profile: RealLoadProfile) => void;
+  onRemoveRealLoad?: (id: string) => void;
+  onSetUseRealData?: (enabled: boolean) => void;
   onStartHunt: () => void;
   onLeave: () => void;
 };
@@ -229,6 +235,11 @@ export function HomeBase({
   hasKestrel = false,
   kestrelProfiles = {},
   onUpsertKestrelProfile,
+  realLoadProfiles = [],
+  useRealDataInSimulation = false,
+  onSaveRealLoad,
+  onRemoveRealLoad,
+  onSetUseRealData,
   onStartHunt,
   onLeave,
 }: HomeBaseProps) {
@@ -342,6 +353,16 @@ export function HomeBase({
         kitItems,
         customsMods,
         carcasses: [],
+        customBarrels,
+      }),
+    [kitItems, customsMods, customBarrels],
+  );
+
+  const weaponRigFactors = useMemo(
+    () =>
+      computeWeaponRigFactors({
+        kitItems,
+        customsMods,
         customBarrels,
       }),
     [kitItems, customsMods, customBarrels],
@@ -487,8 +508,24 @@ export function HomeBase({
   const selectedTerrain = getHuntingTerrain(selectedHuntingTerrainId) ?? null;
 
   const rigSummary = useMemo(() => {
-    return `${rigFilledCount}/${weaponRigRows.length} på våpen · ${formatWeightKg(weaponRigWeightGrams)}`;
-  }, [rigFilledCount, weaponRigRows.length, weaponRigWeightGrams]);
+    const parts = [
+      `${rigFilledCount}/${weaponRigRows.length} på våpen`,
+      formatWeightKg(weaponRigWeightGrams),
+    ];
+    if (weaponRigFactors.bestMoa != null) {
+      parts.push(`${weaponRigFactors.bestMoa.toFixed(2)} MOA`);
+    }
+    if (weaponRigFactors.recoil != null) {
+      parts.push(`rekyl ${formatFeltRecoil(weaponRigFactors.recoil)}`);
+    }
+    return parts.join(" · ");
+  }, [
+    rigFilledCount,
+    weaponRigRows.length,
+    weaponRigWeightGrams,
+    weaponRigFactors.bestMoa,
+    weaponRigFactors.recoil,
+  ]);
 
   const inventorySummary = useMemo(() => {
     if (ownedItems.length === 0) return "Tomt skap";
@@ -604,6 +641,9 @@ export function HomeBase({
         shotLog={shotLog}
         dopeCard={dopeCard}
         rifleRoundCounts={rifleRoundCounts}
+        customBarrels={customBarrels}
+        inventory={inventory}
+        kit={kit}
         onUpdateDope={onUpdateDope}
         onRemoveDope={onRemoveDope}
         onBack={() => setView("main")}
@@ -611,6 +651,11 @@ export function HomeBase({
         hasKestrel={hasKestrel}
         kestrelProfiles={kestrelProfiles}
         onUpsertKestrelProfile={onUpsertKestrelProfile}
+        realLoadProfiles={realLoadProfiles}
+        useRealDataInSimulation={useRealDataInSimulation}
+        onSaveRealLoad={onSaveRealLoad}
+        onRemoveRealLoad={onRemoveRealLoad}
+        onSetUseRealData={onSetUseRealData}
       />
     );
   }
@@ -789,6 +834,84 @@ export function HomeBase({
               </span>
             </li>
           </ul>
+
+          <div
+            className="current-rig-factors"
+            aria-label="Våpenfaktorer"
+          >
+            <p className="current-rig-factors-heading">Våpenfaktorer</p>
+            <ul className="current-rig-factors-list">
+              <li>
+                <span className="current-rig-factors-key">
+                  Best achievable MOA
+                </span>
+                <span className="current-rig-factors-val">
+                  {weaponRigFactors.bestMoa != null
+                    ? `${weaponRigFactors.bestMoa.toFixed(2)} MOA`
+                    : weaponRigFactors.missing.includes("Rifle") ||
+                        weaponRigFactors.missing.includes("Ammo")
+                      ? `— (${[
+                          ...weaponRigFactors.missing.filter((m) =>
+                            m === "Rifle" || m === "Ammo",
+                          ),
+                        ].join(" + ")} mangler)`
+                      : "—"}
+                </span>
+              </li>
+              <li>
+                <span className="current-rig-factors-key">
+                  Zero retention
+                </span>
+                <span className="current-rig-factors-val">
+                  {weaponRigFactors.zeroRetentionMoa != null
+                    ? `${weaponRigFactors.zeroRetentionMoa.toFixed(2)} MOA`
+                    : "— (mangler kikkert)"}
+                  {weaponRigFactors.mountTierLabel
+                    ? ` · montasje ${weaponRigFactors.mountTierLabel}`
+                    : ""}
+                </span>
+              </li>
+              <li>
+                <span className="current-rig-factors-key">
+                  Click accuracy
+                </span>
+                <span className="current-rig-factors-val">
+                  {weaponRigFactors.clickErrorPercent != null
+                    ? `±${weaponRigFactors.clickErrorPercent}%`
+                    : "— (mangler kikkert)"}
+                </span>
+              </li>
+              <li>
+                <span className="current-rig-factors-key">Calm</span>
+                <span className="current-rig-factors-val">
+                  {weaponRigFactors.calm != null
+                    ? `${formatWeaponRigCalm(weaponRigFactors.calm)}${
+                        weaponRigFactors.calmWithBipod
+                          ? " (med bipod)"
+                          : " (uten bipod)"
+                      }`
+                    : "— (mangler rifle)"}
+                </span>
+              </li>
+              <li>
+                <span className="current-rig-factors-key">Recoil</span>
+                <span className="current-rig-factors-val">
+                  {weaponRigFactors.recoil != null
+                    ? `${formatFeltRecoil(weaponRigFactors.recoil)}${
+                        weaponRigFactors.recoilDamping != null &&
+                        weaponRigFactors.recoilDamping > 1.01
+                          ? ` · demping ×${weaponRigFactors.recoilDamping.toFixed(2)}`
+                          : ""
+                      }`
+                    : "— (mangler rifle)"}
+                </span>
+              </li>
+            </ul>
+            <p className="shop-row-note current-rig-factors-note">
+              Lavere MOA / zero-ret / klikkfeil / recoil er bedre. Høyere calm
+              er bedre. Calm og recoil antar bipod ute når den er i kit.
+            </p>
+          </div>
         </section>
       </ExpandableSection>
 

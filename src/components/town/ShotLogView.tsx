@@ -9,10 +9,13 @@ import {
 } from "@/lib/player";
 import {
   BARREL_WEAR_END_SHOTS,
-  BARREL_WEAR_START_SHOTS,
+  BARREL_WEAR_START_CRMo,
+  BARREL_WEAR_START_STAINLESS,
   barrelWearLabelNb,
+  barrelWearMaterialFromCustom,
   barrelWearMoaScale,
 } from "@/lib/rifle/barrelWear";
+import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import { LocationNav } from "@/components/town/LocationNav";
 import { isRifleItem } from "@/lib/shop/types";
 
@@ -20,6 +23,7 @@ type ShotLogViewProps = {
   entries: ShotLogEntry[];
   /** Lifetime shots per rifle barrel. */
   rifleRoundCounts?: Record<string, number>;
+  customBarrels?: Record<string, InstalledCustomBarrel>;
   onBack: () => void;
   /** Where the user came from — used for back button label. */
   backLabel?: string;
@@ -58,6 +62,7 @@ type RifleWearRow = {
 function rifleWearRows(
   counts: Record<string, number>,
   entries: ShotLogEntry[],
+  customBarrels: Record<string, InstalledCustomBarrel>,
 ): RifleWearRow[] {
   const ids = new Set<string>([
     ...Object.keys(counts),
@@ -71,12 +76,13 @@ function rifleWearRows(
     const label = item
       ? `${item.brand} ${item.name}`
       : entries.find((e) => e.rifleId === rifleId)?.rifleLabel ?? rifleId;
+    const material = barrelWearMaterialFromCustom(customBarrels[rifleId]);
     rows.push({
       rifleId,
       label,
       rounds,
-      scale: barrelWearMoaScale(rounds),
-      status: barrelWearLabelNb(rounds),
+      scale: barrelWearMoaScale(rounds, material),
+      status: barrelWearLabelNb(rounds, material),
     });
   }
   rows.sort((a, b) => b.rounds - a.rounds || a.label.localeCompare(b.label));
@@ -86,12 +92,13 @@ function rifleWearRows(
 export function ShotLogView({
   entries,
   rifleRoundCounts = {},
+  customBarrels = {},
   onBack,
   backLabel = "← Tilbake",
   embedded = false,
 }: ShotLogViewProps) {
   const comboCount = uniqueCombos(entries);
-  const wearRows = rifleWearRows(rifleRoundCounts, entries);
+  const wearRows = rifleWearRows(rifleRoundCounts, entries, customBarrels);
 
   return (
     <div className={embedded ? "shot-log shot-log--embedded" : "shot-log"}>
@@ -118,9 +125,10 @@ export function ShotLogView({
         <section className="shot-log-barrels" aria-label="Skudd pr våpen">
           <h3 className="shot-log-barrels-title">Skudd pr våpen (pipe)</h3>
           <p className="shop-row-note">
-            Presisjon: frisk til {BARREL_WEAR_START_SHOTS} skudd, deretter opp
-            mot 2× rifle-MOA ved {BARREL_WEAR_END_SHOTS}. Bytt pipe hos CB
-            Customs eller kjøp nytt våpen.
+            Presisjon: CrMo/carbon/fabrikk {BARREL_WEAR_START_CRMo} skudd,
+            stainless {BARREL_WEAR_START_STAINLESS} — deretter opp mot 2×
+            rifle-MOA over +100 skudd (CrMo til {BARREL_WEAR_END_SHOTS}). Bytt
+            pipe hos CB Customs eller kjøp nytt våpen.
           </p>
           <ul className="shot-log-barrel-list">
             {wearRows.map((row) => (

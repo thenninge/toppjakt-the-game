@@ -66,7 +66,7 @@ import {
   type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
+import { barrelWearMaterialFromCustom, barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import {
   isAmmoItem,
   isBackpackItem,
@@ -122,7 +122,14 @@ import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { ShotVideoView } from "@/components/hunt/ShotVideoView";
 import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
-import type { HuntShootRest } from "@/lib/hunt/shootRest";
+import { BAG_REST_BIPOD_SPEC, type HuntShootRest } from "@/lib/hunt/shootRest";
+import {
+  computeFeltRecoil,
+  computeRecoilDamping,
+  shoulderedWeaponWeightKg,
+} from "@/lib/range/recoil";
+import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
+import { miscKitWeaponCalmGrams } from "@/lib/misc/spec";
 import {
   applyMindCalmToPulse,
   applyPulseStim,
@@ -148,7 +155,10 @@ import {
   customsTriggerPullScale,
   type CustomsMods,
 } from "@/lib/customs/spec";
-import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
+import {
+  barrelV0FactorForRifle,
+  type InstalledCustomBarrel,
+} from "@/lib/customs/customBarrel";
 import {
   applyPostShotBirdFlush,
   bindBirdsToSpotImage,
@@ -200,6 +210,11 @@ import {
   kestrelSolveAmmo,
   type KestrelGunProfile,
 } from "@/lib/ballistics/kestrelProfile";
+import {
+  isRealDataActive,
+  realLoadForRifle,
+  type RealLoadProfile,
+} from "@/lib/ballistics/realLoad";
 import { crosswindMs, fullValueWindageMs, type DayWeather } from "@/lib/weather/spec";
 import {
   ENCOUNTER_NERVE,
@@ -207,7 +222,7 @@ import {
   tickEncounterNerve,
 } from "@/lib/game/nervousness";
 import type { ShotHitFasit, ShotPair } from "@/lib/aware/types";
-import { caliberBulletDiameterMm } from "@/lib/range/precision";
+import { caliberBulletDiameterMm, computeWeaponCalmFactor } from "@/lib/range/precision";
 import {
   estimateVisibleShotPair,
   generateFleeObservation,
@@ -263,9 +278,10 @@ type HuntMapViewProps = {
   dopeCard?: DopeCardEntry[];
   /** Calibrated Kestrel AB profiles (MV / BC / dV/dT). */
   kestrelProfiles?: Record<string, KestrelGunProfile>;
+  realLoadProfiles?: RealLoadProfile[];
+  useRealDataInSimulation?: boolean;
   customsMods?: CustomsMods;
   weather: DayWeather;
-  musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -550,9 +566,10 @@ export function HuntMapView({
   customBarrels = {},
   dopeCard = [],
   kestrelProfiles = {},
+  realLoadProfiles = [],
+  useRealDataInSimulation = false,
   customsMods = EMPTY_CUSTOMS_MODS,
   weather,
-  musicEnabled,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -853,6 +870,38 @@ export function HuntMapView({
     () => kitItems.find(isAmmoItem) ?? null,
     [kitItems],
   );
+  const kitIds = useMemo(() => kitItems.map((i) => i.id), [kitItems]);
+  const inventoryItemIds = useMemo(
+    () => inventory.map((e) => e.itemId),
+    [inventory],
+  );
+  const huntRifle = useMemo(
+    () => kitItems.find(isRifleItem) ?? null,
+    [kitItems],
+  );
+  const realLoad = useMemo(
+    () => realLoadForRifle(realLoadProfiles, huntRifle?.id),
+    [realLoadProfiles, huntRifle],
+  );
+  const realSolveArg = useMemo(
+    () => ({
+      active: isRealDataActive({
+        useRealDataInSimulation,
+        kitIds,
+        inventoryItemIds,
+        realLoad,
+        ammoId: primaryAmmo?.id,
+      }),
+      profile: realLoad,
+    }),
+    [
+      useRealDataInSimulation,
+      kitIds,
+      inventoryItemIds,
+      realLoad,
+      primaryAmmo?.id,
+    ],
+  );
 
   /**
    * Onboard LRF / Kestrel-linked solution for spotting HUD.
@@ -898,6 +947,7 @@ export function HuntMapView({
         primaryAmmo.ammo,
         primaryAmmo.id,
         kestrelProfiles,
+        realSolveArg,
       );
       const hold = exactBallisticHold(solve.ammo, distanceM, cw, {
         densityRatio: density,
@@ -929,6 +979,7 @@ export function HuntMapView({
       weather.forecast.temperatureC,
       scopeClickUnit,
       kestrelProfiles,
+      realSolveArg,
     ],
   );
 
@@ -967,8 +1018,9 @@ export function HuntMapView({
     if (!rifle) return 1;
     return barrelWearMoaScale(
       getRifleRoundCount(rifleRoundCounts, rifle.id),
+      barrelWearMaterialFromCustom(customBarrels[rifle.id]),
     );
-  }, [kitItems, rifleRoundCounts]);
+  }, [kitItems, rifleRoundCounts, customBarrels]);
   const hasHeadlamp = useMemo(
     () =>
       kitItems.some(
@@ -2313,6 +2365,7 @@ export function HuntMapView({
         primaryAmmo.ammo,
         primaryAmmo.id,
         kestrelProfiles,
+        realSolveArg,
       );
       hold = exactBallisticHold(solve.ammo, measured, cw, {
         densityRatio: density,
@@ -2715,6 +2768,7 @@ export function HuntMapView({
         primaryAmmo.ammo,
         primaryAmmo.id,
         kestrelProfiles,
+        realSolveArg,
       );
       hold = exactBallisticHold(solve.ammo, trueDistanceM, cw, {
         densityRatio: density,
@@ -3166,6 +3220,7 @@ export function HuntMapView({
           primaryAmmo.ammo,
           primaryAmmo.id,
           kestrelProfiles,
+          realSolveArg,
         );
         hold = exactBallisticHold(solve.ammo, dist, cw, {
           densityRatio: density,
@@ -3345,11 +3400,74 @@ export function HuntMapView({
     }
     let fleeObservation: ShotPair["fleeObservation"];
     if (result.kind === "ettersok") {
+      const rest = shootSession.rest ?? "none";
+      const weaponCalm = computeWeaponCalmFactor({
+        hasBipod: rest === "bipod" || rest === "backpack",
+        bipod:
+          rest === "backpack"
+            ? BAG_REST_BIPOD_SPEC
+            : rest === "bipod"
+              ? kitBipod?.bipod
+              : null,
+        suppressorWeightGrams: suppressorItem?.weightGrams,
+        extraCalmGrams: miscKitWeaponCalmGrams(
+          kitItems.filter(isMiscItem).map((i) => i.misc),
+          !!suppressorItem,
+        ),
+        customsCalmMult,
+      });
+      const recoilDamping = computeRecoilDamping({
+        soundReductionDb: suppressorSoundDb,
+        customsMods,
+      });
+      const rifleItem = kitItems.find(isRifleItem) ?? null;
+      const scopeItem = kitItems.find(isScopeItem) ?? null;
+      const mountItem = kitItems.find(isMountItem) ?? null;
+      const ammoItem = (() => {
+        if (result.ammoId) {
+          const hit = kitItems.find((i) => i.id === result.ammoId);
+          if (hit && isAmmoItem(hit)) return hit;
+        }
+        return kitItems.find(isAmmoItem) ?? null;
+      })();
+      const weaponKg = rifleItem
+        ? shoulderedWeaponWeightKg({
+            rifleGrams: rifleItem.weightGrams,
+            scopeGrams: scopeItem?.weightGrams,
+            mountGrams: mountItem?.weightGrams,
+            suppressorGrams: suppressorItem?.weightGrams,
+            bipodGrams:
+              rest === "bipod" || rest === "backpack"
+                ? kitBipod?.weightGrams
+                : 0,
+          })
+        : null;
+      const grains = ammoItem
+        ? resolveBulletWeightGrains(
+            ammoItem.ammo,
+            `${ammoItem.brand} ${ammoItem.name}`,
+          )
+        : null;
+      const v0 =
+        result.v0 ??
+        (ammoItem && rifleItem
+          ? ammoItem.ammo.v0 *
+            barrelV0FactorForRifle(rifleItem.id, customBarrels[rifleItem.id])
+          : null);
+      const feltRecoil = computeFeltRecoil({
+        weaponCalm,
+        recoilDamping,
+        fatigue: { physicalFatigue },
+        bulletWeightGrains: grains,
+        v0Mps: v0,
+        weaponWeightKg: weaponKg,
+      });
       const flee = generateFleeObservation({
         birdAtShot: birdPos,
         hitZone: result.zone === "vital" ? "vital" : "body",
         hasTriggercam: triggercamOn,
         hasCamcorder: camcorderOn,
+        feltRecoil,
       });
       impact = flee.landPos;
       fleeObservation = flee.observation;
@@ -4200,13 +4318,18 @@ export function HuntMapView({
         zeroingProfiles={zeroingProfiles}
         dopeCard={dopeCard}
         kestrelProfiles={kestrelProfiles}
+        realLoadProfiles={realLoadProfiles}
+        useRealDataInSimulation={useRealDataInSimulation}
         customsMoaDelta={customsMoaDelta}
         customsCalmMult={customsCalmMult}
+        recoilDamping={computeRecoilDamping({
+          soundReductionDb: suppressorSoundDb,
+          customsMods,
+        })}
         customsTriggerPullScale={triggerPullScale}
         barrelWearScale={huntBarrelWearScale}
         customBarrels={customBarrels}
         mountHuntDriftMm={mountHuntDriftMmRef.current}
-        musicEnabled={musicEnabled}
         physicalFatigue={physicalFatigue}
         mentalFatigue={effectiveMentalFatigue}
         heartRateBpm={pulse.heartRateBpm}

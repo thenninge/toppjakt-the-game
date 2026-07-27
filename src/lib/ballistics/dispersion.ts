@@ -54,6 +54,20 @@ export const MM_PER_MOA_AT_100M = 29.4;
  */
 export const DISPERSION_MOA_SIGMA_LEVEL: 1 | 2 | 3 = 2;
 
+/**
+ * Typical extreme-spread / 1σ for a 5-shot 2D Gaussian group.
+ * Used so CB Real loads «Avg MOA» (measured ES) maps to engine envelope.
+ */
+export const FIVE_SHOT_ES_OVER_SIGMA = 3.1;
+
+/** Measured 5-shot ES (MOA) → engine N-σ envelope. */
+export function groupEsMoaToEnvelopeMoa(groupEsMoa: number): number {
+  return Math.max(
+    0.05,
+    (groupEsMoa * DISPERSION_MOA_SIGMA_LEVEL) / FIVE_SHOT_ES_OVER_SIGMA,
+  );
+}
+
 /** Fallback 1σ muzzle-velocity SD (m/s) when ammo has no explicit field. */
 export const DEFAULT_V0_SIGMA_MPS = 5;
 
@@ -80,6 +94,10 @@ export type DispersionInput = {
    * +25 % × factor (see {@link applyMirageToDispersionMoa}).
    */
   mirageFactor?: number;
+  /**
+   * Pipe length vs factory reference — scales nominal muzzle velocity (1 = factory).
+   */
+  barrelV0Factor?: number;
 };
 
 /**
@@ -88,6 +106,22 @@ export type DispersionInput = {
  * then optional {@link DispersionInput.dispersionScale} (e.g. MIND fatigue).
  */
 export function combinedDispersionMoa(input: DispersionInput): number {
+  const scale =
+    input.dispersionScale != null && Number.isFinite(input.dispersionScale)
+      ? Math.max(1, input.dispersionScale)
+      : 1;
+
+  // Real-data measured system group — replaces catalog rifle+ammo stack.
+  const override = input.ammo.systemGroupMoaOverride;
+  if (
+    override != null &&
+    Number.isFinite(override) &&
+    override > 0
+  ) {
+    // Mirage still widens in sampleShotFromPoa; fatigue scale applies here.
+    return Math.max(0.05, override * scale);
+  }
+
   const wear =
     input.barrelWearScale != null && Number.isFinite(input.barrelWearScale)
       ? Math.max(1, input.barrelWearScale)
@@ -101,10 +135,6 @@ export function combinedDispersionMoa(input: DispersionInput): number {
   if (input.customsMoaDelta) {
     moa += input.customsMoaDelta;
   }
-  const scale =
-    input.dispersionScale != null && Number.isFinite(input.dispersionScale)
-      ? Math.max(1, input.dispersionScale)
-      : 1;
   return Math.max(0.05, moa * scale);
 }
 
@@ -127,6 +157,24 @@ function boxMuller(random: () => number): { z0: number; z1: number } {
     z0: mag * Math.cos(2 * Math.PI * v),
     z1: mag * Math.sin(2 * Math.PI * v),
   };
+}
+
+/**
+ * CB Real loads: Avg = μ, Best = μ − 3σ.
+ * Sample one series/shot envelope from N(μ, σ), soft-clamped to ~±3.5σ
+ * (e.g. Best 0.3 / Avg 0.45 → σ=0.05 → typically ~0.3…0.6 MOA).
+ */
+export function sampleRealSystemGroupMoa(
+  meanMoa: number,
+  bestMoa: number,
+  random: () => number = Math.random,
+): number {
+  const mu = Math.max(0.05, meanMoa);
+  const best = Math.min(Math.max(0.05, bestMoa), mu);
+  const sigma = Math.max(1e-4, (mu - best) / 3);
+  const { z0 } = boxMuller(random);
+  const z = Math.max(-3.5, Math.min(3.5, z0));
+  return Math.max(0.05, mu + z * sigma);
 }
 
 /** Independent Gaussian samples in MOA for horizontal / vertical. */
@@ -152,12 +200,16 @@ export function sampleMuzzleVelocity(
   ammo: AmmoSpec,
   random: () => number = Math.random,
   powderTempC: number = 15,
+  barrelV0Factor: number = 1,
+  dvDtMpsPerC?: number | null,
 ): { v0: number; deltaV0: number } {
-  const base = ammoAtPowderTemp(ammo, powderTempC);
+  const base = ammoAtPowderTemp(ammo, powderTempC, dvDtMpsPerC);
+  const scale = Number.isFinite(barrelV0Factor) ? Math.max(0.5, barrelV0Factor) : 1;
   const sigma = ammoV0SigmaMps(ammo);
   const { z0 } = boxMuller(random);
   const deltaV0 = z0 * sigma;
-  return { v0: Math.max(50, base.v0 + deltaV0), deltaV0 };
+  const nominal = base.v0 * scale;
+  return { v0: Math.max(50, nominal + deltaV0), deltaV0 };
 }
 
 /**
@@ -201,11 +253,51 @@ export function sampleShotFromPoa(
   input: DispersionInput,
   distanceM: number,
   random: () => number = Math.random,
-  opts?: { densityRatio?: number; powderTempC?: number },
+  opts?: {
+    densityRatio?: number;
+    powderTempC?: number;
+    /** Kestrel / calibrated dV/dT — same as exactBallisticHold. */
+    dvDtMpsPerC?: number | null;
+    /**
+     * CB Real loads: reuse one sampled series envelope for all shots in the
+     * group (do not re-roll Best/Avg each shot).
+     */
+    seriesGroupEnvelopeMoa?: number | null;
+    /** Skip mirage widening (CB Real loads already include real conditions). */
+    skipMirage?: boolean;
+  },
 ): SampledShot {
   const powderTempC = opts?.powderTempC ?? 15;
-  let envelope = combinedDispersionMoa(input);
-  if (input.mirageFactor != null && input.mirageFactor > 0) {
+  const scale =
+    input.dispersionScale != null && Number.isFinite(input.dispersionScale)
+      ? Math.max(1, input.dispersionScale)
+      : 1;
+  let envelope: number;
+  const mean = input.ammo.systemGroupMoaOverride;
+  const best = input.ammo.systemGroupMoaBest;
+  if (
+    opts?.seriesGroupEnvelopeMoa != null &&
+    Number.isFinite(opts.seriesGroupEnvelopeMoa) &&
+    opts.seriesGroupEnvelopeMoa > 0
+  ) {
+    envelope = opts.seriesGroupEnvelopeMoa * scale;
+  } else if (
+    mean != null &&
+    Number.isFinite(mean) &&
+    mean > 0 &&
+    best != null &&
+    Number.isFinite(best) &&
+    best > 0
+  ) {
+    envelope = sampleRealSystemGroupMoa(mean, best, random) * scale;
+  } else {
+    envelope = combinedDispersionMoa(input);
+  }
+  if (
+    !opts?.skipMirage &&
+    input.mirageFactor != null &&
+    input.mirageFactor > 0
+  ) {
     envelope = applyMirageToDispersionMoa(
       envelope,
       input.mirageFactor,
@@ -217,6 +309,8 @@ export function sampleShotFromPoa(
     input.ammo,
     random,
     powderTempC,
+    input.barrelV0Factor ?? 1,
+    opts?.dvDtMpsPerC,
   );
   const traj = sampleTrajectory(
     { v0, bc: input.ammo.bc, bcModel: input.ammo.bcModel },

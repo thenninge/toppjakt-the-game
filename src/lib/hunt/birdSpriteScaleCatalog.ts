@@ -4,24 +4,24 @@
  * Admin Scale % writes browser localStorage first. Use Spotting / Scopes →
  * «Lagre til repo» (tiur / orre / ugle) to overwrite this file, then commit + push.
  *
- * Auto-generated 2026-07-26T20:15:29.164Z — do not hand-edit unless needed.
+ * Auto-generated 2026-07-27T11:10:57.752Z — do not hand-edit unless needed.
  */
 
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 
 export const BIRD_SPRITE_SCALE_CATALOG: Record<BirdSpriteId, number> = {
-  "tiur-1": 69,
-  "tiur-2": 68,
-  "tiur-1b": 50,
-  "tiur-2b": 70,
-  "tiur-3b": 52,
-  "tiur-4b": 82,
-  "orre-1": 43,
-  "orre-2": 37,
-  "orre-1b": 36,
-  "orre-2b": 40,
-  "orre-3b": 45,
-  "orre-4b": 59,
-  "orre-5b": 30,
-  "ugle-1": 21,
+  "tiur-1": 120,
+  "tiur-2": 120,
+  "tiur-1b": 120,
+  "tiur-2b": 121,
+  "tiur-3b": 114,
+  "tiur-4b": 120,
+  "orre-1": 93,
+  "orre-2": 89,
+  "orre-1b": 95,
+  "orre-2b": 86,
+  "orre-3b": 91,
+  "orre-4b": 79,
+  "orre-5b": 105,
+  "ugle-1": 74,
 };

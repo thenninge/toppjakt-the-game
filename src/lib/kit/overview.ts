@@ -9,10 +9,12 @@ import { combinedDispersionMoa } from "@/lib/ballistics/dispersion";
 import {
   applyCustomCamoSneakPct,
   customsBeddingMoaDelta,
+  customsCalmMultiplier,
   type CustomsMods,
 } from "@/lib/customs/spec";
 import {
   applyCustomBarrelMoa,
+  barrelV0FactorForRifle,
   rifleSpecWithCustomBarrel,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
@@ -34,20 +36,184 @@ import {
   isCarryItem,
   isFoodItem,
   isLrfItem,
+  isMiscItem,
+  isMountItem,
   isRifleItem,
+  isScopeItem,
   isSkiItem,
   isStockItem,
+  isSuppressorItem,
   isThermalItem,
   type ShopItem,
 } from "@/lib/shop/types";
 import { clampScore10, formatScore10, type Score10 } from "@/lib/shop/score";
 import { kitCanBoil } from "@/lib/food/spec";
+import {
+  mountTierLabelNb,
+  type MountTier,
+} from "@/lib/mount/spec";
+import { miscKitWeaponCalmGrams } from "@/lib/misc/spec";
+import { computeWeaponCalmFactor } from "@/lib/range/precision";
+import {
+  computeFeltRecoil,
+  computeRecoilDamping,
+  formatFeltRecoil,
+  shoulderedWeaponWeightKg,
+} from "@/lib/range/recoil";
+import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
 
 export type KitPrecisionAmmoRow = {
   ammoId: string;
   label: string;
   envelopeMoa: number;
 };
+
+/** Current-rig weapon factors (Home Inventory). */
+export type WeaponRigFactors = {
+  /** Best rifle+ammo+stock+bedding envelope (affinity 1.0). */
+  bestMoa: number | null;
+  /** Scope zero-retention inaccuracy (MOA); null if no scope. */
+  zeroRetentionMoa: number | null;
+  /** Mount tier label, or null. */
+  mountTierLabel: string | null;
+  mountTier: MountTier | null;
+  /** Scope click error ±%; null if no scope. */
+  clickErrorPercent: number | null;
+  /** Weapon calm with bipod out when packed; else offhand + can/customs. */
+  calm: number | null;
+  calmWithBipod: boolean;
+  /** Felt recoil (lower = softer). */
+  recoil: number | null;
+  recoilDamping: number | null;
+  missing: string[];
+};
+
+/**
+ * Live weapon factors for Current rig — MOA, optic retention/clicks, calm, recoil.
+ * Calm/recoil assume bipod deployed when one is in kit (hunt rest choice).
+ */
+export function computeWeaponRigFactors(input: {
+  kitItems: ShopItem[];
+  customsMods: CustomsMods;
+  customBarrels?: Record<string, InstalledCustomBarrel>;
+}): WeaponRigFactors {
+  const { kitItems, customsMods, customBarrels = {} } = input;
+  const rifle = kitItems.find(isRifleItem) ?? null;
+  const stock = kitItems.find(isStockItem) ?? null;
+  const scope = kitItems.find(isScopeItem) ?? null;
+  const mount = kitItems.find(isMountItem) ?? null;
+  const bipod = kitItems.find(isBipodItem) ?? null;
+  const suppressor = kitItems.find(isSuppressorItem) ?? null;
+  const ammoItems = kitItems.filter(isAmmoItem);
+
+  const missing: string[] = [];
+  if (!rifle) missing.push("Rifle");
+  if (ammoItems.length === 0) missing.push("Ammo");
+  if (!scope) missing.push("Kikkert");
+
+  let bestMoa: number | null = null;
+  if (rifle && ammoItems.length > 0) {
+    const beddingDelta = customsBeddingMoaDelta(customsMods);
+    let best = Infinity;
+    for (const ammo of ammoItems) {
+      const envelopeMoa = combinedDispersionMoa({
+        rifle: rifleSpecWithCustomBarrel(
+          rifle.rifle,
+          customBarrels[rifle.id],
+        ),
+        ammo: ammo.ammo,
+        stock: stock?.stock ?? null,
+        affinity: 1,
+        customsMoaDelta: beddingDelta,
+      });
+      if (envelopeMoa < best) best = envelopeMoa;
+    }
+    bestMoa = Number.isFinite(best) ? best : null;
+  }
+
+  const zeroRetentionMoa = scope
+    ? scope.scope.zeroRetentionInaccuracy
+    : null;
+  const clickErrorPercent = scope ? scope.scope.clickErrorPercent : null;
+  const mountTier = mount?.mount.tier ?? null;
+  const mountTierLabel = mountTier ? mountTierLabelNb(mountTier) : null;
+
+  let calm: number | null = null;
+  let calmWithBipod = false;
+  let recoil: number | null = null;
+  let recoilDamping: number | null = null;
+
+  if (rifle) {
+    calmWithBipod = !!bipod;
+    calm = computeWeaponCalmFactor({
+      hasBipod: calmWithBipod,
+      bipod: bipod?.bipod ?? null,
+      suppressorWeightGrams: suppressor?.weightGrams,
+      extraCalmGrams: miscKitWeaponCalmGrams(
+        kitItems.filter(isMiscItem).map((i) => i.misc),
+        !!suppressor,
+      ),
+      customsCalmMult: customsCalmMultiplier(customsMods),
+    });
+    recoilDamping = computeRecoilDamping({
+      soundReductionDb: suppressor?.suppressor.soundReductionDb ?? null,
+      customsMods,
+    });
+    // Softest packed load for the HUD (lowest impulse among kit ammo).
+    let softest = Infinity;
+    const weaponKg = shoulderedWeaponWeightKg({
+      rifleGrams: rifle.weightGrams,
+      scopeGrams: scope?.weightGrams,
+      mountGrams: mount?.weightGrams,
+      suppressorGrams: suppressor?.weightGrams,
+      bipodGrams: bipod?.weightGrams,
+    });
+    for (const ammo of ammoItems) {
+      const grains = resolveBulletWeightGrains(
+        ammo.ammo,
+        `${ammo.brand} ${ammo.name}`,
+      );
+      const v0 =
+        ammo.ammo.v0 *
+        barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]);
+      const r = computeFeltRecoil({
+        weaponCalm: calm,
+        recoilDamping,
+        bulletWeightGrains: grains,
+        v0Mps: v0,
+        weaponWeightKg: weaponKg,
+      });
+      if (r < softest) softest = r;
+    }
+    recoil =
+      ammoItems.length > 0 && Number.isFinite(softest)
+        ? softest
+        : computeFeltRecoil({
+            weaponCalm: calm,
+            recoilDamping,
+            weaponWeightKg: weaponKg,
+          });
+  }
+
+  return {
+    bestMoa,
+    zeroRetentionMoa,
+    mountTierLabel,
+    mountTier,
+    clickErrorPercent,
+    calm,
+    calmWithBipod,
+    recoil,
+    recoilDamping,
+    missing,
+  };
+}
+
+export function formatWeaponRigCalm(calm: number): string {
+  return calm.toFixed(2);
+}
+
+export { formatFeltRecoil };
 
 export type KitOverview = {
   precision: {
@@ -229,14 +395,21 @@ export function computeKitOverview(input: {
   }
   if (!customsMods.bagrider) {
     precisionTips.push(
-      "CB Bagrider (+15% calm, −0.05 MOA) hos CB Customs stabiliserer bakenden.",
+      "CB Bagrider (+15% calm, −0.05 MOA, rekyl-demping) hos CB Customs stabiliserer bakenden.",
     );
   }
   if (!customsMods.actionTrueing) {
     precisionTips.push("Action trueing hos CB shaver ~0.04 MOA.");
   }
   if (!customsMods.cheekRiser) {
-    precisionTips.push("Cheek riser hos CB gir litt mer calm (kinnfeste).");
+    precisionTips.push(
+      "Cheek riser hos CB: +calm og rekyl-demping (kinnfeste).",
+    );
+  }
+  if (!customsMods.buttpad) {
+    precisionTips.push(
+      "CB Soft Buttpad: ×1.25 rekyl-demping — lettere å følge fuglen i kikkerten etter skudd.",
+    );
   }
   if (!customsMods.barrelCrown) {
     precisionTips.push("Barrel crown hos CB: −0.03 MOA.");

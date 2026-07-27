@@ -22,6 +22,8 @@ export type CustomsMods = {
   actionTrueing: boolean;
   /** Custom cheek riser / comb — a bit more calm. */
   cheekRiser: boolean;
+  /** Soft buttpad — lower felt recoil (stay in the glass after the shot). */
+  buttpad: boolean;
   /** Barrel crown job — small MOA improvement. */
   barrelCrown: boolean;
 };
@@ -37,6 +39,7 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   bagrider: false,
   actionTrueing: false,
   cheekRiser: false,
+  buttpad: false,
   barrelCrown: false,
 };
 
@@ -51,6 +54,7 @@ export type CustomsServiceId =
   | "bagrider"
   | "action_trueing"
   | "cheek_riser"
+  | "buttpad"
   | "barrel_crown";
 
 export type CustomsService = {
@@ -113,6 +117,12 @@ export const BAGRIDER_CALM_MULT = 1.15;
 export const ACTION_TRUEING_MOA = 0.04;
 /** Cheek riser — modest calm from better cheek weld. */
 export const CHEEK_RISER_CALM_MULT = 1.08;
+/** Soft buttpad — recoil damping only (no calm). */
+export const BUTTPAD_RECOIL_DAMPING_MULT = 1.25;
+/** Bagrider also softens muzzle jump. */
+export const BAGRIDER_RECOIL_DAMPING_MULT = 1.2;
+/** Cheek riser — slightly better recoil control. */
+export const CHEEK_RISER_RECOIL_DAMPING_MULT = 1.12;
 /** Fresh crown — small MOA improvement. */
 export const BARREL_CROWN_MOA = 0.03;
 
@@ -169,7 +179,7 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     id: "bagrider",
     name: "CB Bagrider",
     priceNok: 4500,
-    effect: `Bakre bag-rider — +${Math.round((BAGRIDER_CALM_MULT - 1) * 100)}% calm og −${BAGRIDER_MOA.toFixed(2)} MOA.`,
+    effect: `Bakre bag-rider — +${Math.round((BAGRIDER_CALM_MULT - 1) * 100)}% calm, −${BAGRIDER_MOA.toFixed(2)} MOA, ×${BAGRIDER_RECOIL_DAMPING_MULT.toFixed(2)} rekyl-demping.`,
   },
   {
     id: "action_trueing",
@@ -181,7 +191,13 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     id: "cheek_riser",
     name: "Cheek riser",
     priceNok: 2500,
-    effect: `Custom comb / cheek riser — +${Math.round((CHEEK_RISER_CALM_MULT - 1) * 100)}% calm (bedre kinnfeste).`,
+    effect: `Custom comb / cheek riser — +${Math.round((CHEEK_RISER_CALM_MULT - 1) * 100)}% calm, ×${CHEEK_RISER_RECOIL_DAMPING_MULT.toFixed(2)} rekyl-demping.`,
+  },
+  {
+    id: "buttpad",
+    name: "CB Soft Buttpad",
+    priceNok: 3500,
+    effect: `Myk bakkappe — ×${BUTTPAD_RECOIL_DAMPING_MULT.toFixed(2)} rekyl-demping (lettere å følge fuglen i kikkerten etter skudd).`,
   },
   {
     id: "barrel_crown",
@@ -205,6 +221,7 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     bagrider: o.bagrider === true,
     actionTrueing: o.actionTrueing === true,
     cheekRiser: o.cheekRiser === true,
+    buttpad: o.buttpad === true,
     barrelCrown: o.barrelCrown === true,
   };
 }
@@ -230,6 +247,15 @@ export function customsCalmMultiplier(mods: CustomsMods): number {
   let m = 1;
   if (mods.bagrider) m *= BAGRIDER_CALM_MULT;
   if (mods.cheekRiser) m *= CHEEK_RISER_CALM_MULT;
+  return m;
+}
+
+/** Multiplier on recoil damping (bagrider × cheek × buttpad). */
+export function customsRecoilDampingMultiplier(mods: CustomsMods): number {
+  let m = 1;
+  if (mods.bagrider) m *= BAGRIDER_RECOIL_DAMPING_MULT;
+  if (mods.cheekRiser) m *= CHEEK_RISER_RECOIL_DAMPING_MULT;
+  if (mods.buttpad) m *= BUTTPAD_RECOIL_DAMPING_MULT;
   return m;
 }
 
@@ -290,6 +316,7 @@ export function serviceOwned(
   if (id === "bagrider") return mods.bagrider;
   if (id === "action_trueing") return mods.actionTrueing;
   if (id === "cheek_riser") return mods.cheekRiser;
+  if (id === "buttpad") return mods.buttpad;
   if (id === "barrel_crown") return mods.barrelCrown;
   return false;
 }

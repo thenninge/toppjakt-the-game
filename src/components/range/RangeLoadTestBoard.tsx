@@ -16,7 +16,8 @@ import { computeChronoSeriesStats } from "@/lib/ballistics/kestrelProfile";
 
 type LiveSeriesStats = {
   shotCount: number;
-  shotsNeeded: number;
+  /** @deprecated Open series — no fixed shot target. */
+  shotsNeeded?: number;
   meanV0Mps: number | null;
   highV0Mps: number | null;
   lowV0Mps: number | null;
@@ -117,7 +118,7 @@ export function RangeLoadTestBoard({
           {live ? (
             <>
               {" · serie "}
-              {live.shotCount}/{live.shotsNeeded}
+              {live.shotCount} skudd
               {live.meanV0Mps != null ? (
                 <>
                   {" · live v₀ "}

@@ -1,9 +1,15 @@
 /**
- * Shared zeroing-lane target scale + optic-zoom reticle scale.
+ * Shared scope image scale — one truth for the whole game.
  *
- * Reticle size depends only on scope zoom (FFP grows with mag) — never on
- * which skive/bird/distance is in the glass. Paper/bird still shrink with
- * distance and true-angular ×0.1 so 1 mil on glass ≈ distanceM mm on target.
+ * Reticle: {@link opticReticleImgScale} — FFP size from optic zoom only
+ * (never subject / distance). Same path for hunt, IMPACT, admin, MOA.
+ *
+ * Bird / landscape: {@link birdScopeImageScale} — true angular vs FFP
+ * (1 mil ↔ distanceM mm); admin sprite-% scales visual + mm together.
+ *
+ * Zeroing paper only: {@link zeroingTargetAndReticleScale} applies the
+ * explicit {@link RANGE_TRUE_ANGULAR_TARGET_SCALE} (×0.1) so dial/hash
+ * matches readable paper — the sole intentional deviation from bird truth.
  */
 
 import type { ScopeClickUnit, ScopeSpec } from "@/lib/optics/spec";

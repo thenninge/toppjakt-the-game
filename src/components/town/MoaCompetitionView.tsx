@@ -1,16 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import {
   isAmmoItem,
   isBipodItem,
   isMiscItem,
+  isMountItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
+  isSuppressorItem,
   type ShopItem,
 } from "@/lib/shop/types";
-import { miscKitWeaponCalmGrams } from "@/lib/misc/spec";
+import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
+import {
+  computeFeltRecoil,
+  computeRecoilDamping,
+  recoilKickScale,
+  shoulderedWeaponWeightKg,
+} from "@/lib/range/recoil";
+import { miscKitWeaponCalmGrams, miscKitMirageMult, isChamberCoolerMisc } from "@/lib/misc/spec";
 import {
   FOCUS_HOLD_MS,
   TRIGGER_BAR_MS,
@@ -22,6 +31,7 @@ import {
   ensureAmmoAffinity,
   focusPhase,
   focusRemainingMs,
+  focusShouldAbort,
   rollTriggerTargetMs,
   sampleShotFromPoa,
   triggerPullErrorFactor,
@@ -29,7 +39,22 @@ import {
   wobbleAmplitudeMm,
   type ShotImpact,
 } from "@/lib/range/precision";
+import {
+  createMiragePhase,
+  mirageStrengthAtTime,
+  type MiragePhase,
+} from "@/lib/range/mirage";
+import {
+  bumpBarrelHeatTarget,
+  createBarrelHeatState,
+  tickBarrelHeat,
+  barrelHeatForRifle,
+  mirageFromBarrelHeat,
+  type BarrelHeatState,
+} from "@/lib/range/barrelHeat";
+import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeTurrets } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
@@ -50,7 +75,7 @@ import { densityRatioFromTempC } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import type { DayWeather } from "@/lib/weather/spec";
-import { barrelWearMoaScale } from "@/lib/rifle/barrelWear";
+import { barrelWearMaterialFromCustom, barrelWearMoaScale } from "@/lib/rifle/barrelWear";
 import {
   MOA_COMP_DISTANCE_M,
   MOA_COMP_ENTRY_FEE_NOK,
@@ -78,6 +103,7 @@ import {
 } from "@/lib/range/scopePointerAim";
 import {
   rifleSpecWithCustomBarrel,
+  barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
 
@@ -95,7 +121,6 @@ type MoaCompetitionViewProps = {
   customsCalmMult?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
-  musicEnabled: boolean;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -202,7 +227,6 @@ export function MoaCompetitionView({
   customsMoaDelta = 0,
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
-  musicEnabled,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -214,17 +238,21 @@ export function MoaCompetitionView({
   const barrelWearScale = useMemo(
     () =>
       rifle
-        ? barrelWearMoaScale(getRifleRoundCount(rifleRoundCounts, rifle.id))
+        ? barrelWearMoaScale(
+            getRifleRoundCount(rifleRoundCounts, rifle.id),
+            barrelWearMaterialFromCustom(customBarrels[rifle.id]),
+          )
         : 1,
-    [rifle, rifleRoundCounts],
+    [rifle, rifleRoundCounts, customBarrels],
   );
   const scope = useMemo(() => kitItems.find(isScopeItem) ?? null, [kitItems]);
   const stock = useMemo(() => kitItems.find(isStockItem) ?? null, [kitItems]);
   const bipod = useMemo(() => kitItems.find(isBipodItem) ?? null, [kitItems]);
   const suppressor = useMemo(
-    () => kitItems.find((i) => i.category === "suppressor") ?? null,
+    () => kitItems.find(isSuppressorItem) ?? null,
     [kitItems],
   );
+  const mount = useMemo(() => kitItems.find(isMountItem) ?? null, [kitItems]);
   const ammoOptions = useMemo(() => kitItems.filter(isAmmoItem), [kitItems]);
   const ready = !!(rifle && scope && ammoOptions.length > 0);
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
@@ -244,7 +272,7 @@ export function MoaCompetitionView({
     "10 skudd — ett per blink. Flytt våpenet selv mellom blinkene. Kun worst teller.",
   );
   const [focusUi, setFocusUi] = useState<{
-    phase: "idle" | "focused" | "fatigued";
+    phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
   const [triggerUi, setTriggerUi] = useState<{
@@ -277,6 +305,90 @@ export function MoaCompetitionView({
       }),
     [bipod, suppressor, kitItems, customsCalmMult],
   );
+  const recoilKick = useMemo(() => {
+    if (!rifle || !selectedAmmo) return 1;
+    const damping = computeRecoilDamping({
+      soundReductionDb: suppressor?.suppressor.soundReductionDb ?? null,
+    });
+    const grains = resolveBulletWeightGrains(
+      selectedAmmo.ammo,
+      `${selectedAmmo.brand} ${selectedAmmo.name}`,
+    );
+    const v0 =
+      selectedAmmo.ammo.v0 *
+      barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]);
+    const felt = computeFeltRecoil({
+      weaponCalm: calmFactor,
+      recoilDamping: damping,
+      bulletWeightGrains: grains,
+      v0Mps: v0,
+      weaponWeightKg: shoulderedWeaponWeightKg({
+        rifleGrams: rifle.weightGrams,
+        scopeGrams: scope?.weightGrams,
+        mountGrams: mount?.weightGrams,
+        suppressorGrams: suppressor?.weightGrams,
+        bipodGrams: bipod?.weightGrams,
+      }),
+    });
+    return recoilKickScale(felt);
+  }, [
+    rifle,
+    scope,
+    mount,
+    suppressor,
+    bipod,
+    selectedAmmo,
+    calmFactor,
+    customBarrels,
+  ]);
+
+  const hasChamberCooler = useMemo(
+    () =>
+      inventory.some(
+        (e) => e.itemId === "misc-magnetospeed-riflekuhl" && e.qty > 0,
+      ) ||
+      kitItems.some((i) => isMiscItem(i) && isChamberCoolerMisc(i.misc)),
+    [inventory, kitItems],
+  );
+  const chamberCoolMult = hasChamberCooler ? 2 : 1;
+  const chamberCoolMultRef = useRef(chamberCoolMult);
+  chamberCoolMultRef.current = chamberCoolMult;
+  const gearMirageMult = useMemo(
+    () =>
+      miscKitMirageMult(
+        kitItems.filter(isMiscItem).map((i) => i.misc),
+        !!suppressor,
+      ),
+    [kitItems, suppressor],
+  );
+  const [barrelHeat01, setBarrelHeat01] = useState(0);
+  const barrelHeatStateRef = useRef<BarrelHeatState>(createBarrelHeatState());
+  const barrelHeatProfile = useMemo(
+    () =>
+      barrelHeatForRifle(
+        rifle?.id,
+        rifle ? customBarrels[rifle.id] : undefined,
+      ),
+    [rifle, customBarrels],
+  );
+  const barrelHeatProfileRef = useRef(barrelHeatProfile);
+  barrelHeatProfileRef.current = barrelHeatProfile;
+  const mirageOptsRef = useRef({
+    fanOn: false,
+    hasSuppressor: false,
+    gearMirageMult: 1,
+  });
+  mirageOptsRef.current = {
+    fanOn: false,
+    hasSuppressor: !!suppressor,
+    gearMirageMult,
+  };
+  const mirageStrengthRef = useRef(0);
+  const miragePhaseRef = useRef<MiragePhase>(createMiragePhase());
+  const weatherTempRef = useRef(weather.live.temperatureC);
+  weatherTempRef.current = weather.live.temperatureC;
+  const mirageSceneRef = useRef<HTMLDivElement>(null);
+  const mirageDisplaceRef = useRef<SVGFEDisplacementMapElement>(null);
 
   const keysRef = useRef<Keys>({
     up: false,
@@ -316,7 +428,7 @@ export function MoaCompetitionView({
   const phaseRef = useRef<Phase>("lobby");
   const ammoRemainingRef = useRef(0);
 
-  const { playShot } = useRangeAudio({ enabled: musicEnabled });
+  const { playShot } = useRangeAudio({ enabled: true });
   const {
     fillRef: triggerFillRef,
     paintTriggerProgress,
@@ -327,7 +439,6 @@ export function MoaCompetitionView({
     focusFillRef,
     paintFocusProgress,
     resetFocusProgress,
-    setFocusBarFatigued,
   } = useFocusBarPaint();
 
   useEffect(() => {
@@ -391,6 +502,10 @@ export function MoaCompetitionView({
     focusRef.current = { held: false, startedAtMs: 0 };
     triggerRef.current = { held: false, startedAtMs: null };
     triggerMarkRef.current = null;
+    barrelHeatStateRef.current = createBarrelHeatState();
+    miragePhaseRef.current = createMiragePhase();
+    mirageStrengthRef.current = 0;
+    setBarrelHeat01(0);
     setPhase("shooting");
     setStatus(
       `Skudd 0/${MOA_COMP_SHOT_COUNT} — pil-taster flytter sikte mellom blinkene. F fokus, Space avtrekk.`,
@@ -429,6 +544,11 @@ export function MoaCompetitionView({
       affinity,
       customsMoaDelta,
       barrelWearScale,
+      mirageFactor: mirageStrengthRef.current,
+      barrelV0Factor: barrelV0FactorForRifle(
+        rifle.id,
+        customBarrels[rifle.id],
+      ),
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(
@@ -484,6 +604,10 @@ export function MoaCompetitionView({
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
+    barrelHeatStateRef.current = bumpBarrelHeatTarget(
+      barrelHeatStateRef.current,
+      barrelHeatProfileRef.current,
+    );
     const bull = moaCompTargetPosMm(idx);
     const scored = scoreMoaCompShot(idx, {
       xMm: absImpact.xMm - bull.xMm,
@@ -541,8 +665,7 @@ export function MoaCompetitionView({
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
-    paintFocusProgress(1);
-    setFocusBarFatigued(false);
+    paintFocusProgress(1, 0);
     setTriggerUi({ pending: false, targetPct: markMs / TRIGGER_BAR_MS });
     setStatus("Fokus — hold pusten. Slipp Space på merket.");
   }
@@ -601,6 +724,7 @@ export function MoaCompetitionView({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: moaCompMmToPx(1),
+      viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
       drag.origX + delta.x,
@@ -745,14 +869,57 @@ export function MoaCompetitionView({
       y = Math.max(-AIM_LIMIT_MM, Math.min(AIM_LIMIT_MM, y));
       aimRef.current = { x, y };
 
+      if (focusShouldAbort(focusRef.current, now)) {
+        endFocus("Fokus brutt etter 7 s — slipp F og start på nytt.");
+      }
+
       const calm = effectiveCalmWithFocus(
         weaponCalmRef.current,
         focusRef.current,
         now,
       );
-      const amp = wobbleAmplitudeMm(calm, MOA_COMP_DISTANCE_M);
       const t = now / 1000;
       const ph = wobblePhase.current;
+
+      barrelHeatStateRef.current = tickBarrelHeat(
+        barrelHeatStateRef.current,
+        barrelHeatProfileRef.current,
+        weatherTempRef.current,
+        dt,
+        chamberCoolMultRef.current,
+      );
+      const mirageMid = mirageFromBarrelHeat(
+        barrelHeatStateRef.current.heat01,
+        mirageOptsRef.current,
+      );
+      const mirage = mirageStrengthAtTime(
+        mirageMid,
+        t,
+        miragePhaseRef.current,
+      );
+      mirageStrengthRef.current = mirage;
+      const scene = mirageSceneRef.current;
+      if (scene) {
+        if (mirage > 0.015) {
+          scene.style.setProperty("--mirage", mirage.toFixed(3));
+          scene.classList.add("is-mirage");
+          scene.classList.toggle("is-mirage-heavy", mirage > 1.1);
+          scene.classList.remove("is-mirage-porridge");
+        } else {
+          scene.classList.remove(
+            "is-mirage",
+            "is-mirage-heavy",
+            "is-mirage-porridge",
+          );
+          scene.style.removeProperty("--mirage");
+        }
+      }
+      const displace = mirageDisplaceRef.current;
+      if (displace) {
+        displace.setAttribute("scale", String(Math.round(mirage * 56)));
+      }
+
+      const amp = wobbleAmplitudeMm(calm, MOA_COMP_DISTANCE_M);
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
@@ -776,27 +943,24 @@ export function MoaCompetitionView({
         }
       }
 
-      const fPhase = focusPhase(focusRef.current, now);
-      if (fPhase === "focused") {
+      if (focusRef.current.held) {
+        const elapsed = now - focusRef.current.startedAtMs;
         paintFocusProgress(
           focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+          elapsed,
         );
-        setFocusBarFatigued(false);
-      } else if (fPhase === "fatigued") {
-        paintFocusProgress(1);
-        setFocusBarFatigued(true);
       } else {
         paintFocusProgress(0);
-        setFocusBarFatigued(false);
       }
 
       uiAccum += dt;
       if (uiAccum > 0.05) {
         uiAccum = 0;
         setFocusUi({
-          phase: fPhase,
+          phase: focusPhase(focusRef.current, now),
           remainingMs: focusRemainingMs(focusRef.current, now),
         });
+        setBarrelHeat01(barrelHeatStateRef.current.heat01);
       }
       raf = requestAnimationFrame(tick);
     }
@@ -816,10 +980,12 @@ export function MoaCompetitionView({
 
   const focusLabel =
     focusUi.phase === "focused"
-      ? `Fokus ${(focusUi.remainingMs / 1000).toFixed(1)} s`
-      : focusUi.phase === "fatigued"
-        ? "Pust — ustabil"
-        : "Ingen fokus (hold F)";
+      ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+      : focusUi.phase === "settling"
+        ? `Settler inn… ${(focusUi.remainingMs / 1000).toFixed(1)} s`
+        : focusUi.phase === "fatigued"
+          ? "Ustabil — slipp før 7 s / start på nytt"
+          : "Ingen fokus (hold F)";
 
   function handleFocusPointerDown(e: PointerEvent<HTMLButtonElement>) {
     e.preventDefault();
@@ -1024,13 +1190,19 @@ export function MoaCompetitionView({
       </div>
 
       <div className="scope-stage" tabIndex={0} ref={scopeStageRef}>
+        <BarrelHeatBar
+          className="range-barrel-heat"
+          heat01={barrelHeat01}
+        />
+        <ScopeOpticFit>
         <div className="scope-stage-optic-row">
           <div className="range-side-rail range-side-rail--focus">
             <span
               className={
                 focusUi.phase === "focused"
                   ? "range-side-rail-label is-focused"
-                  : focusUi.phase === "fatigued"
+                  : focusUi.phase === "settling" ||
+                      focusUi.phase === "fatigued"
                     ? "range-side-rail-label is-fatigued"
                     : "range-side-rail-label"
               }
@@ -1039,11 +1211,7 @@ export function MoaCompetitionView({
             </span>
             <div
               ref={focusBarRef}
-              className={
-                focusUi.phase === "fatigued"
-                  ? "range-focus-bar is-fatigued"
-                  : "range-focus-bar"
-              }
+              className="range-focus-bar"
               aria-hidden
             >
               <div ref={focusFillRef} className="range-focus-fill" />
@@ -1060,11 +1228,16 @@ export function MoaCompetitionView({
             }
           >
             <div
-              className={
-                recoilActive
-                  ? "scope-viewport is-recoiling"
-                  : "scope-viewport"
-              }
+                className={
+                  recoilActive
+                    ? "scope-viewport is-recoiling"
+                    : "scope-viewport"
+                }
+                style={
+                  {
+                    ["--recoil-kick" as string]: recoilKick,
+                  } as CSSProperties
+                }
               onPointerDown={onAimPointerDown}
               onPointerMove={onAimPointerMove}
               onPointerUp={onAimPointerUp}
@@ -1073,36 +1246,79 @@ export function MoaCompetitionView({
               onLostPointerCapture={onAimPointerUp}
             >
               <div ref={scopeWorldRef} className="scope-world">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="scope-target"
-                  src={MOA_COMP_IMG_SRC}
-                  alt="MOA-blink"
-                  draggable={false}
-                  width={MOA_COMP_NATIVE_W}
-                  height={MOA_COMP_NATIVE_H}
-                />
-                {shots.map((s) => {
-                  const bull = moaCompTargetPosMm(s.targetIndex);
-                  const hx = moaCompMmToPx(bull.xMm + s.xMm);
-                  const hy = moaCompMmToPx(bull.yMm + s.yMm);
-                  const d = moaCompMmToPx(s.diameterMm);
-                  return (
-                    <span
-                      key={`hole-${s.targetIndex}`}
-                      className="bullet-hole"
-                      style={{
-                        left: `calc(50% + ${hx}px)`,
-                        top: `calc(50% + ${hy}px)`,
-                        width: `${d}px`,
-                        height: `${d}px`,
-                        marginLeft: `${-d / 2}px`,
-                        marginTop: `${-d / 2}px`,
-                      }}
-                    />
-                  );
-                })}
+                <div ref={mirageSceneRef} className="scope-world-scene">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="scope-target"
+                    src={MOA_COMP_IMG_SRC}
+                    alt="MOA-blink"
+                    draggable={false}
+                    width={MOA_COMP_NATIVE_W}
+                    height={MOA_COMP_NATIVE_H}
+                  />
+                  {shots.map((s) => {
+                    const bull = moaCompTargetPosMm(s.targetIndex);
+                    const hx = moaCompMmToPx(bull.xMm + s.xMm);
+                    const hy = moaCompMmToPx(bull.yMm + s.yMm);
+                    const d = moaCompMmToPx(s.diameterMm);
+                    return (
+                      <span
+                        key={`hole-${s.targetIndex}`}
+                        className="bullet-hole"
+                        style={{
+                          left: `calc(50% + ${hx}px)`,
+                          top: `calc(50% + ${hy}px)`,
+                          width: `${d}px`,
+                          height: `${d}px`,
+                          marginLeft: `${-d / 2}px`,
+                          marginTop: `${-d / 2}px`,
+                        }}
+                      />
+                    );
+                  })}
+                  <div className="scope-mirage-shimmer" aria-hidden />
+                </div>
               </div>
+              <svg
+                className="scope-mirage-defs"
+                width="0"
+                height="0"
+                aria-hidden
+              >
+                <defs>
+                  <filter
+                    id="range-mirage-distort"
+                    x="-8%"
+                    y="-8%"
+                    width="116%"
+                    height="116%"
+                    colorInterpolationFilters="sRGB"
+                  >
+                    <feTurbulence
+                      type="fractalNoise"
+                      baseFrequency="0.014 0.045"
+                      numOctaves="2"
+                      seed="3"
+                      result="noise"
+                    >
+                      <animate
+                        attributeName="baseFrequency"
+                        dur="2.8s"
+                        values="0.014 0.045;0.02 0.055;0.012 0.038;0.014 0.045"
+                        repeatCount="indefinite"
+                      />
+                    </feTurbulence>
+                    <feDisplacementMap
+                      ref={mirageDisplaceRef}
+                      in="SourceGraphic"
+                      in2="noise"
+                      scale={0}
+                      xChannelSelector="R"
+                      yChannelSelector="G"
+                    />
+                  </filter>
+                </defs>
+              </svg>
               <ScopeReticle
                 scope={scope!.scope}
                 zoom={zoom}
@@ -1141,6 +1357,7 @@ export function MoaCompetitionView({
             </div>
           </div>
         </div>
+        </ScopeOpticFit>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button
@@ -1148,7 +1365,8 @@ export function MoaCompetitionView({
             className={
               focusUi.phase === "focused"
                 ? "range-touch-btn range-touch-btn--focus is-active"
-                : focusUi.phase === "fatigued"
+                : focusUi.phase === "settling" ||
+                    focusUi.phase === "fatigued"
                   ? "range-touch-btn range-touch-btn--focus is-fatigued"
                   : "range-touch-btn range-touch-btn--focus"
             }

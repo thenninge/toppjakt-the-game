@@ -9,6 +9,12 @@ import {
   type CellPoint,
 } from "@/lib/aware/cellGeometry";
 import type { ShotPair } from "@/lib/aware/types";
+import {
+  directionErrorSigmaFromRecoil,
+  SCOPE_DISTANCE_RECOIL_MAX,
+  SCOPE_OBSERVE_RECOIL_MAX,
+  scopeLandDistanceErrorFrac,
+} from "@/lib/range/recoil";
 
 export type EttersokEstimate = {
   findChance: number;
@@ -24,11 +30,15 @@ export type FleeObservation = {
   /** Compass label for the observed bearing (N, NØ, …). */
   compassLabel: string;
   /**
-   * Camcorder only: apparent land distance from where the bird sat (m).
+   * Camcorder / soft-recoil scope: apparent land distance from bird perch (m).
    */
   observedLandDistanceM?: number;
   hasTriggercam: boolean;
   hasCamcorder: boolean;
+  /** Cue improved by staying in the glass (low felt recoil). */
+  fromScopeRecoil?: boolean;
+  /** Felt recoil at the shot (lower = softer). */
+  feltRecoil?: number;
 };
 
 const COMPASS_8 = ["N", "NØ", "Ø", "SØ", "S", "SV", "V", "NV"] as const;
@@ -55,17 +65,24 @@ function randn(random: () => number): number {
 
 /**
  * Direction error σ (degrees) for the flee cue.
- * Naked ±30°, Triggercam ±10°, Camcorder ±5°,
- * Camcorder+Triggercam ±2.5° (half camcorder error).
+ * Cams set a floor; soft recoil can match or beat Triggercam alone.
+ * Naked hard recoil ±30°, soft scope ~5–15°, Triggercam ±10°,
+ * Camcorder ±5°, both ±2.5°.
  */
 function directionErrorSigmaDeg(opts: {
   hasTriggercam: boolean;
   hasCamcorder: boolean;
+  feltRecoil?: number;
 }): number {
-  if (opts.hasCamcorder && opts.hasTriggercam) return 2.5;
-  if (opts.hasCamcorder) return 5;
-  if (opts.hasTriggercam) return 10;
-  return 30;
+  let sigma = 30;
+  if (opts.hasCamcorder && opts.hasTriggercam) sigma = 2.5;
+  else if (opts.hasCamcorder) sigma = 5;
+  else if (opts.hasTriggercam) sigma = 10;
+
+  if (opts.feltRecoil != null && Number.isFinite(opts.feltRecoil)) {
+    sigma = Math.min(sigma, directionErrorSigmaFromRecoil(opts.feltRecoil));
+  }
+  return sigma;
 }
 
 /** Snap bearing to nearest 8-point compass (N, NØ, Ø, …). */
@@ -106,6 +123,11 @@ export type GenerateFleeObservationOpts = {
   hasTriggercam: boolean;
   /** True only if camcorder was deployed before the shot. */
   hasCamcorder: boolean;
+  /**
+   * Felt recoil at the shot (lower = softer). Soft recoil improves the
+   * scope-track cue without cams.
+   */
+  feltRecoil?: number;
   random?: () => number;
 };
 
@@ -118,8 +140,8 @@ export type GeneratedFlee = {
 /**
  * Wounded bird flies off and lands somewhere — player gets a noisy cue.
  * Direction + distance are always relative to where the bird sat.
- * Triggercam tightens direction; Camcorder also estimates land distance.
- * Both together halve camcorder angle/distance error.
+ * Triggercam / camcorder tighten the cue; soft recoil lets you stay in the
+ * scope and track the bird without cam gear.
  */
 export function generateFleeObservation(
   opts: GenerateFleeObservationOpts,
@@ -139,21 +161,34 @@ export function generateFleeObservation(
   const trueLandBearing = bearingDegFromTo(opts.birdAtShot, landPos);
   const trueLandDistM = distanceMBetween(opts.birdAtShot, landPos);
 
+  const feltRecoil =
+    opts.feltRecoil != null && Number.isFinite(opts.feltRecoil)
+      ? opts.feltRecoil
+      : undefined;
+  const fromScopeRecoil =
+    feltRecoil != null && feltRecoil <= SCOPE_OBSERVE_RECOIL_MAX;
+
   const sigma = directionErrorSigmaDeg({
     hasTriggercam: opts.hasTriggercam,
     hasCamcorder: opts.hasCamcorder,
+    feltRecoil,
   });
   let observedBearingDeg = normalizeDeg(
     trueLandBearing + randn(random) * sigma,
   );
-  // Naked eye: only a coarse compass sector (nearest N / NØ / Ø …).
-  if (!opts.hasTriggercam && !opts.hasCamcorder) {
+  // Naked hard recoil: only a coarse compass sector.
+  if (!opts.hasTriggercam && !opts.hasCamcorder && !fromScopeRecoil) {
     observedBearingDeg = snapToNearestCompassDeg(observedBearingDeg);
   }
   const compass = compassLabelFromDeg(observedBearingDeg);
 
   let observedLandDistanceM: number | undefined;
   let text: string;
+
+  const canScopeDistance =
+    fromScopeRecoil &&
+    feltRecoil != null &&
+    feltRecoil <= SCOPE_DISTANCE_RECOIL_MAX;
 
   if (opts.hasCamcorder) {
     const fracErr = distanceErrorFrac({
@@ -174,10 +209,36 @@ export function generateFleeObservation(
       `Fuglen er truffet men kommer seg på vingene. ${gearNote} viser at den ` +
       `dro omtrent mot ${compass} og så ut til å lande ca. ${observedLandDistanceM} m ` +
       `fra der den satt.`;
+  } else if (opts.hasTriggercam && canScopeDistance) {
+    const fracErr = scopeLandDistanceErrorFrac(feltRecoil!);
+    const noisy = trueLandDistM * (1 + randn(random) * fracErr);
+    const cap = range.max + 20;
+    observedLandDistanceM = Math.max(
+      10,
+      Math.min(cap, Math.round(noisy / 5) * 5),
+    );
+    text =
+      `Fuglen er truffet men kommer seg på vingene. Triggercam + lav rekyl: du fulgte ` +
+      `den i kikkerten mot ${compass} — land ca. ${observedLandDistanceM} m fra der den satt.`;
   } else if (opts.hasTriggercam) {
     text =
       `Fuglen er truffet men kommer seg på vingene. Triggercam tyder på at den ` +
       `dro i retning ${compass} fra der den satt — usikkerheten er liten, men ikke null.`;
+  } else if (canScopeDistance) {
+    const fracErr = scopeLandDistanceErrorFrac(feltRecoil!);
+    const noisy = trueLandDistM * (1 + randn(random) * fracErr);
+    const cap = range.max + 20;
+    observedLandDistanceM = Math.max(
+      10,
+      Math.min(cap, Math.round(noisy / 5) * 5),
+    );
+    text =
+      `Fuglen er truffet men kommer seg på vingene. Lav rekyl — du ble i kikkerten og så ` +
+      `at den dro mot ${compass} og landet ca. ${observedLandDistanceM} m fra der den satt.`;
+  } else if (fromScopeRecoil) {
+    text =
+      `Fuglen er truffet men kommer seg på vingene. Lav rekyl lot deg følge den i ` +
+      `kikkerten — den dro omtrent mot ${compass} fra der den satt.`;
   } else {
     text =
       `Fuglen er truffet men kommer seg på vingene. Det så ut som den dro mot ` +
@@ -193,6 +254,8 @@ export function generateFleeObservation(
       observedLandDistanceM,
       hasTriggercam: opts.hasTriggercam,
       hasCamcorder: opts.hasCamcorder,
+      fromScopeRecoil: fromScopeRecoil || undefined,
+      feltRecoil,
     },
   };
 }
@@ -339,6 +402,7 @@ export function estimateEttersokFind(
       }
       if (cue.hasCamcorder) chance += 0.04;
       else if (cue.hasTriggercam) chance += 0.02;
+      else if (cue.fromScopeRecoil) chance += 0.02;
     }
 
     if (cover.minDistM > 100 || (cover.bearingErrorDeg ?? 0) > 70) {
@@ -364,7 +428,7 @@ export function estimateEttersokFind(
         : "Skuddparet leder deg til riktig tre."
       : cover.minDistM < 50
         ? "Søkesporene traff området der fuglen landet."
-        : cue?.hasCamcorder || cue?.hasTriggercam
+        : cue?.hasCamcorder || cue?.hasTriggercam || cue?.fromScopeRecoil
           ? "Du fant den — sporene fulgte fluktretningen godt nok."
           : "Heldig — du snubler over fuglen nær søkesporet."
     : missHint;
