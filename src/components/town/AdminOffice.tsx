@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SpotView } from "@/components/hunt/SpotView";
 import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
+import { AdminJaktfeltPanel } from "@/components/town/AdminJaktfeltPanel";
 import { AdminSceneCreationPanel } from "@/components/town/AdminSceneCreationPanel";
 import { AdminScopeTestPanel } from "@/components/town/AdminScopeTestPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
@@ -52,7 +53,7 @@ type AdminOfficeProps = {
   onLeave: () => void;
 };
 
-type AdminTab = "spotting" | "scenes" | "treff" | "scopes";
+type AdminTab = "spotting" | "scenes" | "jaktfelt" | "treff" | "scopes";
 
 function spotLabel(src: string): string {
   const base = src.split("/").pop() ?? src;
@@ -238,6 +239,15 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
     );
   }
 
+  if (tab === "jaktfelt") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminJaktfeltPanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
   if (tab === "treff") {
     return (
       <div className="admin-office-shell">
@@ -300,6 +310,19 @@ function AdminTabBar({
         onClick={() => onTab("scenes")}
       >
         Scene creation
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "jaktfelt"}
+        className={
+          tab === "jaktfelt"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("jaktfelt")}
+      >
+        Jaktfelt
       </button>
       <button
         type="button"

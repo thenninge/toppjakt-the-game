@@ -166,6 +166,15 @@ type SpotViewProps = {
    * Admin uses this to select a perch without leaving Spot.
    */
   onBirdRanged?: (info: BirdObservedInfo) => void;
+  /**
+   * Every LRF press (bird hit or terrain miss) — bearing under reticle +
+   * measured/fake distance. Parent uses this for Aware arrow without a bird.
+   */
+  onLrfSample?: (sample: {
+    bearingDeg: number;
+    distanceM: number;
+    hitBird: boolean;
+  }) => void;
   onDone: (info: { mode: SpotMode; gameSeconds: number }) => void;
   /**
    * Extreme-caution auto-spot: open already in binos, pan on the bird,
@@ -407,6 +416,7 @@ export function SpotView({
   engageResumeActive = false,
   onOpenAware,
   onBirdRanged,
+  onLrfSample,
   onDone,
   initialMode = "eyes",
   initialPan,
@@ -1144,6 +1154,11 @@ export function SpotView({
       };
       setRangedBird(contact);
       onBirdRanged?.(contact);
+      onLrfSample?.({
+        bearingDeg: bearing,
+        distanceM: measured,
+        hitBird: true,
+      });
       playHud(measured, hold);
       return;
     }
@@ -1151,6 +1166,11 @@ export function SpotView({
     const terrain = 80 + Math.floor(Math.random() * 420) + Math.random();
     const terrainRounded = Math.round(terrain * 10) / 10;
     const hold = resolveHold(terrainRounded);
+    onLrfSample?.({
+      bearingDeg: bearing,
+      distanceM: terrainRounded,
+      hitBird: false,
+    });
     playHud(terrainRounded, hold);
   }
 

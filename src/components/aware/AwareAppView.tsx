@@ -122,7 +122,7 @@ function awareZoomUiLabel(actualZoom: number): string {
 }
 
 function nearestAwareZoomUiStep(ui: number): number {
-  let best = AWARE_MAP_ZOOM_UI_STEPS[0]!;
+  let best: number = AWARE_MAP_ZOOM_UI_STEPS[0]!;
   let bestDist = Math.abs(ui - best);
   for (const step of AWARE_MAP_ZOOM_UI_STEPS) {
     const d = Math.abs(ui - step);
@@ -136,12 +136,11 @@ function nearestAwareZoomUiStep(ui: number): number {
 
 function bumpAwareZoomUi(ui: number, dir: 1 | -1): number {
   const current = nearestAwareZoomUiStep(ui);
-  const idx = AWARE_MAP_ZOOM_UI_STEPS.indexOf(
-    current as (typeof AWARE_MAP_ZOOM_UI_STEPS)[number],
-  );
+  const idx = AWARE_MAP_ZOOM_UI_STEPS.findIndex((s) => s === current);
+  const safeIdx = idx < 0 ? 0 : idx;
   const nextIdx = Math.max(
     0,
-    Math.min(AWARE_MAP_ZOOM_UI_STEPS.length - 1, idx + dir),
+    Math.min(AWARE_MAP_ZOOM_UI_STEPS.length - 1, safeIdx + dir),
   );
   return AWARE_MAP_ZOOM_UI_STEPS[nextIdx]!;
 }
@@ -1580,18 +1579,22 @@ export function AwareAppView({
       <div className="aware-phone">
         <header className="aware-phone-bar">
           <span className="aware-brand">AWARE</span>
-          {rangeSource === "lrf" && hasActiveBird ? (
+          {rangeSource === "lrf" ? (
             <span
               className="lrf-range-callout"
               aria-label={
-                Math.abs(liveDistanceM - birdDistanceM) > 3
-                  ? `LRF ${Math.round(birdDistanceM)} meter, stand ${Math.round(liveDistanceM)} meter`
-                  : `LRF ${Math.round(birdDistanceM)} meter`
+                hasActiveBird
+                  ? Math.abs(liveDistanceM - birdDistanceM) > 3
+                    ? `LRF ${Math.round(birdDistanceM)} meter, stand ${Math.round(liveDistanceM)} meter`
+                    : `LRF ${Math.round(birdDistanceM)} meter`
+                  : `LRF-retning ${measuredBearing}°`
               }
             >
-              {Math.abs(liveDistanceM - birdDistanceM) > 3
-                ? `Stand ${Math.round(liveDistanceM)} m · LRF ${Math.round(birdDistanceM)} m`
-                : `LRF: ${Math.round(birdDistanceM)} m`}
+              {hasActiveBird
+                ? Math.abs(liveDistanceM - birdDistanceM) > 3
+                  ? `Stand ${Math.round(liveDistanceM)} m · LRF ${Math.round(birdDistanceM)} m`
+                  : `LRF: ${Math.round(birdDistanceM)} m`
+                : `LRF ${measuredBearing}°`}
             </span>
           ) : null}
           <span className="aware-clock">{formatHuntClock(clockMinutes)}</span>

@@ -678,6 +678,14 @@ export function HuntMapView({
     Record<string, BirdMapContact>
   >({});
   /**
+   * Last spotting LRF under reticle (bird or terrain). Drives Aware arrow
+   * when opening Aware without an engaged bird.
+   */
+  const lastSpotLrfRef = useRef<{
+    bearingDeg: number;
+    distanceM: number;
+  } | null>(null);
+  /**
    * Last hunter stand on the Aware map per cell — so a second bird in the
    * same spot does not force you to re-walk to the safe cake slice.
    */
@@ -1819,6 +1827,7 @@ export function HuntMapView({
     });
     const arrivedAt = { ...walkSession.to };
     setPos(arrivedAt);
+    lastSpotLrfRef.current = null;
     const nowMins = Math.floor(clockSecondsRef.current / 60);
     const nowDark = isHuntDark(nowMins);
     const arrivedParking = isAtParking(arrivedAt, activeMap);
@@ -3564,21 +3573,22 @@ export function HuntMapView({
       pickSpotImage();
     const scanPlacements = prepared?.birdPlacements ?? layout?.placements ?? [];
     const sceneWidthPct = medianPlacementWidthPct(scanPlacements, 2);
-    const birdPos = birdMarkerOnAwareMap(150, 0, {
+    const lrfSample = lastSpotLrfRef.current;
+    const bearing = lrfSample
+      ? ((Math.round(lrfSample.bearingDeg) % 360) + 360) % 360
+      : ((Math.round(
+          prepared?.viewBearingDeg ?? layout?.viewBearingDeg ?? 0,
+        ) % 360) +
+          360) %
+        360;
+    const dist = Math.max(
+      40,
+      Math.round(lrfSample?.distanceM ?? 150),
+    );
+    const birdPos = birdMarkerOnAwareMap(dist, bearing, {
       origin: stand,
       maxM: map ? awareMapMaxMFor(map) : undefined,
     });
-    const bearing = bearingDegFromTo(stand, birdPos);
-    const dist = Math.max(
-      40,
-      Math.round(
-        distanceMBetween(
-          stand,
-          birdPos,
-          map ? awareMetersPerPctFor(map) : undefined,
-        ),
-      ),
-    );
     const sprite = getBirdSprite("tiur-1");
     setEngageResume(null);
     setBirdEncounter(null);
@@ -3603,17 +3613,25 @@ export function HuntMapView({
       birdBearingDeg: bearing,
       hunterPos: stand,
       birdPos,
-      rangeSource: "estimated",
+      rangeSource: lrfSample ? "lrf" : "estimated",
       gunPrepOnly: true,
     });
     setLog(
       shotPairs.length > 0
         ? scanPlacements.length > 0
-          ? "Aware — skuddpar og stand. Gun · tårn, eller finn fugl i scope (F)."
-          : "Aware — skuddpar og siste stand. Gun · Skuddklar for tårn (prep)."
+          ? lrfSample
+            ? `Aware — LRF-retning ${bearing}° · skuddpar/stand. Gun · tårn, eller finn fugl i scope (F).`
+            : "Aware — skuddpar og stand. Gun · tårn, eller finn fugl i scope (F)."
+          : lrfSample
+            ? `Aware — LRF-retning ${bearing}°. Gun · Skuddklar for tårn (prep).`
+            : "Aware — skuddpar og siste stand. Gun · Skuddklar for tårn (prep)."
         : scanPlacements.length > 0
-          ? "Aware — siste stand. Gun · tårn, eller finn fugl i scope og marker med F."
-          : "Aware — siste stand. Gun · Skuddklar for å stille tårn.",
+          ? lrfSample
+            ? `Aware — LRF-retning ${bearing}°. Gun · tårn, eller finn fugl i scope og marker med F.`
+            : "Aware — siste stand. Gun · tårn, eller finn fugl i scope og marker med F."
+          : lrfSample
+            ? `Aware — LRF-retning ${bearing}°. Gun · Skuddklar for å stille tårn.`
+            : "Aware — siste stand. Gun · Skuddklar for å stille tårn.",
     );
     setPanel("arrived");
   }
@@ -4895,6 +4913,12 @@ export function HuntMapView({
         solveLrfHold={solveLrfHold}
         solveElevClicks={solveElevClicks}
         onBirdObserved={onBirdObserved}
+        onLrfSample={(sample) => {
+          lastSpotLrfRef.current = {
+            bearingDeg: sample.bearingDeg,
+            distanceM: sample.distanceM,
+          };
+        }}
         onResumeEngage={
           engageResume ? () => resumeEngageFromSpot() : undefined
         }
