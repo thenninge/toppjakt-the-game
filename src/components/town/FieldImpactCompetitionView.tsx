@@ -72,6 +72,7 @@ import {
 } from "@/lib/player";
 import {
   applyScopeClickError,
+  scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
@@ -94,6 +95,7 @@ import {
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
   formatHuntImpactOffsetMm,
+  isShotCamItemId,
 } from "@/lib/hunt/shoot";
 import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
 import {
@@ -215,6 +217,25 @@ export function FieldImpactCompetitionView({
     [rifle, rifleRoundCounts, customBarrels],
   );
   const scope = useMemo(() => kitItems.find(isScopeItem) ?? null, [kitItems]);
+  const shotCamInKit = useMemo(
+    () => kitItems.some((i) => isShotCamItemId(i.id)),
+    [kitItems],
+  );
+  const zoomRange = useMemo(
+    () =>
+      scope
+        ? scopeEffectiveZoomRange(scope.scope, shotCamInKit)
+        : { minZoom: 1, maxZoom: 1 },
+    [
+      scope,
+      shotCamInKit,
+      scope?.scope.minZoom,
+      scope?.scope.maxZoom,
+      scope?.scope.triggercamZoomRestrict,
+      scope?.scope.triggercamMinZoom,
+      scope?.scope.triggercamMaxZoom,
+    ],
+  );
   const stock = useMemo(() => kitItems.find(isStockItem) ?? null, [kitItems]);
   const bipod = useMemo(() => kitItems.find(isBipodItem) ?? null, [kitItems]);
   const suppressor = useMemo(
@@ -512,9 +533,14 @@ export function FieldImpactCompetitionView({
 
   useEffect(() => {
     if (scope) {
-      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, scope.scope));
+      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, zoomRange));
     }
-  }, [scope]);
+  }, [scope, zoomRange.minZoom, zoomRange.maxZoom]);
+
+  useEffect(() => {
+    if (!scope) return;
+    setZoom((z) => clampScopeZoom(z, zoomRange));
+  }, [scope, zoomRange.minZoom, zoomRange.maxZoom]);
 
   useEffect(() => {
     if (!rifle || !scope || !selectedAmmo) return;
@@ -1610,9 +1636,9 @@ export function FieldImpactCompetitionView({
               ) : null}
             </div>
             <ScopeZoomRing
-              scope={scope!.scope}
+              scope={zoomRange}
               zoom={zoom}
-              onChange={(z) => setZoom(z)}
+              onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
             />
           </div>
 

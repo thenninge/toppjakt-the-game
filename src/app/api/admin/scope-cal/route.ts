@@ -14,6 +14,9 @@ type Body = {
   focusZoomEnabled?: unknown;
   focusZoomMultiplier?: unknown;
   focusViewportScale?: unknown;
+  triggercamZoomRestrict?: unknown;
+  triggercamMinZoom?: unknown;
+  triggercamMaxZoom?: unknown;
 };
 
 function isFiniteNumber(v: unknown): v is number {
@@ -123,6 +126,10 @@ export async function POST(req: NextRequest) {
     isFiniteNumber(body.focusViewportScale) &&
     (body.focusViewportScale as number) >= 1 &&
     (body.focusViewportScale as number) <= 1.8;
+  const hasTriggercamRestrict =
+    typeof body.triggercamZoomRestrict === "boolean";
+  const hasTriggercamMin = isFiniteNumber(body.triggercamMinZoom);
+  const hasTriggercamMax = isFiniteNumber(body.triggercamMaxZoom);
 
   if (
     !hasMin &&
@@ -132,12 +139,15 @@ export async function POST(req: NextRequest) {
     !hasMinFov &&
     !hasFocusZoomEnabled &&
     !hasFocusZoomMult &&
-    !hasFocusViewportScale
+    !hasFocusViewportScale &&
+    !hasTriggercamRestrict &&
+    !hasTriggercamMin &&
+    !hasTriggercamMax
   ) {
     return NextResponse.json(
       {
         error:
-          "Expected at least one of minZoom, maxZoom, clickUnit, zoomMagCal, minZoomMagCal, focusZoomEnabled, focusZoomMultiplier, focusViewportScale",
+          "Expected at least one of minZoom, maxZoom, clickUnit, zoomMagCal, minZoomMagCal, focusZoomEnabled, focusZoomMultiplier, focusViewportScale, triggercamZoomRestrict, triggercamMinZoom, triggercamMaxZoom",
       },
       { status: 400 },
     );
@@ -181,6 +191,15 @@ export async function POST(req: NextRequest) {
     : undefined;
   const focusViewportScale = hasFocusViewportScale
     ? Math.round((body.focusViewportScale as number) * 1000) / 1000
+    : undefined;
+  const triggercamZoomRestrict = hasTriggercamRestrict
+    ? (body.triggercamZoomRestrict as boolean)
+    : undefined;
+  const triggercamMinZoom = hasTriggercamMin
+    ? Math.round((body.triggercamMinZoom as number) * 100) / 100
+    : undefined;
+  const triggercamMaxZoom = hasTriggercamMax
+    ? Math.round((body.triggercamMaxZoom as number) * 100) / 100
     : undefined;
 
   const relPath = "src/lib/shop/catalog.ts";
@@ -229,6 +248,27 @@ export async function POST(req: NextRequest) {
       String(focusViewportScale),
     );
   }
+  if (triggercamZoomRestrict != null) {
+    inner = upsertBooleanField(
+      inner,
+      "triggercamZoomRestrict",
+      triggercamZoomRestrict,
+    );
+  }
+  if (triggercamMinZoom != null) {
+    inner = upsertNumericField(
+      inner,
+      "triggercamMinZoom",
+      String(triggercamMinZoom),
+    );
+  }
+  if (triggercamMaxZoom != null) {
+    inner = upsertNumericField(
+      inner,
+      "triggercamMaxZoom",
+      String(triggercamMaxZoom),
+    );
+  }
 
   const replacement = `${match[1]}${inner}${match[3]}`;
   src =
@@ -250,5 +290,8 @@ export async function POST(req: NextRequest) {
     ...(focusZoomEnabled != null ? { focusZoomEnabled } : null),
     ...(focusZoomMultiplier != null ? { focusZoomMultiplier } : null),
     ...(focusViewportScale != null ? { focusViewportScale } : null),
+    ...(triggercamZoomRestrict != null ? { triggercamZoomRestrict } : null),
+    ...(triggercamMinZoom != null ? { triggercamMinZoom } : null),
+    ...(triggercamMaxZoom != null ? { triggercamMaxZoom } : null),
   });
 }

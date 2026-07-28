@@ -8,6 +8,7 @@ import {
   SPOT_TIME_FACTOR_THERMAL,
 } from "@/lib/hunt/images";
 import {
+  findBirdNearLandscapePoint,
   findBirdUnderLrfReticle,
   visibleInSpotMode,
   visibleWithHabrokZoom,
@@ -361,27 +362,6 @@ function BirdOverlay({
       />
     </button>
   );
-}
-
-/** Nearest visible bird within a forgiving radius of a frame click (% coords). */
-function findBirdNearPoint(
-  placements: BirdVisualPlacement[],
-  xPct: number,
-  yPct: number,
-): BirdVisualPlacement | null {
-  let best: BirdVisualPlacement | null = null;
-  let bestD2 = Infinity;
-  for (const p of placements) {
-    const radius = Math.max(p.widthPct / 2, BIRD_HIT_MIN_PCT / 2) * 1.15;
-    const dx = p.x - xPct;
-    const dy = p.y - yPct;
-    const d2 = dx * dx + dy * dy;
-    if (d2 <= radius * radius && d2 < bestD2) {
-      best = p;
-      bestD2 = d2;
-    }
-  }
-  return best;
 }
 
 /**
@@ -985,8 +965,28 @@ export function SpotView({
   toggleBinosRef.current = toggleBinos;
   toggleThermalRef.current = toggleThermal;
 
+  function endPanDrag(
+    el?: HTMLDivElement | null,
+    pointerId?: number,
+  ) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (pointerId != null && drag.pointerId !== pointerId) return;
+    dragRef.current = null;
+    if (el && el.hasPointerCapture(drag.pointerId)) {
+      try {
+        el.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+  }
+
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (mode !== "binos" && mode !== "thermal") return;
+    // Ignore non-primary mouse (right-click) and multi-touch extras.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
       pointerId: e.pointerId,
@@ -1000,6 +1000,11 @@ export function SpotView({
   function onPointerMove(e: PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    // Trackpad/mouse can drop button-up outside the glass — stop if no buttons.
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endPanDrag(e.currentTarget, e.pointerId);
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const sensX = (100 / Math.max(1, rect.width)) / zoom;
     const sensY = (100 / Math.max(1, rect.height)) / zoom;
@@ -1013,9 +1018,12 @@ export function SpotView({
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (dragRef.current?.pointerId === e.pointerId) {
-      dragRef.current = null;
-    }
+    endPanDrag(e.currentTarget, e.pointerId);
+  }
+
+  function onPointerLeave(e: PointerEvent<HTMLDivElement>) {
+    // Leaving the optic glass ends pan-drag (stuck capture / phantom left-button).
+    endPanDrag(e.currentTarget, dragRef.current?.pointerId);
   }
 
   /** Habrok: WH/BH/Outline + dagoptikk gate far birds by zoom. Fusion shows all birds. */
@@ -1250,7 +1258,7 @@ export function SpotView({
     if (rect.width <= 0 || rect.height <= 0) return;
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
     const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-    const hit = findBirdNearPoint(birdsOnFrame, xPct, yPct);
+    const hit = findBirdNearLandscapePoint(birdsOnFrame, xPct, yPct);
     if (hit) onBirdClick(hit);
   }
 
@@ -1580,6 +1588,8 @@ export function SpotView({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={onPointerLeave}
+        onLostPointerCapture={onPointerUp}
         onClick={onFrameClick}
       >
         <div

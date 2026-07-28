@@ -178,15 +178,23 @@ export function chestrigOpticsRaiseNerve(kitItems: ShopItem[]): number {
 }
 
 /**
- * Bird-nerve bump when presenting the rifle (Klar til skudd).
- * Backpack QR 10 → 0, QR 1 → +10 %. No backpack → treated as QR 1.
+ * Bird-nerve bump when deploying the rifle (Aware «Deploy gun»).
+ * Backpack QR 10 → +1 %, QR 1 → +10 %. No backpack → treated as QR 1.
  */
 export function backpackRifleRaiseNerve(kitItems: ShopItem[]): number {
   const hasRifle = kitItems.some(isRifleItem);
   if (!hasRifle) return 0;
   const pack = backpackFromKit(kitItems);
-  return scoreToQuickReleaseNerve(pack?.quickRelease ?? 1);
+  const qr = pack?.quickRelease ?? 1;
+  const q = Math.max(1, Math.min(10, Math.round(qr)));
+  return 0.01 + ((10 - q) / 9) * 0.09;
 }
+
+/**
+ * Absolute bird-nerve bump on unspotted birds when the rifle is mounted
+ * back into the pack (Aware «Mount gun» / auto-mount on cell change / Track).
+ */
+export const MOUNT_GUN_UNSPOTTED_NERVE = 0.3;
 
 /** @deprecated Prefer backpackFromKit / chestrigFromKit. */
 export function carryFromKit(kitItems: ShopItem[]): CarrySpec {

@@ -42,6 +42,11 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
 } from "@/lib/hunt/shoot";
+import { spriteWidthPctForDistance } from "@/lib/hunt/birds";
+import {
+  perchesForSpotImage,
+  spotImagesWithPerches,
+} from "@/lib/hunt/spotPerches";
 import {
   angularMmAtDistance,
   clampElevationTurretMm,
@@ -54,10 +59,12 @@ import {
   FOCUS_VIEWPORT_SCALE_MIN,
   FOCUS_ZOOM_MULTIPLIER_MAX,
   FOCUS_ZOOM_MULTIPLIER_MIN,
+  scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
   scopeFovDiameterScale,
+  scopeTriggercamMinZoomDefault,
   scopeWindageClicksPerRev,
   type ScopeClickUnit,
 } from "@/lib/optics/spec";
@@ -141,6 +148,11 @@ function clampDistanceM(raw: number): number {
 
 function scopeLabel(item: ScopeShopItem): string {
   return `${item.brand} ${item.name}`;
+}
+
+function spotImageLabel(src: string): string {
+  const base = src.split("/").pop() ?? src;
+  return base.replace(/\.[^.]+$/, "");
 }
 
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -279,6 +291,15 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const [birdId, setBirdId] = useState<BirdSpriteId>(
     () => birdIds[0] ?? "tiur-1",
   );
+  /** Spotting landscape behind bird — default off for clean hash/FOV cal. */
+  const [spotBgEnabled, setSpotBgEnabled] = useState(false);
+  const spotImageOptions = useMemo(() => spotImagesWithPerches(), []);
+  const [spotImageSrc, setSpotImageSrc] = useState(
+    () => spotImageOptions[0] ?? "",
+  );
+  const [spotFocusX, setSpotFocusX] = useState(50);
+  const [spotFocusY, setSpotFocusY] = useState(50);
+  const [landAspect, setLandAspect] = useState(16 / 9);
   const [distanceM, setDistanceM] = useState(100);
   const [easy10x, setEasy10x] = useState(false);
   const [zoom, setZoom] = useState(() => scope?.maxZoom ?? 27);
@@ -318,6 +339,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const [focusViewportScale, setFocusViewportScale] = useState(
     DEFAULT_FOCUS_VIEWPORT_SCALE,
   );
+  /** Catalog flag + admin preview (simulates Triggercam in kit when on). */
+  const [triggercamZoomRestrict, setTriggercamZoomRestrict] = useState(false);
+  const [triggercamMinZoom, setTriggercamMinZoom] = useState(24);
+  const [triggercamMaxZoom, setTriggercamMaxZoom] = useState(27);
   /** Local sticky lock for focus preview (optional; F-hold is the primary). */
   const [previewFocusSticky, setPreviewFocusSticky] = useState(false);
   /** Momentary F-held focus preview. */
@@ -353,6 +378,11 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     focusZoomEnabled: boolean;
     focusZoomMultiplier: number;
     focusViewportScale: number;
+  } | null>(null);
+  const [repoTriggercamZoomOverride, setRepoTriggercamZoomOverride] = useState<{
+    triggercamZoomRestrict: boolean;
+    triggercamMinZoom: number;
+    triggercamMaxZoom: number;
   } | null>(null);
   const [repoScopeOverride, setRepoScopeOverride] = useState<{
     minZoom: number;
@@ -399,6 +429,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const pxPerMmRef = useRef(1);
   const distanceRef = useRef(distanceM);
   const subjectKindRef = useRef(subjectKind);
+  const spotBgEnabledRef = useRef(spotBgEnabled);
   const keysRef = useRef<AimKeys>({
     up: null,
     down: null,
@@ -424,6 +455,30 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   useEffect(() => {
     subjectKindRef.current = subjectKind;
   }, [subjectKind]);
+
+  useEffect(() => {
+    spotBgEnabledRef.current = spotBgEnabled;
+  }, [spotBgEnabled]);
+
+  /** Place bird on a matching perch (or frame centre) when spotting bg is on. */
+  useEffect(() => {
+    if (!spotBgEnabled || !spotImageSrc) {
+      setSpotFocusX(50);
+      setSpotFocusY(50);
+      return;
+    }
+    const species = getBirdSprite(birdId).species;
+    const perches = perchesForSpotImage(spotImageSrc);
+    const match =
+      perches.find((p) => p.species === species) ?? perches[0] ?? null;
+    if (match) {
+      setSpotFocusX(match.x);
+      setSpotFocusY(match.y);
+    } else {
+      setSpotFocusX(50);
+      setSpotFocusY(50);
+    }
+  }, [spotBgEnabled, spotImageSrc, birdId]);
 
   /** Snap to engraved max power when switching scope — matches range calibration. */
   useEffect(() => {
@@ -474,6 +529,25 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
           )
         : DEFAULT_FOCUS_VIEWPORT_SCALE,
     );
+    setTriggercamZoomRestrict(scope?.triggercamZoomRestrict === true);
+    {
+      const base = {
+        minZoom: scope?.minZoom ?? 5,
+        maxZoom: scope?.maxZoom ?? 27,
+      };
+      setTriggercamMinZoom(
+        scope?.triggercamMinZoom != null &&
+          Number.isFinite(scope.triggercamMinZoom)
+          ? scope.triggercamMinZoom
+          : scopeTriggercamMinZoomDefault(base),
+      );
+      setTriggercamMaxZoom(
+        scope?.triggercamMaxZoom != null &&
+          Number.isFinite(scope.triggercamMaxZoom)
+          ? scope.triggercamMaxZoom
+          : base.maxZoom,
+      );
+    }
     setPreviewFocusSticky(false);
     setPreviewFocusHeld(false);
     if (def) {
@@ -505,6 +579,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setRepoCalOverride(null);
     setRepoFovOverride(null);
     setRepoFocusZoomOverride(null);
+    setRepoTriggercamZoomOverride(null);
   }, [
     scopeId,
     scope?.reticleId,
@@ -513,6 +588,11 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     scope?.focusZoomEnabled,
     scope?.focusZoomMultiplier,
     scope?.focusViewportScale,
+    scope?.triggercamZoomRestrict,
+    scope?.triggercamMinZoom,
+    scope?.triggercamMaxZoom,
+    scope?.minZoom,
+    scope?.maxZoom,
   ]);
 
   function applyIlluminationToState(
@@ -552,16 +632,18 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       ccw: null,
       cw: null,
     };
-  }, [subjectKind, rangeTargetId, birdId, distanceM, scopeId]);
+  }, [subjectKind, rangeTargetId, birdId, distanceM, scopeId, spotBgEnabled, spotImageSrc]);
 
   /** Arrow keys — same tap + hold ramp as shooting range. */
   useEffect(() => {
     function aimLimits(): { limitX: number; limitY: number } {
       const distFactor = distanceRef.current / 100;
       const limit =
-        subjectKindRef.current === "bird"
-          ? 120 * distFactor
-          : 80 * distFactor;
+        spotBgEnabledRef.current && subjectKindRef.current === "bird"
+          ? 420 * distFactor
+          : subjectKindRef.current === "bird"
+            ? 120 * distFactor
+            : 80 * distFactor;
       return { limitX: limit, limitY: limit };
     }
 
@@ -700,9 +782,37 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         focusZoomEnabled,
         focusZoomMultiplier,
         focusViewportScale,
+        triggercamZoomRestrict,
+        triggercamMinZoom,
+        triggercamMaxZoom,
         ...(uploadedReticleId ? { reticleId: uploadedReticleId } : null),
       }
     : null;
+
+  const zoomRange = useMemo(
+    () =>
+      scopeEffectiveZoomRange(
+        {
+          minZoom: liveMinZoom,
+          maxZoom: liveMaxZoom,
+          triggercamZoomRestrict,
+          triggercamMinZoom,
+          triggercamMaxZoom,
+        },
+        triggercamZoomRestrict,
+      ),
+    [
+      liveMinZoom,
+      liveMaxZoom,
+      triggercamZoomRestrict,
+      triggercamMinZoom,
+      triggercamMaxZoom,
+    ],
+  );
+
+  useEffect(() => {
+    setZoom((z) => clampScopeZoom(z, zoomRange));
+  }, [zoomRange.minZoom, zoomRange.maxZoom]);
 
   let targetScale = 1;
   let pxPerMm = 1;
@@ -713,6 +823,14 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   let imgH = 1;
   let imgAlt = "";
   let reticleImgScale = 0;
+  let birdWidthPct = 2;
+  let sceneW = 1;
+  let sceneH = 1;
+  const useSpotLandscape =
+    spotBgEnabled &&
+    subjectKind === "bird" &&
+    !!spotImageSrc &&
+    !!liveScope;
   const focusZoomBoost = liveScope
     ? scopeFocusZoomBoost(liveScope, previewFocusZoom)
     : 1;
@@ -741,12 +859,17 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     imgH = rangeTarget.nativeHeight;
     imgAlt = rangeTarget.label;
   } else if (liveScope && subjectKind === "bird") {
+    birdWidthPct = Math.max(
+      0.05,
+      spriteWidthPctForDistance(distanceM, birdId),
+    );
     targetScale = birdScopeImageScale(
       zoom,
       liveScope,
       distanceM,
       birdGeom.nativeW,
       birdId,
+      useSpotLandscape ? birdWidthPct : undefined,
     );
     pxPerMm = birdNativePxPerMm(birdGeom);
     const off = birdVitalOffsetFromImageCenterPx(birdGeom);
@@ -758,6 +881,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     imgAlt = birdId;
     // Same optic zoom as skive — reticle must not track bird size/distance.
     reticleImgScale = opticReticleImgScale(zoom, liveScope);
+    if (useSpotLandscape) {
+      sceneW = birdGeom.nativeW * (100 / birdWidthPct);
+      sceneH = sceneW / Math.max(0.25, landAspect);
+    }
   }
 
   targetScaleRef.current = targetScale;
@@ -765,8 +892,21 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   const zeroXMm = angularMmAtDistance(sessionZeroXMm, distanceM);
   const zeroYMm = angularMmAtDistance(sessionZeroYMm, distanceM);
-  const panPxX = (offsetX + (aimMm.x + zeroXMm) * pxPerMm) * targetScale;
-  const panPxY = (offsetY + (aimMm.y + zeroYMm) * pxPerMm) * targetScale;
+  let panPxX: number;
+  let panPxY: number;
+  if (useSpotLandscape) {
+    const aimPxX = (aimMm.x + zeroXMm) * pxPerMm;
+    const aimPxY = (aimMm.y + zeroYMm) * pxPerMm;
+    const birdCx = (spotFocusX / 100) * sceneW;
+    const birdCy = (spotFocusY / 100) * sceneH;
+    const ox = birdCx - sceneW / 2;
+    const oy = birdCy - sceneH / 2;
+    panPxX = (ox + offsetX + aimPxX) * targetScale;
+    panPxY = (oy + offsetY + aimPxY) * targetScale;
+  } else {
+    panPxX = (offsetX + (aimMm.x + zeroXMm) * pxPerMm) * targetScale;
+    panPxY = (offsetY + (aimMm.y + zeroYMm) * pxPerMm) * targetScale;
+  }
 
   const blurPx = focusBlurPx(distanceM, parallaxFocusM);
   const blurHint = focusBlurHint(blurPx);
@@ -875,6 +1015,31 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     (focusZoomEnabled &&
       repoFocusZoomOverride == null &&
       scope?.focusZoomEnabled !== true);
+  const catalogTriggercamRestrict =
+    repoTriggercamZoomOverride?.triggercamZoomRestrict ??
+    scope?.triggercamZoomRestrict === true;
+  const catalogTriggercamMin =
+    repoTriggercamZoomOverride?.triggercamMinZoom ??
+    (scope?.triggercamMinZoom != null &&
+    Number.isFinite(scope.triggercamMinZoom)
+      ? scope.triggercamMinZoom
+      : scopeTriggercamMinZoomDefault({
+          minZoom: catalogMinZoom,
+          maxZoom: catalogMaxZoom,
+        }));
+  const catalogTriggercamMax =
+    repoTriggercamZoomOverride?.triggercamMaxZoom ??
+    (scope?.triggercamMaxZoom != null &&
+    Number.isFinite(scope.triggercamMaxZoom)
+      ? scope.triggercamMaxZoom
+      : catalogMaxZoom);
+  const triggercamZoomDirty =
+    triggercamZoomRestrict !== catalogTriggercamRestrict ||
+    Math.abs(triggercamMinZoom - catalogTriggercamMin) > 1e-6 ||
+    Math.abs(triggercamMaxZoom - catalogTriggercamMax) > 1e-6 ||
+    (triggercamZoomRestrict &&
+      repoTriggercamZoomOverride == null &&
+      scope?.triggercamZoomRestrict !== true);
   const scopeSpecDirty =
     Math.abs(liveMinZoom - catalogMinZoom) > 1e-6 ||
     Math.abs(liveMaxZoom - catalogMaxZoom) > 1e-6 ||
@@ -1170,6 +1335,76 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       });
       setBakeStatus(
         `OK → ${data.path ?? "catalog.ts"} focusZoom ${savedEnabled ? "på" : "av"} ×${savedMult} glass×${savedViewport}. Commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
+  async function bakeTriggercamZoomToRepo() {
+    if (!scopeId) return;
+    let lo = Math.round(triggercamMinZoom * 100) / 100;
+    let hi = Math.round(triggercamMaxZoom * 100) / 100;
+    if (lo > hi) {
+      const t = lo;
+      lo = hi;
+      hi = t;
+    }
+    lo = Math.min(liveMaxZoom, Math.max(liveMinZoom, lo));
+    hi = Math.min(liveMaxZoom, Math.max(liveMinZoom, hi));
+    setTriggercamMinZoom(lo);
+    setTriggercamMaxZoom(hi);
+    setBakingReticleCal(true);
+    setBakeStatus("Skriver Triggercam zoom-limit til repo…");
+    try {
+      const res = await fetch("/api/admin/scope-cal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopeId,
+          triggercamZoomRestrict,
+          triggercamMinZoom: lo,
+          triggercamMaxZoom: hi,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        path?: string;
+        triggercamZoomRestrict?: boolean;
+        triggercamMinZoom?: number;
+        triggercamMaxZoom?: number;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const savedEnabled =
+        typeof data.triggercamZoomRestrict === "boolean"
+          ? data.triggercamZoomRestrict
+          : triggercamZoomRestrict;
+      const savedMin =
+        typeof data.triggercamMinZoom === "number"
+          ? data.triggercamMinZoom
+          : lo;
+      const savedMax =
+        typeof data.triggercamMaxZoom === "number"
+          ? data.triggercamMaxZoom
+          : hi;
+      setTriggercamZoomRestrict(savedEnabled);
+      setTriggercamMinZoom(savedMin);
+      setTriggercamMaxZoom(savedMax);
+      setRepoTriggercamZoomOverride({
+        triggercamZoomRestrict: savedEnabled,
+        triggercamMinZoom: savedMin,
+        triggercamMaxZoom: savedMax,
+      });
+      setBakeStatus(
+        `OK → ${data.path ?? "catalog.ts"} triggercam zoom ${savedEnabled ? "på" : "av"} ${savedMin}–${savedMax}×. Commit + push.`,
       );
     } catch (err) {
       setBakeStatus(
@@ -1553,9 +1788,11 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             <span>Subject</span>
             <select
               value={subjectKind}
-              onChange={(e) =>
-                setSubjectKind(e.target.value as SubjectKind)
-              }
+              onChange={(e) => {
+                const next = e.target.value as SubjectKind;
+                setSubjectKind(next);
+                if (next === "range") setSpotBgEnabled(false);
+              }}
             >
               <option value="range">Skyteskive</option>
               <option value="bird">Fugl</option>
@@ -1645,6 +1882,45 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             </>
           )}
 
+          <label
+            className="admin-spot-field admin-spot-check"
+            title="Hunt spotting-landskap bak fuglen — minZoomMagCal zoomer bakgrunnen ut/inn"
+          >
+            <input
+              type="checkbox"
+              checked={spotBgEnabled}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setSpotBgEnabled(on);
+                if (on) setSubjectKind("bird");
+              }}
+            />
+            <span>Spotting bakgrunn</span>
+          </label>
+          {spotBgEnabled ? (
+            <label className="admin-spot-field">
+              <span>Bakgrunn</span>
+              <select
+                value={spotImageSrc}
+                onChange={(e) => {
+                  setSpotImageSrc(e.target.value);
+                  setLandAspect(16 / 9);
+                }}
+                disabled={spotImageOptions.length === 0}
+              >
+                {spotImageOptions.length === 0 ? (
+                  <option value="">Ingen spotting-bilder</option>
+                ) : (
+                  spotImageOptions.map((src) => (
+                    <option key={src} value={src}>
+                      {spotImageLabel(src)}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          ) : null}
+
           <label className="admin-spot-field admin-spot-scale">
             <span>Avstand m</span>
             <input
@@ -1686,7 +1962,89 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             />
             <span>Cant på</span>
           </label>
+          <label
+            className="admin-spot-field admin-spot-check"
+            title="Når på og Triggercam/Scopemate er i aktivt kit: begrens zoom (ZCO default 24–27×)"
+          >
+            <input
+              type="checkbox"
+              checked={triggercamZoomRestrict}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setTriggercamZoomRestrict(on);
+                if (on) {
+                  setZoom((z) =>
+                    clampScopeZoom(z, {
+                      minZoom: triggercamMinZoom,
+                      maxZoom: triggercamMaxZoom,
+                    }),
+                  );
+                }
+              }}
+            />
+            <span>Include zoom restriction with Triggercam</span>
+          </label>
         </div>
+
+        {triggercamZoomRestrict ? (
+          <div className="admin-spot-row">
+            <label className="admin-spot-field admin-spot-scale">
+              <span>TC min ×</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={liveMinZoom}
+                max={liveMaxZoom}
+                step={0.1}
+                value={triggercamMinZoom}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (!Number.isFinite(n)) return;
+                  setTriggercamMinZoom(Math.round(n * 100) / 100);
+                }}
+              />
+            </label>
+            <label className="admin-spot-field admin-spot-scale">
+              <span>TC max ×</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={liveMinZoom}
+                max={liveMaxZoom}
+                step={0.1}
+                value={triggercamMaxZoom}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (!Number.isFinite(n)) return;
+                  setTriggercamMaxZoom(Math.round(n * 100) / 100);
+                }}
+              />
+            </label>
+            <span className="admin-scope-cal-clicks">
+              Preview {zoomRange.minZoom}–{zoomRange.maxZoom}×
+            </span>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={!triggercamZoomDirty}
+              onClick={() => {
+                setTriggercamZoomRestrict(catalogTriggercamRestrict);
+                setTriggercamMinZoom(catalogTriggercamMin);
+                setTriggercamMaxZoom(catalogTriggercamMax);
+              }}
+            >
+              Nullstill
+            </button>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={!triggercamZoomDirty || bakingReticleCal}
+              onClick={() => void bakeTriggercamZoomToRepo()}
+            >
+              {bakingReticleCal ? "Skriver…" : "Lagre til repo"}
+            </button>
+          </div>
+        ) : null}
 
         {subjectKind === "range" && rangeTargetId !== "tracking-test" ? (
           <div className="admin-spot-row">
@@ -1734,7 +2092,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               <code>minZoomMagCal</code> / focus zoom til{" "}
               <code>catalog.ts</code> (kun dev). Calibrate illumination:
               sirkel/rektangel/maske for hva som lyser rødt.
-              {calDirty || fovDirty || focusZoomDirty
+              {calDirty || fovDirty || focusZoomDirty || triggercamZoomDirty
                 ? " · lokale endringer"
                 : ""}
             </p>
@@ -1993,6 +2351,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                   <span>
                     minZoomMagCal {minZoomMagCal.toFixed(3)} · FOV ±
                     {fovHalfMrad.toFixed(2)} mrad @ min
+                    {useSpotLandscape ? " · bakgrunn følger" : ""}
                   </span>
                   <input
                     type="range"
@@ -2638,11 +2997,21 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                       >
                         <ScopeFocusZoom scale={focusZoomBoost}>
                         <div
+                          className="scope-cant-roll"
+                          style={
+                            Math.abs(worldRollDeg) > 0.02
+                              ? {
+                                  transform: `rotate(${worldRollDeg.toFixed(3)}deg)`,
+                                }
+                              : undefined
+                          }
+                        >
+                        <div
                           className="scope-world"
                           style={{
                             transform:
                               `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
-                              `scale(${targetScale}) rotate(${worldRollDeg.toFixed(3)}deg)`,
+                              `scale(${targetScale})`,
                             filter:
                               blurPx > 0.05
                                 ? `blur(${blurPx.toFixed(2)}px)`
@@ -2650,21 +3019,72 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                           }}
                         >
                           <div className="scope-world-scene">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              className={
-                                subjectKind === "bird"
-                                  ? "scope-target hunt-tiur-target"
-                                  : "scope-target"
-                              }
-                              src={imgSrc}
-                              alt={imgAlt}
-                              draggable={false}
-                              width={imgW}
-                              height={imgH}
-                              style={{ width: imgW }}
-                            />
+                            {useSpotLandscape ? (
+                              <div
+                                className="hunt-scope-scene"
+                                style={{ width: sceneW, height: sceneH }}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  className="hunt-scope-landscape"
+                                  src={spotImageSrc}
+                                  alt=""
+                                  draggable={false}
+                                  aria-hidden
+                                  onLoad={(e) => {
+                                    const img = e.currentTarget;
+                                    if (
+                                      img.naturalWidth > 0 &&
+                                      img.naturalHeight > 0
+                                    ) {
+                                      setLandAspect(
+                                        img.naturalWidth / img.naturalHeight,
+                                      );
+                                    }
+                                  }}
+                                />
+                                <div
+                                  className="hunt-scope-bird-wrap"
+                                  style={{
+                                    left: `${spotFocusX}%`,
+                                    top: `${spotFocusY}%`,
+                                    width: `${birdWidthPct}%`,
+                                    aspectRatio: `${imgW} / ${imgH}`,
+                                  }}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    className="scope-target hunt-tiur-target"
+                                    src={imgSrc}
+                                    alt={imgAlt}
+                                    draggable={false}
+                                    width={imgW}
+                                    height={imgH}
+                                    style={{
+                                      width: "100%",
+                                      height: "100%",
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                className={
+                                  subjectKind === "bird"
+                                    ? "scope-target hunt-tiur-target"
+                                    : "scope-target"
+                                }
+                                src={imgSrc}
+                                alt={imgAlt}
+                                draggable={false}
+                                width={imgW}
+                                height={imgH}
+                                style={{ width: imgW }}
+                              />
+                            )}
                           </div>
+                        </div>
                         </div>
                         <div className="scope-reticle-offset">
                           <ScopeReticle
@@ -2804,10 +3224,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                         ) : null}
                       </div>
                       <ScopeZoomRing
-                        scope={liveScope ?? scope}
+                        scope={zoomRange}
                         zoom={zoom}
                         onChange={(z) =>
-                          setZoom(clampScopeZoom(z, liveScope ?? scope))
+                          setZoom(clampScopeZoom(z, zoomRange))
                         }
                       />
                       <BubbleLevel

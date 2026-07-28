@@ -107,6 +107,8 @@ export type AwareShootStance = {
   kestrelEnviroActive?: boolean;
   /** Triggercam started in Aware before the shot. */
   triggercamActive?: boolean;
+  /** Rifle already deployed in Aware (nerve paid). */
+  gunDeployed?: boolean;
   /** Bird nervousness carried into the shoot scene (0–cap). */
   birdNerve?: number;
   /** Pack rest or deployed bipod — gates hunt weapon calm. */
@@ -141,6 +143,8 @@ type AwareAppViewProps = {
   initialKestrelEnviroReady?: boolean;
   /** Triggercam already started this encounter. */
   initialTriggercamReady?: boolean;
+  /** Rifle already deployed this encounter. */
+  initialGunDeployed?: boolean;
   /** Rest choice restored when returning from shoot. */
   initialRest?: HuntShootRest;
   /** Has LRF — Shoot-tab still useful, but less critical. */
@@ -164,6 +168,15 @@ type AwareAppViewProps = {
   hasBipod?: boolean;
   /** Kit bipod weaponCalm 1–10 (for nerve label). */
   bipodWeaponCalm?: number;
+  /**
+   * Bird-nerve when deploying the rifle (0–1), from backpack QR.
+   * 10 QR → ~1 %, 1 QR → 10 %.
+   */
+  gunDeployNerve?: number;
+  /** Rifle taken out of the pack (parent tracks for remount / auto-mount). */
+  onGunDeployed?: () => void;
+  /** Rifle mounted back into the pack (parent bumps unspotted birds). */
+  onMountGun?: () => void;
   clockMinutes: number;
   shotPairs: ShotPair[];
   focusPairId?: string | null;
@@ -372,6 +385,7 @@ export function AwareAppView({
   initialChronoReady = false,
   initialKestrelEnviroReady = false,
   initialTriggercamReady = false,
+  initialGunDeployed = false,
   initialRest = "none",
   hasLrf = false,
   ammo = null,
@@ -385,6 +399,9 @@ export function AwareAppView({
   hasBackpack = false,
   hasBipod = false,
   bipodWeaponCalm = 5,
+  gunDeployNerve = 0.1,
+  onGunDeployed,
+  onMountGun,
   clockMinutes,
   shotPairs,
   focusPairId = null,
@@ -415,9 +432,13 @@ export function AwareAppView({
   const [triggercamReady, setTriggercamReady] = useState(
     initialTriggercamReady,
   );
+  const [gunDeployed, setGunDeployed] = useState(initialGunDeployed);
   const [rest, setRest] = useState<HuntShootRest>(() => {
     if (initialRest === "bipod" && !hasBipod) return "none";
     if (initialRest === "backpack" && !hasBackpack) return "none";
+    if (!initialGunDeployed && (initialRest === "bipod" || initialRest === "backpack")) {
+      return "none";
+    }
     return initialRest;
   });
   const [hunter, setHunter] = useState<CellPoint>(
@@ -1137,6 +1158,10 @@ export function AwareAppView({
       onProceedToShoot();
       return;
     }
+    if (!gunDeployed) {
+      setStatus("Deploy gun først — ta rifla frem før tårn / skudd.");
+      return;
+    }
     onProceedToShoot({
       bearingDeg: liveBearing,
       distanceM: liveDistanceM,
@@ -1146,12 +1171,72 @@ export function AwareAppView({
       chronoActive: hasChronograph && chronoReady,
       kestrelEnviroActive: hasKestrel && kestrelEnviroReady,
       triggercamActive: hasTriggercam && triggercamReady,
+      gunDeployed: true,
       birdNerve: nerveRef.current,
       rest,
     });
   }
 
+  function deployGun() {
+    if (gunDeployed || flushedRef.current) return;
+    // Nerve only once per «gun out» cycle — remount after Til spotting must not re-charge.
+    const cost = gunPrepOnly ? 0 : Math.max(0, gunDeployNerve);
+    const next = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      nerveRef.current + cost,
+    );
+    nerveRef.current = next;
+    flushSync(() => {
+      setNerve(next);
+      setGunDeployed(true);
+    });
+    onNerveChangeRef.current?.(next);
+    onGunDeployed?.();
+    const pct = Math.round(cost * 100);
+    setStatus(
+      gunPrepOnly
+        ? "Gun deployed — klar for tårn / prep."
+        : next >= ENCOUNTER_NERVE.flushThreshold
+          ? `Gun deployed — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `Gun deployed (+${pct}% nervøsitet). Sekk-anlegg / bipod / tårn er tilgjengelig.`,
+    );
+    if (!gunPrepOnly && next >= ENCOUNTER_NERVE.flushThreshold) {
+      flushedRef.current = true;
+      onBirdFlushedRef.current(next);
+    }
+  }
+
+  function mountGun() {
+    if (!gunDeployed || flushedRef.current) return;
+    // Clear anlegg (refund rest nerve) — deploy cost stays paid.
+    if (rest !== "none") {
+      const revert = shootRestNerve(rest, bipodWeaponCalm);
+      const cleared = Math.max(0, nerveRef.current - revert);
+      nerveRef.current = cleared;
+      flushSync(() => {
+        setNerve(cleared);
+        setRest("none");
+        setGunDeployed(false);
+      });
+      onNerveChangeRef.current?.(cleared);
+    } else {
+      flushSync(() => {
+        setGunDeployed(false);
+      });
+    }
+    onMountGun?.();
+    setStatus(
+      gunPrepOnly
+        ? "Gun mounted — rifla i sekken."
+        : "Gun mounted — rifla i sekken. Uspottede fugler i feltet blir mer nervøse.",
+    );
+  }
+
   function applyRestChoice(next: HuntShootRest) {
+    if (!gunDeployed) {
+      setStatus("Deploy gun først — anlegg krever at rifla er fremme.");
+      return;
+    }
     if (flushedRef.current) return;
     if (next === "backpack" && !hasBackpack) return;
     if (next === "bipod" && !hasBipod) return;
@@ -1640,17 +1725,24 @@ export function AwareAppView({
             <button
               type="button"
               className="intro-button"
-              disabled={!gunPrepOnly && !liveBakgrunnOk}
+              disabled={
+                (!gunPrepOnly && !liveBakgrunnOk) ||
+                (!focusPairId && !postShotSkuddparMode && !gunDeployed)
+              }
               title={
                 gunPrepOnly
-                  ? "Gun — still tårn / prep (ingen skudd)"
-                  : liveBakgrunnOk
-                    ? planning
-                      ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
-                      : "Gun · Skuddklar — bakgrunn OK"
-                    : planning
-                      ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
-                      : "Flytt deg til sone uten farlig bakgrunn"
+                  ? gunDeployed
+                    ? "Gun — still tårn / prep (ingen skudd)"
+                    : "Deploy gun først"
+                  : !gunDeployed
+                    ? "Deploy gun først — ta rifla frem"
+                    : liveBakgrunnOk
+                      ? planning
+                        ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
+                        : "Gun · Skuddklar — bakgrunn OK"
+                      : planning
+                        ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
+                        : "Flytt deg til sone uten farlig bakgrunn"
               }
               onClick={proceed}
             >
@@ -1711,6 +1803,37 @@ export function AwareAppView({
 
           {mode === "aware" ? (
             <div className="aware-actions">
+              <button
+                type="button"
+                className={
+                  gunDeployed
+                    ? "intro-button sheriff-secondary is-active"
+                    : "intro-button sheriff-secondary"
+                }
+                disabled={gunDeployed}
+                onClick={deployGun}
+                title={
+                  gunPrepOnly
+                    ? "Ta rifla frem for tårn-prep"
+                    : `Backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → +1 %, 1 QR → +10 %)`
+                }
+              >
+                {gunDeployed
+                  ? "Gun deployed"
+                  : gunPrepOnly
+                    ? "Deploy gun"
+                    : `Deploy gun (+${Math.round(gunDeployNerve * 100)}% nervøsitet)`}
+              </button>
+              {gunDeployed ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  onClick={mountGun}
+                  title="Sett rifla tilbake i sekken. Uspottede fugler i feltet +30% bird nerve."
+                >
+                  Mount gun
+                </button>
+              ) : null}
               {hasBackpack ? (
                 <button
                   type="button"
@@ -1720,8 +1843,13 @@ export function AwareAppView({
                       : "intro-button sheriff-secondary"
                   }
                   aria-pressed={rest === "backpack"}
+                  disabled={!gunDeployed}
                   onClick={() => applyRestChoice("backpack")}
-                  title="Dobbelt calm vs beste bipod — +25% bird nerve"
+                  title={
+                    gunDeployed
+                      ? "Dobbelt calm vs beste bipod — +25% bird nerve"
+                      : "Deploy gun først"
+                  }
                 >
                   {rest === "backpack"
                     ? "Sekk-anlegg aktiv"
@@ -1737,8 +1865,13 @@ export function AwareAppView({
                       : "intro-button sheriff-secondary"
                   }
                   aria-pressed={rest === "bipod"}
+                  disabled={!gunDeployed}
                   onClick={() => applyRestChoice("bipod")}
-                  title="Calm fra tofot bare når den er deployet"
+                  title={
+                    gunDeployed
+                      ? "Calm fra tofot bare når den er deployet"
+                      : "Deploy gun først"
+                  }
                 >
                   {rest === "bipod"
                     ? "Bipod deployet"
@@ -1747,34 +1880,10 @@ export function AwareAppView({
               ) : null}
               {hasBackpack || hasBipod ? (
                 <p className="shop-row-note">
-                  Anlegg: sekk = maks calm (+25% nerve). Bipod = tofot-calm
-                  (nerve 5–15% etter kvalitet). Uten valg: ingen bipod/sekk-calm
-                  i skuddet.
+                  Anlegg krever Deploy gun. Sekk = maks calm (+25% nerve). Bipod
+                  = tofot-calm (nerve 5–15% etter kvalitet). Uten valg: ingen
+                  bipod/sekk-calm i skuddet.
                 </p>
-              ) : null}
-              {hasCamcorder ? (
-                <button
-                  type="button"
-                  className="intro-button sheriff-secondary"
-                  disabled={camcorderReady}
-                  onClick={deployCamcorder}
-                >
-                  {camcorderReady
-                    ? "Camcorder klar"
-                    : `Sett opp camcorder (+${Math.round(camcorderSetupNerve * 100)}% nervøsitet)`}
-                </button>
-              ) : null}
-              {hasChronograph ? (
-                <button
-                  type="button"
-                  className="intro-button sheriff-secondary"
-                  disabled={chronoReady}
-                  onClick={deployChrono}
-                >
-                  {chronoReady
-                    ? "Chrono klar"
-                    : "Sett opp Chrono (+5% nervøsitet)"}
-                </button>
               ) : null}
               {hasKestrel ? (
                 <button
@@ -1800,20 +1909,37 @@ export function AwareAppView({
                     : `Start ${shotCamName} (+${shotCamNervePct}% nervøsitet)`}
                 </button>
               ) : null}
+              {hasCamcorder ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  disabled={camcorderReady}
+                  onClick={deployCamcorder}
+                >
+                  {camcorderReady
+                    ? "Camcorder klar"
+                    : `Sett opp camcorder (+${Math.round(camcorderSetupNerve * 100)}% nervøsitet)`}
+                </button>
+              ) : null}
+              {hasChronograph ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  disabled={chronoReady}
+                  onClick={deployChrono}
+                >
+                  {chronoReady
+                    ? "Chrono klar"
+                    : "Sett opp Chrono (+5% nervøsitet)"}
+                </button>
+              ) : null}
               <p className="shop-row-note">
                 Trykk kart → planleggingsmål (kakene flytter apex hit, samme
                 retning/bredde · skuddlinje følger).
                 Hold piltaster for å gå. Grønn linje = klar sektor; rød = fare.
-                {hasCamcorder
-                  ? camcorderReady
-                    ? " Camcorder filmer stand — bedre ettersøk-cue etter skudd."
-                    : " Camcorder i kit: sett opp før skudd for retning + landingsavstand (koster nervøsitet)."
-                  : ""}
-                {hasChronograph
-                  ? chronoReady
-                    ? " Chrono måler foran stand (+5% nerve) — shotlog får v0 + °C."
-                    : " Xero i kit: Sett opp Chrono (+5% nervøsitet)."
-                  : ""}
+                {gunDeployed
+                  ? " Gun deployed — Mount gun for å legge den i sekken."
+                  : " Deploy gun før tårn / skudd / anlegg."}
                 {hasKestrel
                   ? kestrelEnviroReady
                     ? " Kestrel enviro målt — app prefyller vind/temp."
@@ -1823,6 +1949,16 @@ export function AwareAppView({
                   ? triggercamReady
                     ? ` ${shotCamName} filmer — AAR + skuddpar-autofill.`
                     : ` ${shotCamName} i kit: Start ${shotCamName} (+${shotCamNervePct}% nervøsitet) før skudd.`
+                  : ""}
+                {hasCamcorder
+                  ? camcorderReady
+                    ? " Camcorder filmer stand — bedre ettersøk-cue etter skudd."
+                    : " Camcorder i kit: sett opp før skudd for retning + landingsavstand (koster nervøsitet)."
+                  : ""}
+                {hasChronograph
+                  ? chronoReady
+                    ? " Chrono måler foran stand (+5% nerve) — shotlog får v0 + °C."
+                    : " Xero i kit: Sett opp Chrono (+5% nervøsitet)."
                   : ""}
                 {holdHint
                   ? " Kestrel AB dialer elev + windage når du går til skudd."

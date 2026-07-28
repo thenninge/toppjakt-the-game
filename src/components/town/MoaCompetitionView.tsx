@@ -73,6 +73,7 @@ import {
 } from "@/lib/player";
 import {
   applyScopeClickError,
+  scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
@@ -105,6 +106,7 @@ import {
   type MoaCompShot,
 } from "@/lib/range/moaComp";
 import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
+import { isShotCamItemId } from "@/lib/hunt/shoot";
 import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
 import {
   aimMmDeltaFromPointerDrag,
@@ -255,6 +257,25 @@ export function MoaCompetitionView({
     [rifle, rifleRoundCounts, customBarrels],
   );
   const scope = useMemo(() => kitItems.find(isScopeItem) ?? null, [kitItems]);
+  const shotCamInKit = useMemo(
+    () => kitItems.some((i) => isShotCamItemId(i.id)),
+    [kitItems],
+  );
+  const zoomRange = useMemo(
+    () =>
+      scope
+        ? scopeEffectiveZoomRange(scope.scope, shotCamInKit)
+        : { minZoom: 1, maxZoom: 1 },
+    [
+      scope,
+      shotCamInKit,
+      scope?.scope.minZoom,
+      scope?.scope.maxZoom,
+      scope?.scope.triggercamZoomRestrict,
+      scope?.scope.triggercamMinZoom,
+      scope?.scope.triggercamMaxZoom,
+    ],
+  );
   const stock = useMemo(() => kitItems.find(isStockItem) ?? null, [kitItems]);
   const bipod = useMemo(() => kitItems.find(isBipodItem) ?? null, [kitItems]);
   const suppressor = useMemo(
@@ -269,6 +290,10 @@ export function MoaCompetitionView({
   const [phase, setPhase] = useState<Phase>("lobby");
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
+  useEffect(() => {
+    if (!scope) return;
+    setZoom((z) => clampScopeZoom(z, zoomRange));
+  }, [scope, zoomRange.minZoom, zoomRange.maxZoom]);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
   const [aimMm, setAimMm] = useState(() => {
@@ -1357,9 +1382,9 @@ export function MoaCompetitionView({
               <div className="scope-vignette" aria-hidden />
             </div>
             <ScopeZoomRing
-              scope={scope!.scope}
+              scope={zoomRange}
               zoom={zoom}
-              onChange={(z) => setZoom(clampScopeZoom(z, scope!.scope))}
+              onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
             />
           </div>
 

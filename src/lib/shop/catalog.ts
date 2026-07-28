@@ -420,6 +420,10 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       focusZoomEnabled: true,
       focusZoomMultiplier: 1.2,
       focusViewportScale: 1.2,
+      /** Triggercam on ocular: 24–27× when restrict is enabled. */
+      triggercamZoomRestrict: false,
+      triggercamMinZoom: 24,
+      triggercamMaxZoom: 27,
     },
   },
   {
@@ -3164,7 +3168,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vorn",
     name: "Deer 42L",
     priceNok: 3495,
-    note: "QRR — rifla klar på ryggen. Høy QR = lite bird-nerve når du tar rifla frem; høy comfort = mindre felt last.",
+    note: "QRR — rifla klar på ryggen. Høy QR = lite bird-nerve ved Deploy gun (10 → +1 %, 1 → +10 %); høy comfort = mindre felt last.",
     carry: {
       carryComfort: 8,
       quickRelease: 9,

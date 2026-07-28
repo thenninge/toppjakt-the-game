@@ -114,6 +114,7 @@ import {
 } from "@/lib/player";
 import {
   applyScopeClickError,
+  scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
@@ -148,6 +149,10 @@ import {
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
+import {
+  findBirdNearLandscapePoint,
+  type BirdVisualPlacement,
+} from "@/lib/hunt/birds";
 import {
   BAG_REST_BIPOD_SPEC,
   type HuntShootRest,
@@ -233,6 +238,17 @@ type HuntShootViewProps = {
    * Turret dial / prep only — no live bird shot (from map Aware overview).
    */
   gunPrepOnly?: boolean;
+  /**
+   * Undiscovered birds on the landscape — gun-prep scan; F marks under reticle.
+   */
+  scanBirdPlacements?: BirdVisualPlacement[];
+  /** Bird id locked with F in gun-prep — stay in scope until Aware. */
+  scopeMarkedBirdId?: string | null;
+  /** Gun-prep: reticle on bird + F → discover / open Aware engage. */
+  onMarkBirdFromScope?: (info: {
+    placement: BirdVisualPlacement;
+    measuredDistanceM: number;
+  }) => void;
   /** Persist chronograph row (hunt shot with Xero set up). */
   onLogSeries?: (entry: ShotLogEntry) => void;
   /** CB Customs bedding MOA delta (negative = tighter). */
@@ -359,6 +375,27 @@ function aimMmForLandscapeCenter(opts: {
   };
 }
 
+/** Landscape % under optical centre — inverse of {@link paintScopeWorld} pan. */
+function landscapePctUnderReticle(opts: {
+  aimMm: { x: number; y: number };
+  seat: { x: number; y: number; widthPct: number };
+  nativeW: number;
+  nativeH: number;
+  spriteHeightMm: number;
+  landAspect: number;
+  vitalOff: { x: number; y: number };
+}): { xPct: number; yPct: number } {
+  const sceneW = opts.nativeW * (100 / Math.max(0.05, opts.seat.widthPct));
+  const sceneH = sceneW / Math.max(0.25, opts.landAspect);
+  const pxPerMm = opts.nativeH / opts.spriteHeightMm;
+  const aimPxX = opts.aimMm.x * pxPerMm;
+  const aimPxY = opts.aimMm.y * pxPerMm;
+  return {
+    xPct: opts.seat.x + ((opts.vitalOff.x + aimPxX) / sceneW) * 100,
+    yPct: opts.seat.y + ((opts.vitalOff.y + aimPxY) / sceneH) * 100,
+  };
+}
+
 /**
  * Hunt shoot: same scope loop as the range, tiurtopp1 as target,
  * vital zones, ballistics at true distance.
@@ -395,6 +432,9 @@ export function HuntShootView({
   triggercamActive = false,
   shootRest = "none",
   gunPrepOnly = false,
+  scanBirdPlacements = [],
+  scopeMarkedBirdId = null,
+  onMarkBirdFromScope,
   onLogSeries,
   customsMoaDelta = 0,
   customsCalmMult = 1,
@@ -572,6 +612,12 @@ export function HuntShootView({
   landAspectRef.current = landAspect;
   const landscapeSrcRef = useRef(landscapeSrc);
   landscapeSrcRef.current = landscapeSrc;
+  const gunPrepOnlyRef = useRef(gunPrepOnly);
+  gunPrepOnlyRef.current = gunPrepOnly;
+  const scanBirdPlacementsRef = useRef(scanBirdPlacements);
+  scanBirdPlacementsRef.current = scanBirdPlacements;
+  const onMarkBirdFromScopeRef = useRef(onMarkBirdFromScope);
+  onMarkBirdFromScopeRef.current = onMarkBirdFromScope;
   const [recoilActive, setRecoilActive] = useState(false);
   const [fired, setFired] = useState(false);
   const bubbleLevel = useMemo(
@@ -642,6 +688,10 @@ export function HuntShootView({
 
   const hasTriggercam =
     triggercamActive && kitItems.some((i) => isShotCamItemId(i.id));
+  const shotCamInKit = kitItems.some((i) => isShotCamItemId(i.id));
+  const zoomRange = scope
+    ? scopeEffectiveZoomRange(scope.scope, shotCamInKit)
+    : { minZoom: 1, maxZoom: 1 };
 
   const keysRef = useRef<AimKeys>({
     up: null,
@@ -883,13 +933,21 @@ export function HuntShootView({
 
   useEffect(() => {
     if (scope) {
-      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, scope.scope));
+      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, zoomRange));
     }
-  }, [scope]);
+  }, [scope, zoomRange.minZoom, zoomRange.maxZoom]);
+
+  useEffect(() => {
+    setZoom((z) => clampScopeZoom(z, zoomRange));
+  }, [zoomRange.minZoom, zoomRange.maxZoom]);
 
   fireShotRef.current = () => {
     if (gunPrepOnly) {
-      setStatus("Gun-prep — ingen skudd. Still tårn, deretter Back to Aware.");
+      setStatus(
+        scopeMarkedBirdId
+          ? "Fugl merket — trykk Aware når du er klar."
+          : "Gun-prep — ingen skudd. Still tårn, deretter Aware.",
+      );
       return;
     }
     if (!ready || !rifle || !selectedAmmo || !scope || firedRef.current) return;
@@ -1418,6 +1476,42 @@ export function HuntShootView({
       }
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
+        if (e.repeat) return;
+        if (
+          gunPrepOnlyRef.current &&
+          onMarkBirdFromScopeRef.current &&
+          landscapeSrcRef.current
+        ) {
+          const scans = scanBirdPlacementsRef.current;
+          if (scans.length > 0) {
+            const g = geomRef.current;
+            const seat = birdSeatRef.current;
+            const pt = landscapePctUnderReticle({
+              aimMm: {
+                x: aimRef.current.x + wobbleRef.current.x,
+                y: aimRef.current.y + wobbleRef.current.y,
+              },
+              seat,
+              nativeW: g.nativeW,
+              nativeH: g.nativeH,
+              spriteHeightMm: g.spriteHeightMm,
+              landAspect: landAspectRef.current,
+              vitalOff: vitalOffRef.current,
+            });
+            const hit = findBirdNearLandscapePoint(scans, pt.xPct, pt.yPct);
+            if (hit) {
+              onMarkBirdFromScopeRef.current({
+                placement: hit,
+                measuredDistanceM: Math.round(hit.distanceM),
+              });
+              setStatus(
+                "Fugl merket — trykk Aware når du er klar (gun forblir deployed).",
+              );
+              return;
+            }
+            setStatus("Ingen fugl under sikte — panorer videre, F for å markere.");
+          }
+        }
         beginFocus(performance.now());
       } else if (e.key === " " || e.code === "Space") {
         e.preventDefault();
@@ -1425,12 +1519,12 @@ export function HuntShootView({
       } else if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         if (scope) {
-          setZoom((z) => clampScopeZoom(z + 0.5, scope.scope));
+          setZoom((z) => clampScopeZoom(z + 0.5, zoomRange));
         }
       } else if (e.key === "-") {
         e.preventDefault();
         if (scope) {
-          setZoom((z) => clampScopeZoom(z - 0.5, scope.scope));
+          setZoom((z) => clampScopeZoom(z - 0.5, zoomRange));
         }
       }
     }
@@ -1454,7 +1548,7 @@ export function HuntShootView({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [ready, scope, onAbort, onBackToAware]);
+  }, [ready, scope, onAbort, onBackToAware, zoomRange.minZoom, zoomRange.maxZoom]);
 
   useEffect(() => {
     if (!ready || fired) return;
@@ -1484,11 +1578,15 @@ export function HuntShootView({
         const oy = birdCy - sceneH / 2;
         const panPxX = (ox + vo.x + aimPxX) * scale;
         const panPxY = (oy + vo.y + aimPxY) * scale;
-        el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+        el.style.transform =
+          `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
+          `scale(${scale})`;
       } else {
         const panPxX = (vo.x + aimPxX) * scale;
         const panPxY = (vo.y + aimPxY) * scale;
-        el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+        el.style.transform =
+          `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
+          `scale(${scale})`;
       }
     }
 
@@ -1638,9 +1736,12 @@ export function HuntShootView({
     if (hasPannedRef.current) return;
     const g = shotGeom;
     const vitalBase = birdVitalOffsetFromImageCenterPx(g);
-    const vitalOff = birdFlip
-      ? { x: -vitalBase.x, y: vitalBase.y }
-      : vitalBase;
+    const vitalOff =
+      gunPrepOnly
+        ? { x: 0, y: 0 }
+        : birdFlip
+          ? { x: -vitalBase.x, y: vitalBase.y }
+          : vitalBase;
     const widthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
     aimRef.current = aimMmForLandscapeCenter({
       nativeW: g.nativeW,
@@ -1660,6 +1761,7 @@ export function HuntShootView({
     landAspect,
     shotGeom,
     birdFlip,
+    gunPrepOnly,
   ]);
 
   function nudgeZero(axis: "x" | "y", deltaMm: number): boolean {
@@ -1701,9 +1803,12 @@ export function HuntShootView({
   const reticleScale = opticReticleImgScale(zoom, scope.scope);
   const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
   // Flipped sprite mirrors vital X around image centre — keep reticle on chest.
-  const vitalOff = birdFlip
-    ? { x: -vitalBase.x, y: vitalBase.y }
-    : vitalBase;
+  // Gun-prep scan has no vital seat — optical centre = landscape aim.
+  const vitalOff = gunPrepOnly
+    ? { x: 0, y: 0 }
+    : birdFlip
+      ? { x: -vitalBase.x, y: vitalBase.y }
+      : vitalBase;
   targetScaleRef.current = targetScale;
   focusZoomBoostRef.current = focusZoomBoost;
   vitalOffRef.current = vitalOff;
@@ -1784,7 +1889,15 @@ export function HuntShootView({
         <p className="shop-row-note">
           Kl {formatHuntClock(clockMinutes)}
           {gunPrepOnly ? (
-            <> · Still tårn manuelt · Back to Aware lagrer dial (ingen skudd)</>
+            <>
+              {" "}
+              · Still tårn manuelt
+              {scopeMarkedBirdId
+                ? " · Fugl merket — trykk Aware når du er klar"
+                : scanBirdPlacements.length > 0
+                  ? " · Finn fugl i glasset — F for å markere"
+                  : " · Aware lagrer dial (ingen skudd)"}
+            </>
           ) : (
             <>
               {rangeSource === "lrf" ? (
@@ -1948,7 +2061,20 @@ export function HuntShootView({
                     </p>
                   )}
                   <KestrelFasitView
-                    hold={kestrelDisplayHold}
+                    baseDistanceM={measuredDistanceM}
+                    solveHold={(distanceM) =>
+                      exactBallisticHold(
+                        ballisticsAmmo!.ammo,
+                        distanceM,
+                        crosswindMs,
+                        {
+                          densityRatio,
+                          powderTempC: temperatureC,
+                          dvDtMpsPerC: ballisticsAmmo!.dvDtMpsPerC,
+                          cantDeg: liveCantDeg(),
+                        },
+                      )
+                    }
                     shotBearingDeg={shotBearingDeg}
                     windFromDeg={windFromDeg}
                     windSpeedMs={windSpeedMs}
@@ -1991,7 +2117,7 @@ export function HuntShootView({
                 disabled={fired}
                 onClick={leaveToAware}
               >
-                Back to Aware
+                {gunPrepOnly && scopeMarkedBirdId ? "Aware" : "Back to Aware"}
               </button>
             </>
           }
@@ -2184,20 +2310,21 @@ export function HuntShootView({
             >
               <ScopeFocusZoom scale={focusZoomBoost}>
               <div
+                className="scope-cant-roll"
+                style={
+                  Math.abs(worldRollDeg) > 0.02
+                    ? {
+                        transform: `rotate(${worldRollDeg.toFixed(3)}deg)`,
+                      }
+                    : undefined
+                }
+              >
+              <div
                 ref={scopeWorldRef}
                 className="scope-world"
                 style={
-                  blurPx > 0.05 || Math.abs(worldRollDeg) > 0.02
-                    ? {
-                        filter:
-                          blurPx > 0.05
-                            ? `blur(${blurPx.toFixed(2)}px)`
-                            : undefined,
-                        transform:
-                          Math.abs(worldRollDeg) > 0.02
-                            ? `rotate(${worldRollDeg.toFixed(3)}deg)`
-                            : undefined,
-                      }
+                  blurPx > 0.05
+                    ? { filter: `blur(${blurPx.toFixed(2)}px)` }
                     : undefined
                 }
               >
@@ -2220,6 +2347,43 @@ export function HuntShootView({
                         }
                       }}
                     />
+                    {gunPrepOnly && scanBirdPlacements.length > 0
+                      ? [...scanBirdPlacements]
+                          .slice()
+                          .sort((a, b) => b.distanceM - a.distanceM)
+                          .map((p) => {
+                            const geom = birdShotGeom(p.spriteId);
+                            return (
+                              <div
+                                key={p.birdId}
+                                className="hunt-scope-bird-wrap"
+                                style={{
+                                  left: `${p.x}%`,
+                                  top: `${p.y}%`,
+                                  width: `${Math.max(0.05, p.widthPct)}%`,
+                                  aspectRatio: `${geom.nativeW} / ${geom.nativeH}`,
+                                }}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  className="scope-target hunt-tiur-target"
+                                  src={p.imageSrc}
+                                  alt=""
+                                  draggable={false}
+                                  width={geom.nativeW}
+                                  height={geom.nativeH}
+                                  style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    transform: p.flip
+                                      ? "scaleX(-1)"
+                                      : undefined,
+                                  }}
+                                />
+                              </div>
+                            );
+                          })
+                      : null}
                     {!gunPrepOnly ? (
                       <div
                         className="hunt-scope-bird-wrap"
@@ -2292,6 +2456,7 @@ export function HuntShootView({
                   </>
                 )}
               </div>
+              </div>
               <ScopeReticle
                 scope={scope.scope}
                 zoom={zoom}
@@ -2301,9 +2466,9 @@ export function HuntShootView({
               </ScopeFocusZoom>
             </div>
             <ScopeZoomRing
-              scope={scope.scope}
+              scope={zoomRange}
               zoom={zoom}
-              onChange={(z) => setZoom(z)}
+              onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
               disabled={fired}
             />
             {cantActive && bubbleLevel ? (
@@ -2360,6 +2525,45 @@ export function HuntShootView({
             disabled={fired}
             onPointerDown={(e) => {
               e.preventDefault();
+              if (
+                gunPrepOnly &&
+                onMarkBirdFromScope &&
+                landscapeSrc &&
+                scanBirdPlacements.length > 0
+              ) {
+                const g = shotGeom;
+                const seat = birdSeatRef.current;
+                const pt = landscapePctUnderReticle({
+                  aimMm: {
+                    x: aimRef.current.x + wobbleRef.current.x,
+                    y: aimRef.current.y + wobbleRef.current.y,
+                  },
+                  seat,
+                  nativeW: g.nativeW,
+                  nativeH: g.nativeH,
+                  spriteHeightMm: g.spriteHeightMm,
+                  landAspect: landAspectRef.current,
+                  vitalOff: vitalOffRef.current,
+                });
+                const hit = findBirdNearLandscapePoint(
+                  scanBirdPlacements,
+                  pt.xPct,
+                  pt.yPct,
+                );
+                if (hit) {
+                  onMarkBirdFromScope({
+                    placement: hit,
+                    measuredDistanceM: Math.round(hit.distanceM),
+                  });
+                  setStatus(
+                    "Fugl merket — trykk Aware når du er klar (gun forblir deployed).",
+                  );
+                  return;
+                }
+                setStatus(
+                  "Ingen fugl under sikte — panorer videre, F for å markere.",
+                );
+              }
               beginFocus(performance.now());
             }}
             onPointerUp={endFocus}

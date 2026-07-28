@@ -15,10 +15,7 @@ import {
   POWDER_TEMP_REFERENCE_C,
 } from "@/lib/ballistics/powderTemp";
 import { ZERO_CLICK_MM } from "@/lib/player";
-import {
-  clickUnitLabel,
-  mmAt100ToAngular,
-} from "@/lib/optics/clicks";
+import { mmAt100ToAngular } from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
   cantCompensatedDialMm,
@@ -184,7 +181,11 @@ export function formatHoldClicks(solution: BallisticHoldSolution): string {
 
 /**
  * Kestrel 5700 AB LCD lines (matches Applied Ballistics solution screen).
- * Clicks are 0.1 mil → mils = |clicks| / 10.
+ *
+ * Display modes:
+ * - MIL / MOA: angular units (2 decimals)
+ * - CLICK_MIL: 0.1 mil clicks = mil×10 (1 decimal)
+ * - CLICK_MOA: 0.25 MOA clicks = moa×4 (1 decimal)
  */
 export type KestrelLcdCopy = {
   elevLine: string;
@@ -192,6 +193,8 @@ export type KestrelLcdCopy = {
   tgtLine: string;
   windEnvLine: string;
 };
+
+export type KestrelDisplayMode = "MIL" | "MOA" | "CLICK_MIL" | "CLICK_MOA";
 
 /** Wind direction as clock face relative to shot (12 = headwind). */
 export function formatWindClockFacing(
@@ -210,23 +213,48 @@ export function formatWindClockFacing(
   return m === 0 ? `${h}:00` : `${h}:${String(m).padStart(2, "0")}`;
 }
 
+function formatKestrelAxisValue(
+  mmAt100: number,
+  mode: KestrelDisplayMode,
+): { abs: number; digits: string; unitLabel: string } {
+  const mils = mmAt100ToAngular(mmAt100, "MRAD");
+  const moa = mmAt100ToAngular(mmAt100, "MOA");
+  if (mode === "CLICK_MIL") {
+    const clicks = mils * 10;
+    return { abs: clicks, digits: clicks.toFixed(1), unitLabel: "CLK" };
+  }
+  if (mode === "CLICK_MOA") {
+    const clicks = moa * 4;
+    return { abs: clicks, digits: clicks.toFixed(1), unitLabel: "CLK" };
+  }
+  if (mode === "MOA") {
+    return { abs: moa, digits: moa.toFixed(2), unitLabel: "MOA" };
+  }
+  return { abs: mils, digits: mils.toFixed(2), unitLabel: "MIL" };
+}
+
 export function formatKestrelLcd(
   solution: BallisticHoldSolution,
   opts: {
     shotBearingDeg: number;
     windFromDeg: number;
     windSpeedMs: number;
-    /** Equipped scope click unit — default MRAD. */
+    /** Equipped scope click unit — default display mode when unset. */
     clickUnit?: ScopeClickUnit;
+    /** How elev/wind are labeled on the LCD. */
+    displayMode?: KestrelDisplayMode;
   },
 ): KestrelLcdCopy {
-  const unit = opts.clickUnit ?? "MRAD";
-  const unitLabel = clickUnitLabel(unit);
-  const eAbs = mmAt100ToAngular(solution.dialYMmAt100, unit);
-  const wAbs = mmAt100ToAngular(solution.dialXMmAt100, unit);
+  const scopeUnit = opts.clickUnit ?? "MRAD";
+  const mode =
+    opts.displayMode ?? (scopeUnit === "MOA" ? "MOA" : "MIL");
+  const eFmt = formatKestrelAxisValue(solution.dialYMmAt100, mode);
+  const wFmt = formatKestrelAxisValue(solution.dialXMmAt100, mode);
   // Wind1 / Wind2 bracket (±~25% like dual-wind AB display)
-  const w1 = wAbs;
-  const w2 = wAbs * 1.4;
+  const w1 = wFmt.abs;
+  const w2 = wFmt.abs * 1.4;
+  const clickMode = mode === "CLICK_MIL" || mode === "CLICK_MOA";
+  const w2Digits = clickMode ? w2.toFixed(1) : w2.toFixed(2);
   const eDir =
     Math.abs(solution.dialYMmAt100) < 0.05
       ? ""
@@ -240,18 +268,15 @@ export function formatKestrelLcd(
         ? "L"
         : "R";
 
-  const eDigits = unit === "MOA" ? eAbs.toFixed(2) : eAbs.toFixed(2);
-  const wDigits = (n: number) =>
-    unit === "MOA" ? n.toFixed(2) : n.toFixed(2);
-
+  const zeroDigits = clickMode ? "0.0" : "0.00";
   const elevLine =
     Math.abs(solution.dialYMmAt100) < 0.05
-      ? `E  0.00 ${unitLabel}`
-      : `E  ${eDigits}${eDir} ${unitLabel}`;
+      ? `E  ${zeroDigits} ${eFmt.unitLabel}`
+      : `E  ${eFmt.digits}${eDir} ${eFmt.unitLabel}`;
   const windLine =
     Math.abs(solution.dialXMmAt100) < 0.05
-      ? "W  0.00"
-      : `W  ${wDigits(w1)}/${wDigits(w2)}${wDir}`;
+      ? `W  ${zeroDigits}`
+      : `W  ${wFmt.digits}/${w2Digits}${wDir}`;
 
   const bearing = Math.round(((opts.shotBearingDeg % 360) + 360) % 360);
   const distM = Math.round(solution.distanceM);

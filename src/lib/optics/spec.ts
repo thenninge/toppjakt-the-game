@@ -33,6 +33,22 @@ export type ScopeSpec = {
   tubeDiameterMm: ScopeTubeDiameterMm;
   minZoom: number;
   maxZoom: number;
+  /**
+   * When true and Triggercam/Scopemate is in the active kit, zoom is limited to
+   * {@link triggercamMinZoom}–{@link triggercamMaxZoom} (ocular clearance).
+   * Omit / false → full engraved range even with a shot-cam packed.
+   */
+  triggercamZoomRestrict?: boolean;
+  /**
+   * Lower zoom with Triggercam zoom restrict active.
+   * Omit → {@link scopeTriggercamMinZoomDefault} (typically maxZoom − 3).
+   */
+  triggercamMinZoom?: number;
+  /**
+   * Upper zoom with Triggercam zoom restrict active.
+   * Omit → scope {@link maxZoom}.
+   */
+  triggercamMaxZoom?: number;
   /** FFP = reticle grows with zoom; SFP = fixed reticle (default). */
   focalPlane?: ScopeFocalPlane;
   /** Key into `RETICLES` (range/reticles.ts). */
@@ -276,6 +292,64 @@ export function scopeFocusViewportBoost(
 ): number {
   if (!focusHeld || !scopeFocusZoomEnabled(scope)) return 1;
   return scopeFocusViewportScale(scope);
+}
+
+/** Default Triggercam floor: top 3× of the engraved range (ZCO 27 → 24). */
+export function scopeTriggercamMinZoomDefault(
+  scope: Pick<ScopeSpec, "minZoom" | "maxZoom">,
+): number {
+  const lo = scope.minZoom;
+  const hi = scope.maxZoom;
+  if (!(hi > lo)) return lo;
+  return Math.max(lo, Math.round((hi - 3) * 100) / 100);
+}
+
+export function scopeTriggercamZoomRestrictEnabled(
+  scope: Pick<ScopeSpec, "triggercamZoomRestrict"> | null | undefined,
+): boolean {
+  return scope?.triggercamZoomRestrict === true;
+}
+
+/**
+ * Engraved zoom window, optionally narrowed when Triggercam/Scopemate is in kit
+ * and {@link ScopeSpec.triggercamZoomRestrict} is on.
+ */
+export function scopeEffectiveZoomRange(
+  scope: Pick<
+    ScopeSpec,
+    | "minZoom"
+    | "maxZoom"
+    | "triggercamZoomRestrict"
+    | "triggercamMinZoom"
+    | "triggercamMaxZoom"
+  >,
+  shotCamInKit: boolean,
+): { minZoom: number; maxZoom: number } {
+  const baseMin = scope.minZoom;
+  const baseMax = scope.maxZoom;
+  if (
+    !shotCamInKit ||
+    !scopeTriggercamZoomRestrictEnabled(scope) ||
+    !(baseMax > baseMin)
+  ) {
+    return { minZoom: baseMin, maxZoom: baseMax };
+  }
+  let lo =
+    scope.triggercamMinZoom != null && Number.isFinite(scope.triggercamMinZoom)
+      ? scope.triggercamMinZoom
+      : scopeTriggercamMinZoomDefault(scope);
+  let hi =
+    scope.triggercamMaxZoom != null && Number.isFinite(scope.triggercamMaxZoom)
+      ? scope.triggercamMaxZoom
+      : baseMax;
+  lo = Math.min(baseMax, Math.max(baseMin, lo));
+  hi = Math.min(baseMax, Math.max(baseMin, hi));
+  if (lo > hi) {
+    const t = lo;
+    lo = hi;
+    hi = t;
+  }
+  return { minZoom: lo, maxZoom: hi };
 }
 
 /**

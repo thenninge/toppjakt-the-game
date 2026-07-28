@@ -7993,6 +7993,18 @@ body {
   will-change: transform;
 }
 
+/**
+ * Cant roll — rotates the world around the glass centre (reticle / FOV centre).
+ * Reticle stays a sibling outside this layer.
+ */
+.scope-cant-roll {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+  pointer-events: none;
+  will-change: transform;
+}
+
 .scope-world-scene {
   position: relative;
   display: block;
@@ -9963,6 +9975,100 @@ body {
   align-self: center;
   pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+
+.kestrel-fasit-zoom,
+.kestrel-unit-toggle,
+.kestrel-range-nudge,
+.kestrel-unit-btn,
+.kestrel-range-btn {
+  pointer-events: auto;
+}
+
+.kestrel-unit-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.kestrel-unit-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.kestrel-unit-btn {
+  width: 100%;
+  min-width: 0;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid rgba(140, 200, 160, 0.35);
+  border-radius: 0.2rem;
+  background: rgba(12, 28, 18, 0.92);
+  color: #8fbf9a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kestrel-unit-btn:hover {
+  border-color: rgba(160, 230, 180, 0.55);
+  color: #b6e8c0;
+}
+
+.kestrel-unit-btn.is-active {
+  background: rgba(40, 90, 55, 0.95);
+  border-color: #9fe0ae;
+  color: #e8ffe8;
+}
+
+.kestrel-range-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+}
+
+.kestrel-range-btn {
+  width: 2.4rem;
+  height: 2rem;
+  border: 1px solid rgba(140, 200, 160, 0.35);
+  border-radius: 0.2rem;
+  background: rgba(12, 28, 18, 0.92);
+  color: #9fe0ae;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.kestrel-range-btn:hover:not(:disabled) {
+  border-color: rgba(160, 230, 180, 0.55);
+  color: #e8ffe8;
+}
+
+.kestrel-range-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.kestrel-range-readout {
+  min-width: 3.6rem;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #b6e8c0;
+  letter-spacing: 0.04em;
 }
 
 /* --- Budget wind meter (Clas Ohlson) --- */

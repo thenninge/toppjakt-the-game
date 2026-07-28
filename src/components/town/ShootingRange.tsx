@@ -17,6 +17,7 @@ import {
   isSuppressorItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { isShotCamItemId } from "@/lib/hunt/shoot";
 import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
 import {
   computeFeltRecoil,
@@ -95,6 +96,7 @@ import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
   applyScopeClickError,
   rollScopeClickScale,
+  scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
@@ -359,6 +361,25 @@ export function ShootingRange({
   const scope = useMemo(
     () => kitItems.find(isScopeItem) ?? null,
     [kitItems],
+  );
+  const shotCamInKit = useMemo(
+    () => kitItems.some((i) => isShotCamItemId(i.id)),
+    [kitItems],
+  );
+  const zoomRange = useMemo(
+    () =>
+      scope
+        ? scopeEffectiveZoomRange(scope.scope, shotCamInKit)
+        : { minZoom: 1, maxZoom: 1 },
+    [
+      scope,
+      shotCamInKit,
+      scope?.scope.minZoom,
+      scope?.scope.maxZoom,
+      scope?.scope.triggercamZoomRestrict,
+      scope?.scope.triggercamMinZoom,
+      scope?.scope.triggercamMaxZoom,
+    ],
   );
   const stock = useMemo(
     () => kitItems.find(isStockItem) ?? null,
@@ -716,9 +737,14 @@ export function ShootingRange({
 
   useEffect(() => {
     if (scope) {
-      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, scope.scope));
+      setZoom(clampScopeZoom(DEFAULT_SCOPE_ZOOM, zoomRange));
     }
-  }, [scope]);
+  }, [scope, zoomRange.minZoom, zoomRange.maxZoom]);
+
+  useEffect(() => {
+    if (!scope) return;
+    setZoom((z) => clampScopeZoom(z, zoomRange));
+  }, [scope, zoomRange.minZoom, zoomRange.maxZoom]);
 
   /** New scope → paper grid defaults to that reticle's unit. */
   useEffect(() => {
@@ -1238,11 +1264,11 @@ export function ShootingRange({
       if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         if (!scope) return;
-        setZoom((z) => clampScopeZoom(z + 0.5, scope.scope));
+        setZoom((z) => clampScopeZoom(z + 0.5, zoomRange));
       } else if (e.key === "-" || e.key === "_") {
         e.preventDefault();
         if (!scope) return;
-        setZoom((z) => clampScopeZoom(z - 0.5, scope.scope));
+        setZoom((z) => clampScopeZoom(z - 0.5, zoomRange));
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         if (e.repeat) return;
@@ -1278,7 +1304,7 @@ export function ShootingRange({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [ready, scope]);
+  }, [ready, scope, zoomRange.minZoom, zoomRange.maxZoom]);
 
   // Aim + wobble + trigger resolve (paused while reviewing measured series)
   useEffect(() => {
@@ -1298,7 +1324,9 @@ export function ShootingRange({
       const pxPerMm = targetPxPerMmRef.current;
       const panPxX = (off.x + ax * pxPerMm) * scale;
       const panPxY = (off.y + ay * pxPerMm) * scale;
-      el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+      el.style.transform =
+        `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
+        `scale(${scale})`;
 
       const reticleEl = scopeReticleOffsetRef.current;
       if (reticleEl) {
@@ -2962,20 +2990,21 @@ export function ShootingRange({
               >
                 <ScopeFocusZoom scale={focusZoomBoost}>
                 <div
+                  className="scope-cant-roll"
+                  style={
+                    Math.abs(worldRollDeg) > 0.02
+                      ? {
+                          transform: `rotate(${worldRollDeg.toFixed(3)}deg)`,
+                        }
+                      : undefined
+                  }
+                >
+                <div
                   ref={scopeWorldRef}
                   className="scope-world"
                   style={
-                    blurPx > 0.05 || Math.abs(worldRollDeg) > 0.02
-                      ? {
-                          filter:
-                            blurPx > 0.05
-                              ? `blur(${blurPx.toFixed(2)}px)`
-                              : undefined,
-                          transform:
-                            Math.abs(worldRollDeg) > 0.02
-                              ? `rotate(${worldRollDeg.toFixed(3)}deg)`
-                              : undefined,
-                        }
+                    blurPx > 0.05
+                      ? { filter: `blur(${blurPx.toFixed(2)}px)` }
                       : undefined
                   }
                 >
@@ -3020,6 +3049,7 @@ export function ShootingRange({
                     })}
                     <div className="scope-mirage-shimmer" aria-hidden />
                   </div>
+                </div>
                 </div>
                 {/* SVG filter: warps only the world scene (blink), not the reticle. */}
                 <svg
@@ -3077,9 +3107,9 @@ export function ShootingRange({
                 <div className="scope-vignette" aria-hidden />
               </div>
               <ScopeZoomRing
-                scope={scope.scope}
+                scope={zoomRange}
                 zoom={zoom}
-                onChange={(z) => setZoom(z)}
+                onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
               />
               {cantActive && bubbleLevel ? (
                 <BubbleLevel

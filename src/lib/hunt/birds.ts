@@ -327,6 +327,47 @@ export function findBirdUnderLrfReticle(
   return best;
 }
 
+/** Minimum hit radius as % of landscape (matches SpotView click / LRF floor). */
+const LANDSCAPE_BIRD_HIT_MIN_PCT = 4.5;
+
+/**
+ * Nearest bird under a landscape point (%, same frame as SpotView placements).
+ * Used by eyes click and gun-scope mark-before-engage.
+ */
+export function findBirdNearLandscapePoint(
+  placements: BirdVisualPlacement[],
+  xPct: number,
+  yPct: number,
+): BirdVisualPlacement | null {
+  let best: BirdVisualPlacement | null = null;
+  let bestD2 = Infinity;
+  for (const p of placements) {
+    const radius =
+      Math.max(p.widthPct / 2, LANDSCAPE_BIRD_HIT_MIN_PCT / 2) * 1.15;
+    const dx = p.x - xPct;
+    const dy = p.y - yPct;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= radius * radius && d2 < bestD2) {
+      best = p;
+      bestD2 = d2;
+    }
+  }
+  return best;
+}
+
+/** Median placement widthPct — sizes the gun-prep scope scene so overlays match Spot. */
+export function medianPlacementWidthPct(
+  placements: Pick<BirdVisualPlacement, "widthPct">[],
+  fallback = 2,
+): number {
+  const widths = placements
+    .map((p) => p.widthPct)
+    .filter((w) => Number.isFinite(w) && w > 0)
+    .sort((a, b) => a - b);
+  if (widths.length === 0) return fallback;
+  return widths[Math.floor(widths.length / 2)] ?? fallback;
+}
+
 /**
  * Pan so the bird sits under the LRF reticle (lens centre at 50 %, 50 %).
  * Same transform as {@link isBirdUnderLrfReticle}.
