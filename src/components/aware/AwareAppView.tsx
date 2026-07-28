@@ -535,13 +535,32 @@ export function AwareAppView({
   });
   /** Sticky Deploy across Til spotting / remount — prop wins when already out. */
   useEffect(() => {
-    if (initialGunDeployed) setGunDeployed(true);
+    setGunDeployed(initialGunDeployed);
   }, [initialGunDeployed]);
   useEffect(() => {
-    if (!initialGunDeployed) return;
+    if (!initialGunDeployed) {
+      setRest("none");
+      return;
+    }
     if (initialRest === "bipod" && hasBipod) setRest("bipod");
     else if (initialRest === "backpack" && hasBackpack) setRest("backpack");
   }, [initialGunDeployed, initialRest, hasBipod, hasBackpack]);
+  /**
+   * Hent/søk / Track: rifle always goes back in the pack (can't carry it
+   * while recovering). Parent also mounts; this clears local Deploy UI when
+   * Aware stays mounted across skuddpar → Track.
+   */
+  useEffect(() => {
+    if (!focusPairId) return;
+    if (!gunDeployed) return;
+    flushSync(() => {
+      setRest("none");
+      setGunDeployed(false);
+    });
+    onMountGun?.();
+    setStatus("Gun mounted — rifla i sekken mens du henter / søker.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on Track enter
+  }, [focusPairId]);
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? cellCenterOnAwareMap(cell, map),
   );
@@ -893,20 +912,21 @@ export function AwareAppView({
    * Track actions only for pairs tied to a real shot (harvestDraft).
    * Planning-only Shoot skuddpar must not appear as «Søk tiur».
    */
-  const actionableTrackPairs = useMemo(() => {
-    const open = shotPairs.filter(
-      (p) =>
-        p.found == null &&
-        !!p.harvestDraft &&
-        (p.resultKind === "instant_kill" ||
-          p.resultKind === "vital_kill" ||
-          p.resultKind === "ettersok"),
-    );
-    const onCell = open.filter(
-      (p) => p.cell.row === cell.row && p.cell.col === cell.col,
-    );
-    return onCell.length > 0 ? onCell : open;
-  }, [shotPairs, cell.row, cell.col]);
+  /** Track only pairs for this map cell — return to the shot rute to continue. */
+  const actionableTrackPairs = useMemo(
+    () =>
+      shotPairs.filter(
+        (p) =>
+          p.found == null &&
+          !!p.harvestDraft &&
+          p.cell.row === cell.row &&
+          p.cell.col === cell.col &&
+          (p.resultKind === "instant_kill" ||
+            p.resultKind === "vital_kill" ||
+            p.resultKind === "ettersok"),
+      ),
+    [shotPairs, cell.row, cell.col],
+  );
 
   const trackActivePair =
     actionableTrackPairs.find((p) => p.id === activePairId) ??
@@ -1080,7 +1100,11 @@ export function AwareAppView({
 
   function startShootPair() {
     const stand = { ...hunter };
-    if (skuddparAutofill) {
+    /**
+     * Prefill when cam is on, or during the post-shot window (bird seat is
+     * still visible — blank 0°/200 m dragged tree-kills due north on Track).
+     */
+    if (skuddparAutofill || postShotSkuddparMode) {
       const exactDist = distanceMBetween(stand, birdWorld, metersPerPct);
       const exactBearing = bearingDegFromTo(stand, birdWorld);
       const rangeM = Math.max(
@@ -1095,11 +1119,33 @@ export function AwareAppView({
         bearingDeg,
       });
       setStatus(
-        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
+        postShotSkuddparMode
+          ? `Skuddpar: stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° fra synlig fugleprikk — juster om nødvendig, deretter lagre.`
+          : `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
       );
       return;
     }
-    // No cam: blank dials — player must knote range/direction from memory.
+    // Late adjust of an open Track pair — start from current overlay / memory.
+    const editPair =
+      (focusPairId && shotPairs.find((p) => p.id === focusPairId)) ||
+      (trackActivePair?.harvestDraft ? trackActivePair : null);
+    if (editPair?.harvestDraft && editPair.found == null) {
+      const rangeM = Math.max(
+        50,
+        Math.min(mapMaxM, Math.round(editPair.distanceM / 5) * 5),
+      );
+      setShootWizard({
+        phase: "range",
+        stand,
+        rangeM,
+        bearingDeg: normalizeBearingDeg(editPair.bearingDeg),
+      });
+      setStatus(
+        `Juster skuddpar (hukommelse): stand = der du står. Forrige ${editPair.distanceM} m / ${Math.round(editPair.bearingDeg)}° — lagre oppdaterer siktepunktet (sann fall beholdes).`,
+      );
+      return;
+    }
+    // No cam / no post-shot seat: blank dials — player must knote from memory.
     setShootWizard({
       phase: "range",
       stand,
@@ -1126,10 +1172,12 @@ export function AwareAppView({
       distanceM: rangeM,
       metersPerPct,
     });
-    // Snap to true bird only when cam autofill is allowed (within one slider step).
+    // Snap to true bird when cam autofill is on, or during post-shot (seat visible).
     const snapM = distanceMBetween(dialed, birdWorld, metersPerPct);
     const target =
-      skuddparAutofill && snapM <= 12 ? { ...birdWorld } : dialed;
+      (skuddparAutofill || postShotSkuddparMode) && snapM <= 12
+        ? { ...birdWorld }
+        : dialed;
     const distanceM = Math.round(distanceMBetween(stand, target, metersPerPct));
     const bearing = Math.round(bearingDegFromTo(stand, target));
 
@@ -1141,6 +1189,54 @@ export function AwareAppView({
         bearingDeg: bearing,
       });
       setShootWizard({ phase: "idle" });
+      return;
+    }
+
+    /**
+     * After 60 s timeout (or later same day): update open Track pair aim from
+     * memory. Keep true impact / harvestDraft / cell — only stand→target moves.
+     */
+    const editId = focusPairId ?? activePairId;
+    const editPair = editId
+      ? shotPairs.find((p) => p.id === editId)
+      : trackActivePair;
+    if (
+      editPair &&
+      editPair.found == null &&
+      editPair.harvestDraft &&
+      editPair.cell.row === cell.row &&
+      editPair.cell.col === cell.col
+    ) {
+      const treeKill =
+        editPair.resultKind === "instant_kill" ||
+        editPair.resultKind === "vital_kill";
+      const nextTarget = treeKill ? { ...editPair.impact } : target;
+      const nextDist = Math.max(
+        1,
+        Math.round(distanceMBetween(stand, nextTarget, metersPerPct)),
+      );
+      const nextBearing = Math.round(bearingDegFromTo(stand, nextTarget));
+      onShotPairsChange(
+        shotPairs.map((p) =>
+          p.id === editPair.id
+            ? {
+                ...p,
+                stand,
+                target: nextTarget,
+                distanceM: nextDist,
+                bearingDeg: nextBearing,
+                skuddparCommitted: true,
+              }
+            : p,
+        ),
+      );
+      setShootWizard({ phase: "idle" });
+      setMode("track");
+      setStatus(
+        treeKill
+          ? `Skuddpar oppdatert: ${nextDist} m / ${compassLabel(nextBearing)} — treet er fortsatt sann fall (Hent ved treet).`
+          : `Skuddpar oppdatert: ${nextDist} m / ${compassLabel(nextBearing)} — synlig stand → tre. Fortsett Track / søkespor.`,
+      );
       return;
     }
 
@@ -2172,7 +2268,7 @@ export function AwareAppView({
               }
               title={
                 !gunDeployed
-                  ? "Deploy gun først — ta rifla frem"
+                  ? "Deploy gun i panelet under først"
                   : hasActiveBird && !birdOnMap
                     ? "Fugl utenfor kartet — kan ikke skyte (ettersøk krever søkespor på kartet)"
                     : hasActiveBird && !liveBakgrunnOk
@@ -2184,7 +2280,7 @@ export function AwareAppView({
               onClick={proceed}
             >
               {!gunDeployed
-                ? "Deploy gun først"
+                ? "(deploy gun)"
                 : hasActiveBird && !birdOnMap
                   ? "Fugl utenfor kart"
                   : hasActiveBird && !liveBakgrunnOk
@@ -2501,9 +2597,11 @@ export function AwareAppView({
               <p className="shop-row-note">
                 {postShotSkuddparMode
                   ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen).`
-                  : skuddparAutofill
-                    ? "Cam i bruk: avstand/retning prefylles — juster ved behov under kartet."
-                    : "Sett avstand (sirkel) og retning under kartet — uten cam ingen autofyll."}
+                  : focusPairId || trackActivePair?.harvestDraft
+                    ? "Juster skuddpar fra hukommelse (hele jaktdagen). Stand = der du står; sann fall beholdes."
+                    : skuddparAutofill
+                      ? "Cam i bruk: avstand/retning prefylles — juster ved behov under kartet."
+                      : "Sett avstand (sirkel) og retning under kartet — uten cam ingen autofyll."}
               </p>
 
               {shotPairs.length > 0 ? (

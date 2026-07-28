@@ -7,7 +7,7 @@
 const HOLD_BAND_HALF_MRAD = 0.15;
 
 export function dropMmToMrad(dropMm: number, distanceM: number): number {
-  return Math.abs(dropMm) / Math.max(1, distanceM);
+  return dropMm / Math.max(1, distanceM);
 }
 
 export function approximateHoldMradBand(exactMrad: number): {

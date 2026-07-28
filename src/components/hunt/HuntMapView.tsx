@@ -532,6 +532,9 @@ type PostShotGhost = {
   expiresAtMs: number;
   imageSrc: string;
   bird: BirdVisualPlacement;
+  /** Grid cell where the shot landed — sticky even if player walks during the window. */
+  cell: HuntGridCell;
+  cellLabel: string;
   stand: CellPoint;
   /** Aim / tree position (shown on Aware). */
   birdAim: CellPoint;
@@ -762,6 +765,8 @@ export function HuntMapView({
   /** Skuddlys over — splash once, then race to the car. */
   const [endexReveal, setEndexReveal] = useState(false);
   const endexShownRef = useRef(false);
+  /** Open hent/søk pairs forfeited once when clock passes 17:00. */
+  const skuddlysForfeitRef = useRef(false);
   /** Missed midnight at the car — lose catch, overnight. */
   const [lostCatchReveal, setLostCatchReveal] = useState(false);
   const midnightHandledRef = useRef(false);
@@ -1274,6 +1279,7 @@ export function HuntMapView({
     setCampOvernight(null);
     setEndexReveal(false);
     endexShownRef.current = false;
+    skuddlysForfeitRef.current = false;
     setLostCatchReveal(false);
     midnightHandledRef.current = false;
     setBirds(
@@ -1408,6 +1414,7 @@ export function HuntMapView({
       if (canHuntAtTime(clockMinutes)) {
         endexShownRef.current = false;
         midnightHandledRef.current = false;
+        skuddlysForfeitRef.current = false;
       }
       return;
     }
@@ -1418,11 +1425,21 @@ export function HuntMapView({
     setBirdEncounter(null);
     birdEncounterRef.current = null;
     setFlushQueue([]);
-    setAwareSession((prev) => (prev?.ettersokPairId ? prev : null));
+    // Open hent/søk pairs are lost at 17:00 — once per skuddlys crossing.
+    if (!skuddlysForfeitRef.current) {
+      skuddlysForfeitRef.current = true;
+      if (postShotGhostRef.current) {
+        expirePostShotGhost();
+      }
+      forfeitOpenShotPairs("skuddlys");
+      setAwareSession((prev) => (prev?.ettersokPairId ? null : prev));
+      setPendingPostShot(null);
+      setPostShotGhost(null);
+      setPostShotGhostSecLeft(0);
+    }
 
     if (!endexShownRef.current && !forcedCamp && !campOvernight && !walkSession) {
       endexShownRef.current = true;
-      setPendingPostShot(null);
       setEndexReveal(true);
       setLog("Skuddlys over — kom deg til bilen før midnatt.");
     }
@@ -2412,7 +2429,6 @@ export function HuntMapView({
       if (!opts?.deferOpen) setPanel("arrived");
       return null;
     }
-    const forfeitNote = forfeitUncommittedShotPairs();
     const imageSrc =
       spotSession?.imageSrc ??
       shootSession?.imageSrc ??
@@ -2624,8 +2640,7 @@ export function HuntMapView({
     }
     setAwareSession(session);
     setLog(
-      (forfeitNote ? `${forfeitNote} ` : "") +
-        (resumedStand
+      (resumedStand
           ? "Du står der du var sist i denne cella. "
           : "") +
         (info.rangeSource === "lrf"
@@ -3356,16 +3371,21 @@ export function HuntMapView({
     setPostShotGhost(null);
     // Track after shot → rifle back in the pack.
     mountFieldGun({ silent: true });
-    setAwareSession(next);
+    setAwareSession({
+      ...next,
+      returnGunDeployed: false,
+      returnRest: "none",
+    });
     setPanel("arrived");
   }
 
-  /** Fallback uncommitted pair when the 60 s register window expires. */
+  /** Fallback pair when the 60 s register window expires / Fortsett spotting. */
   function createFallbackPairFromGhost(g: PostShotGhost): ShotPair {
     const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
     /**
      * Never invent 0° / 250 m — that dragged tree-kills to due north on Track.
      * Tree drop: aim = impact = seat. Ettersøk: aim = seat (birdAim), land = impact.
+     * True geometry + shot cell stick for the whole hunt day (until Gi opp / 17:00).
      */
     const target = g.recoveryOnly
       ? { ...g.impact }
@@ -3378,11 +3398,11 @@ export function HuntMapView({
     return {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
-      cell: { ...pos },
-      cellLabel: cellLabel(pos),
+      cell: { ...g.cell },
+      cellLabel: g.cellLabel,
       stand: g.stand,
       target,
-      impact: g.recoveryOnly ? { ...target } : g.impact,
+      impact: g.recoveryOnly ? { ...target } : { ...g.impact },
       distanceM,
       bearingDeg,
       resultKind: g.resultKind,
@@ -3391,7 +3411,7 @@ export function HuntMapView({
       harvestDraft: g.harvestDraft,
       fleeObservation: g.fleeObservation,
       hitFasit: g.hitFasit,
-      skuddparCommitted: false,
+      skuddparCommitted: true,
     };
   }
 
@@ -3440,7 +3460,7 @@ export function HuntMapView({
           },
     );
     setLog(
-      "Skuddpar-vinduet er ute — standard skuddpar lagret. Åpne Hent/søk, eller lagre bedre skuddpar neste gang før tiden går ut.",
+      "Skuddpar lagret (sete huskes hele jaktdagen). Åpne Aware → Hent/søk når du er klar — eller juster skuddpar senere i Shoot.",
     );
     // If still in Aware registering, kick back to map.
     setAwareSession((prev) => (prev?.postShotSkuddpar ? null : prev));
@@ -3468,16 +3488,33 @@ export function HuntMapView({
   }) {
     const g = postShotGhostRef.current;
     if (!g) return;
+    const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
+    /**
+     * Tree kills: Track marker + «Hent ved treet» must share the true seat.
+     * A dialed 0° aim otherwise puts the overlay due north while Hent walks
+     * to impact.
+     */
+    const treeKill = g.recoveryOnly;
+    const target = treeKill ? { ...g.impact } : draft.target;
+    const distanceM = treeKill
+      ? Math.max(
+          1,
+          Math.round(distanceMBetween(draft.stand, target, mPerPct)),
+        )
+      : draft.distanceM;
+    const bearingDeg = treeKill
+      ? Math.round(bearingDegFromTo(draft.stand, target))
+      : draft.bearingDeg;
     const pair: ShotPair = {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
-      cell: { ...pos },
-      cellLabel: cellLabel(pos),
+      cell: { ...g.cell },
+      cellLabel: g.cellLabel,
       stand: draft.stand,
-      target: draft.target,
+      target,
       impact: g.impact,
-      distanceM: draft.distanceM,
-      bearingDeg: draft.bearingDeg,
+      distanceM,
+      bearingDeg,
       resultKind: g.resultKind,
       trackPoints: [],
       found: null,
@@ -3490,11 +3527,15 @@ export function HuntMapView({
     setPostShotGhost(null);
     setPostShotGhostSecLeft(0);
     setPendingPostShot(null);
+    // Track / Hent → rifle back in the pack.
+    mountFieldGun({ silent: true });
     setAwareSession({
       ...awareSessionFromGhost(g, pair.id),
       postShotSkuddpar: false,
       birdPos: g.impact,
       ettersokPairId: pair.id,
+      returnGunDeployed: false,
+      returnRest: "none",
     });
     setLog(
       `Skuddpar lagret: ${pair.distanceM} m / ${Math.round(pair.bearingDeg)}° — fortsett i Track (Hent/søk).`,
@@ -3582,6 +3623,8 @@ export function HuntMapView({
       rangeSource: "estimated",
       ettersokPairId: pair.id,
       recoveryOnly,
+      returnGunDeployed: false,
+      returnRest: "none",
     });
     setPanel("arrived");
   }
@@ -3593,8 +3636,12 @@ export function HuntMapView({
    */
   function openAwareOverview() {
     setSpotSession(null);
-    if (unfinishedShotPairs.length > 0) {
-      openAwareForPair(unfinishedShotPairs[0]!);
+    // Prefer unfinished pairs in this cell (side list opens other cells).
+    const hereUnfinished = unfinishedShotPairs.filter(
+      (p) => p.cell.row === pos.row && p.cell.col === pos.col,
+    );
+    if (hereUnfinished.length > 0) {
+      openAwareForPair(hereUnfinished[0]!);
       setLog("Aware — skuddpar klar for Hent/søk.");
       return;
     }
@@ -3809,34 +3856,35 @@ export function HuntMapView({
   }
 
   /**
-   * Uncommitted recoveries (no cam / no saved skuddpar) are lost when you
-   * engage another bird — not when you only continue spotting.
+   * Mark unfinished recoveries lost (Gi opp / skuddlys / midnatt).
+   * Engage / Fortsett spotting never forfeits — pairs stick in their shot cell
+   * for the whole hunt day.
    */
-  function forfeitUncommittedShotPairs(): string | null {
-    const lost = shotPairs.filter(
+  function forfeitOpenShotPairs(reason: "skuddlys" | "midnight"): number {
+    const open = shotPairs.filter(
       (p) =>
-        !!p.harvestDraft &&
         p.found == null &&
-        p.skuddparCommitted === false &&
+        !!p.harvestDraft &&
         (p.resultKind === "instant_kill" ||
           p.resultKind === "vital_kill" ||
           p.resultKind === "ettersok"),
     );
-    if (lost.length === 0) return null;
+    if (open.length === 0) return 0;
     setShotPairs((prev) =>
       prev.map((p) =>
-        lost.some((l) => l.id === p.id)
+        open.some((o) => o.id === p.id)
           ? { ...p, found: false, harvestDraft: undefined }
           : p,
       ),
     );
-    setMentalFatigue((m) =>
-      clampFatigue(1 - staminaLeft(m) * ETTERSOK_ABANDON_MENTAL_KEEP),
-    );
-    const n = lost.length;
-    return n === 1
-      ? "Du gikk videre til ny fugl uten lagret skuddpar — forrige fugl er tapt."
-      : `Du gikk videre til ny fugl uten lagret skuddpar — ${n} fugler tapt.`;
+    if (reason === "skuddlys") {
+      setLog(
+        open.length === 1
+          ? "Skuddlys over — ufunnen fugl er tapt (hent/søk før 17:00 neste gang)."
+          : `Skuddlys over — ${open.length} ufunne fugler er tapt.`,
+      );
+    }
+    return open.length;
   }
 
   function onHuntShotResult(result: HuntShotResult) {
@@ -4174,10 +4222,16 @@ export function HuntMapView({
         result.kind === "instant_kill" || result.kind === "vital_kill";
       const needsSkuddparWindow = !pair;
       if (needsSkuddparWindow) {
+        // Don't overwrite a previous ghost — commit it first (all-day Track).
+        if (postShotGhostRef.current) {
+          expirePostShotGhost();
+        }
         setPostShotGhost({
           expiresAtMs: Date.now() + POST_SHOT_SKUDDPAR_WINDOW_MS,
           imageSrc: shootSession.imageSrc,
           bird: shootSession.bird,
+          cell: { ...pos },
+          cellLabel: cellLabel(pos),
           stand,
           birdAim: birdPos,
           impact,

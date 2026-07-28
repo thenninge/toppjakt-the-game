@@ -95,14 +95,26 @@ export type ShotPair = {
   /** True impact on bird — revealed when the bird/tree is found. */
   hitFasit?: ShotHitFasit;
   /**
-   * Camcorder / triggercam auto-save, or player saved in Shoot.
-   * Uncommitted pairs can still be tracked until you shoot another bird.
+   * Camcorder / triggercam auto-save, player saved in Shoot, or true-geometry
+   * fallback after the post-shot window. Open pairs stay in their shot cell
+   * all hunt day; forfeit only via «Gi opp søket», skuddlys (17:00), or
+   * end of hunt / midnatt.
    */
   skuddparCommitted?: boolean;
 };
 
-/** Map endpoint for the visible skuddpar (aim point). */
+/** Map endpoint for the visible skuddpar (aim / tree marker). */
 export function shotPairAimPoint(pair: ShotPair): CellLocalPoint {
+  /**
+   * Tree kills: overlay must match «Hent ved treet» (impact), not a dialed
+   * aim that may have defaulted to 0° north.
+   */
+  if (
+    pair.resultKind === "instant_kill" ||
+    pair.resultKind === "vital_kill"
+  ) {
+    return pair.impact;
+  }
   return pair.target ?? pair.impact;
 }
 

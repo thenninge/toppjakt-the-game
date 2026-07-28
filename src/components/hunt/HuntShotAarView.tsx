@@ -14,6 +14,7 @@ import {
   type HuntShotZone,
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
+import { dropMmToMrad } from "@/lib/ballistics/holdHint";
 
 export type HuntShotHitFasit = {
   xMm: number;
@@ -132,6 +133,11 @@ export function HuntShotAarView({
         : `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`);
 
   const e = adminDebug?.effects;
+  const rangeM = e?.trueDistanceM ?? 0;
+  const dxMm = adminDebug ? hit.xMm - adminDebug.aimMm.x : 0;
+  const dyUpMm = adminDebug ? -(hit.yMm - adminDebug.aimMm.y) : 0;
+  const dxMrad = rangeM > 0 ? dropMmToMrad(dxMm, rangeM) : 0;
+  const dyMrad = rangeM > 0 ? dropMmToMrad(dyUpMm, rangeM) : 0;
 
   return (
     <div
@@ -248,6 +254,13 @@ export function HuntShotAarView({
           <div className="admin-hunt-aar-panel">
             <p className="admin-hunt-aar-heading">Admin AAR</p>
             <dl className="admin-hunt-aar-grid">
+              <dt>Range</dt>
+              <dd>
+                {e.trueDistanceM.toFixed(0)} m
+                {Math.abs(e.trueDistanceM - e.measuredDistanceM) >= 0.5
+                  ? ` (målt ${e.measuredDistanceM.toFixed(0)} m)`
+                  : ""}
+              </dd>
               <dt>Treffpunkt (fra vital)</dt>
               <dd>
                 {fmtMm(hit.xMm)} mm side · {fmtMm(-hit.yMm)} mm høyde
@@ -266,8 +279,9 @@ export function HuntShotAarView({
               </dd>
               <dt>Avvik treff − sikte</dt>
               <dd>
-                {fmtMm(hit.xMm - adminDebug.aimMm.x)} ·{" "}
-                {fmtMm(-(hit.yMm - adminDebug.aimMm.y))} mm
+                {fmtMm(dxMm)} · {fmtMm(dyUpMm)} mm
+                {" · "}
+                {fmtSigned(dxMrad, 2)}/{fmtSigned(dyMrad, 2)} mrad
               </dd>
               <dt>v₀</dt>
               <dd>
@@ -293,9 +307,6 @@ export function HuntShotAarView({
               <dt>Atmosfære</dt>
               <dd>
                 ρ {e.densityRatio.toFixed(3)} · {e.temperatureC.toFixed(1)}°C
-                {" · "}
-                {e.trueDistanceM.toFixed(0)} m (målt{" "}
-                {e.measuredDistanceM.toFixed(0)} m)
               </dd>
               <dt>Spredning</dt>
               <dd>
