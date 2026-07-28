@@ -11,7 +11,7 @@
  *
  * Backpack:
  * | carryComfort     | Felt pack load: 10 = 25% lighter (75% felt), 1 = full weight |
- * | quickRelease     | Bird-nerve when presenting rifle (10 = +1 %, 1 = +10 %) |
+ * | quickRelease     | Bird-nerve when presenting rifle (10 = 0 %, 1 = +10 %) |
  *
  * Comfort felt fraction: (10 − score) / 9 → 10 = 0 %, 1 = 100 %.
  */

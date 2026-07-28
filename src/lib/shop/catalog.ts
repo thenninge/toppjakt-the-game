@@ -3173,7 +3173,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Vorn",
     name: "Deer 42L",
     priceNok: 3495,
-    note: "QRR — rifla klar på ryggen. Høy QR = lite bird-nerve ved Deploy gun (10 → +1 %, 1 → +10 %); høy comfort = mindre felt last.",
+    note: "QRR — rifla klar på ryggen. Høy QR = lite bird-nerve ved Deploy gun (10 → 0 %, 1 → +10 %); høy comfort = mindre felt last.",
     carry: {
       carryComfort: 8,
       quickRelease: 9,

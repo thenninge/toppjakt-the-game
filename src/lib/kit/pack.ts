@@ -179,15 +179,14 @@ export function chestrigOpticsRaiseNerve(kitItems: ShopItem[]): number {
 
 /**
  * Bird-nerve bump when deploying the rifle (Aware «Deploy gun»).
- * Backpack QR 10 → +1 %, QR 1 → +10 %. No backpack → treated as QR 1.
+ * Same QR scale as chestrig optics: 10 → 0 %, 1 → +10 %.
+ * No backpack → treated as QR 1.
  */
 export function backpackRifleRaiseNerve(kitItems: ShopItem[]): number {
   const hasRifle = kitItems.some(isRifleItem);
   if (!hasRifle) return 0;
   const pack = backpackFromKit(kitItems);
-  const qr = pack?.quickRelease ?? 1;
-  const q = Math.max(1, Math.min(10, Math.round(qr)));
-  return 0.01 + ((10 - q) / 9) * 0.09;
+  return scoreToQuickReleaseNerve(pack?.quickRelease ?? 1);
 }
 
 /**

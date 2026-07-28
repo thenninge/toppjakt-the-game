@@ -240,7 +240,7 @@ type AwareAppViewProps = {
   bipodWeaponCalm?: number;
   /**
    * Bird-nerve when deploying the rifle (0–1), from backpack QR.
-   * 10 QR → ~1 %, 1 QR → 10 %.
+   * 10 QR → 0 %, 1 QR → 10 % (same scale as chestrig optics).
    */
   gunDeployNerve?: number;
   /** Rifle taken out of the pack (parent tracks for remount / auto-mount). */
@@ -2236,7 +2236,7 @@ export function AwareAppView({
                 title={
                   gunPrepOnly
                     ? "Ta rifla frem for tårn-prep"
-                    : `Backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → +1 %, 1 QR → +10 %)`
+                    : `Backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → 0 %, 1 QR → +10 %)`
                 }
               >
                 {gunDeployed
