@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { getSession, signIn, signOut, useSession } from "next-auth/react";
 import { generateNickname } from "@/lib/nickname";
 import {
   addToInventory,
@@ -210,8 +210,11 @@ export function IntroScreen() {
   } | null>(null);
   const statsRef = useRef(stats);
   const bootstrappedRef = useRef(false);
-  /** Where to go after the Amiga chapter title card. */
+  /** Where to go after the Amiga chapter title card (+ optional cloud sync). */
   const afterChapterRef = useRef<AfterChapterPhase>("name");
+  /** Cloud PUT only after intro continue (avoids sync UI over title card). */
+  const postIntroCloudOkRef = useRef(false);
+  const chapterContinueLockRef = useRef(false);
   /** Last hunt HUD distance — used to delta-accumulate into lifetimeDistanceM. */
   const lastHuntDistanceMRef = useRef(0);
 
@@ -241,6 +244,19 @@ export function IntroScreen() {
   }
   const signedIn = authStatus === "authenticated" && !!session?.user;
 
+  function applyChosenSave(chosen: PlayerSaveV1) {
+    const next = ensureNamedStarterGear(chosen.stats);
+    savePlayerStats(next);
+    setStats(next);
+    setName(next.name);
+    if (!next.jegerprovePassed) {
+      setLocation("jegerprove");
+      afterChapterRef.current = "location";
+    } else {
+      afterChapterRef.current = "town";
+    }
+  }
+
   useEffect(() => {
     try {
       setAdminUnlocked(sessionStorage.getItem(ADMIN_SESSION_KEY) === "1");
@@ -260,11 +276,12 @@ export function IntroScreen() {
     syncHomeLoadedLotCache(stats.homeLoadedLots);
   }, [stats]);
 
-  /** Persist local + debounced cloud when signed in. */
+  /** Persist local always; debounced cloud only after intro continue. */
   useEffect(() => {
     if (!stats.name) return;
     savePlayerStats(stats);
     if (authStatus !== "authenticated") return;
+    if (!postIntroCloudOkRef.current) return;
     const t = window.setTimeout(() => {
       void putCloudSave(stats).catch((err) => {
         console.warn("Cloud save failed", err);
@@ -277,9 +294,18 @@ export function IntroScreen() {
     setMusicEnabled(readMusicEnabled());
   }, []);
 
+  /** Keep loading dots alive while post-intro sky sync runs. */
+  useEffect(() => {
+    if (!cloudSyncing || phase !== "loading") return;
+    const id = window.setInterval(() => {
+      setDots((d) => (d.length >= 4 ? "." : `${d}.`));
+    }, 380);
+    return () => window.clearInterval(id);
+  }, [cloudSyncing, phase]);
+
+  /** Splash only — local save, no cloud fetch (sync waits for chapter continue). */
   useEffect(() => {
     if (phase !== "loading") return;
-    if (authStatus === "loading") return;
     if (bootstrappedRef.current) return;
     bootstrappedRef.current = true;
 
@@ -292,72 +318,17 @@ export function IntroScreen() {
     async function bootstrap() {
       const started = Date.now();
       const local = loadPlayerSave();
-      let chosen = local;
 
-      if (authStatus === "authenticated") {
-        setCloudSyncing(true);
-        try {
-          const cloud = await fetchCloudSave();
-          if (cancelled) return;
-
-          const localNamed = !!local?.stats.name;
-          const cloudNamed = !!cloud?.stats.name;
-
-          if (localNamed && cloudNamed && local && cloud) {
-            // Both exist — ask the player; do not auto-overwrite.
-            const wait = Math.max(0, LOADING_MS - (Date.now() - started));
-            if (wait > 0) await new Promise((r) => window.setTimeout(r, wait));
-            if (cancelled) return;
-            setCloudSyncing(false);
-            setSaveConflict({ local, cloud });
-            setAuthNote("Innlogget — velg lokal eller sky-save.");
-            afterChapterRef.current = "name";
-            setPhase("chapter");
-            return;
-          }
-
-          if (cloudNamed && cloud) {
-            chosen = cloud;
-            savePlayerStats(cloud.stats);
-            setAuthNote("Innlogget — save hentet fra sky.");
-          } else if (localNamed && local) {
-            chosen = local;
-            await putCloudSave(local.stats, local.savedAtMs);
-            setAuthNote("Innlogget — lokal save lastet opp til sky.");
-          } else {
-            setAuthNote("Innlogget — opprett jeger.");
-          }
-        } catch (err) {
-          console.warn(err);
-          setAuthNote(
-            "Innlogget, men sky-save feilet — bruker lokal lagring.",
-          );
-        } finally {
-          if (!cancelled) setCloudSyncing(false);
-        }
+      if (local?.stats.name) {
+        applyChosenSave(local);
+      } else {
+        setName("");
+        afterChapterRef.current = "name";
       }
 
       const wait = Math.max(0, LOADING_MS - (Date.now() - started));
       if (wait > 0) await new Promise((r) => window.setTimeout(r, wait));
       if (cancelled) return;
-
-      if (chosen?.stats.name) {
-        const next = ensureNamedStarterGear(chosen.stats);
-        setStats(next);
-        setName(next.name);
-        if (!next.jegerprovePassed) {
-          setLocation("jegerprove");
-          afterChapterRef.current = "location";
-        } else {
-          afterChapterRef.current = "town";
-        }
-        setPhase("chapter");
-        return;
-      }
-
-      // Always let the hunter pick their own name — never lock to Google display name.
-      setName("");
-      afterChapterRef.current = "name";
       setPhase("chapter");
     }
 
@@ -367,7 +338,7 @@ export function IntroScreen() {
       cancelled = true;
       window.clearInterval(dotTimer);
     };
-  }, [phase, authStatus, session?.user?.email]);
+  }, [phase]);
 
   function toggleMusic() {
     setMusicEnabled((prev) => {
@@ -427,7 +398,77 @@ export function IntroScreen() {
     setName(next.name);
     setAuthNote(note);
     setSaveConflict(null);
+    postIntroCloudOkRef.current = true;
     setPhase("town");
+  }
+
+  /**
+   * After Amiga title card: optional cloud sync, then town / name / exam.
+   * Keeps sync UI and conflict dialog off the chapter screen.
+   */
+  async function continueAfterChapter() {
+    if (chapterContinueLockRef.current) return;
+    chapterContinueLockRef.current = true;
+
+    const finish = (nextPhase: AfterChapterPhase) => {
+      postIntroCloudOkRef.current = true;
+      setCloudSyncing(false);
+      setPhase(nextPhase);
+      chapterContinueLockRef.current = false;
+    };
+
+    let authenticated = authStatus === "authenticated";
+    if (authStatus === "loading") {
+      setPhase("loading");
+      setCloudSyncing(true);
+      const sessionNow = await getSession();
+      authenticated = !!sessionNow?.user;
+    }
+
+    if (!authenticated) {
+      finish(afterChapterRef.current);
+      return;
+    }
+
+    setPhase("loading");
+    setCloudSyncing(true);
+    try {
+      const local = loadPlayerSave();
+      const cloud = await fetchCloudSave();
+
+      const localNamed = !!local?.stats.name;
+      const cloudNamed = !!cloud?.stats.name;
+
+      if (localNamed && cloudNamed && local && cloud) {
+        setSaveConflict({ local, cloud });
+        setAuthNote("Innlogget — velg lokal eller sky-save.");
+        setCloudSyncing(false);
+        // Conflict modal over name — never over the Amiga title card.
+        setPhase("name");
+        chapterContinueLockRef.current = false;
+        return;
+      }
+
+      if (cloudNamed && cloud) {
+        applyChosenSave(cloud);
+        setAuthNote("Innlogget — save hentet fra sky.");
+      } else if (localNamed && local) {
+        applyChosenSave(local);
+        await putCloudSave(local.stats, local.savedAtMs);
+        setAuthNote("Innlogget — lokal save lastet opp til sky.");
+      } else {
+        setName("");
+        afterChapterRef.current = "name";
+        setAuthNote("Innlogget — opprett jeger.");
+      }
+    } catch (err) {
+      console.warn(err);
+      setAuthNote(
+        "Innlogget, men sky-save feilet — bruker lokal lagring.",
+      );
+    }
+
+    finish(afterChapterRef.current);
   }
 
   function chooseCloudSave() {
@@ -483,6 +524,7 @@ export function IntroScreen() {
     if (local?.stats.name) {
       enterWithSave(local, "Innlogging avbrutt — fortsetter med lokal save.");
     } else {
+      postIntroCloudOkRef.current = true;
       setAuthNote("Innlogging avbrutt.");
       setPhase("name");
     }
@@ -1496,7 +1538,7 @@ export function IntroScreen() {
 
         {phase === "chapter" ? (
           <AmigaChapterIntro
-            onContinue={() => setPhase(afterChapterRef.current)}
+            onContinue={() => void continueAfterChapter()}
           />
         ) : null}
 
@@ -2071,7 +2113,7 @@ export function IntroScreen() {
         />
       ) : null}
 
-      {saveConflict ? (
+      {saveConflict && phase !== "chapter" ? (
         <SaveConflictDialog
           local={saveConflict.local}
           cloud={saveConflict.cloud}
