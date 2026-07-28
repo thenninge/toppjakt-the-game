@@ -26,63 +26,87 @@ const ADMIN_PIN = "9898";
 const MENU_COPY: Record<
   GameLang,
   {
+    settings: string;
+    name: string;
+    login: string;
+    loginGoogle: string;
+    logout: string;
+    loggedInAs: string;
     language: string;
     volume: string;
     music: string;
     sfx: string;
-    edit: string;
     realism: string;
     realismMedium: string;
     realismHigh: string;
     rename: string;
     deleteHunter: string;
-    back: string;
+    advanced: string;
+    close: string;
     cancel: string;
     save: string;
   }
 > = {
   nb: {
-    language: "Språk",
+    settings: "Settings",
+    name: "Name",
+    login: "Login",
+    loginGoogle: "Logg inn med Google",
+    logout: "Logg ut",
+    loggedInAs: "Sky",
+    language: "Language",
     volume: "Volum",
     music: "Musikk",
     sfx: "Lydeffekter",
-    edit: "Edit",
     realism: "Realism",
     realismMedium: "Medium",
     realismHigh: "High",
     rename: "Endre navn",
     deleteHunter: "Slett jeger",
-    back: "← Tilbake",
+    advanced: "Avansert",
+    close: "Lukk",
     cancel: "Avbryt",
     save: "Lagre",
   },
   en: {
+    settings: "Settings",
+    name: "Name",
+    login: "Login",
+    loginGoogle: "Sign in with Google",
+    logout: "Sign out",
+    loggedInAs: "Cloud",
     language: "Language",
     volume: "Volume",
     music: "Music",
     sfx: "Sound effects",
-    edit: "Edit",
     realism: "Realism",
     realismMedium: "Medium",
     realismHigh: "High",
     rename: "Change name",
     deleteHunter: "Delete hunter",
-    back: "← Back",
+    advanced: "Advanced",
+    close: "Close",
     cancel: "Cancel",
     save: "Save",
   },
   ja: {
-    language: "言語",
+    settings: "Settings",
+    name: "Name",
+    login: "Login",
+    loginGoogle: "Googleでログイン",
+    logout: "ログアウト",
+    loggedInAs: "Cloud",
+    language: "Language",
     volume: "音量",
     music: "音楽",
     sfx: "効果音",
-    edit: "編集",
-    realism: "リアリズム",
+    realism: "Realism",
     realismMedium: "Medium",
     realismHigh: "High",
     rename: "名前を変更",
     deleteHunter: "ハンターを削除",
-    back: "← 戻る",
+    advanced: "詳細",
+    close: "閉じる",
     cancel: "キャンセル",
     save: "保存",
   },
@@ -109,7 +133,7 @@ function formatRange(meters: number): string {
   return `${meters} m`;
 }
 
-type MenuView = "closed" | "root" | "edit" | "rename" | "admin-pin";
+type MenuView = "closed" | "settings" | "rename" | "admin-pin";
 
 /** Compact sticky hunter strip — keeps main content visible. */
 export function StatsFrame({
@@ -188,7 +212,7 @@ export function StatsFrame({
       return;
     }
     setRenameError("");
-    setMenu("closed");
+    setMenu("settings");
   }
 
   function submitAdminPin(e: FormEvent) {
@@ -202,6 +226,13 @@ export function StatsFrame({
     setAdminPin("");
     setAdminPinError("");
     setMenu("closed");
+  }
+
+  function closeMenu() {
+    setMenu("closed");
+    setRenameError("");
+    setAdminPin("");
+    setAdminPinError("");
   }
 
   return (
@@ -218,10 +249,10 @@ export function StatsFrame({
                   : "stats-menu-btn"
               }
               aria-label="Jeger-meny"
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               aria-expanded={menu !== "closed"}
               onClick={() =>
-                setMenu((m) => (m === "closed" ? "root" : "closed"))
+                setMenu((m) => (m === "closed" ? "settings" : "closed"))
               }
             >
               <span className="stats-menu-burger" aria-hidden>
@@ -230,126 +261,77 @@ export function StatsFrame({
                 <span />
               </span>
             </button>
-            {menu === "root" ? (
-              <div className="stats-menu-panel" role="menu">
-                <button
-                  type="button"
-                  className="stats-menu-item"
-                  role="menuitem"
-                  onClick={() => setMenu("edit")}
-                >
-                  Edit
-                </button>
-                {authEmail ? (
-                  <p className="stats-menu-heading stats-menu-auth">
-                    Sky: {authEmail}
+            {menu === "settings" ? (
+              <div
+                className="stats-menu-panel stats-settings-panel"
+                role="dialog"
+                aria-label={copy.settings}
+              >
+                <div className="stats-settings-head">
+                  <p className="stats-menu-heading stats-settings-title">
+                    {copy.settings}
                   </p>
-                ) : null}
-                {!authEmail && onGoogleLogin ? (
                   <button
                     type="button"
-                    className="stats-menu-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu("closed");
-                      onGoogleLogin();
-                    }}
+                    className="stats-menu-item is-muted stats-settings-close"
+                    onClick={closeMenu}
                   >
-                    Logg inn med Google
+                    {copy.close}
                   </button>
-                ) : null}
-                {authEmail && onGoogleLogout ? (
-                  <button
-                    type="button"
-                    className="stats-menu-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu("closed");
-                      onGoogleLogout();
-                    }}
-                  >
-                    Logg ut
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {menu === "edit" ? (
-              <div className="stats-menu-panel" role="menu">
-                <p className="stats-menu-heading">{copy.edit}</p>
-                <div className="stats-menu-volume" role="group" aria-label={copy.volume}>
-                  <p className="stats-menu-heading">{copy.volume}</p>
-                  <label className="stats-volume-row">
-                    <span className="stats-volume-label">
-                      {copy.music}
-                      <span className="stats-volume-pct">
-                        {Math.round(musicVol * 100)}%
-                      </span>
-                    </span>
-                    <input
-                      type="range"
-                      className="stats-volume-slider"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={Math.round(musicVol * 100)}
-                      aria-label={copy.music}
-                      onChange={(e) => {
-                        const next = Number(e.target.value) / 100;
-                        setMusicVol(next);
-                        writeMusicVolume(next);
-                      }}
-                    />
-                  </label>
-                  <label className="stats-volume-row">
-                    <span className="stats-volume-label">
-                      {copy.sfx}
-                      <span className="stats-volume-pct">
-                        {Math.round(sfxVol * 100)}%
-                      </span>
-                    </span>
-                    <input
-                      type="range"
-                      className="stats-volume-slider"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={Math.round(sfxVol * 100)}
-                      aria-label={copy.sfx}
-                      onChange={(e) => {
-                        const next = Number(e.target.value) / 100;
-                        setSfxVol(next);
-                        writeSfxVolume(next);
-                      }}
-                    />
-                  </label>
                 </div>
-                {onLangChange ? (
-                  <div className="stats-menu-lang" role="group" aria-label={copy.language}>
-                    <p className="stats-menu-heading">{copy.language}</p>
-                    <div className="stats-menu-lang-row">
-                      {GAME_LANGS.map((code) => (
-                        <button
-                          key={code}
-                          type="button"
-                          className={
-                            stats.lang === code
-                              ? "stats-menu-item is-active"
-                              : "stats-menu-item"
-                          }
-                          role="menuitemradio"
-                          aria-checked={stats.lang === code}
-                          onClick={() => onLangChange(code)}
-                        >
-                          {GAME_LANG_LABEL[code]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+
+                <section className="stats-settings-section" aria-label={copy.name}>
+                  <p className="stats-menu-heading">{copy.name}</p>
+                  <p className="stats-settings-value">{stats.name || "—"}</p>
+                  {onRename ? (
+                    <button
+                      type="button"
+                      className="stats-menu-item"
+                      onClick={openRename}
+                    >
+                      {copy.rename}
+                    </button>
+                  ) : null}
+                </section>
+
+                <section className="stats-settings-section" aria-label={copy.login}>
+                  <p className="stats-menu-heading">{copy.login}</p>
+                  {authEmail ? (
+                    <p className="stats-settings-value">
+                      {copy.loggedInAs}: {authEmail}
+                    </p>
+                  ) : (
+                    <p className="stats-settings-value is-muted">—</p>
+                  )}
+                  {!authEmail && onGoogleLogin ? (
+                    <button
+                      type="button"
+                      className="stats-menu-item"
+                      onClick={() => {
+                        closeMenu();
+                        onGoogleLogin();
+                      }}
+                    >
+                      {copy.loginGoogle}
+                    </button>
+                  ) : null}
+                  {authEmail && onGoogleLogout ? (
+                    <button
+                      type="button"
+                      className="stats-menu-item"
+                      onClick={() => {
+                        closeMenu();
+                        onGoogleLogout();
+                      }}
+                    >
+                      {copy.logout}
+                    </button>
+                  ) : null}
+                </section>
+
                 {onRealismChange ? (
-                  <div
-                    className="stats-menu-lang"
-                    role="group"
+                  <section
+                    className="stats-settings-section"
                     aria-label={copy.realism}
                   >
                     <p className="stats-menu-heading">{copy.realism}</p>
@@ -363,7 +345,7 @@ export function StatsFrame({
                               ? "stats-menu-item is-active"
                               : "stats-menu-item"
                           }
-                          role="menuitemradio"
+                          role="radio"
                           aria-checked={(stats.realism ?? "medium") === level}
                           onClick={() => onRealismChange(level)}
                         >
@@ -373,67 +355,131 @@ export function StatsFrame({
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </section>
                 ) : null}
-                {onRename ? (
-                  <button
-                    type="button"
-                    className="stats-menu-item"
-                    role="menuitem"
-                    onClick={openRename}
+
+                {onLangChange ? (
+                  <section
+                    className="stats-settings-section"
+                    aria-label={copy.language}
                   >
-                    {copy.rename}
-                  </button>
+                    <p className="stats-menu-heading">{copy.language}</p>
+                    <div className="stats-menu-lang-row">
+                      {GAME_LANGS.map((code) => (
+                        <button
+                          key={code}
+                          type="button"
+                          className={
+                            stats.lang === code
+                              ? "stats-menu-item is-active"
+                              : "stats-menu-item"
+                          }
+                          role="radio"
+                          aria-checked={stats.lang === code}
+                          onClick={() => onLangChange(code)}
+                        >
+                          {GAME_LANG_LABEL[code]}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 ) : null}
-                {onDeleteUser ? (
-                  <button
-                    type="button"
-                    className="stats-menu-item is-danger"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu("closed");
-                      onDeleteUser();
-                    }}
-                  >
-                    {copy.deleteHunter}
-                  </button>
-                ) : null}
-                {onAdminUnlock ? (
-                  adminUnlocked ? (
-                    <button
-                      type="button"
-                      className="stats-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        onAdminLock?.();
-                        setMenu("closed");
-                      }}
-                    >
-                      Admin av
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="stats-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        setAdminPin("");
-                        setAdminPinError("");
-                        setMenu("admin-pin");
-                      }}
-                    >
-                      Admin
-                    </button>
-                  )
-                ) : null}
-                <button
-                  type="button"
-                  className="stats-menu-item is-muted"
-                  role="menuitem"
-                  onClick={() => setMenu("root")}
+
+                <section
+                  className="stats-settings-section stats-settings-advanced"
+                  aria-label={copy.advanced}
                 >
-                  {copy.back}
-                </button>
+                  <p className="stats-menu-heading">{copy.advanced}</p>
+                  <div
+                    className="stats-menu-volume"
+                    role="group"
+                    aria-label={copy.volume}
+                  >
+                    <p className="stats-menu-heading">{copy.volume}</p>
+                    <label className="stats-volume-row">
+                      <span className="stats-volume-label">
+                        {copy.music}
+                        <span className="stats-volume-pct">
+                          {Math.round(musicVol * 100)}%
+                        </span>
+                      </span>
+                      <input
+                        type="range"
+                        className="stats-volume-slider"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(musicVol * 100)}
+                        aria-label={copy.music}
+                        onChange={(e) => {
+                          const next = Number(e.target.value) / 100;
+                          setMusicVol(next);
+                          writeMusicVolume(next);
+                        }}
+                      />
+                    </label>
+                    <label className="stats-volume-row">
+                      <span className="stats-volume-label">
+                        {copy.sfx}
+                        <span className="stats-volume-pct">
+                          {Math.round(sfxVol * 100)}%
+                        </span>
+                      </span>
+                      <input
+                        type="range"
+                        className="stats-volume-slider"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(sfxVol * 100)}
+                        aria-label={copy.sfx}
+                        onChange={(e) => {
+                          const next = Number(e.target.value) / 100;
+                          setSfxVol(next);
+                          writeSfxVolume(next);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {onDeleteUser ? (
+                    <button
+                      type="button"
+                      className="stats-menu-item is-danger"
+                      onClick={() => {
+                        closeMenu();
+                        onDeleteUser();
+                      }}
+                    >
+                      {copy.deleteHunter}
+                    </button>
+                  ) : null}
+                  {onAdminUnlock ? (
+                    adminUnlocked ? (
+                      <button
+                        type="button"
+                        className="stats-menu-item"
+                        onClick={() => {
+                          onAdminLock?.();
+                          closeMenu();
+                        }}
+                      >
+                        Admin av
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="stats-menu-item"
+                        onClick={() => {
+                          setAdminPin("");
+                          setAdminPinError("");
+                          setMenu("admin-pin");
+                        }}
+                      >
+                        Admin
+                      </button>
+                    )
+                  ) : null}
+                </section>
               </div>
             ) : null}
             {menu === "admin-pin" ? (
@@ -461,12 +507,12 @@ export function StatsFrame({
                       type="button"
                       className="stats-menu-item is-muted"
                       onClick={() => {
-                        setMenu("edit");
+                        setMenu("settings");
                         setAdminPin("");
                         setAdminPinError("");
                       }}
                     >
-                      Avbryt
+                      {copy.cancel}
                     </button>
                     <button type="submit" className="stats-menu-item">
                       Lås opp
@@ -497,7 +543,7 @@ export function StatsFrame({
                       type="button"
                       className="stats-menu-item is-muted"
                       onClick={() => {
-                        setMenu("edit");
+                        setMenu("settings");
                         setRenameError("");
                       }}
                     >

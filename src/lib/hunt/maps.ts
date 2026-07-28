@@ -1,9 +1,14 @@
+import {
+  CLOUD_HUNT_MAPS,
+} from "@/lib/hunt/cloudHuntMapsCatalog";
+
 /**
  * Hunting map image assets under /public/maps.
  * Placement seats live in mapPlacements.ts (from maps_placement overlays).
+ * Cloud-synced terrains: cloudHuntMapsCatalog.ts
  */
 
-export type HuntMapId =
+export type CoreHuntMapId =
   | "ostlandet1"
   | "ostlandet2"
   | "midtnorge1"
@@ -11,6 +16,9 @@ export type HuntMapId =
   | "inatur2"
   | "svenskegrensa"
   | "finnskogen";
+
+/** Core catalog id, or cloud-synced id (`cloud_…`). */
+export type HuntMapId = CoreHuntMapId | string;
 
 /** Grid cell: row letter A.. from bottom, column number 1.. from left. */
 export type HuntGridCell = {
@@ -41,7 +49,7 @@ export type HuntMapAsset = {
   awareMapMaxM?: number;
 };
 
-export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
+export const HUNT_MAPS: Record<CoreHuntMapId, HuntMapAsset> = {
   ostlandet1: {
     id: "ostlandet1",
     src: "/maps/ostlandet1.png",
@@ -124,7 +132,25 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
 };
 
 export function getHuntMap(id: HuntMapId): HuntMapAsset {
-  return HUNT_MAPS[id];
+  if (Object.prototype.hasOwnProperty.call(HUNT_MAPS, id)) {
+    return HUNT_MAPS[id as CoreHuntMapId];
+  }
+  const cloud = CLOUD_HUNT_MAPS[id];
+  if (cloud) return cloud;
+  throw new Error(`Unknown hunt map: ${id}`);
+}
+
+/** Core + cloud-synced playable maps for pickers / admin. */
+export function listHuntMaps(): HuntMapAsset[] {
+  return [...Object.values(HUNT_MAPS), ...Object.values(CLOUD_HUNT_MAPS)];
+}
+
+export function tryGetHuntMap(id: string): HuntMapAsset | null {
+  try {
+    return getHuntMap(id);
+  } catch {
+    return null;
+  }
 }
 
 /** Row 0 → "A", row 1 → "B", … */

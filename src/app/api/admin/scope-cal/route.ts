@@ -32,9 +32,12 @@ function upsertNumericField(
   key: string,
   value: string,
 ): string {
-  const fieldRe = new RegExp(`(\\b${key}:\\s*)(-?\\d+(?:\\.\\d+)?)`);
+  // Line-anchored so zoomMagCal never hits minZoomMagCal / similar suffixes.
+  const fieldRe = new RegExp(
+    `(^|\\n)([ \\t]*${key}:\\s*)(-?\\d+(?:\\.\\d+)?)`,
+  );
   if (fieldRe.test(block)) {
-    return block.replace(fieldRe, `$1${value}`);
+    return block.replace(fieldRe, `$1$2${value}`);
   }
   const trimmed = block.replace(/\s*$/, "");
   const comma = /,\s*$/.test(trimmed) ? "" : ",";
@@ -278,6 +281,34 @@ export async function POST(req: NextRequest) {
 
   await fs.writeFile(target, src, "utf8");
 
+  // Re-read and confirm the scope block actually contains the new FOV values.
+  const written = await fs.readFile(target, "utf8");
+  const verifyMatch = idRe.exec(written);
+  const verifyInner = verifyMatch?.[2] ?? "";
+  let verified = true;
+  if (zoomMagCal != null) {
+    const m = new RegExp(
+      `(^|\\n)[ \\t]*zoomMagCal:\\s*${escapeRegExp(String(zoomMagCal))}\\b`,
+    ).exec(verifyInner);
+    if (!m) verified = false;
+  }
+  if (minZoomMagCal != null) {
+    const m = new RegExp(
+      `(^|\\n)[ \\t]*minZoomMagCal:\\s*${escapeRegExp(String(minZoomMagCal))}\\b`,
+    ).exec(verifyInner);
+    if (!m) verified = false;
+  }
+  if (!verified) {
+    return NextResponse.json(
+      {
+        error: `Wrote ${relPath} but could not verify FOV fields for "${scopeId}"`,
+        path: relPath,
+        scopeId,
+      },
+      { status: 500 },
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     path: relPath,
@@ -285,6 +316,7 @@ export async function POST(req: NextRequest) {
     minZoom,
     maxZoom,
     clickUnit,
+    verified: true,
     ...(zoomMagCal != null ? { zoomMagCal } : null),
     ...(minZoomMagCal != null ? { minZoomMagCal } : null),
     ...(focusZoomEnabled != null ? { focusZoomEnabled } : null),

@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useSession } from "next-auth/react";
 import {
   AWARE_MAP_MAX_M,
   AWARE_MAP_RADIUS_PCT,
@@ -16,6 +18,11 @@ import {
   distanceMBetween,
   type CellPoint,
 } from "@/lib/aware/cellGeometry";
+import { compressImageForCloudTerrain } from "@/lib/hunt/compressCloudTerrainMap";
+import {
+  ensureCloudTerrainsLoaded,
+  type CloudHuntTerrain,
+} from "@/lib/hunt/cloudTerrains";
 import {
   awareMapMaxMFromKnownSpan,
   awareRingDiameterPct,
@@ -31,7 +38,9 @@ import {
 import {
   HUNT_MAPS,
   cellLabel,
+  listHuntMaps,
   type HuntGridCell,
+  type HuntMapAsset,
   type HuntMapId,
 } from "@/lib/hunt/maps";
 import {
@@ -43,7 +52,6 @@ type AdminJaktfeltPanelProps = {
   onLeave: () => void;
 };
 
-const MAP_LIST = Object.values(HUNT_MAPS);
 const AWARE_SAFETY_RING_M = 1000;
 
 type MeasureState = {
@@ -51,9 +59,58 @@ type MeasureState = {
   b: CellPoint | null;
 };
 
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function slugTitle(title: string): string {
+  const s = title
+    .toLowerCase()
+    .replace(/[^a-z0-9æøå]+/gi, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  return s || `terreng-${Date.now().toString(36)}`;
+}
+
 export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
+  const { status: authStatus } = useSession();
   const [mapId, setMapId] = useState<HuntMapId>("finnskogen");
-  const catalog = HUNT_MAPS[mapId];
+  const [draftTitle, setDraftTitle] = useState(HUNT_MAPS.finnskogen.label);
+  const [draftRegion, setDraftRegion] = useState(
+    HUNT_MAPS.finnskogen.regionHint,
+  );
+  const [draftCols, setDraftCols] = useState(HUNT_MAPS.finnskogen.cols);
+  const [draftRows, setDraftRows] = useState(HUNT_MAPS.finnskogen.rows);
+  /** Uploaded / cloud preview src (blob URL or remote). Null → catalog map. */
+  const [customImageSrc, setCustomImageSrc] = useState<string | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<Blob | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const catalogAsset: HuntMapAsset = useMemo(() => {
+    try {
+      return (
+        listHuntMaps().find((m) => m.id === mapId) ?? HUNT_MAPS.finnskogen
+      );
+    } catch {
+      return HUNT_MAPS.finnskogen;
+    }
+  }, [mapId]);
+
+  const catalog: Pick<HuntMapAsset, "cols" | "rows" | "src" | "label" | "awareMapMaxM"> =
+    {
+      cols: draftCols,
+      rows: draftRows,
+      src: customImageSrc ?? catalogAsset.src,
+      label: draftTitle,
+      awareMapMaxM: catalogAsset.awareMapMaxM,
+    };
 
   const [seats, setSeats] = useState<MapBirdSeat[]>(() => [
     ...getMapBirdSeats("finnskogen"),
@@ -74,7 +131,14 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
   const [knownSpanM, setKnownSpanM] = useState(1000);
   const [status, setStatus] = useState<string | null>(null);
   const [baking, setBaking] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [canPublishCloud, setCanPublishCloud] = useState(false);
+  const [cloudList, setCloudList] = useState<CloudHuntTerrain[]>([]);
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
+
+  const isCustomDraft = !!customImageSrc || !!pendingUpload;
+  const mapList = useMemo(() => listHuntMaps(), [cloudList, syncing]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const panDragRef = useRef<{
@@ -88,6 +152,30 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
   const suppressClickRef = useRef(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/cloud-terrains");
+        const data = (await res.json()) as { canPublish?: boolean };
+        if (!cancelled) setCanPublishCloud(!!data.canPublish);
+      } catch {
+        if (!cancelled) setCanPublishCloud(false);
+      }
+      const terrains = await ensureCloudTerrainsLoaded();
+      if (!cancelled) setCloudList(terrains);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    };
+  }, []);
 
   const metersPerPct = awareMetersPerPctFor({ awareMapMaxM: awareMaxM });
   const counts = useMemo(() => countSeats(seats), [seats]);
@@ -104,9 +192,28 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
   });
   const scaleDiamPct = awareScaleRingDiameterPct();
 
+  function clearUpload() {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    setPendingUpload(null);
+    setCustomImageSrc(null);
+  }
+
   function loadMap(id: HuntMapId) {
-    const m = HUNT_MAPS[id];
+    clearUpload();
+    let m: HuntMapAsset;
+    try {
+      m = listHuntMaps().find((x) => x.id === id) ?? HUNT_MAPS.finnskogen;
+    } catch {
+      m = HUNT_MAPS.finnskogen;
+    }
     setMapId(id);
+    setDraftTitle(m.label);
+    setDraftRegion(m.regionHint);
+    setDraftCols(m.cols);
+    setDraftRows(m.rows);
     setSeats([...getMapBirdSeats(id)]);
     setStart({ ...m.start });
     setAwareMaxM(awareMapMaxMFor(m));
@@ -116,6 +223,65 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setStatus(`Lastet ${m.label}`);
+  }
+
+  function loadCloudTerrain(t: CloudHuntTerrain) {
+    clearUpload();
+    setMapId(`cloud-preview:${t.id}`);
+    setCustomImageSrc(t.imageUrl);
+    setDraftTitle(t.title || "Cloud-terreng");
+    setDraftRegion(t.regionHint || "Cloud");
+    setDraftCols(t.cols);
+    setDraftRows(t.rows);
+    setStart({ ...t.start });
+    setAwareMaxM(
+      t.awareMapMaxM != null && Number.isFinite(t.awareMapMaxM)
+        ? t.awareMapMaxM
+        : AWARE_MAP_MAX_M,
+    );
+    setSeats([...t.seats]);
+    setMeasure({ a: null, b: null });
+    setRingCell(null);
+    setSelectedSeat(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setStatus(`Cloud-terreng: ${t.title || t.id} (${t.seats.length} seter)`);
+  }
+
+  async function onUploadFile(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setStatus("Velg PNG eller JPEG.");
+      return;
+    }
+    clearUpload();
+    const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
+    setPendingUpload(file);
+    setCustomImageSrc(url);
+    setMapId(`draft:${Date.now().toString(36)}`);
+    setDraftTitle(file.name.replace(/\.(png|jpe?g|webp)$/i, "") || "Nytt terreng");
+    setDraftRegion("Nytt");
+    setDraftCols(7);
+    setDraftRows(6);
+    setStart({ row: 0, col: 0 });
+    setAwareMaxM(AWARE_MAP_MAX_M);
+    setSeats([]);
+    setMeasure({ a: null, b: null });
+    setRingCell(null);
+    setSelectedSeat(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setStatus(
+      `Nytt kart lastet opp — sett start, skala, tiur/orre, deretter publiser eller eksporter.`,
+    );
+  }
+
+  async function resolveMapBlob(): Promise<Blob> {
+    if (pendingUpload) return pendingUpload;
+    const src = customImageSrc ?? catalogAsset.src;
+    const res = await fetch(src);
+    if (!res.ok) throw new Error(`Kunne ikke hente kartbilde (${res.status})`);
+    return res.blob();
   }
 
   function mapClickPoint(e: MouseEvent<HTMLDivElement>): CellPoint {
@@ -203,6 +369,12 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
   }
 
   function resetSeatsFromCatalog() {
+    if (isCustomDraft || String(mapId).startsWith("cloud-preview:")) {
+      setSeats([]);
+      setSelectedSeat(null);
+      setStatus("Seter tømt (nytt terreng)");
+      return;
+    }
     setSeats([...getMapBirdSeats(mapId)]);
     setSelectedSeat(null);
     setStatus("Seter tilbakestilt fra katalog");
@@ -215,6 +387,12 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
   }
 
   async function bakeToRepo() {
+    if (isCustomDraft || String(mapId).startsWith("cloud-preview:")) {
+      setStatus(
+        "Nye / cloud-forhåndsviste terreng: bruk «Publiser til sky» eller «Oppdater fra sky». «Lagre til repo» gjelder kun kjernekart.",
+      );
+      return;
+    }
     setBaking(true);
     setStatus(null);
     try {
@@ -245,6 +423,167 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
       setStatus(err instanceof Error ? err.message : "Bake feilet");
     } finally {
       setBaking(false);
+    }
+  }
+
+  async function publishToCloud() {
+    if (!canPublishCloud) {
+      setStatus(
+        authStatus !== "authenticated"
+          ? "Logg inn med Google for å publisere til sky."
+          : "Ingen cloud-admin-tilgang (ADMIN_GOOGLE_IDS).",
+      );
+      return;
+    }
+    setPublishing(true);
+    setStatus("Komprimerer kart og publiserer til sky…");
+    try {
+      const raw = await resolveMapBlob();
+      const compressed = await compressImageForCloudTerrain(raw);
+      const res = await fetch("/api/admin/cloud-terrains", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: draftTitle,
+          regionHint: draftRegion,
+          imageBase64: compressed.base64,
+          cols: draftCols,
+          rows: draftRows,
+          start,
+          awareMapMaxM: awareMaxM,
+          seats,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        seats?: number;
+        bytes?: number;
+        id?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const terrains = await ensureCloudTerrainsLoaded({ force: true });
+      setCloudList(terrains);
+      const kb = data.bytes ? Math.round(data.bytes / 1024) : "?";
+      setStatus(
+        `Publisert til sky · ${data.seats ?? seats.length} seter · ${kb} KB. Main admin: «Oppdater repo fra sky».`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Publisering feilet");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function exportTerrainPackage() {
+    try {
+      const raw = await resolveMapBlob();
+      const compressed = await compressImageForCloudTerrain(raw);
+      const base = slugTitle(draftTitle);
+      const pack = {
+        version: 1,
+        title: draftTitle,
+        regionHint: draftRegion,
+        exportedAt: new Date().toISOString(),
+        cols: draftCols,
+        rows: draftRows,
+        start,
+        awareMapMaxM: awareMaxM,
+        seats,
+        image: {
+          filename: `${base}.${compressed.ext}`,
+          mime: compressed.mime,
+          bytes: compressed.bytes,
+        },
+      };
+      downloadBlob(
+        `${base}.terrain.json`,
+        new Blob([JSON.stringify(pack, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      downloadBlob(`${base}.${compressed.ext}`, compressed.blob);
+      setStatus(
+        `Eksportert ${base}.terrain.json + ${base}.${compressed.ext} (${Math.round(compressed.bytes / 1024)} KB).`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Eksport feilet");
+    }
+  }
+
+  async function syncRepoFromCloud() {
+    if (!canPublishCloud) {
+      setStatus(
+        authStatus !== "authenticated"
+          ? "Logg inn med Google for å synke fra sky."
+          : "Ingen cloud-admin-tilgang (ADMIN_GOOGLE_IDS).",
+      );
+      return;
+    }
+    setSyncing(true);
+    setStatus("Henter terreng fra sky til lokal repo…");
+    try {
+      const res = await fetch("/api/admin/cloud-terrains/sync-to-repo", {
+        method: "POST",
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        terrains?: number;
+        added?: number;
+        updated?: number;
+        failed?: number;
+        hint?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const terrains = await ensureCloudTerrainsLoaded({ force: true });
+      setCloudList(terrains);
+      setStatus(
+        `Synket ${data.terrains ?? 0} terreng (ny ${data.added ?? 0} · oppdatert ${data.updated ?? 0}${data.failed ? ` · feil ${data.failed}` : ""}). ${data.hint ?? ""}`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Sync feilet");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function onImportPackage(file: File) {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text) as {
+        title?: string;
+        regionHint?: string;
+        cols?: number;
+        rows?: number;
+        start?: HuntGridCell;
+        awareMapMaxM?: number;
+        seats?: MapBirdSeat[];
+      };
+      if (!Array.isArray(data.seats)) {
+        setStatus("Ugyldig .terrain.json (mangler seats).");
+        return;
+      }
+      setDraftTitle(typeof data.title === "string" ? data.title : draftTitle);
+      setDraftRegion(
+        typeof data.regionHint === "string" ? data.regionHint : draftRegion,
+      );
+      if (typeof data.cols === "number") setDraftCols(data.cols);
+      if (typeof data.rows === "number") setDraftRows(data.rows);
+      if (data.start) setStart({ ...data.start });
+      if (typeof data.awareMapMaxM === "number") setAwareMaxM(data.awareMapMaxM);
+      setSeats(data.seats.filter(Boolean));
+      setStatus(
+        `Importert JSON (${data.seats.length} seter). Last opp kartbilde hvis det mangler.`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Import feilet");
     }
   }
 
@@ -296,8 +635,9 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
         <div>
           <h2 className="jaktfelt-title">Jaktfelt</h2>
           <p className="shop-row-note">
-            Kartskala (Aware), startcelle og utplassering av tiur/orre. Bake
-            skriver til <code>mapPlacements.ts</code> + <code>maps.ts</code>.
+            Last opp PNG/screenshot, definer grid/seter/Aware-skala. Assistent
+            publiserer til sky; main admin henter med «Oppdater fra sky»
+            (samme mønster som spotting-scener).
           </p>
         </div>
         <button
@@ -313,16 +653,84 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
         <label className="shop-filter">
           Terreng
           <select
-            value={mapId}
-            onChange={(e) => loadMap(e.target.value as HuntMapId)}
+            value={
+              String(mapId).startsWith("draft:") ||
+              String(mapId).startsWith("cloud-preview:")
+                ? ""
+                : mapId
+            }
+            onChange={(e) => {
+              if (e.target.value) loadMap(e.target.value as HuntMapId);
+            }}
           >
-            {MAP_LIST.map((m) => (
+            {isCustomDraft || String(mapId).startsWith("cloud-preview:") ? (
+              <option value="">— utkast / cloud —</option>
+            ) : null}
+            {mapList.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label} ({m.regionHint})
               </option>
             ))}
           </select>
         </label>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onUploadFile(f);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onImportPackage(f);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          className="intro-button sheriff-secondary"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Last opp kart
+        </button>
+        <button
+          type="button"
+          className="intro-button sheriff-secondary"
+          onClick={() => importInputRef.current?.click()}
+        >
+          Importer JSON
+        </button>
+
+        {cloudList.length > 0 ? (
+          <label className="shop-filter">
+            Fra sky
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                const t = cloudList.find((x) => x.id === e.target.value);
+                if (t) loadCloudTerrain(t);
+                e.target.value = "";
+              }}
+            >
+              <option value="">— åpne cloud-terreng —</option>
+              {cloudList.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title || t.id} · {t.seats.length} seter
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         <div className="jaktfelt-tool-tabs" role="tablist" aria-label="Verktøy">
           {tools.map((t) => (
@@ -527,6 +935,52 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
         <aside className="jaktfelt-side">
           <section className="jaktfelt-card">
             <h3>Terreng</h3>
+            <label className="shop-filter">
+              Navn
+              <input
+                type="text"
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+              />
+            </label>
+            <label className="shop-filter">
+              Region
+              <input
+                type="text"
+                value={draftRegion}
+                onChange={(e) => setDraftRegion(e.target.value)}
+              />
+            </label>
+            <div className="jaktfelt-grid-fields">
+              <label className="shop-filter">
+                Kolonner
+                <input
+                  type="number"
+                  min={2}
+                  max={24}
+                  value={draftCols}
+                  onChange={(e) => {
+                    const n = Math.round(Number(e.target.value));
+                    if (!Number.isFinite(n)) return;
+                    setDraftCols(Math.max(2, Math.min(24, n)));
+                  }}
+                />
+              </label>
+              <label className="shop-filter">
+                Rader
+                <input
+                  type="number"
+                  min={2}
+                  max={24}
+                  value={draftRows}
+                  onChange={(e) => {
+                    const n = Math.round(Number(e.target.value));
+                    if (!Number.isFinite(n)) return;
+                    setDraftRows(Math.max(2, Math.min(24, n)));
+                  }}
+                />
+              </label>
+            </div>
             <p className="shop-row-note">{formatSeatSummary(seats, catalog)}</p>
             <p className="shop-row-note">
               Start: <strong>{startCellLabel(start)}</strong>
@@ -550,9 +1004,6 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
             </label>
             <p className="shop-row-note">
               ≈ {metersPerPct.toFixed(1)} m/% · default {Math.round(AWARE_MAP_MAX_M)} m
-              {catalog.awareMapMaxM != null
-                ? ` · katalog ${Math.round(catalog.awareMapMaxM)} m`
-                : " · katalog: default"}
             </p>
           </section>
 
@@ -648,11 +1099,40 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
               </button>
               <button
                 type="button"
-                className="intro-button"
-                disabled={baking}
-                onClick={bakeToRepo}
+                className="intro-button sheriff-secondary"
+                disabled={baking || isCustomDraft}
+                onClick={() => void bakeToRepo()}
+                title="Kun kjernekart i lokal repo"
               >
                 {baking ? "Skriver…" : "Lagre til repo"}
+              </button>
+              <button
+                type="button"
+                className="intro-button"
+                disabled={publishing || !canPublishCloud}
+                title={
+                  canPublishCloud
+                    ? "Publiser kart + seter til Supabase"
+                    : "Krever Google + ADMIN_GOOGLE_IDS"
+                }
+                onClick={() => void publishToCloud()}
+              >
+                {publishing ? "Publiserer…" : "Publiser til sky"}
+              </button>
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                onClick={() => void exportTerrainPackage()}
+              >
+                Eksporter JSON+PNG
+              </button>
+              <button
+                type="button"
+                className="intro-button"
+                disabled={syncing || !canPublishCloud}
+                onClick={() => void syncRepoFromCloud()}
+              >
+                {syncing ? "Synker…" : "Oppdater repo fra sky"}
               </button>
             </div>
             {status ? <p className="jaktfelt-status">{status}</p> : null}

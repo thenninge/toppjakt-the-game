@@ -8,6 +8,7 @@
  */
 
 import type { HuntGridCell, HuntMapId } from "@/lib/hunt/maps";
+import { CLOUD_MAP_BIRD_SEATS } from "@/lib/hunt/cloudHuntMapsCatalog";
 
 type BirdSpecies = "tiur" | "orrhane";
 
@@ -761,7 +762,7 @@ const MAX_TOTAL_BY_MAP: Partial<Record<HuntMapId, number>> = (() => {
 })();
 
 export function getMapBirdSeats(mapId: HuntMapId): readonly MapBirdSeat[] {
-  return MAP_BIRD_SEATS[mapId] ?? [];
+  return MAP_BIRD_SEATS[mapId] ?? CLOUD_MAP_BIRD_SEATS[mapId] ?? [];
 }
 
 export function getCellSeatCounts(

@@ -28,7 +28,7 @@ CBA / 100 m / max zoom.
 | Dial click | 1 klikk = 0.1 mil = 10 mm @ 100 m | `ZERO_CLICK_MM` in `player.ts` |
 | Reticle size | FFP ∝ optic zoom only (100 m ref) — not subject/distance | `opticReticleImgScale` |
 | Paper / bird | Distance + true-angular ×0.1 (skive); hunt bird FOV separate | `zeroingTargetAndReticleScale` / `birdScopeImageScale` |
-| FFP asset map | `centerTo1MilPx` → CBA diamond tip (115 px) | `ffpReticleImageScale` |
+| FFP asset map | `centerTo1MilPx` → 1 mil (MRAD) or 1 MOA (MOA scopes) via diamond tip × 29.4/100 | `ffpReticleImageScale` |
 | Global subtension | Keep `RETICLE_SUBTENSION_CAL = 1` | `precision.ts` |
 | Premium FOV | +15 % circle diameter | `SCOPE_FOV_DIAMETER_PREMIUM` / catalog |
 

@@ -1,9 +1,21 @@
-import { useCallback, useEffect, useRef } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import type { BirdVisualPlacement } from "@/lib/hunt/birds";
 import { getBirdSprite } from "@/lib/hunt/birdSprites";
 
 /** Thermal palette / Habrok display mode. */
 export type ThermalPolarity = "wh" | "bh" | "outline" | "fusion";
+
+/** Imperative pan during touch/mouse drag — same idea as scope aimRef. */
+export type ThermalCanvasHandle = {
+  setPanLive: (pan: { x: number; y: number }) => void;
+  endLivePan: () => void;
+};
 
 type ThermalCanvasProps = {
   imageSrc: string;
@@ -106,17 +118,21 @@ function drawBirdSilhouette(
  * Fusion and day binos: no bake — Fusion only draws outline rim over the photo.
  * Low-res sensors: live per-pixel sample (chunky fillRect look).
  */
-export function ThermalCanvas({
-  imageSrc,
-  birdPlacements,
-  pan,
-  zoom,
-  pixelFactor,
-  polarity = "wh",
-  birdVisualScale = 0.55,
-  className,
-  onLandscapeReady,
-}: ThermalCanvasProps) {
+export const ThermalCanvas = forwardRef<ThermalCanvasHandle, ThermalCanvasProps>(
+  function ThermalCanvas(
+    {
+      imageSrc,
+      birdPlacements,
+      pan,
+      zoom,
+      pixelFactor,
+      polarity = "wh",
+      birdVisualScale = 0.55,
+      className,
+      onLandscapeReady,
+    },
+    ref,
+  ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   /** Raw RGB sample for live (coarse) path. */
@@ -127,6 +143,9 @@ export function ThermalCanvas({
   const spriteCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const onLandscapeReadyRef = useRef(onLandscapeReady);
   onLandscapeReadyRef.current = onLandscapeReady;
+  /** True while SpotView drives pan via setPanLive (no React setState). */
+  const livePanRef = useRef(false);
+  const drawRafRef = useRef<number | null>(null);
 
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
@@ -134,12 +153,40 @@ export function ThermalCanvas({
   const birdsRef = useRef(birdPlacements);
   const pixelFactorRef = useRef(pixelFactor);
   const birdScaleRef = useRef(birdVisualScale);
-  panRef.current = pan;
+  if (!livePanRef.current) {
+    panRef.current = pan;
+  }
   zoomRef.current = zoom;
   polarityRef.current = polarity;
   birdsRef.current = birdPlacements;
   pixelFactorRef.current = pixelFactor;
   birdScaleRef.current = birdVisualScale;
+
+  const drawRef = useRef<() => void>(() => {});
+
+  function scheduleDraw() {
+    if (drawRafRef.current != null) return;
+    drawRafRef.current = requestAnimationFrame(() => {
+      drawRafRef.current = null;
+      drawRef.current();
+    });
+  }
+
+  useImperativeHandle(ref, () => ({
+    setPanLive(next) {
+      livePanRef.current = true;
+      panRef.current = next;
+      scheduleDraw();
+    },
+    endLivePan() {
+      livePanRef.current = false;
+      if (drawRafRef.current != null) {
+        cancelAnimationFrame(drawRafRef.current);
+        drawRafRef.current = null;
+      }
+      drawRef.current();
+    },
+  }));
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -386,7 +433,6 @@ export function ThermalCanvas({
     ctx.drawImage(off, 0, 0, cols, rows, 0, 0, w, h);
   }, []);
 
-  const drawRef = useRef(draw);
   drawRef.current = draw;
 
   /** Load landscape once per image — never re-bake on pan. */
@@ -440,6 +486,7 @@ export function ThermalCanvas({
   }, [birdPlacements]);
 
   useEffect(() => {
+    if (livePanRef.current) return;
     draw();
   }, [draw, pan, zoom, polarity, birdPlacements, pixelFactor, birdVisualScale]);
 
@@ -451,6 +498,15 @@ export function ThermalCanvas({
     return () => ro.disconnect();
   }, []);
 
+  useEffect(
+    () => () => {
+      if (drawRafRef.current != null) {
+        cancelAnimationFrame(drawRafRef.current);
+      }
+    },
+    [],
+  );
+
   return (
     <canvas
       ref={canvasRef}
@@ -460,10 +516,10 @@ export function ThermalCanvas({
         width: "100%",
         height: "100%",
         display: "block",
-        ...(polarity === "fusion"
-          ? { background: "transparent", pointerEvents: "none" }
-          : null),
+        pointerEvents: "none",
+        ...(polarity === "fusion" ? { background: "transparent" } : null),
       }}
     />
   );
-}
+  },
+);

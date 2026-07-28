@@ -29,7 +29,12 @@ import { mmAt100ToAngular } from "@/lib/optics/clicks";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
-import { ThermalCanvas, type ThermalPolarity } from "@/components/hunt/ThermalCanvas";
+import {
+  ThermalCanvas,
+  type ThermalCanvasHandle,
+  type ThermalPolarity,
+} from "@/components/hunt/ThermalCanvas";
+import { clientDeltaToLocalCssPx } from "@/lib/range/scopePointerAim";
 import {
   ZeissVictoryLrfHud,
   ZEISS_VICTORY_ACQUIRE_MS,
@@ -514,6 +519,10 @@ export function SpotView({
   const [pan, setPan] = useState(startPan);
   const panRef = useRef(pan);
   panRef.current = pan;
+  /** Dragging: paint via refs/DOM like HuntShootView aim — no setState per move. */
+  const [panDragging, setPanDragging] = useState(false);
+  const binosWorldRef = useRef<HTMLDivElement | null>(null);
+  const thermalCanvasRef = useRef<ThermalCanvasHandle | null>(null);
   const keysRef = useRef<PanKeys>({
     up: null,
     down: null,
@@ -527,6 +536,18 @@ export function SpotView({
     origX: number;
     origY: number;
   } | null>(null);
+
+  /** Live pan for touch/mouse drag (binos world CSS + thermal canvas). */
+  function paintPanLive(next: { x: number; y: number }) {
+    panRef.current = next;
+    const el = binosWorldRef.current;
+    if (el) {
+      const z = zoomRef.current;
+      el.style.left = `${(1 - z) * next.x}%`;
+      el.style.top = `${(1 - z) * next.y}%`;
+    }
+    thermalCanvasRef.current?.setPanLive(next);
+  }
 
   /** Pan stop when the circular aperture hits the landscape edge. */
   function clampPanXY(x: number, y: number): { x: number; y: number } {
@@ -983,6 +1004,10 @@ export function SpotView({
     if (!drag) return;
     if (pointerId != null && drag.pointerId !== pointerId) return;
     dragRef.current = null;
+    setPanDragging(false);
+    const next = panRef.current;
+    thermalCanvasRef.current?.endLivePan();
+    setPan(next);
     if (el && el.hasPointerCapture(drag.pointerId)) {
       try {
         el.releasePointerCapture(drag.pointerId);
@@ -1002,9 +1027,10 @@ export function SpotView({
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      origX: pan.x,
-      origY: pan.y,
+      origX: panRef.current.x,
+      origY: panRef.current.y,
     };
+    setPanDragging(true);
   }
 
   function onPointerMove(e: PointerEvent<HTMLDivElement>) {
@@ -1015,16 +1041,20 @@ export function SpotView({
       endPanDrag(e.currentTarget, e.pointerId);
       return;
     }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const sensX = (100 / Math.max(1, rect.width)) / zoom;
-    const sensY = (100 / Math.max(1, rect.height)) / zoom;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    const nextX = drag.origX - dx * sensX * 1.15;
-    const nextY = drag.origY - dy * sensY * 1.15;
-    const next = clampPanXY(nextX, nextY);
-    panRef.current = next;
-    setPan(next);
+    // Same local-CSS conversion as rifle scope (ancestors with transform: scale).
+    const local = clientDeltaToLocalCssPx(
+      e.clientX - drag.startX,
+      e.clientY - drag.startY,
+      e.currentTarget,
+    );
+    const z = zoomRef.current;
+    const sensX = (100 / Math.max(1, e.currentTarget.offsetWidth)) / z;
+    const sensY = (100 / Math.max(1, e.currentTarget.offsetHeight)) / z;
+    const next = clampPanXY(
+      drag.origX - local.dx * sensX * 1.15,
+      drag.origY - local.dy * sensY * 1.15,
+    );
+    paintPanLive(next);
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
@@ -1032,7 +1062,8 @@ export function SpotView({
   }
 
   function onPointerLeave(e: PointerEvent<HTMLDivElement>) {
-    // Leaving the optic glass ends pan-drag (stuck capture / phantom left-button).
+    // Mouse leave ends drag (stuck :active). Touch keeps capture until up/cancel.
+    if (e.pointerType !== "mouse") return;
     endPanDrag(e.currentTarget, dragRef.current?.pointerId);
   }
 
@@ -1598,9 +1629,13 @@ export function SpotView({
         ref={frameRef}
         className={
           mode === "binos"
-            ? "spot-eyes-frame spot-binos-frame"
+            ? panDragging
+              ? "spot-eyes-frame spot-binos-frame is-pan-dragging"
+              : "spot-eyes-frame spot-binos-frame"
             : mode === "thermal"
-              ? "spot-eyes-frame spot-thermal-frame"
+              ? panDragging
+                ? "spot-eyes-frame spot-thermal-frame is-pan-dragging"
+                : "spot-eyes-frame spot-thermal-frame"
               : "spot-eyes-frame spot-eyes-frame-clickable"
         }
         style={frameStyle}
@@ -1650,7 +1685,11 @@ export function SpotView({
           </>
         ) : mode === "binos" ? (
           <>
-            <div className="spot-binos-world" style={worldStyle}>
+            <div
+              ref={binosWorldRef}
+              className="spot-binos-world"
+              style={worldStyle}
+            >
               <img
                 src={imageSrc}
                 alt=""
@@ -1712,7 +1751,11 @@ export function SpotView({
         ) : (
           <>
             {thermalPolarity === "fusion" ? (
-              <div className="spot-binos-world" style={worldStyle}>
+              <div
+                ref={binosWorldRef}
+                className="spot-binos-world"
+                style={worldStyle}
+              >
                 <img
                   src={imageSrc}
                   alt=""
@@ -1733,6 +1776,7 @@ export function SpotView({
               </div>
             ) : null}
             <ThermalCanvas
+              ref={thermalCanvasRef}
               imageSrc={imageSrc}
               birdPlacements={
                 thermalPolarity === "fusion" ? fusionOutlineBirds : birdsOnFrame

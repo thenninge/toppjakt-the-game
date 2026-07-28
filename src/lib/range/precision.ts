@@ -19,6 +19,7 @@ import {
   sampleShotFromPoa,
   type DispersionInput,
 } from "@/lib/ballistics/dispersion";
+import { getRealismParams } from "@/lib/range/realismControls";
 
 export { MM_PER_MOA_AT_100M };
 export {
@@ -441,7 +442,7 @@ export function triggerPullErrorFactor(
 ): number {
   const err = Math.abs(releaseElapsedMs - targetMs);
   if (err <= TRIGGER_PERFECT_BAND_MS) return 0;
-  const maxErr = Math.max(targetMs, TRIGGER_BAR_MS - targetMs);
+  const maxErr = Math.max(targetMs, getRealismParams().triggerBarMs - targetMs);
   const span = Math.max(1, maxErr - TRIGGER_PERFECT_BAND_MS);
   return clamp01((err - TRIGGER_PERFECT_BAND_MS) / span);
 }
@@ -572,7 +573,8 @@ export function focusCalmMultiplier(elapsedMs: number): number {
     return FOCUS_CALM_MULT;
   }
   // u: 0→1 over strain. Shake excess u²: 0 at sweet end, max at abort.
-  const strainSpan = FOCUS_ABORT_MS - FOCUS_SWEET_END_MS;
+  const abortMs = getRealismParams().focusAbortMs;
+  const strainSpan = Math.max(1, abortMs - FOCUS_SWEET_END_MS);
   const u = clamp01((elapsedMs - FOCUS_SWEET_END_MS) / strainSpan);
   const shakeExcess = u * u;
   return (
@@ -612,7 +614,8 @@ export function focusBarFillColor(elapsedMs: number): string {
     return lerpHsl(FOCUS_BAR_RED, FOCUS_BAR_GREEN, 1);
   }
   const t = clamp01(
-    (elapsedMs - FOCUS_SWEET_END_MS) / (FOCUS_ABORT_MS - FOCUS_SWEET_END_MS),
+    (elapsedMs - FOCUS_SWEET_END_MS) /
+      Math.max(1, getRealismParams().focusAbortMs - FOCUS_SWEET_END_MS),
   );
   return lerpHsl(FOCUS_BAR_GREEN, FOCUS_BAR_RED, t);
 }
@@ -630,13 +633,13 @@ export function focusPhase(
   return "fatigued";
 }
 
-/** True when focus hold has hit the hard abort (7 s). */
+/** True when focus hold has hit the hard abort. */
 export function focusShouldAbort(
   focus: { held: boolean; startedAtMs: number },
   nowMs: number,
 ): boolean {
   if (!focus.held) return false;
-  return nowMs - focus.startedAtMs >= FOCUS_ABORT_MS;
+  return nowMs - focus.startedAtMs >= getRealismParams().focusAbortMs;
 }
 
 export function focusRemainingMs(
@@ -644,7 +647,10 @@ export function focusRemainingMs(
   nowMs: number,
 ): number {
   if (!focus.held) return 0;
-  return Math.max(0, FOCUS_ABORT_MS - (nowMs - focus.startedAtMs));
+  return Math.max(
+    0,
+    getRealismParams().focusAbortMs - (nowMs - focus.startedAtMs),
+  );
 }
 
 export type ScopeView = {

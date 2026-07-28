@@ -7,11 +7,15 @@
  * Elevation dial / aim offsets live in the scope frame; gravity drop is world
  * down. Cant rotates scope-frame vectors into the world before impact.
  *
- * Gameplay gate: only realism **high** with a bubble level in the active kit
- * (hunt / range). Medium always uses 0° and ignores cant in ballistics.
+ * Gameplay gate: Admin Realism controls «cant» for the active level, plus a
+ * bubble level in kit. Default: high on / medium off.
  */
 
 import type { GameRealism } from "@/lib/optics/turretStyle";
+import {
+  getRealismParams,
+  realismFeatureEnabled,
+} from "@/lib/range/realismControls";
 
 /** Soft max |cant| for UI + roll (deg). Full bubble travel at ± this. */
 export const CANT_UI_MAX_DEG = 8;
@@ -19,15 +23,23 @@ export const CANT_UI_MAX_DEG = 8;
 /** Typical entry roll amplitude (deg, 1σ-ish half-range). */
 export const CANT_ENTRY_SPREAD_DEG = 3.2;
 
+function cantUiMaxDeg(): number {
+  return getRealismParams().cantUiMaxDeg;
+}
+
+function cantEntrySpreadDeg(): number {
+  return getRealismParams().cantEntrySpreadDeg;
+}
+
 /**
- * Cant challenge + bubble HUD: high realism and a bubble level in kit.
- * Medium (or high without level) → cant stays 0 and does not affect POI.
+ * Cant challenge + bubble HUD: feature flag for level + bubble in kit.
+ * Without level (or feature off) → cant stays 0 and does not affect POI.
  */
 export function isCantGameplayActive(
   realism: GameRealism | null | undefined,
   hasBubbleLevel: boolean,
 ): boolean {
-  return realism === "high" && hasBubbleLevel;
+  return realismFeatureEnabled(realism, "cant") && hasBubbleLevel;
 }
 
 /** Entry / series cant — 0 when gameplay is inactive. */
@@ -52,7 +64,8 @@ export function effectiveCantDeg(
 
 export function clampCantDeg(deg: number): number {
   if (!Number.isFinite(deg)) return 0;
-  return Math.max(-CANT_UI_MAX_DEG, Math.min(CANT_UI_MAX_DEG, deg));
+  const max = cantUiMaxDeg();
+  return Math.max(-max, Math.min(max, deg));
 }
 
 /** Random cant when entering a scope lane / hunt shot. */
@@ -60,7 +73,7 @@ export function rollEntryCantDeg(random: () => number = Math.random): number {
   // Triangle-ish around 0 so pure vertical is rare but possible.
   const u = random() * 2 - 1;
   const v = random() * 2 - 1;
-  return clampCantDeg(((u + v) / 2) * CANT_ENTRY_SPREAD_DEG * 1.6);
+  return clampCantDeg(((u + v) / 2) * cantEntrySpreadDeg() * 1.6);
 }
 
 /**
@@ -69,7 +82,8 @@ export function rollEntryCantDeg(random: () => number = Math.random): number {
  * E / CW (positive cant) → bubble left (−).
  */
 export function bubbleOffsetFromCantDeg(cantDeg: number): number {
-  const t = clampCantDeg(cantDeg) / CANT_UI_MAX_DEG;
+  const max = cantUiMaxDeg();
+  const t = max > 0 ? clampCantDeg(cantDeg) / max : 0;
   return Math.max(-1, Math.min(1, -t));
 }
 

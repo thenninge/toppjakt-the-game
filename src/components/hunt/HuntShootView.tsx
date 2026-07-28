@@ -5,12 +5,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type PointerEvent,
 } from "react";
 import {
-  FOCUS_HOLD_MS,
-  TRIGGER_BAR_MS,
   caliberBulletDiameterMm,
   clampScopeZoom,
   combinedDispersionMoa,
@@ -28,6 +27,11 @@ import {
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
 } from "@/lib/range/precision";
+import {
+  DEFAULT_REALISM_CONTROLS,
+  getRealismControls,
+  subscribeRealismControls,
+} from "@/lib/range/realismControls";
 import {
   computeFeltRecoil,
   recoilKickScale,
@@ -537,10 +541,25 @@ export function HuntShootView({
     if (saved == null || !Number.isFinite(saved)) return DEFAULT_RETICLE_ILLUM;
     return Math.max(0, Math.min(1, saved));
   });
-  const tubeMode = realism === "high";
-  const blurPx = tubeMode
-    ? focusBlurPx(trueDistanceM, parallaxFocusM)
+  const realismControls = useSyncExternalStore(
+    subscribeRealismControls,
+    getRealismControls,
+    () => DEFAULT_REALISM_CONTROLS,
+  );
+  const realismLevel = realism === "high" ? "high" : "medium";
+  const features = realismControls.features[realismLevel];
+  const params = realismControls.params;
+  const tubeMode = features.tubeTurrets;
+  const blurPx = features.parallaxBlur
+    ? focusBlurPx(trueDistanceM, parallaxFocusM) * params.parallaxBlurMult
     : 0;
+  const illumOn = features.illumination;
+  const featuresRef = useRef(features);
+  featuresRef.current = features;
+  const triggerBarMsRef = useRef(params.triggerBarMs);
+  triggerBarMsRef.current = params.triggerBarMs;
+  const focusAbortMsRef = useRef(params.focusAbortMs);
+  focusAbortMsRef.current = params.focusAbortMs;
   const [status, setStatus] = useState(
     restoreTurrets
       ? "Tårn som sist · F = fokus+merke · slipp Space på merket."
@@ -1249,6 +1268,7 @@ export function HuntShootView({
   }
 
   function beginFocus(nowMs: number) {
+    if (!featuresRef.current.focusHold) return;
     if (focusRef.current.held || firedRef.current) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
     setFocusHeld(true);
@@ -1258,7 +1278,7 @@ export function HuntShootView({
     paintFocusProgress(1, 0);
     setTriggerUi({
       pending: false,
-      targetPct: markMs / TRIGGER_BAR_MS,
+      targetPct: markMs / triggerBarMsRef.current,
     });
   }
 
@@ -1364,7 +1384,30 @@ export function HuntShootView({
   function beginTrigger(nowMs: number) {
     if (firedRef.current) return;
     if (triggerRef.current.held) return;
-    if (!focusRef.current.held || triggerMarkRef.current == null) {
+    const feats = featuresRef.current;
+    if (!feats.triggerTiming) {
+      // Instant perfect break when trigger timing is disabled.
+      if (feats.focusHold && !focusRef.current.held) {
+        setStatus("Hold F (fokus) først — da settes avtrekkspunktet.");
+        return;
+      }
+      triggerPullRef.current = 0;
+      fireShotRef.current();
+      return;
+    }
+    if (!feats.focusHold) {
+      // No focus gate — seed the mark on first Space press.
+      if (triggerMarkRef.current == null) {
+        const markMs = rollTriggerTargetMs();
+        triggerMarkRef.current = markMs;
+        setTriggerUi({
+          pending: false,
+          targetPct: markMs / triggerBarMsRef.current,
+        });
+      }
+      focusRef.current = { held: true, startedAtMs: nowMs };
+      setFocusHeld(true);
+    } else if (!focusRef.current.held || triggerMarkRef.current == null) {
       setStatus("Hold F (fokus) først — da settes avtrekkspunktet.");
       return;
     }
@@ -1377,6 +1420,7 @@ export function HuntShootView({
   function releaseTrigger(nowMs: number) {
     const trig = triggerRef.current;
     const markMs = triggerMarkRef.current;
+    const barMs = triggerBarMsRef.current;
     if (!trig.held || trig.startedAtMs == null || markMs == null) {
       triggerRef.current = { held: false, startedAtMs: null };
       resetTriggerProgress();
@@ -1386,12 +1430,12 @@ export function HuntShootView({
       }));
       return;
     }
-    if (!focusRef.current.held) {
+    if (featuresRef.current.focusHold && !focusRef.current.held) {
       abortTrigger("Mistet fokus under avtrekk.");
       return;
     }
     const elapsed = Math.min(
-      TRIGGER_BAR_MS,
+      barMs,
       Math.max(0, nowMs - trig.startedAtMs),
     );
     triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
@@ -1652,9 +1696,14 @@ export function HuntShootView({
         }
       }
 
-      if (focusShouldAbort(focusRef.current, now)) {
+      if (
+        featuresRef.current.focusHold &&
+        focusShouldAbort(focusRef.current, now)
+      ) {
         endFocus();
-        setStatus("Fokus brutt etter 7 s — slipp F og start på nytt.");
+        setStatus(
+          `Fokus brutt etter ${(focusAbortMsRef.current / 1000).toFixed(0)} s — slipp F og start på nytt.`,
+        );
       }
 
       const calm = effectiveCalmWithFocus(
@@ -1695,17 +1744,18 @@ export function HuntShootView({
       const trig = triggerRef.current;
       if (trig.held && trig.startedAtMs != null) {
         const elapsed = now - trig.startedAtMs;
-        const prog = Math.min(1, elapsed / TRIGGER_BAR_MS);
+        const barMs = triggerBarMsRef.current;
+        const prog = Math.min(1, elapsed / barMs);
         paintTriggerProgress(prog);
-        if (elapsed >= TRIGGER_BAR_MS) {
-          releaseTrigger(trig.startedAtMs + TRIGGER_BAR_MS);
+        if (elapsed >= barMs) {
+          releaseTrigger(trig.startedAtMs + barMs);
         }
       }
 
       if (focusRef.current.held) {
         const elapsed = now - focusRef.current.startedAtMs;
         paintFocusProgress(
-          focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+          focusRemainingMs(focusRef.current, now) / focusAbortMsRef.current,
           elapsed,
         );
       } else {
@@ -2150,11 +2200,13 @@ export function HuntShootView({
           }
           parallax={
             <div className="scope-tube-para-stack">
-              <IlluminationTurret
-                value={reticleIllum}
-                onChange={setReticleIllum}
-                disabled={fired}
-              />
+              {illumOn ? (
+                <IlluminationTurret
+                  value={reticleIllum}
+                  onChange={setReticleIllum}
+                  disabled={fired}
+                />
+              ) : null}
               <ParallaxTurret
                 focusM={parallaxFocusM}
                 onChange={setParallaxFocusM}
@@ -2176,7 +2228,7 @@ export function HuntShootView({
             />
           }
           focusRail={
-            tubeMode ? (
+            tubeMode && features.focusHold ? (
               <div className="range-side-rail range-side-rail--focus">
                 <span
                   className={
@@ -2207,7 +2259,7 @@ export function HuntShootView({
             ) : null
           }
           triggerRail={
-            tubeMode && !gunPrepOnly ? (
+            tubeMode && !gunPrepOnly && features.triggerTiming ? (
               <div className="range-side-rail range-side-rail--trigger">
                 <span
                   className={
@@ -2237,7 +2289,7 @@ export function HuntShootView({
         >
           <ScopeOpticFit>
             <div className="scope-stage-optic-row">
-              {!tubeMode ? (
+              {!tubeMode && features.focusHold ? (
                 <div className="range-side-rail range-side-rail--focus">
                   <span
                     className={
@@ -2461,7 +2513,7 @@ export function HuntShootView({
                 scope={scope.scope}
                 zoom={zoom}
                 imgScale={reticleScale}
-                illumination={tubeMode ? reticleIllum : 0}
+                illumination={illumOn ? reticleIllum : 0}
               />
               </ScopeFocusZoom>
             </div>
@@ -2481,7 +2533,7 @@ export function HuntShootView({
             ) : null}
           </div>
 
-              {!tubeMode && !gunPrepOnly ? (
+              {!tubeMode && !gunPrepOnly && features.triggerTiming ? (
                 <div className="range-side-rail range-side-rail--trigger">
                   <span
                     className={

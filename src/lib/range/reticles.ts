@@ -7,7 +7,8 @@
  * via player.ts ZERO_CLICK_MM.
  *
  * {@link ffpReticleImageScale} maps each asset’s `centerTo1MilPx` onto the
- * CBA diamond tip in native px.
+ * CBA diamond tip (1 mil angular). For MOA scopes, that tip is scaled by
+ * {@link MM_PER_MOA_AT_100M}/100 so 1 MOA hash ↔ 1 MOA on the bird/world.
  *
  * ZCO MPCT3 ({@code zco527b.png}): full tree, FFP. In-game 27× (premium FOV)
  * ≈7.2 mrad centre→edge (real ZCO @ 27×).
@@ -17,7 +18,8 @@
  * Optional `opticalCenterX/Y` if the crosshair is not at the image midpoint.
  */
 
-import type { ScopeSpec } from "@/lib/optics/spec";
+import type { ScopeClickUnit, ScopeSpec } from "@/lib/optics/spec";
+import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import {
   CBA_DIAMOND_CENTER_TO_TIP_PX,
   RETICLE_SUBTENSION_CAL,
@@ -103,10 +105,9 @@ export const RETICLES: Record<string, ReticleDef> = {
   },
   /**
    * Nightforce MOA tree (nf_moa.png, 1279×1280).
-   * Admin hash rings (clickUnit=MOA): `centerTo1MilPx` = native px → 1 MOA.
-   * NX8 4-32 MOA FOV: {@code zoomMagCal: 0.235}, {@code minZoomMagCal: 0.1}
-   * (catalog). Native ≈ 15.1 px/MOA (10 MOA @ 151 px); value below is the
-   * paper-aligned subtension used with MOA range scale.
+   * `centerTo1MilPx` = native px centre → **1 MOA** hash (10 MOA @ 151 px).
+   * FFP scale uses MOA angular (29.4 mm @ 100 m), not mil diamond — see
+   * {@link ffpReticleImageScale}. NX8 FOV: zoomMagCal / minZoomMagCal in catalog.
    */
   nf_moa: {
     id: "nf_moa",
@@ -114,7 +115,7 @@ export const RETICLES: Record<string, ReticleDef> = {
     src: "/range/reticles/nf_moa.png",
     nativeWidth: 1279,
     nativeHeight: 1280,
-    centerTo1MilPx: 151 / 40,
+    centerTo1MilPx: 151 / 10,
   },
   /**
    * ZCO 5-27 MPCT3-style mil tree ({@code zco527b.png}).
@@ -303,16 +304,23 @@ export function angularReticleImgScale(opts: {
 
 /**
  * Uniform image scale for an FFP reticle at the current target zoom.
- * Maps `centerTo1MilPx` → CBA diamond tip; pair with {@link angularReticleImgScale}.
+ *
+ * Maps `centerTo1MilPx` → one major angular unit on glass:
+ * - MRAD: CBA diamond tip = **1 mil** (same as bird {@link birdScopeImageScale})
+ * - MOA: that tip × (29.4 mm / 100 mm) = **1 MOA**
+ *
  * Applies {@link RETICLE_SUBTENSION_CAL} so hashes match dialed drop.
  */
 export function ffpReticleImageScale(
   imgScale: number,
   reticle: ReticleDef,
+  clickUnit: ScopeClickUnit = "MRAD",
 ): number {
-  const milToDiamond =
+  const unitToDiamond =
     CBA_DIAMOND_CENTER_TO_TIP_PX / reticle.centerTo1MilPx;
-  return imgScale * milToDiamond * RETICLE_SUBTENSION_CAL;
+  const moaVsMil =
+    clickUnit === "MOA" ? MM_PER_MOA_AT_100M / 100 : 1;
+  return imgScale * unitToDiamond * moaVsMil * RETICLE_SUBTENSION_CAL;
 }
 
 /**
@@ -333,11 +341,12 @@ export function trackingReticleImgScale(
  * SFP reticle stays the same apparent size — calibrated at max magnification.
  */
 export function sfpReticleImageScale(
-  scope: Pick<ScopeSpec, "minZoom" | "maxZoom">,
+  scope: Pick<ScopeSpec, "minZoom" | "maxZoom" | "clickUnit">,
   reticle: ReticleDef,
 ): number {
   const refImgScale = scopeImageScale(scope.maxZoom);
-  return ffpReticleImageScale(refImgScale, reticle);
+  const unit = scope.clickUnit === "MOA" ? "MOA" : "MRAD";
+  return ffpReticleImageScale(refImgScale, reticle, unit);
 }
 
 export function reticleImageScale(
@@ -346,8 +355,9 @@ export function reticleImageScale(
   imgScale: number,
   reticle: ReticleDef,
 ): number {
+  const unit = scope.clickUnit === "MOA" ? "MOA" : "MRAD";
   if (scope.focalPlane === "FFP") {
-    return ffpReticleImageScale(imgScale, reticle);
+    return ffpReticleImageScale(imgScale, reticle, unit);
   }
   return sfpReticleImageScale(scope, reticle);
 }

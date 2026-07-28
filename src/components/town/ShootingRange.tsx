@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
@@ -47,8 +47,6 @@ import {
 } from "@/lib/range/barrelHeat";
 import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import {
-  FOCUS_HOLD_MS,
-  TRIGGER_BAR_MS,
   caliberBulletDiameterMm,
   clampScopeZoom,
   combinedDispersionMoa,
@@ -72,6 +70,11 @@ import {
   type RangeDistanceM,
   type ShotImpact,
 } from "@/lib/range/precision";
+import {
+  DEFAULT_REALISM_CONTROLS,
+  getRealismControls,
+  subscribeRealismControls,
+} from "@/lib/range/realismControls";
 import { zeroingTargetAndReticleScale } from "@/lib/range/scopeViewScale";
 import {
   DEFAULT_TARGET_BY_DISTANCE,
@@ -515,8 +518,25 @@ export function ShootingRange({
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
   const [parallaxFocusM, setParallaxFocusM] = useState(100);
   const [reticleIllum, setReticleIllum] = useState(0);
-  const tubeMode = realism === "high";
-  const blurPx = tubeMode ? focusBlurPx(distanceM, parallaxFocusM) : 0;
+  const realismControls = useSyncExternalStore(
+    subscribeRealismControls,
+    getRealismControls,
+    () => DEFAULT_REALISM_CONTROLS,
+  );
+  const realismLevel = realism === "high" ? "high" : "medium";
+  const features = realismControls.features[realismLevel];
+  const params = realismControls.params;
+  const tubeMode = features.tubeTurrets;
+  const blurPx = features.parallaxBlur
+    ? focusBlurPx(distanceM, parallaxFocusM) * params.parallaxBlurMult
+    : 0;
+  const illumOn = features.illumination;
+  const featuresRef = useRef(features);
+  featuresRef.current = features;
+  const triggerBarMsRef = useRef(params.triggerBarMs);
+  triggerBarMsRef.current = params.triggerBarMs;
+  const focusAbortMsRef = useRef(params.focusAbortMs);
+  focusAbortMsRef.current = params.focusAbortMs;
   const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
   const [shots, setShots] = useState<ShotImpact[]>([]);
   const [measurement, setMeasurement] = useState<GroupMeasurement | null>(
@@ -1031,6 +1051,7 @@ export function ShootingRange({
   }
 
   function beginFocus(nowMs: number) {
+    if (!featuresRef.current.focusHold) return;
     if (focusRef.current.held) return;
     focusRef.current = {
       held: true,
@@ -1043,7 +1064,7 @@ export function ShootingRange({
     paintFocusProgress(1, 0);
     setTriggerUi({
       pending: false,
-      targetPct: markMs / TRIGGER_BAR_MS,
+      targetPct: markMs / triggerBarMsRef.current,
     });
     setStatus(
       trackingLockedRef.current
@@ -1165,12 +1186,17 @@ export function ShootingRange({
       }));
       return;
     }
-    if (!focusRef.current.held || markMs == null) {
+    if (featuresRef.current.focusHold && (!focusRef.current.held || markMs == null)) {
       abortTrigger("Mistet fokus under avtrekk.");
       return;
     }
+    if (markMs == null) {
+      abortTrigger("Mistet fokus under avtrekk.");
+      return;
+    }
+    const barMs = triggerBarMsRef.current;
     const elapsed = Math.min(
-      TRIGGER_BAR_MS,
+      barMs,
       Math.max(0, nowMs - trig.startedAtMs),
     );
     triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
@@ -1189,12 +1215,33 @@ export function ShootingRange({
       setStatus("Målt ferdig — start ny serie.");
       return;
     }
-    if (!focusRef.current.held || triggerMarkRef.current == null) {
-      setStatus("Hold F (pust/fokus) før du tar avtrekk — da settes merket.");
-      return;
-    }
     if (ammoRemaining <= 0) {
       setStatus("Tom for ammo — kjøp mer hos XXL.");
+      return;
+    }
+    const feats = featuresRef.current;
+    if (!feats.triggerTiming) {
+      if (feats.focusHold && !focusRef.current.held) {
+        setStatus("Hold F (pust/fokus) før du tar avtrekk — da settes merket.");
+        return;
+      }
+      triggerPullRef.current = 0;
+      fireShotRef.current();
+      return;
+    }
+    if (!feats.focusHold) {
+      if (triggerMarkRef.current == null) {
+        const markMs = rollTriggerTargetMs();
+        triggerMarkRef.current = markMs;
+        setTriggerUi({
+          pending: false,
+          targetPct: markMs / triggerBarMsRef.current,
+        });
+      }
+      focusRef.current = { held: true, startedAtMs: nowMs };
+      setFocusHeld(true);
+    } else if (!focusRef.current.held || triggerMarkRef.current == null) {
+      setStatus("Hold F (pust/fokus) før du tar avtrekk — da settes merket.");
       return;
     }
     triggerRef.current = {
@@ -1408,8 +1455,13 @@ export function ShootingRange({
         }
       }
 
-      if (focusShouldAbort(focusRef.current, now)) {
-        endFocus("Fokus brutt etter 7 s — slipp F og start på nytt.");
+      if (
+        featuresRef.current.focusHold &&
+        focusShouldAbort(focusRef.current, now)
+      ) {
+        endFocus(
+          `Fokus brutt etter ${(focusAbortMsRef.current / 1000).toFixed(0)} s — slipp F og start på nytt.`,
+        );
       }
 
       const calm = effectiveCalmWithFocus(
@@ -1481,17 +1533,18 @@ export function ShootingRange({
       const trig = triggerRef.current;
       if (trig.held && trig.startedAtMs != null) {
         const elapsed = now - trig.startedAtMs;
-        const progress = Math.min(1, Math.max(0, elapsed / TRIGGER_BAR_MS));
+        const barMs = triggerBarMsRef.current;
+        const progress = Math.min(1, Math.max(0, elapsed / barMs));
         paintTriggerProgress(progress);
-        if (elapsed >= TRIGGER_BAR_MS) {
-          releaseTrigger(trig.startedAtMs + TRIGGER_BAR_MS);
+        if (elapsed >= barMs) {
+          releaseTrigger(trig.startedAtMs + barMs);
         }
       }
 
       if (focusRef.current.held) {
         const elapsed = now - focusRef.current.startedAtMs;
         paintFocusProgress(
-          focusRemainingMs(focusRef.current, now) / FOCUS_HOLD_MS,
+          focusRemainingMs(focusRef.current, now) / focusAbortMsRef.current,
           elapsed,
         );
       } else {
@@ -2816,10 +2869,12 @@ export function ShootingRange({
             }
             parallax={
               <div className="scope-tube-para-stack">
-                <IlluminationTurret
-                  value={reticleIllum}
-                  onChange={setReticleIllum}
-                />
+                {illumOn ? (
+                  <IlluminationTurret
+                    value={reticleIllum}
+                    onChange={setReticleIllum}
+                  />
+                ) : null}
                 <ParallaxTurret
                   focusM={parallaxFocusM}
                   onChange={setParallaxFocusM}
@@ -2839,7 +2894,7 @@ export function ShootingRange({
               />
             }
             focusRail={
-              tubeMode ? (
+              tubeMode && features.focusHold ? (
                 <div className="range-side-rail range-side-rail--focus">
                   <span
                     className={
@@ -2878,7 +2933,7 @@ export function ShootingRange({
               ) : null
             }
             triggerRail={
-              tubeMode ? (
+              tubeMode && features.triggerTiming ? (
                 <div className="range-side-rail range-side-rail--trigger">
                   <span
                     className={
@@ -2911,7 +2966,7 @@ export function ShootingRange({
           >
             <ScopeOpticFit>
               <div className="scope-stage-optic-row">
-                {!tubeMode ? (
+                {!tubeMode && features.focusHold ? (
                   <div className="range-side-rail range-side-rail--focus">
                     <span
                       className={
@@ -3100,7 +3155,7 @@ export function ShootingRange({
                     scope={scope.scope}
                     zoom={zoom}
                     imgScale={reticleImgScale}
-                    illumination={tubeMode ? reticleIllum : 0}
+                    illumination={illumOn ? reticleIllum : 0}
                   />
                 </div>
                 </ScopeFocusZoom>
@@ -3149,7 +3204,7 @@ export function ShootingRange({
               </div>
             ) : null}
 
-                {!tubeMode ? (
+                {!tubeMode && features.triggerTiming ? (
                   <div className="range-side-rail range-side-rail--trigger">
                     <span
                       className={

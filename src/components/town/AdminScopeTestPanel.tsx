@@ -270,16 +270,16 @@ function hydrateIllumStateFromCatalog(
 
 /** Admin: free scope + target/bird pick — same glass math as 100 m zeroing. */
 export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
-  const scopeItems = useMemo(
-    () => getCatalogByCategory("scope").filter(isScopeItem),
-    [],
-  );
+  // Fresh each render so FOV bake + HMR show the latest catalog (do not freeze).
+  const scopeItems = getCatalogByCategory("scope").filter(isScopeItem);
   const birdIds = useMemo(() => allBirdSpriteIds(), []);
 
   const [scopeId, setScopeId] = useState(
     () =>
-      scopeItems.find((s) => s.id === "scope-zco-527-mct")?.id ??
-      scopeItems[0]?.id ??
+      getCatalogByCategory("scope").filter(isScopeItem).find(
+        (s) => s.id === "scope-zco-527-mct",
+      )?.id ??
+      getCatalogByCategory("scope").filter(isScopeItem)[0]?.id ??
       "",
   );
   const scopeItem = scopeItems.find((s) => s.id === scopeId) ?? null;
@@ -482,69 +482,75 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   /** Snap to engraved max power when switching scope — matches range calibration. */
   useEffect(() => {
-    if (!scope) return;
-    setLiveMinZoom(scope.minZoom);
-    setLiveMaxZoom(scope.maxZoom);
-    setLiveClickUnit(scope.clickUnit === "MOA" ? "MOA" : "MRAD");
+    const sc = getCatalogByCategory("scope")
+      .filter(isScopeItem)
+      .find((s) => s.id === scopeId)?.scope;
+    if (!sc) return;
+    setLiveMinZoom(sc.minZoom);
+    setLiveMaxZoom(sc.maxZoom);
+    setLiveClickUnit(sc.clickUnit === "MOA" ? "MOA" : "MRAD");
     setReticleSrcOverride(null);
     setReticleNativeOverride(null);
     setUploadedReticleId(null);
     setRepoScopeOverride(null);
-    setZoom(scope.maxZoom);
-  }, [scopeId, scope]);
+    setZoom(sc.maxZoom);
+  }, [scopeId]);
 
-  /** Load catalog reticle calibration when switching scope / reticle. */
+  /**
+   * Load catalog reticle / FOV calibration only when switching scope.
+   * Do NOT re-hydrate on catalog HMR of zoomMagCal — that was wiping in-progress
+   * max-zoom cal (and racing the bake write) for NX8 MOA and others.
+   */
   useEffect(() => {
-    const def = scope?.reticleId ? getReticleDef(scope.reticleId) : null;
+    const sc = getCatalogByCategory("scope")
+      .filter(isScopeItem)
+      .find((s) => s.id === scopeId)?.scope;
+    const def = sc?.reticleId ? getReticleDef(sc.reticleId) : null;
     setReticleRotDeg(def?.imageRotationDeg ?? 0);
     setCenterTo1MilPx(def?.centerTo1MilPx ?? 55.5);
     setZoomMagCal(
-      scope?.zoomMagCal != null && scope.zoomMagCal > 0
-        ? scope.zoomMagCal
-        : 1,
+      sc?.zoomMagCal != null && sc.zoomMagCal > 0 ? sc.zoomMagCal : 1,
     );
     setMinZoomMagCal(
-      scope?.minZoomMagCal != null && scope.minZoomMagCal > 0
-        ? scope.minZoomMagCal
-        : scope?.zoomMagCal != null && scope.zoomMagCal > 0
-          ? scope.zoomMagCal
+      sc?.minZoomMagCal != null && sc.minZoomMagCal > 0
+        ? sc.minZoomMagCal
+        : sc?.zoomMagCal != null && sc.zoomMagCal > 0
+          ? sc.zoomMagCal
           : 1,
     );
-    setFocusZoomEnabled(scope?.focusZoomEnabled === true);
+    setFocusZoomEnabled(sc?.focusZoomEnabled === true);
     setFocusZoomMultiplier(
-      scope?.focusZoomMultiplier != null &&
-        Number.isFinite(scope.focusZoomMultiplier)
+      sc?.focusZoomMultiplier != null &&
+        Number.isFinite(sc.focusZoomMultiplier)
         ? Math.min(
             FOCUS_ZOOM_MULTIPLIER_MAX,
-            Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, scope.focusZoomMultiplier),
+            Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, sc.focusZoomMultiplier),
           )
         : DEFAULT_FOCUS_ZOOM_MULTIPLIER,
     );
     setFocusViewportScale(
-      scope?.focusViewportScale != null &&
-        Number.isFinite(scope.focusViewportScale)
+      sc?.focusViewportScale != null &&
+        Number.isFinite(sc.focusViewportScale)
         ? Math.min(
             FOCUS_VIEWPORT_SCALE_MAX,
-            Math.max(FOCUS_VIEWPORT_SCALE_MIN, scope.focusViewportScale),
+            Math.max(FOCUS_VIEWPORT_SCALE_MIN, sc.focusViewportScale),
           )
         : DEFAULT_FOCUS_VIEWPORT_SCALE,
     );
-    setTriggercamZoomRestrict(scope?.triggercamZoomRestrict === true);
+    setTriggercamZoomRestrict(sc?.triggercamZoomRestrict === true);
     {
       const base = {
-        minZoom: scope?.minZoom ?? 5,
-        maxZoom: scope?.maxZoom ?? 27,
+        minZoom: sc?.minZoom ?? 5,
+        maxZoom: sc?.maxZoom ?? 27,
       };
       setTriggercamMinZoom(
-        scope?.triggercamMinZoom != null &&
-          Number.isFinite(scope.triggercamMinZoom)
-          ? scope.triggercamMinZoom
+        sc?.triggercamMinZoom != null && Number.isFinite(sc.triggercamMinZoom)
+          ? sc.triggercamMinZoom
           : scopeTriggercamMinZoomDefault(base),
       );
       setTriggercamMaxZoom(
-        scope?.triggercamMaxZoom != null &&
-          Number.isFinite(scope.triggercamMaxZoom)
-          ? scope.triggercamMaxZoom
+        sc?.triggercamMaxZoom != null && Number.isFinite(sc.triggercamMaxZoom)
+          ? sc.triggercamMaxZoom
           : base.maxZoom,
       );
     }
@@ -580,20 +586,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setRepoFovOverride(null);
     setRepoFocusZoomOverride(null);
     setRepoTriggercamZoomOverride(null);
-  }, [
-    scopeId,
-    scope?.reticleId,
-    scope?.zoomMagCal,
-    scope?.minZoomMagCal,
-    scope?.focusZoomEnabled,
-    scope?.focusZoomMultiplier,
-    scope?.focusViewportScale,
-    scope?.triggercamZoomRestrict,
-    scope?.triggercamMinZoom,
-    scope?.triggercamMaxZoom,
-    scope?.minZoom,
-    scope?.maxZoom,
-  ]);
+  }, [scopeId]);
 
   function applyIlluminationToState(
     illum: ReticleIllumination | null | undefined,
@@ -1197,33 +1190,39 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   async function bakeFovCalToRepo() {
     if (!scopeId) return;
+    const clamped =
+      Math.round(Math.min(1.4, Math.max(0.1, zoomMagCal)) * 1000) / 1000;
+    setZoomMagCal(clamped);
     setBakingReticleCal(true);
     setBakeStatus("Skriver FOV / max-zoom…");
     try {
       const res = await fetch("/api/admin/scope-cal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scopeId, zoomMagCal }),
+        body: JSON.stringify({ scopeId, zoomMagCal: clamped }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
         path?: string;
         zoomMagCal?: number;
+        verified?: boolean;
       };
       if (!res.ok || !data.ok) {
         setBakeStatus(data.error ?? `Feil ${res.status}`);
         return;
       }
-      if (typeof data.zoomMagCal === "number") {
-        setZoomMagCal(data.zoomMagCal);
-        setRepoFovOverride({
-          zoomMagCal: data.zoomMagCal,
-          minZoomMagCal: catalogMinZoomMag,
-        });
-      }
+      const saved =
+        typeof data.zoomMagCal === "number" ? data.zoomMagCal : clamped;
+      setZoomMagCal(saved);
+      setRepoFovOverride((prev) => ({
+        zoomMagCal: saved,
+        minZoomMagCal: prev?.minZoomMagCal ?? catalogMinZoomMag,
+      }));
       setBakeStatus(
-        `OK → ${data.path ?? "catalog.ts"} zoomMagCal=${data.zoomMagCal}. Commit + push.`,
+        `OK → ${data.path ?? "catalog.ts"} zoomMagCal=${saved}${
+          data.verified === false ? " (advarsel: verify feilet)" : ""
+        }. Commit + push.`,
       );
     } catch (err) {
       setBakeStatus(
@@ -1252,6 +1251,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         error?: string;
         path?: string;
         minZoomMagCal?: number;
+        verified?: boolean;
       };
       if (!res.ok || !data.ok) {
         setBakeStatus(data.error ?? `Feil ${res.status}`);
@@ -1260,12 +1260,14 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       const saved =
         typeof data.minZoomMagCal === "number" ? data.minZoomMagCal : clamped;
       setMinZoomMagCal(saved);
-      setRepoFovOverride({
-        zoomMagCal: catalogZoomMag,
+      setRepoFovOverride((prev) => ({
+        zoomMagCal: prev?.zoomMagCal ?? catalogZoomMag,
         minZoomMagCal: saved,
-      });
+      }));
       setBakeStatus(
-        `OK → ${data.path ?? "catalog.ts"} minZoomMagCal=${saved}. Commit + push.`,
+        `OK → ${data.path ?? "catalog.ts"} minZoomMagCal=${saved}${
+          data.verified === false ? " (advarsel: verify feilet)" : ""
+        }. Commit + push.`,
       );
     } catch (err) {
       setBakeStatus(

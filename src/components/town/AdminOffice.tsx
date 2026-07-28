@@ -6,6 +6,7 @@ import type { BirdObservedInfo } from "@/components/hunt/SpotView";
 import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
 import { AdminJaktfeltPanel } from "@/components/town/AdminJaktfeltPanel";
 import { AdminSceneCreationPanel } from "@/components/town/AdminSceneCreationPanel";
+import { AdminRealismControlsPanel } from "@/components/town/AdminRealismControlsPanel";
 import { AdminScopeTestPanel } from "@/components/town/AdminScopeTestPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
@@ -53,7 +54,13 @@ type AdminOfficeProps = {
   onLeave: () => void;
 };
 
-type AdminTab = "spotting" | "scenes" | "jaktfelt" | "treff" | "scopes";
+type AdminTab =
+  | "spotting"
+  | "scenes"
+  | "jaktfelt"
+  | "treff"
+  | "scopes"
+  | "realism";
 
 function spotLabel(src: string): string {
   const base = src.split("/").pop() ?? src;
@@ -239,6 +246,15 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
     );
   }
 
+  if (tab === "realism") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminRealismControlsPanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
   if (tab === "jaktfelt") {
     return (
       <div className="admin-office-shell">
@@ -349,6 +365,19 @@ function AdminTabBar({
         onClick={() => onTab("scopes")}
       >
         Scopes
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "realism"}
+        className={
+          tab === "realism"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("realism")}
+      >
+        Realism controls
       </button>
       <button
         type="button"

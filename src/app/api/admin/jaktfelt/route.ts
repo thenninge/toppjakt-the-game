@@ -3,15 +3,15 @@ import { promises as fs } from "fs";
 import path from "path";
 import {
   HUNT_MAPS,
+  type CoreHuntMapId,
   type HuntGridCell,
-  type HuntMapId,
 } from "@/lib/hunt/maps";
 import {
   MAP_BIRD_SEATS,
   type MapBirdSeat,
 } from "@/lib/hunt/mapPlacements";
 
-const MAP_IDS = Object.keys(HUNT_MAPS) as HuntMapId[];
+const MAP_IDS = Object.keys(HUNT_MAPS) as CoreHuntMapId[];
 
 type BakeBody = {
   mapId?: string;
@@ -20,8 +20,8 @@ type BakeBody = {
   start?: HuntGridCell | null;
 };
 
-function isMapId(id: string): id is HuntMapId {
-  return MAP_IDS.includes(id as HuntMapId);
+function isMapId(id: string): id is CoreHuntMapId {
+  return MAP_IDS.includes(id as CoreHuntMapId);
 }
 
 function normalizeSeat(raw: unknown): MapBirdSeat | null {
@@ -55,7 +55,7 @@ function formatSeat(s: MapBirdSeat): string {
 }
 
 function buildPlacementsFile(
-  seatsByMap: Partial<Record<HuntMapId, MapBirdSeat[]>>,
+  seatsByMap: Partial<Record<CoreHuntMapId, MapBirdSeat[]>>,
 ): string {
   const blocks = MAP_IDS.filter((id) => (seatsByMap[id]?.length ?? 0) > 0)
     .map((id) => {
@@ -214,7 +214,7 @@ export function placementBirdChancePct(
 
 function patchMapsTs(
   source: string,
-  mapId: HuntMapId,
+  mapId: CoreHuntMapId,
   opts: { awareMapMaxM?: number | null; start?: HuntGridCell | null },
 ): string {
   const map = HUNT_MAPS[mapId];
@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
     seats.push(s);
   }
 
-  const merged: Partial<Record<HuntMapId, MapBirdSeat[]>> = {};
+  const merged: Partial<Record<CoreHuntMapId, MapBirdSeat[]>> = {};
   for (const id of MAP_IDS) {
     if (id === mapId) merged[id] = seats;
     else merged[id] = [...(MAP_BIRD_SEATS[id] ?? [])];
