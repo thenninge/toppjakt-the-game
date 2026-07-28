@@ -319,7 +319,14 @@ export const CHEAT_STARTING_BALANCE = 500_000;
  * First-name tokens that unlock elevated starting cash + VIP kit
  * (case-insensitive word match). e.g. "Jørn Nilsson" → {@link VIP_STARTING_BALANCE}.
  */
-export const VIP_NAME_TOKENS = ["jørn", "ivar", "tomas", "einar"] as const;
+export const VIP_NAME_TOKENS = [
+  "jørn",
+  "ivar",
+  "tomas",
+  "einar",
+  "konrad",
+  "dyre",
+] as const;
 export const VIP_STARTING_BALANCE = 100_000;
 /**
  * Substrings in the chosen hunter name that grant elevated starting cash only
@@ -614,7 +621,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Einar — e.g. "Jørn Nilsson").
+ * (Jørn / Ivar / Tomas / Einar / Konrad / Dyre — e.g. "Jørn Nilsson").
  */
 export function isVipPlayerName(name: string): boolean {
   return vipKitProfileIdForName(name) != null;
@@ -631,7 +638,14 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
   if (words.includes("tomas")) return "tomas";
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
-  if (words.includes("einar")) return "einar";
+  // Konrad / Dyre share Einar’s Sauer + ZCO loadout + High realism.
+  if (
+    words.includes("einar") ||
+    words.includes("konrad") ||
+    words.includes("dyre")
+  ) {
+    return "einar";
+  }
   return null;
 }
 
