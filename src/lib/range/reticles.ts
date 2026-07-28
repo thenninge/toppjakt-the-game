@@ -10,7 +10,7 @@
  * CBA diamond tip (1 mil angular). For MOA scopes, that tip is scaled by
  * {@link MM_PER_MOA_AT_100M}/100 so 1 MOA hash ↔ 1 MOA on the bird/world.
  *
- * ZCO MPCT3 ({@code zco527b.png}): full tree, FFP. In-game 27× (premium FOV)
+ * ZCO MPCT3X ({@code zco527b.png}): full tree, FFP. In-game 27× (premium FOV)
  * ≈7.2 mrad centre→edge (real ZCO @ 27×).
  *
  * Measure `centerTo1MilPx` on the native PNG (center → 1.0 mil hash on
@@ -118,7 +118,7 @@ export const RETICLES: Record<string, ReticleDef> = {
     centerTo1MilPx: 151 / 10,
   },
   /**
-   * ZCO 5-27 MPCT3-style mil tree ({@code zco527b.png}).
+   * ZCO 5-27 MPCT3X mil tree ({@code zco527b.png}).
    * CALIBRATED reference reticle — see `.cursor/skills/scope-reticle-calibration`.
    * Full Christmas-tree hold grid; ~55.5 px/mil.
        * Optical centre: −2.47 klikk X / +0.85 klikk Y (1 klikk = 0.1 mil) + 0.42° CW.
@@ -128,9 +128,9 @@ export const RETICLES: Record<string, ReticleDef> = {
    * `{ region: { shape: "circleMils", rMils: 1.5 } }`, or a stroke mask PNG via
    * `{ maskSrc: "/range/reticles/zco527b-illum-mask.png" }`.
    */
-  "zco-527-mpct": {
-    id: "zco-527-mpct",
-    label: "MPCT",
+  mpct3x: {
+    id: "mpct3x",
+    label: "MPCT3X",
     src: "/range/reticles/zco527b.png",
     nativeWidth: 1792,
     nativeHeight: 1780,

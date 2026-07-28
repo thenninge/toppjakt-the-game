@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent } from "react";
 import {
   isAmmoItem,
   isBipodItem,
@@ -55,11 +55,23 @@ import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
-import { ScopeTurrets, turretNudgeMoved } from "@/components/range/ScopeTurrets";
+import {
+  ScopeElevationDial,
+  ScopeTurrets,
+  ScopeWindageDial,
+  turretNudgeMoved,
+} from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
+import { MaybeScopeTube } from "@/components/range/ScopeTubeLayout";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
+import {
+  DEFAULT_REALISM_CONTROLS,
+  getRealismControls,
+  subscribeRealismControls,
+} from "@/lib/range/realismControls";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   angularMmAtDistance,
   clampElevationTurretMm,
@@ -89,12 +101,12 @@ import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import { kestrelSolveAmmo } from "@/lib/ballistics/kestrelProfile";
 import {
   birdNativePxPerMm,
-  birdMmToNativePx,
   birdScopeImageScale,
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
   classifyHuntShot,
   formatHuntImpactOffsetMm,
+  SCOPE_VIEWPORT_REF_PX,
   isShotCamItemId,
 } from "@/lib/hunt/shoot";
 import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
@@ -150,6 +162,8 @@ type FieldImpactCompetitionViewProps = {
   onPayEntryFee: (amountNok: number) => boolean;
   onAwardPayout: (amountNok: number) => void;
   onBack: () => void;
+  /** medium = HUD dials; high = tube-mounted realistic turrets. */
+  realism?: GameRealism;
 };
 
 type Keys = {
@@ -161,21 +175,73 @@ type Keys = {
 
 type Phase = "lobby" | "shooting" | "result" | "aar";
 
+const LANDSCAPE_AIM_FOV_FRAC = 0.36;
 const FOCUS_AIM_SPEED_MULT = 0.14;
-/** Aim pan without landscape — same as HuntShootView bare-bird path. */
-const AIM_SPEED_MM_PER_SEC = 44;
-/**
- * Holdover room in mils (centre→edge of useful pan).
- * Old 120×(D/100) mm capped ~1.2 mil @ 400 m — blocked 2.8 mil holds.
- */
-const IMPACT_AIM_LIMIT_MILS = 12;
 const DEFAULT_SCOPE_ZOOM = 12;
 const IMPACT_FLASH_MS = 900;
+/** Losby photo aspect ≈ 1024×606. */
+const DEFAULT_LAND_ASPECT = 1024 / 606;
 
-/** Max aim offset (mm on target) so FFP holdover can reach the hold card. */
-function impactAimLimitMm(distanceM: number): number {
-  const d = Math.max(1, distanceM);
-  return IMPACT_AIM_LIMIT_MILS * d;
+/** Aim (mm from vital) that puts a landscape % under the reticle. */
+function aimMmForLandscapeLookAt(opts: {
+  nativeW: number;
+  nativeH: number;
+  spriteHeightMm: number;
+  widthPct: number;
+  landAspect: number;
+  birdXPct: number;
+  birdYPct: number;
+  lookXPct: number;
+  lookYPct: number;
+  vitalOff: { x: number; y: number };
+}): { x: number; y: number } {
+  const sceneW = opts.nativeW * (100 / Math.max(0.05, opts.widthPct));
+  const sceneH = sceneW / Math.max(0.25, opts.landAspect);
+  const pxPerMm = opts.nativeH / opts.spriteHeightMm;
+  const aimPxX =
+    ((opts.lookXPct - opts.birdXPct) / 100) * sceneW - opts.vitalOff.x;
+  const aimPxY =
+    ((opts.lookYPct - opts.birdYPct) / 100) * sceneH - opts.vitalOff.y;
+  return { x: aimPxX / pxPerMm, y: aimPxY / pxPerMm };
+}
+
+/** Aim that puts landscape centre under the reticle (find the bird). */
+function aimMmForLandscapeCenter(opts: {
+  nativeW: number;
+  nativeH: number;
+  spriteHeightMm: number;
+  widthPct: number;
+  landAspect: number;
+  birdXPct: number;
+  birdYPct: number;
+  vitalOff: { x: number; y: number };
+}): { x: number; y: number } {
+  return aimMmForLandscapeLookAt({
+    ...opts,
+    lookXPct: 50,
+    lookYPct: 50,
+  });
+}
+
+/** Landscape % currently under optical centre. */
+function landscapePctUnderReticle(opts: {
+  aimMm: { x: number; y: number };
+  seat: { x: number; y: number; widthPct: number };
+  nativeW: number;
+  nativeH: number;
+  spriteHeightMm: number;
+  landAspect: number;
+  vitalOff: { x: number; y: number };
+}): { xPct: number; yPct: number } {
+  const sceneW = opts.nativeW * (100 / Math.max(0.05, opts.seat.widthPct));
+  const sceneH = sceneW / Math.max(0.25, opts.landAspect);
+  const pxPerMm = opts.nativeH / opts.spriteHeightMm;
+  const aimPxX = opts.aimMm.x * pxPerMm;
+  const aimPxY = opts.aimMm.y * pxPerMm;
+  return {
+    xPct: opts.seat.x + ((opts.vitalOff.x + aimPxX) / sceneW) * 100,
+    yPct: opts.seat.y + ((opts.vitalOff.y + aimPxY) / sceneH) * 100,
+  };
 }
 
 function speciesLabelNb(species: FieldImpactStageLayout["species"]): string {
@@ -204,7 +270,16 @@ export function FieldImpactCompetitionView({
   onPayEntryFee,
   onAwardPayout,
   onBack,
+  realism = "medium",
 }: FieldImpactCompetitionViewProps) {
+  const realismControls = useSyncExternalStore(
+    subscribeRealismControls,
+    getRealismControls,
+    () => DEFAULT_REALISM_CONTROLS,
+  );
+  const realismLevel = realism === "high" ? "high" : "medium";
+  const features = realismControls.features[realismLevel];
+  const tubeMode = features.tubeTurrets;
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
   const barrelWearScale = useMemo(
     () =>
@@ -302,6 +377,9 @@ export function FieldImpactCompetitionView({
   );
   const distanceM = stage?.distanceM ?? 100;
   const birdWidthPct = stage?.widthPct ?? 2;
+  const landscapeFocusX = stage?.x ?? 50;
+  const landscapeFocusY = stage?.y ?? 50;
+  const [landAspect, setLandAspect] = useState(DEFAULT_LAND_ASPECT);
 
   const holdCard: FieldImpactHoldCard | null = useMemo(() => {
     if (!rifle || !selectedAmmo || !stage) return null;
@@ -461,6 +539,8 @@ export function FieldImpactCompetitionView({
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(calmFactor);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
+  /** One shot max per F-hold / focus period. */
+  const focusShotSpentRef = useRef(false);
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -477,6 +557,20 @@ export function FieldImpactCompetitionView({
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const scopeStageRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
+  const birdSeatRef = useRef({
+    x: landscapeFocusX,
+    y: landscapeFocusY,
+    widthPct: Math.max(0.05, birdWidthPct),
+  });
+  birdSeatRef.current = {
+    x: landscapeFocusX,
+    y: landscapeFocusY,
+    widthPct: Math.max(0.05, birdWidthPct),
+  };
+  const landAspectRef = useRef(landAspect);
+  landAspectRef.current = landAspect;
+  /** False until the player pans — allows re-center when landAspect loads. */
+  const hasPannedRef = useRef(false);
   const geomRef = useRef(shotGeom);
   // Sync every render (same as HuntShootView) — useEffect is too late for
   // rAF paint / fire between stage advance and the next commit.
@@ -562,13 +656,74 @@ export function FieldImpactCompetitionView({
   function applyStageToLiveRefs(st: FieldImpactStageLayout) {
     geomRef.current = birdShotGeom(st.spriteId);
     distanceRef.current = st.distanceM;
+    birdSeatRef.current = {
+      x: st.x,
+      y: st.y,
+      widthPct: Math.max(0.05, st.widthPct),
+    };
   }
 
-  function resetAimToVital() {
-    const aim0 = { x: 0, y: 0 };
+  function aimForStageLayout(
+    st: FieldImpactStageLayout,
+    aspect: number,
+  ): { x: number; y: number } {
+    const g = birdShotGeom(st.spriteId);
+    const vitalOff = birdVitalOffsetFromImageCenterPx(g);
+    return aimMmForLandscapeCenter({
+      nativeW: g.nativeW,
+      nativeH: g.nativeH,
+      spriteHeightMm: g.spriteHeightMm,
+      widthPct: st.widthPct,
+      landAspect: aspect,
+      birdXPct: st.x,
+      birdYPct: st.y,
+      vitalOff,
+    });
+  }
+
+  /** Keep the same landscape look-point when the stage bird/seat changes. */
+  function aimPreservingLandscapeLook(
+    next: FieldImpactStageLayout,
+  ): { x: number; y: number } {
+    const prevG = geomRef.current;
+    const prevSeat = birdSeatRef.current;
+    const look =
+      prevG != null
+        ? landscapePctUnderReticle({
+            aimMm: aimRef.current,
+            seat: prevSeat,
+            nativeW: prevG.nativeW,
+            nativeH: prevG.nativeH,
+            spriteHeightMm: prevG.spriteHeightMm,
+            landAspect: landAspectRef.current,
+            vitalOff: birdVitalOffsetFromImageCenterPx(prevG),
+          })
+        : { xPct: 50, yPct: 50 };
+    applyStageToLiveRefs(next);
+    const g = geomRef.current!;
+    const vitalOff = birdVitalOffsetFromImageCenterPx(g);
+    return aimMmForLandscapeLookAt({
+      nativeW: g.nativeW,
+      nativeH: g.nativeH,
+      spriteHeightMm: g.spriteHeightMm,
+      widthPct: next.widthPct,
+      landAspect: landAspectRef.current,
+      birdXPct: next.x,
+      birdYPct: next.y,
+      lookXPct: look.xPct,
+      lookYPct: look.yPct,
+      vitalOff,
+    });
+  }
+
+  /** Re-center on landscape centre until the player pans (aspect load). */
+  useEffect(() => {
+    if (phase !== "shooting" || !stage) return;
+    if (hasPannedRef.current) return;
+    const aim0 = aimForStageLayout(stage, landAspect);
     setAimMm(aim0);
     aimRef.current = aim0;
-  }
+  }, [phase, stage, landAspect]);
 
   function startRound() {
     if (!ready || !selectedAmmo || !rifle) return;
@@ -584,7 +739,9 @@ export function FieldImpactCompetitionView({
     const first = layout.stages[0]!;
     applyStageToLiveRefs(first);
     roundLayoutRef.current = layout;
+    const aim0 = aimForStageLayout(first, landAspectRef.current);
     const now = performance.now();
+    hasPannedRef.current = false;
     setRoundLayout(layout);
     setPhase("shooting");
     setStageIndex(0);
@@ -597,7 +754,8 @@ export function FieldImpactCompetitionView({
     setAarIndex(0);
     setLastImpact(null);
     setImpactFlash(false);
-    resetAimToVital();
+    setAimMm(aim0);
+    aimRef.current = aim0;
     advancingRef.current = false;
     setSessionZeroXMm(0);
     setSessionZeroYMm(0);
@@ -813,8 +971,10 @@ export function FieldImpactCompetitionView({
       setStageIndex(nextStage);
       setLastImpact(null);
       if (next) {
-        applyStageToLiveRefs(next);
-        resetAimToVital();
+        const aimNext = aimPreservingLandscapeLook(next);
+        hasPannedRef.current = true;
+        setAimMm(aimNext);
+        aimRef.current = aimNext;
         setStatus(
           `Hold ${nextStage + 1}/${FIELD_IMPACT_STAGE_COUNT} · ${speciesLabelNb(next.species)} @ ${next.distanceM} m — dial etter kortet.`,
         );
@@ -837,6 +997,7 @@ export function FieldImpactCompetitionView({
   function beginFocus(nowMs: number) {
     if (focusRef.current.held) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
+    focusShotSpentRef.current = false;
     setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
@@ -905,11 +1066,17 @@ export function FieldImpactCompetitionView({
       pxPerMm: birdNativePxPerMm(g),
       viewportEl: e.currentTarget,
     });
-    const limit = impactAimLimitMm(distanceRef.current);
+    const seat = birdSeatRef.current;
+    const sceneW = g.nativeW * (100 / seat.widthPct);
+    const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+    const pxPerMm = birdNativePxPerMm(g);
+    const limitX = (sceneW * 0.55) / pxPerMm;
+    const limitY = (sceneH * 0.55) / pxPerMm;
     aimRef.current = {
-      x: Math.max(-limit, Math.min(limit, drag.origX + delta.x)),
-      y: Math.max(-limit, Math.min(limit, drag.origY + delta.y)),
+      x: Math.max(-limitX, Math.min(limitX, drag.origX + delta.x)),
+      y: Math.max(-limitY, Math.min(limitY, drag.origY + delta.y)),
     };
+    hasPannedRef.current = true;
   }
 
   function onAimPointerUp(e: PointerEvent<HTMLDivElement>) {
@@ -941,6 +1108,8 @@ export function FieldImpactCompetitionView({
     triggerRef.current = { held: false, startedAtMs: null };
     resetTriggerProgress();
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));
+    focusShotSpentRef.current = true;
+    triggerMarkRef.current = null;
     fireShotRef.current();
   }
 
@@ -948,6 +1117,10 @@ export function FieldImpactCompetitionView({
     if (triggerRef.current.held) return;
     if (phaseRef.current !== "shooting") return;
     if (advancingRef.current) return;
+    if (focusShotSpentRef.current) {
+      setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
+      return;
+    }
     if (!focusRef.current.held || triggerMarkRef.current == null) {
       setStatus("Hold F (fokus) før avtrekk.");
       return;
@@ -1028,12 +1201,19 @@ export function FieldImpactCompetitionView({
       const ax = aimRef.current.x + wobbleRef.current.x;
       const ay = aimRef.current.y + wobbleRef.current.y;
       const scale = targetScaleRef.current;
+      const pxPerMm = birdNativePxPerMm(g);
       const vo = birdVitalOffsetFromImageCenterPx(g);
-      const aimPxX = birdMmToNativePx(ax, g);
-      const aimPxY = birdMmToNativePx(ay, g);
-      // Hunt no-landscape path: aim {0,0} ⇒ vital under reticle.
-      const panPxX = (vo.x + aimPxX) * scale;
-      const panPxY = (vo.y + aimPxY) * scale;
+      const seat = birdSeatRef.current;
+      const sceneW = g.nativeW * (100 / seat.widthPct);
+      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+      const birdCx = (seat.x / 100) * sceneW;
+      const birdCy = (seat.y / 100) * sceneH;
+      const ox = birdCx - sceneW / 2;
+      const oy = birdCy - sceneH / 2;
+      const aimPxX = ax * pxPerMm;
+      const aimPxY = ay * pxPerMm;
+      const panPxX = (ox + vo.x + aimPxX) * scale;
+      const panPxY = (oy + vo.y + aimPxY) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
     }
 
@@ -1042,18 +1222,28 @@ export function FieldImpactCompetitionView({
       last = now;
       const k = keysRef.current;
       let { x, y } = aimRef.current;
-      const distFactor = distanceRef.current / 100;
-      let speed = AIM_SPEED_MM_PER_SEC * distFactor * dt;
+      const g = geomRef.current;
+      const seat = birdSeatRef.current;
+      const pxPerMm = g ? birdNativePxPerMm(g) : 1;
+      const scale = targetScaleRef.current;
+      const visibleScenePx = SCOPE_VIEWPORT_REF_PX / Math.max(0.01, scale);
+      let speed = ((visibleScenePx * LANDSCAPE_AIM_FOV_FRAC) / pxPerMm) * dt;
       if (focusRef.current.held) {
         speed *= FOCUS_AIM_SPEED_MULT;
       }
-      const limit = impactAimLimitMm(distanceRef.current);
+      const sceneW = g ? g.nativeW * (100 / seat.widthPct) : 1000;
+      const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
+      const limitX = (sceneW * 0.55) / pxPerMm;
+      const limitY = (sceneH * 0.55) / pxPerMm;
       if (k.left) x -= speed;
       if (k.right) x += speed;
       if (k.up) y -= speed;
       if (k.down) y += speed;
-      x = Math.max(-limit, Math.min(limit, x));
-      y = Math.max(-limit, Math.min(limit, y));
+      if (k.left || k.right || k.up || k.down) {
+        hasPannedRef.current = true;
+      }
+      x = Math.max(-limitX, Math.min(limitX, x));
+      y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
 
       if (focusShouldAbort(focusRef.current, now)) {
@@ -1187,6 +1377,10 @@ export function FieldImpactCompetitionView({
     : { x: 0, y: 0 };
   const mmToPx = (mm: number) =>
     shotGeom ? mm * birdNativePxPerMm(shotGeom) : 0;
+  const sceneW = shotGeom
+    ? shotGeom.nativeW * (100 / Math.max(0.05, birdWidthPct))
+    : 0;
+  const sceneH = sceneW / Math.max(0.25, landAspect);
 
   const focusLabel =
     focusUi.phase === "focused"
@@ -1487,8 +1681,90 @@ export function FieldImpactCompetitionView({
           className="range-barrel-heat"
           heat01={barrelHeat01}
         />
+        <MaybeScopeTube
+          enabled={tubeMode}
+          scopeId={scope!.id}
+          elevation={
+            <ScopeElevationDial
+              sessionZeroMm={sessionZeroYMm}
+              onNudge={(d) =>
+                turretNudgeMoved(setSessionZeroYMm, (y) =>
+                  clampElevationTurretMm(y + d, scope!.scope),
+                )
+              }
+              clickUnit={clickUnit}
+              clicksPerRev={scopeElevationClicksPerRev(scope!.scope)}
+            />
+          }
+          parallax={null}
+          windage={
+            <ScopeWindageDial
+              sessionZeroMm={sessionZeroXMm}
+              onNudge={(d) =>
+                turretNudgeMoved(setSessionZeroXMm, (x) =>
+                  clampTurretMm(x + d),
+                )
+              }
+              clickUnit={clickUnit}
+              clicksPerRev={scopeWindageClicksPerRev(scope!.scope)}
+            />
+          }
+          focusRail={
+            tubeMode ? (
+              <div className="range-side-rail range-side-rail--focus">
+                <span
+                  className={
+                    focusUi.phase === "focused"
+                      ? "range-side-rail-label is-focused"
+                      : focusUi.phase === "settling" ||
+                          focusUi.phase === "fatigued"
+                        ? "range-side-rail-label is-fatigued"
+                        : "range-side-rail-label"
+                  }
+                >
+                  {focusLabel}
+                </span>
+                <div
+                  ref={focusBarRef}
+                  className="range-focus-bar"
+                  aria-hidden
+                >
+                  <div ref={focusFillRef} className="range-focus-fill" />
+                </div>
+              </div>
+            ) : null
+          }
+          triggerRail={
+            tubeMode ? (
+              <div className="range-side-rail range-side-rail--trigger">
+                <span
+                  className={
+                    triggerUi.pending
+                      ? "range-side-rail-label is-pending"
+                      : "range-side-rail-label"
+                  }
+                >
+                  Avtrekk
+                </span>
+                <div
+                  className="range-trigger-bar"
+                  style={{
+                    ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                  }}
+                  aria-hidden
+                >
+                  <div ref={triggerFillRef} className="range-trigger-fill" />
+                  {triggerUi.targetPct > 0 ? (
+                    <span className="range-trigger-mark" />
+                  ) : null}
+                </div>
+              </div>
+            ) : null
+          }
+        >
         <ScopeOpticFit>
         <div className="scope-stage-optic-row">
+          {!tubeMode ? (
           <div className="range-side-rail range-side-rail--focus">
             <span
               className={
@@ -1510,6 +1786,7 @@ export function FieldImpactCompetitionView({
               <div ref={focusFillRef} className="range-focus-fill" />
             </div>
           </div>
+          ) : null}
 
           <div
             className={[
@@ -1551,34 +1828,60 @@ export function FieldImpactCompetitionView({
               <div ref={scopeWorldRef} className="scope-world">
                 <div ref={mirageSceneRef} className="scope-world-scene">
                   {shotGeom ? (
-                    <>
+                    <div
+                      className="hunt-scope-scene"
+                      style={{ width: sceneW, height: sceneH }}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        className="scope-target hunt-tiur-target field-impact-target-orange"
-                        src={shotGeom.displaySrc}
-                        alt="Feltfigur"
+                        className="hunt-scope-landscape"
+                        src={FIELD_IMPACT_LANDSCAPE_SRC}
+                        alt=""
                         draggable={false}
-                        width={shotGeom.nativeW}
-                        height={shotGeom.nativeH}
-                        style={{
-                          width: shotGeom.nativeW,
-                          height: shotGeom.nativeH,
+                        aria-hidden
+                        onLoad={(e) => {
+                          const img = e.currentTarget;
+                          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                            setLandAspect(
+                              img.naturalWidth / img.naturalHeight,
+                            );
+                          }
                         }}
                       />
-                      {lastImpact ? (
-                        <span
-                          className="bullet-hole"
-                          style={{
-                            width: mmToPx(lastImpact.diameterMm),
-                            height: mmToPx(lastImpact.diameterMm),
-                            left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
-                            top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
-                            marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
-                            marginTop: -mmToPx(lastImpact.diameterMm) / 2,
-                          }}
+                      <div
+                        className="hunt-scope-bird-wrap"
+                        style={{
+                          left: `${landscapeFocusX}%`,
+                          top: `${landscapeFocusY}%`,
+                          width: `${birdWidthPct}%`,
+                          aspectRatio: `${shotGeom.nativeW} / ${shotGeom.nativeH}`,
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          className="scope-target hunt-tiur-target field-impact-target-orange"
+                          src={shotGeom.displaySrc}
+                          alt="Feltfigur"
+                          draggable={false}
+                          width={shotGeom.nativeW}
+                          height={shotGeom.nativeH}
+                          style={{ width: "100%", height: "100%" }}
                         />
-                      ) : null}
-                    </>
+                        {lastImpact ? (
+                          <span
+                            className="bullet-hole"
+                            style={{
+                              width: mmToPx(lastImpact.diameterMm),
+                              height: mmToPx(lastImpact.diameterMm),
+                              left: `calc(50% + ${vitalOff.x + mmToPx(lastImpact.xMm)}px)`,
+                              top: `calc(50% + ${vitalOff.y + mmToPx(lastImpact.yMm)}px)`,
+                              marginLeft: -mmToPx(lastImpact.diameterMm) / 2,
+                              marginTop: -mmToPx(lastImpact.diameterMm) / 2,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
                   ) : null}
                   <div className="scope-mirage-shimmer" aria-hidden />
                 </div>
@@ -1642,6 +1945,7 @@ export function FieldImpactCompetitionView({
             />
           </div>
 
+          {!tubeMode ? (
           <div className="range-side-rail range-side-rail--trigger">
             <span
               className={
@@ -1665,8 +1969,10 @@ export function FieldImpactCompetitionView({
               ) : null}
             </div>
           </div>
+          ) : null}
         </div>
         </ScopeOpticFit>
+        </MaybeScopeTube>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button
@@ -1710,6 +2016,7 @@ export function FieldImpactCompetitionView({
           clickUnit={clickUnit}
           elevationClicksPerRev={scopeElevationClicksPerRev(scope?.scope)}
           windageClicksPerRev={scopeWindageClicksPerRev(scope?.scope)}
+          hideShooterDials={tubeMode}
           onNudge={(axis, deltaMm) => {
             if (axis === "x") {
               return turretNudgeMoved(setSessionZeroXMm, (v) =>

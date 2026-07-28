@@ -30,7 +30,10 @@ export function AmigaChapterIntro({ onContinue }: AmigaChapterIntroProps) {
           <span className="amiga-chapter-titlebar-text">
             Cold Bore Toppjakt
           </span>
-          <span className="amiga-chapter-gadget amiga-chapter-gadget-depth" aria-hidden />
+          <span
+            className="amiga-chapter-gadget amiga-chapter-gadget-depth"
+            aria-hidden
+          />
         </div>
         <div className="amiga-chapter-body">
           <div className="amiga-chapter-portrait-wrap">
@@ -50,7 +53,9 @@ export function AmigaChapterIntro({ onContinue }: AmigaChapterIntroProps) {
               Cold Bore Toppjakt
             </p>
             <p id="amiga-chapter-chapter" className="amiga-chapter-line">
-              Chapter: {CHAPTER_TITLE}
+              Chapter 1:
+              <br />
+              {CHAPTER_TITLE}
             </p>
             <p className="amiga-chapter-copyright">
               (c) Parabox Productions - 2026

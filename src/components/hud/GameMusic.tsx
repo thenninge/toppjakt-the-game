@@ -7,19 +7,12 @@ import {
 } from "@/lib/audio/volumes";
 import { getMusicTrack, type MusicScene } from "@/lib/music/scenes";
 
+export {
+  readMusicEnabled,
+  writeMusicEnabled,
+} from "@/lib/audio/volumes";
+
 const MUSIC_BASE_VOLUME = 0.45;
-const STORAGE_KEY = "toppjakt-music-enabled";
-
-export function readMusicEnabled(): boolean {
-  if (typeof window === "undefined") return true;
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === null) return true;
-  return stored === "true";
-}
-
-export function writeMusicEnabled(enabled: boolean): void {
-  window.localStorage.setItem(STORAGE_KEY, String(enabled));
-}
 
 function effectiveMusicGain(): number {
   return MUSIC_BASE_VOLUME * readMusicVolume();

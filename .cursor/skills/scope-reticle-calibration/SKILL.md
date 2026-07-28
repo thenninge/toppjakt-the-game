@@ -9,7 +9,7 @@ description: >-
 
 # Scope / reticle calibration
 
-Repeat the **ZCO 5-27 MPCT** process for every premium reticle. Shared optic
+Repeat the **ZCO 5-27 MPCT3X** process for every premium reticle. Shared optic
 pipeline is already in place; per-scope work is asset + FOV fine-tune only.
 
 ## Admin sandbox
@@ -17,7 +17,7 @@ pipeline is already in place; per-scope work is asset + FOV fine-tune only.
 **Admin Office → Scopes** (`AdminScopeTestPanel`): free catalog scope pick,
 skyteskive *or* bird sprite, distance 10–1500 m (1 m steps), power ring, drag
 to pan. Reticle uses `opticReticleImgScale` (zoom only). Skive paper uses
-`zeroingTargetAndReticleScale` like ShootingRange. At fixed zoom the MPCT
+`zeroingTargetAndReticleScale` like ShootingRange. At fixed zoom the MPCT3X
 tree must look identical on CBA and any bird. Button «= Range 100 m» resets
 CBA / 100 m / max zoom.
 
@@ -37,7 +37,7 @@ True-angular paper: `RANGE_TRUE_ANGULAR_TARGET_SCALE = 0.1` on zeroing lane
 
 ## Reference: ZCO (done)
 
-Reticle id `zco-527-mpct` · asset `zco527b.png` · scope `scope-zco-527-mct`
+Reticle id `mpct3x` · asset `zco527b.png` · scope `scope-zco-527-mct`
 
 | Knob | Value | Meaning |
 |------|-------|---------|
@@ -103,7 +103,7 @@ Note calibrated values in the `ReticleDef` comment block (same style as ZCO).
 
 | Reticle id | Typical scopes | Status |
 |------------|----------------|--------|
-| `zco-527-mpct` | ZCO 5-27 | **Calibrated** |
+| `mpct3x` | ZCO 5-27 | **Calibrated** |
 | `kahles` | K318i / K525i / K624i / K16i | TODO |
 | `nightforce-mil-r` | NX8 / ATACR MRAD | TODO |
 | `nf_moa` | NX8 MOA | TODO (MOA paper) |

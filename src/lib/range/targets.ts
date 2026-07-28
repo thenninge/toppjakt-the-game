@@ -11,6 +11,7 @@
  */
 
 import type { RangeDistanceM } from "@/lib/range/precision";
+import { RANGE_DISTANCES_M } from "@/lib/range/precision";
 
 export type RangeTargetId =
   | "cba-100"
@@ -76,11 +77,10 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     src: "/range/tracking-test.jpg",
     nativeWidth: 724,
     nativeHeight: 1024,
-    bullseyeXPx: 359,
-    bullseyeYPx: 147,
-    pxPerMm: 353 / 100,
-    pxPerMmY: 182 / 50,
-    /** Readable board; reticle uses true-mil scale on this lane (see reticles). */
+    bullseyeXPx: 359.5,
+    bullseyeYPx: 690.8,
+    pxPerMm: 3.547,
+/** Readable board; reticle uses true-mil scale on this lane (see reticles). */
     visualScale: 2,
   },
   /**
@@ -159,6 +159,23 @@ export const DEFAULT_TARGET_BY_DISTANCE: Record<RangeDistanceM, RangeTargetId> =
   400: "target-400",
   500: "target-500",
 };
+
+/**
+ * Pick default skive for any distance 100–1000 m (nearest calibrated preset).
+ */
+export function defaultTargetIdForDistanceM(distanceM: number): RangeTargetId {
+  const d = Number.isFinite(distanceM) ? distanceM : 100;
+  let best: RangeDistanceM = 100;
+  let bestDiff = Infinity;
+  for (const p of RANGE_DISTANCES_M) {
+    const diff = Math.abs(p - d);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = p;
+    }
+  }
+  return DEFAULT_TARGET_BY_DISTANCE[best];
+}
 
 export function getRangeTarget(id: RangeTargetId): RangeTargetDef {
   return RANGE_TARGETS[id];

@@ -753,6 +753,8 @@ export function HuntShootView({
   const heartRateBpmRef = useRef(heartRateBpm);
   const shootRestRef = useRef(shootRest);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
+  /** One shot max per F-hold / focus period. */
+  const focusShotSpentRef = useRef(false);
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -974,8 +976,8 @@ export function HuntShootView({
     if (gunPrepOnly) {
       setStatus(
         scopeMarkedBirdId
-          ? "Fugl merket — trykk Aware når du er klar."
-          : "Gun-prep — ingen skudd. Still tårn, deretter Aware.",
+          ? "Fugl merket — fokus og avtrekk er aktive."
+          : "Gun-prep — ingen skudd. Marker fugl med F, eller gå via LRF/Engage.",
       );
       return;
     }
@@ -1137,6 +1139,7 @@ export function HuntShootView({
     playShotRef.current({
       hasSuppressor: !!suppressor,
       silent: silentShot,
+      afterShot: false,
     });
     setRecoilActive(false);
     window.requestAnimationFrame(() => {
@@ -1340,8 +1343,10 @@ export function HuntShootView({
 
   function beginFocus(nowMs: number) {
     if (!featuresRef.current.focusHold) return;
+    if (gunPrepOnlyRef.current) return;
     if (focusRef.current.held || firedRef.current) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
+    focusShotSpentRef.current = false;
     setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
@@ -1455,6 +1460,10 @@ export function HuntShootView({
   function beginTrigger(nowMs: number) {
     if (firedRef.current) return;
     if (triggerRef.current.held) return;
+    if (focusShotSpentRef.current) {
+      setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
+      return;
+    }
     const feats = featuresRef.current;
     if (!feats.triggerTiming) {
       // Instant perfect break when trigger timing is disabled.
@@ -1463,6 +1472,8 @@ export function HuntShootView({
         return;
       }
       triggerPullRef.current = 0;
+      focusShotSpentRef.current = true;
+      triggerMarkRef.current = null;
       fireShotRef.current();
       return;
     }
@@ -1516,6 +1527,8 @@ export function HuntShootView({
       pending: false,
       targetPct: prev.targetPct,
     }));
+    focusShotSpentRef.current = true;
+    triggerMarkRef.current = null;
     fireShotRef.current();
   }
 
@@ -1620,11 +1633,12 @@ export function HuntShootView({
                 measuredDistanceM: Math.round(hit.distanceM),
               });
               setStatus(
-                "Fugl merket — trykk Aware når du er klar (gun forblir deployed).",
+                "Fugl merket — fokus og avtrekk er aktive.",
               );
               return;
             }
             setStatus("Ingen fugl under sikte — panorer videre, F for å markere.");
+            return;
           }
         }
         beginFocus(performance.now());
@@ -2021,10 +2035,10 @@ export function HuntShootView({
               {" "}
               · Still tårn manuelt
               {scopeMarkedBirdId
-                ? " · Fugl merket — trykk Aware når du er klar"
+                ? " · Fugl merket"
                 : scanBirdPlacements.length > 0
-                  ? " · Finn fugl i glasset — F for å markere"
-                  : " · Aware lagrer dial (ingen skudd)"}
+                  ? " · Finn fugl i glasset — F for å markere (aktiverer fokus/avtrekk)"
+                  : " · Aware lagrer dial (ingen skudd uten mål)"}
             </>
           ) : (
             <>
@@ -2306,7 +2320,7 @@ export function HuntShootView({
             />
           }
           focusRail={
-            tubeMode && features.focusHold ? (
+            tubeMode && !gunPrepOnly && features.focusHold ? (
               <div className="range-side-rail range-side-rail--focus">
                 <span
                   className={
@@ -2367,7 +2381,7 @@ export function HuntShootView({
         >
           <ScopeOpticFit>
             <div className="scope-stage-optic-row">
-              {!tubeMode && features.focusHold ? (
+              {!tubeMode && !gunPrepOnly && features.focusHold ? (
                 <div className="range-side-rail range-side-rail--focus">
                   <span
                     className={
@@ -2685,21 +2699,20 @@ export function HuntShootView({
                     placement: hit,
                     measuredDistanceM: Math.round(hit.distanceM),
                   });
-                  setStatus(
-                    "Fugl merket — trykk Aware når du er klar (gun forblir deployed).",
-                  );
+                  setStatus("Fugl merket — fokus og avtrekk er aktive.");
                   return;
                 }
                 setStatus(
                   "Ingen fugl under sikte — panorer videre, F for å markere.",
                 );
+                return;
               }
               beginFocus(performance.now());
             }}
             onPointerUp={endFocus}
             onPointerCancel={endFocus}
           >
-            Fokus
+            {gunPrepOnly ? "Merk (F)" : "Fokus"}
           </button>
           <button
             type="button"
@@ -2708,7 +2721,7 @@ export function HuntShootView({
                 ? "range-touch-btn range-touch-btn--trigger is-active"
                 : "range-touch-btn range-touch-btn--trigger"
             }
-            disabled={fired}
+            disabled={fired || gunPrepOnly}
             onPointerDown={(e) => {
               e.preventDefault();
               beginTrigger(performance.now());

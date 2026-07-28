@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent } from "react";
 import {
   isAmmoItem,
   isBipodItem,
@@ -55,11 +55,23 @@ import {
 import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
-import { ScopeTurrets, turretNudgeMoved } from "@/components/range/ScopeTurrets";
+import {
+  ScopeElevationDial,
+  ScopeTurrets,
+  ScopeWindageDial,
+  turretNudgeMoved,
+} from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
+import { MaybeScopeTube } from "@/components/range/ScopeTubeLayout";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
+import {
+  DEFAULT_REALISM_CONTROLS,
+  getRealismControls,
+  subscribeRealismControls,
+} from "@/lib/range/realismControls";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   angularMmAtDistance,
   clampElevationTurretMm,
@@ -143,6 +155,8 @@ type MoaCompetitionViewProps = {
   onPayEntryFee: (amountNok: number) => boolean;
   onAwardPayout: (amountNok: number) => void;
   onBack: () => void;
+  /** medium = HUD dials; high = tube-mounted realistic turrets. */
+  realism?: GameRealism;
 };
 
 type Keys = {
@@ -244,7 +258,16 @@ export function MoaCompetitionView({
   onPayEntryFee,
   onAwardPayout,
   onBack,
+  realism = "medium",
 }: MoaCompetitionViewProps) {
+  const realismControls = useSyncExternalStore(
+    subscribeRealismControls,
+    getRealismControls,
+    () => DEFAULT_REALISM_CONTROLS,
+  );
+  const realismLevel = realism === "high" ? "high" : "medium";
+  const features = realismControls.features[realismLevel];
+  const tubeMode = features.tubeTurrets;
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
   const barrelWearScale = useMemo(
     () =>
@@ -443,6 +466,8 @@ export function MoaCompetitionView({
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(calmFactor);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
+  /** One shot max per F-hold / focus period. */
+  const focusShotSpentRef = useRef(false);
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -698,6 +723,7 @@ export function MoaCompetitionView({
   function beginFocus(nowMs: number) {
     if (focusRef.current.held) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
+    focusShotSpentRef.current = false;
     setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
@@ -800,6 +826,8 @@ export function MoaCompetitionView({
     triggerRef.current = { held: false, startedAtMs: null };
     resetTriggerProgress();
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));
+    focusShotSpentRef.current = true;
+    triggerMarkRef.current = null;
     fireShotRef.current();
   }
 
@@ -807,6 +835,10 @@ export function MoaCompetitionView({
     if (triggerRef.current.held) return;
     if (phaseRef.current !== "shooting") return;
     if (shotsLenRef.current >= MOA_COMP_SHOT_COUNT) return;
+    if (focusShotSpentRef.current) {
+      setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
+      return;
+    }
     if (!focusRef.current.held || triggerMarkRef.current == null) {
       setStatus("Hold F (fokus) før avtrekk.");
       return;
@@ -1238,8 +1270,90 @@ export function MoaCompetitionView({
           className="range-barrel-heat"
           heat01={barrelHeat01}
         />
+        <MaybeScopeTube
+          enabled={tubeMode}
+          scopeId={scope!.id}
+          elevation={
+            <ScopeElevationDial
+              sessionZeroMm={sessionZeroYMm}
+              onNudge={(d) =>
+                turretNudgeMoved(setSessionZeroYMm, (y) =>
+                  clampElevationTurretMm(y + d, scope!.scope),
+                )
+              }
+              clickUnit={scope!.scope.clickUnit ?? "MRAD"}
+              clicksPerRev={scopeElevationClicksPerRev(scope!.scope)}
+            />
+          }
+          parallax={null}
+          windage={
+            <ScopeWindageDial
+              sessionZeroMm={sessionZeroXMm}
+              onNudge={(d) =>
+                turretNudgeMoved(setSessionZeroXMm, (x) =>
+                  clampTurretMm(x + d),
+                )
+              }
+              clickUnit={scope!.scope.clickUnit ?? "MRAD"}
+              clicksPerRev={scopeWindageClicksPerRev(scope!.scope)}
+            />
+          }
+          focusRail={
+            tubeMode ? (
+              <div className="range-side-rail range-side-rail--focus">
+                <span
+                  className={
+                    focusUi.phase === "focused"
+                      ? "range-side-rail-label is-focused"
+                      : focusUi.phase === "settling" ||
+                          focusUi.phase === "fatigued"
+                        ? "range-side-rail-label is-fatigued"
+                        : "range-side-rail-label"
+                  }
+                >
+                  {focusLabel}
+                </span>
+                <div
+                  ref={focusBarRef}
+                  className="range-focus-bar"
+                  aria-hidden
+                >
+                  <div ref={focusFillRef} className="range-focus-fill" />
+                </div>
+              </div>
+            ) : null
+          }
+          triggerRail={
+            tubeMode ? (
+              <div className="range-side-rail range-side-rail--trigger">
+                <span
+                  className={
+                    triggerUi.pending
+                      ? "range-side-rail-label is-trigger"
+                      : "range-side-rail-label"
+                  }
+                >
+                  {triggerUi.pending ? "Avtrekk…" : "Avtrekk"}
+                </span>
+                <div
+                  className="range-trigger-bar"
+                  aria-hidden
+                  style={{
+                    ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                  }}
+                >
+                  <div ref={triggerFillRef} className="range-trigger-fill" />
+                  {triggerUi.targetPct > 0 ? (
+                    <span className="range-trigger-mark" />
+                  ) : null}
+                </div>
+              </div>
+            ) : null
+          }
+        >
         <ScopeOpticFit>
         <div className="scope-stage-optic-row">
+          {!tubeMode ? (
           <div className="range-side-rail range-side-rail--focus">
             <span
               className={
@@ -1261,6 +1375,7 @@ export function MoaCompetitionView({
               <div ref={focusFillRef} className="range-focus-fill" />
             </div>
           </div>
+          ) : null}
 
           <div
             className={[
@@ -1388,6 +1503,7 @@ export function MoaCompetitionView({
             />
           </div>
 
+          {!tubeMode ? (
           <div className="range-side-rail range-side-rail--trigger">
             <span
               className={
@@ -1411,8 +1527,10 @@ export function MoaCompetitionView({
               ) : null}
             </div>
           </div>
+          ) : null}
         </div>
         </ScopeOpticFit>
+        </MaybeScopeTube>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button
@@ -1456,6 +1574,7 @@ export function MoaCompetitionView({
           clickUnit={scope?.scope.clickUnit ?? "MRAD"}
           elevationClicksPerRev={scopeElevationClicksPerRev(scope?.scope)}
           windageClicksPerRev={scopeWindageClicksPerRev(scope?.scope)}
+          hideShooterDials={tubeMode}
           onNudge={(axis, deltaMm) => {
             if (axis === "x") {
               return turretNudgeMoved(setSessionZeroXMm, (v) =>

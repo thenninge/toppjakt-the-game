@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
-import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
 import {
   isAmmoItem,
   isBallisticsItem,
@@ -58,8 +57,11 @@ import {
   focusShouldAbort,
   measureGroup,
   RANGE_DISTANCE_M,
+  RANGE_DISTANCE_MAX_M,
+  RANGE_DISTANCE_MIN_M,
+  RANGE_DISTANCE_PRESETS_M,
   RANGE_DISTANCES_M,
-  RANGE_EASY_ZERO_SCALE,
+  clampRangeDistanceM,
   rollTriggerTargetMs,
   sampleRealSystemGroupMoa,
   sampleShotFromPoa,
@@ -67,7 +69,6 @@ import {
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
   type GroupMeasurement,
-  type RangeDistanceM,
   type ShotImpact,
 } from "@/lib/range/precision";
 import {
@@ -77,8 +78,8 @@ import {
 } from "@/lib/range/realismControls";
 import { zeroingTargetAndReticleScale } from "@/lib/range/scopeViewScale";
 import {
-  DEFAULT_TARGET_BY_DISTANCE,
   RANGE_TARGET_IDS,
+  defaultTargetIdForDistanceM,
   getRangeTarget,
   mmToPxOnTargetX,
   mmToPxOnTargetY,
@@ -148,13 +149,11 @@ import {
   angularMmAtDistance,
   clampElevationTurretMm,
   clampTurretMm,
-  clicksForDropMm,
   effectiveZeroOffsetMm,
   getInventoryQty,
   getRifleRoundCount,
   MAX_TURRET_OFFSET_MM,
   mmAt100ToClicks,
-  ZERO_CLICK_MM,
   zeroingKey,
   type InventoryEntry,
   type ShotLogEntry,
@@ -165,6 +164,11 @@ import {
   densityRatioFromTempC,
   exactBallisticHold,
 } from "@/lib/ballistics/solver";
+import {
+  dropMmToMrad,
+  formatApproximateHoldMrad,
+  formatExactHoldMrad,
+} from "@/lib/ballistics/holdHint";
 import {
   chronographKindFromKitIds,
   computeChronoSeriesStats,
@@ -501,9 +505,11 @@ export function ShootingRange({
   const ready = gearReady;
 
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
-  const [distanceM, setDistanceM] = useState<RangeDistanceM>(RANGE_DISTANCE_M);
+  const [distanceM, setDistanceM] = useState(RANGE_DISTANCE_M);
+  /** Draft while typing free distance — commit on blur/Enter so clamp doesn't fight mid-edit. */
+  const [distanceDraft, setDistanceDraft] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<RangeTargetId>(
-    DEFAULT_TARGET_BY_DISTANCE[RANGE_DISTANCE_M],
+    defaultTargetIdForDistanceM(RANGE_DISTANCE_M),
   );
   /** Paper grid: MOA (×0.727) or MIL (1 cm = 0.1 mil). Default = reticle. */
   const reticleUnit: ScopeClickUnit = scope?.scope.clickUnit ?? "MRAD";
@@ -632,6 +638,8 @@ export function ShootingRange({
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(1);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
+  /** One shot max per F-hold / focus period. */
+  const focusShotSpentRef = useRef(false);
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -1058,6 +1066,7 @@ export function ShootingRange({
       held: true,
       startedAtMs: nowMs,
     };
+    focusShotSpentRef.current = false;
     setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
@@ -1208,6 +1217,8 @@ export function ShootingRange({
       pending: false,
       targetPct: prev.targetPct,
     }));
+    focusShotSpentRef.current = true;
+    triggerMarkRef.current = null;
     fireShotRef.current();
   }
 
@@ -1221,6 +1232,10 @@ export function ShootingRange({
       setStatus("Tom for ammo — kjøp mer hos XXL.");
       return;
     }
+    if (focusShotSpentRef.current) {
+      setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
+      return;
+    }
     const feats = featuresRef.current;
     if (!feats.triggerTiming) {
       if (feats.focusHold && !focusRef.current.held) {
@@ -1228,6 +1243,8 @@ export function ShootingRange({
         return;
       }
       triggerPullRef.current = 0;
+      focusShotSpentRef.current = true;
+      triggerMarkRef.current = null;
       fireShotRef.current();
       return;
     }
@@ -1614,45 +1631,36 @@ export function ShootingRange({
     })
   );
 
-  const ballisticHint = selectedAmmo
-    ? (() => {
-        const solveAmmo = kestrelAmmoSolve?.ammo ?? selectedAmmo.ammo;
-        const dropMm = resolveZeroingDropMm({
-          ammo: solveAmmo,
-          distanceM,
-          realLoad: activeRealLoad,
-          usingReal: usingCbRealLoads,
-          densityRatio,
-        });
-        // 0.1 mil clicks — not mm-at-100 (that is 10× larger).
-        const clicks = clicksForDropMm(dropMm, distanceM);
-        if (distanceM <= DEFAULT_ZERO_DISTANCE_M || Math.abs(clicks) < 0.05) {
-          return `Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ 0 klikk`;
-        }
-        const mil = (Math.abs(dropMm) / Math.max(1, distanceM)).toFixed(2);
-        const tag = usingCbRealLoads ? "CB Real loads · " : "";
-        const clicksTxt = Math.abs(clicks)
-          .toFixed(1)
-          .replace(".", ",");
-        return `${tag}Zero ${DEFAULT_ZERO_DISTANCE_M} m · drop ≈ ${clicksTxt} klikk (${mil} mil / ${(dropMm / 10).toFixed(0)} cm)`;
-      })()
-    : null;
-
-  const cbRealDropRows =
+  const holdHintRows =
     usingCbRealLoads && selectedAmmo
-      ? RANGE_DISTANCES_M.map((distanceMRow) => {
+      ? (() => {
           const solveAmmo = kestrelAmmoSolve?.ammo ?? selectedAmmo.ammo;
-          const dropMm = resolveZeroingDropMm({
-            ammo: solveAmmo,
-            distanceM: distanceMRow,
-            realLoad: activeRealLoad,
-            usingReal: true,
-            densityRatio,
+          const distances: number[] = [...RANGE_DISTANCES_M];
+          if (
+            distanceM > DEFAULT_ZERO_DISTANCE_M &&
+            !(RANGE_DISTANCES_M as readonly number[]).includes(distanceM)
+          ) {
+            distances.push(distanceM);
+            distances.sort((a, b) => a - b);
+          }
+          return distances.map((distanceMRow) => {
+            const dropMm = resolveZeroingDropMm({
+              ammo: solveAmmo,
+              distanceM: distanceMRow,
+              realLoad: activeRealLoad,
+              usingReal: true,
+              densityRatio,
+            });
+            const mrad = dropMmToMrad(dropMm, distanceMRow);
+            const label =
+              distanceMRow <= DEFAULT_ZERO_DISTANCE_M || mrad < 0.05
+                ? "0"
+                : hasKestrel
+                  ? formatExactHoldMrad(mrad)
+                  : formatApproximateHoldMrad(mrad);
+            return { distanceM: distanceMRow, label, dropMm };
           });
-          const mmAt100 = (dropMm * 100) / Math.max(1, distanceMRow);
-          const clicks = mmAt100 / ZERO_CLICK_MM;
-          return { distanceM: distanceMRow, dropMm, clicks };
-        })
+        })()
       : null;
 
   function measureSeries() {
@@ -1815,10 +1823,12 @@ export function ShootingRange({
     );
   }
 
-  function changeDistance(next: RangeDistanceM) {
+  function changeDistance(nextRaw: number) {
+    const next = clampRangeDistanceM(nextRaw);
+    setDistanceDraft(null);
     if (next === distanceM) return;
     setDistanceM(next);
-    setTargetId(DEFAULT_TARGET_BY_DISTANCE[next]);
+    setTargetId(defaultTargetIdForDistanceM(next));
     setAimMm({ x: 0, y: 0 });
     aimRef.current = { x: 0, y: 0 };
     wobbleRef.current = { x: 0, y: 0 };
@@ -1826,6 +1836,12 @@ export function ShootingRange({
     setMeasurement(null);
     abortTrigger("");
     setStatus(`Avstand satt til ${next} m — ny serie.`);
+  }
+
+  function commitDistanceDraft() {
+    if (distanceDraft === null) return;
+    const v = Number(distanceDraft);
+    changeDistance(Number.isFinite(v) ? v : distanceM);
   }
 
   function changeTarget(next: RangeTargetId) {
@@ -1837,7 +1853,7 @@ export function ShootingRange({
     setShots([]);
     setMeasurement(null);
     abortTrigger("");
-    const def = DEFAULT_TARGET_BY_DISTANCE[distanceM];
+    const def = defaultTargetIdForDistanceM(distanceM);
     setStatus(
       next === def
         ? `Skive: ${getRangeTarget(next).label} (default for ${distanceM} m).`
@@ -2020,7 +2036,7 @@ export function ShootingRange({
         setTrackingLocked(false);
       }
       if (targetId === "tracking-test") {
-        setTargetId(DEFAULT_TARGET_BY_DISTANCE[distanceM] ?? "cba-100");
+        setTargetId(defaultTargetIdForDistanceM(distanceM) ?? "cba-100");
       }
       return;
     }
@@ -2076,6 +2092,7 @@ export function ShootingRange({
             onPayEntryFee={onPayCompetitionFee}
             onAwardPayout={onAwardCompetitionPayout}
             onBack={() => setCompId("lobby")}
+            realism={realism}
           />
         </div>
       );
@@ -2109,6 +2126,7 @@ export function ShootingRange({
             onPayEntryFee={onPayCompetitionFee}
             onAwardPayout={onAwardCompetitionPayout}
             onBack={() => setCompId("lobby")}
+            realism={realism}
           />
         </div>
       );
@@ -2192,22 +2210,6 @@ export function ShootingRange({
         </p>
         {!rifle ? <p className="shop-row-note">Mangler: rifle</p> : null}
         {!scope ? <p className="shop-row-note">Mangler: scope</p> : null}
-        {onPackFavoriteKit && onRemoveFavoriteItem ? (
-          <FavoriteKitPanel
-            favoriteKitIds={favoriteKitIds}
-            kit={kitItems.map((i) => i.id)}
-            ownedItemIds={
-              new Set(
-                inventory.filter((e) => e.qty > 0).map((e) => e.itemId),
-              )
-            }
-            onPackFavoriteKit={onPackFavoriteKit}
-            onRemoveFavoriteItem={onRemoveFavoriteItem}
-            customsMods={customsMods}
-            customBarrels={customBarrels}
-            hint="Pakker favoritt-jaktkittet og bytter ut det som ligger i kit nå."
-          />
-        ) : null}
         <div className="range-actions">
           <button
             type="button"
@@ -2263,6 +2265,235 @@ export function ShootingRange({
     releaseTrigger(performance.now());
   }
 
+  const setupUnderHud = realism === "high";
+  const showRangeSerieSetup =
+    lane !== "load-test" && lane !== "tracking-test";
+  const rangeSerieSetup = showRangeSerieSetup ? (
+    <section
+          className={
+            setupUnderHud
+              ? "range-setup range-setup--under-hud"
+              : "range-setup"
+          }
+          aria-label="Serieoppsett"
+        >
+            <div className="range-setup-compact" aria-label="Baneoppsett">
+              <label className="range-setup-field" htmlFor="range-distance-input">
+                <span className="range-setup-label">Avstand</span>
+                <span className="range-setup-distance-row">
+                  <select
+                    id="range-distance-preset"
+                    className="range-setup-select"
+                    disabled={setupLocked}
+                    value={
+                      (RANGE_DISTANCE_PRESETS_M as readonly number[]).includes(
+                        distanceM,
+                      )
+                        ? String(distanceM)
+                        : ""
+                    }
+                    aria-label="Hurtigvalg avstand"
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v)) changeDistance(v);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Velg…
+                    </option>
+                    {RANGE_DISTANCE_PRESETS_M.map((d) => (
+                      <option key={d} value={d}>
+                        {d} m
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    id="range-distance-input"
+                    className="range-setup-input"
+                    type="number"
+                    inputMode="numeric"
+                    min={RANGE_DISTANCE_MIN_M}
+                    max={RANGE_DISTANCE_MAX_M}
+                    step={1}
+                    disabled={setupLocked}
+                    value={distanceDraft ?? String(distanceM)}
+                    onChange={(e) => setDistanceDraft(e.target.value)}
+                    onBlur={commitDistanceDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitDistanceDraft();
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                  />
+                  <span className="range-setup-unit">m</span>
+                </span>
+              </label>
+    
+              <label className="range-setup-field" htmlFor="range-target-select">
+                <span className="range-setup-label">
+                  Skive
+                  {targetId !== defaultTargetIdForDistanceM(distanceM) ? (
+                    <span className="range-setup-lock"> · avvik</span>
+                  ) : null}
+                </span>
+                <select
+                  id="range-target-select"
+                  className="range-setup-select range-setup-select-wide"
+                  disabled={setupLocked}
+                  value={targetId}
+                  onChange={(e) =>
+                    changeTarget(e.target.value as RangeTargetId)
+                  }
+                >
+                  {RANGE_TARGET_IDS.filter((id) => id !== "tracking-test").map(
+                    (id) => {
+                      const t = getRangeTarget(id);
+                      const isDefault =
+                        id === defaultTargetIdForDistanceM(distanceM);
+                      return (
+                        <option key={id} value={id}>
+                          {t.label}
+                          {isDefault ? " (def)" : ""}
+                        </option>
+                      );
+                    },
+                  )}
+                </select>
+              </label>
+    
+              <div className="range-setup-field" role="group" aria-label="Rutenett">
+                <span className="range-setup-label" id="range-paper-label">
+                  Rutenett
+                  {paperUnit === reticleUnit ? (
+                    <span className="range-setup-lock"> · retikkel</span>
+                  ) : (
+                    <span className="range-setup-lock"> · avvik</span>
+                  )}
+                </span>
+                <div
+                  className="range-segment range-segment-pair"
+                  aria-labelledby="range-paper-label"
+                >
+                  <button
+                    type="button"
+                    className={
+                      paperUnit === "MRAD"
+                        ? "range-seg-btn is-active"
+                        : "range-seg-btn"
+                    }
+                    disabled={setupLocked}
+                    aria-pressed={paperUnit === "MRAD"}
+                    title="1 cm ≈ 0,1 mil"
+                    onClick={() => changePaperUnit("MRAD")}
+                  >
+                    <span className="range-seg-value">MIL</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      paperUnit === "MOA"
+                        ? "range-seg-btn is-active"
+                        : "range-seg-btn"
+                    }
+                    disabled={setupLocked}
+                    aria-pressed={paperUnit === "MOA"}
+                    title={`1 cm ≈ 0,25 MOA (×${MOA_RANGE_TARGET_SCALE})`}
+                    onClick={() => changePaperUnit("MOA")}
+                  >
+                    <span className="range-seg-value">MOA</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+    
+            <div className="range-setup-block">
+              <div className="range-setup-label-row">
+                <p className="range-setup-label" id="range-ammo-label">
+                  Ammunisjon
+                </p>
+                <span
+                  className={
+                    ammoRemaining <= 0
+                      ? "range-shot-count is-empty"
+                      : "range-shot-count"
+                  }
+                >
+                  {ammoRemaining} i eske
+                </span>
+              </div>
+              <ul
+                className="range-ammo-list"
+                role="listbox"
+                aria-labelledby="range-ammo-label"
+              >
+                {ammoOptions.map((a) => {
+                  const rounds = getInventoryQty(inventory, a.id);
+                  const selected = a.id === ammoId;
+                  const empty = rounds <= 0;
+                  return (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={
+                          selected
+                            ? "range-ammo-option is-selected"
+                            : empty
+                              ? "range-ammo-option is-empty"
+                              : "range-ammo-option"
+                        }
+                        disabled={setupLocked || (empty && !selected)}
+                        onClick={() => changeAmmo(a.id)}
+                      >
+                        <span className="range-ammo-main">
+                          <span className="range-ammo-name">
+                            {displayAmmoBrandName({
+                              ammoId: a.id,
+                              brand: a.brand,
+                              name: a.name,
+                            })}
+                          </span>
+                          <span className="range-ammo-meta">
+                            {a.ammo.caliber}
+                            {" · "}
+                            {a.ammo.projectileType}
+                            {" · "}
+                            v0{" "}
+                            {displayV0MpsForAmmo({
+                              ammoId: a.id,
+                              catalogV0: a.ammo.v0,
+                              rifleId: rifle?.id,
+                              realLoadProfiles,
+                            })}
+                          </span>
+                        </span>
+                        <span
+                          className={
+                            empty
+                              ? "range-ammo-qty is-empty"
+                              : "range-ammo-qty"
+                          }
+                        >
+                          {rounds}
+                          <span className="range-ammo-qty-label">stk</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {setupLocked ? (
+                <p className="range-setup-lock">
+                  Serie i gang — trykk «Ny serie» for å bytte avstand eller ammo.
+                </p>
+              ) : null}
+            </div>
+          </section>
+  ) : null;
+
   const worldRollDeg = -liveCantDeg();
 
   return (
@@ -2277,21 +2508,6 @@ export function ShootingRange({
               : "Velg avstand + ammo · dra i glasset for å sikte · dra zoom-ringen · F / Space-avtrekk"
         }
       />
-
-      {onPackFavoriteKit && onRemoveFavoriteItem ? (
-        <FavoriteKitPanel
-          favoriteKitIds={favoriteKitIds}
-          kit={kitItems.map((i) => i.id)}
-          ownedItemIds={
-            new Set(inventory.filter((e) => e.qty > 0).map((e) => e.itemId))
-          }
-          onPackFavoriteKit={onPackFavoriteKit}
-          onRemoveFavoriteItem={onRemoveFavoriteItem}
-          customsMods={customsMods}
-          customBarrels={customBarrels}
-          hint="Etter nulling med ekstra ammo/gear: pakk favoritt-jaktkittet før du drar."
-        />
-      ) : null}
 
       {laneTabs}
 
@@ -2321,23 +2537,33 @@ export function ShootingRange({
               ? "Shooting Range — Tracking test"
               : "Shooting Range — Zeroing"}
         </p>
-        <p className="shop-row-note">
-          {rifle.brand} {rifle.name}
-          {" · "}
-          {scope.brand} {scope.name}
-          {" · "}
-          kit-calm {calmFactor.toFixed(2)}
-          {bipod ? " · bipod" : " · uten bipod"}
-          {suppressor ? " · can" : ""}
-        </p>
-        {lane === "load-test" ? (
-          <p className="shop-row-note">100 m · CBA-skive (fast) · 1 mil = 100 mm</p>
-        ) : lane === "tracking-test" ? (
+        <ExpandableSection
+          title="Current kit stats"
+          summary={`${rifle.brand} ${rifle.name} · ${scope.brand} ${scope.name}`}
+          defaultExpanded={false}
+          scrollOnExpand={false}
+        >
           <p className="shop-row-note">
-            100 m · 1 cm-rute = 1 klikk · retikkel i ekte mrad · 1 mil = 10 cm
+            {rifle.brand} {rifle.name}
+            {" · "}
+            {scope.brand} {scope.name}
           </p>
-        ) : (
-          <>
+          <p className="shop-row-note">
+            Calm value: {calmFactor.toFixed(2)}
+            {" · "}
+            Recoil kick value: {recoilKick.toFixed(2)}
+            {" · "}
+            Barrel heat value: {barrelHeatProfile.heatPerShotPct}%/skudd
+          </p>
+          {lane === "load-test" ? (
+            <p className="shop-row-note">
+              100 m · CBA-skive (fast) · 1 mil = 100 mm
+            </p>
+          ) : lane === "tracking-test" ? (
+            <p className="shop-row-note">
+              100 m · 1 cm-rute = 1 klikk · retikkel i ekte mrad · 1 mil = 10 cm
+            </p>
+          ) : (
             <p className="shop-row-note">
               Hold-over aktiv · retikkel og skive deler samme vinkel
               {paperUnit === "MOA"
@@ -2346,314 +2572,15 @@ export function ShootingRange({
               {" · "}
               diamant 10 mm = 1 klikk
               {fovDiameterScale > 1 ? " · premium FOV" : ""}
+              {usingCbRealLoads ? " · CB Real → Real data-fanen" : ""}
             </p>
-            {ballisticHint ? (
-              <p className="shop-row-note range-ballistic-hint">{ballisticHint}</p>
-            ) : null}
-            {cbRealDropRows ? (
-              <div className="range-cb-real-drops" aria-label="CB Real loads dropp">
-                <p className="range-setup-label">CB Real loads — dropp</p>
-                <div className="range-cb-real-drops-grid">
-                  {cbRealDropRows.map((row) => (
-                    <div
-                      key={row.distanceM}
-                      className={
-                        row.distanceM === distanceM
-                          ? "range-cb-real-drop is-active"
-                          : "range-cb-real-drop"
-                      }
-                    >
-                      <span>{row.distanceM} m</span>
-                      <strong>
-                        {row.distanceM <= DEFAULT_ZERO_DISTANCE_M
-                          ? "0"
-                          : Math.round(row.clicks)}{" "}
-                        klikk
-                      </strong>
-                      <span className="shop-row-note">
-                        {(row.dropMm / 10).toFixed(0)} cm
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
+          )}
+        </ExpandableSection>
       </header>
 
-      {lane !== "load-test" && lane !== "tracking-test" ? (
-      <section className="range-setup" aria-label="Serieoppsett">
-        <ExpandableSection
-          title="Baneoppsett"
-          summary={`${distanceM} m · ${paperUnit === "MOA" ? "MOA" : "MIL"} · ${target.shortLabel}${easy10x ? " · 10×" : ""}`}
-        >
-          <div className="range-setup-block">
-            <p className="range-setup-label" id="range-distance-label">
-              Avstand
-            </p>
-            <div
-              className="range-segment"
-              role="group"
-              aria-labelledby="range-distance-label"
-            >
-              {RANGE_DISTANCES_M.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  className={
-                    distanceM === d
-                      ? "range-seg-btn is-active"
-                      : "range-seg-btn"
-                  }
-                  disabled={setupLocked}
-                  aria-pressed={distanceM === d}
-                  onClick={() => changeDistance(d)}
-                >
-                  <span className="range-seg-value">{d}</span>
-                  <span className="range-seg-unit">m</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="range-setup-block">
-            <p className="range-setup-label" id="range-paper-label">
-              Rutenett
-              {paperUnit === reticleUnit ? (
-                <span className="range-setup-lock"> · matcher retikkel</span>
-              ) : (
-                <span className="range-setup-lock"> · avvik fra retikkel</span>
-              )}
-            </p>
-            <div
-              className="range-segment"
-              role="group"
-              aria-labelledby="range-paper-label"
-            >
-              <button
-                type="button"
-                className={
-                  paperUnit === "MRAD"
-                    ? "range-seg-btn is-active"
-                    : "range-seg-btn"
-                }
-                disabled={setupLocked}
-                aria-pressed={paperUnit === "MRAD"}
-                title="1 cm ≈ 0,1 mil"
-                onClick={() => changePaperUnit("MRAD")}
-              >
-                <span className="range-seg-value">MIL</span>
-                <span className="range-seg-unit">1 cm</span>
-              </button>
-              <button
-                type="button"
-                className={
-                  paperUnit === "MOA"
-                    ? "range-seg-btn is-active"
-                    : "range-seg-btn"
-                }
-                disabled={setupLocked}
-                aria-pressed={paperUnit === "MOA"}
-                title={`1 cm ≈ 0,25 MOA (×${MOA_RANGE_TARGET_SCALE})`}
-                onClick={() => changePaperUnit("MOA")}
-              >
-                <span className="range-seg-value">MOA</span>
-                <span className="range-seg-unit">¼</span>
-              </button>
-            </div>
-            {paperUnit === "MOA" ? (
-              <p className="shop-row-note range-moa-paper-hint">
-                MOA-skive: skalert ×{MOA_RANGE_TARGET_SCALE} slik at 1 cm-ruten ≈
-                7,27 mm ≈ 0,25 MOA (ett klikk). Retikkel er {reticleUnit}
-                {paperUnit !== reticleUnit ? " — skive avviker fra default" : ""}.
-              </p>
-            ) : paperUnit !== reticleUnit ? (
-              <p className="shop-row-note range-moa-paper-hint">
-                MIL-skive valgt mens retikkelet er MOA — 1 cm ≈ 0,1 mil.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="range-setup-block">
-            <p className="range-setup-label" id="range-easy10x-label">
-              Innskyting
-            </p>
-            <div
-              className="range-segment"
-              role="group"
-              aria-labelledby="range-easy10x-label"
-            >
-              <button
-                type="button"
-                className={
-                  easy10x ? "range-seg-btn is-active" : "range-seg-btn"
-                }
-                disabled={setupLocked}
-                aria-pressed={easy10x}
-                title="10× større blink (turret forblir 1 klikk per knepp)"
-                onClick={() => {
-                  setEasy10x((v) => {
-                    const next = !v;
-                    setStatus(
-                      next
-                        ? "10× på — blink ×10, turret 1 klikk per knepp."
-                        : "10× av — ekte vinkel og 1 klikk per knepp.",
-                    );
-                    return next;
-                  });
-                }}
-              >
-                <span className="range-seg-value">10×</span>
-                <span className="range-seg-unit">
-                  {easy10x ? "på" : "av"}
-                </span>
-              </button>
-            </div>
-            {easy10x ? (
-              <p className="shop-row-note range-moa-paper-hint">
-                Blink ×{RANGE_EASY_ZERO_SCALE} (lesbar). Turret = 1 klikk per
-                knepp.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="range-setup-block">
-            <p className="range-setup-label" id="range-target-label">
-              Skive
-              {targetId !== DEFAULT_TARGET_BY_DISTANCE[distanceM] ? (
-                <span className="range-setup-lock"> · avvik fra default</span>
-              ) : null}
-            </p>
-            <div
-              className="range-segment"
-              role="group"
-              aria-labelledby="range-target-label"
-            >
-              {RANGE_TARGET_IDS.filter((id) => id !== "tracking-test").map(
-                (id) => {
-                const t = getRangeTarget(id);
-                const isDefault = id === DEFAULT_TARGET_BY_DISTANCE[distanceM];
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    className={
-                      targetId === id
-                        ? "range-seg-btn is-active"
-                        : "range-seg-btn"
-                    }
-                    disabled={setupLocked}
-                    aria-pressed={targetId === id}
-                    title={
-                      isDefault
-                        ? `Default for ${distanceM} m`
-                        : t.label
-                    }
-                    onClick={() => changeTarget(id)}
-                  >
-                    <span className="range-seg-value">{t.shortLabel}</span>
-                    <span className="range-seg-unit">
-                      {isDefault ? "def" : "m"}
-                    </span>
-                  </button>
-                );
-              },
-              )}
-            </div>
-          </div>
-        </ExpandableSection>
-
-        <div className="range-setup-block">
-          <div className="range-setup-label-row">
-            <p className="range-setup-label" id="range-ammo-label">
-              Ammunisjon
-            </p>
-            <span
-              className={
-                ammoRemaining <= 0
-                  ? "range-shot-count is-empty"
-                  : "range-shot-count"
-              }
-            >
-              {ammoRemaining} i eske
-            </span>
-          </div>
-          <ul
-            className="range-ammo-list"
-            role="listbox"
-            aria-labelledby="range-ammo-label"
-          >
-            {ammoOptions.map((a) => {
-              const rounds = getInventoryQty(inventory, a.id);
-              const selected = a.id === ammoId;
-              const empty = rounds <= 0;
-              return (
-                <li key={a.id}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    className={
-                      selected
-                        ? "range-ammo-option is-selected"
-                        : empty
-                          ? "range-ammo-option is-empty"
-                          : "range-ammo-option"
-                    }
-                    disabled={setupLocked || (empty && !selected)}
-                    onClick={() => changeAmmo(a.id)}
-                  >
-                    <span className="range-ammo-main">
-                      <span className="range-ammo-name">
-                        {displayAmmoBrandName({
-                          ammoId: a.id,
-                          brand: a.brand,
-                          name: a.name,
-                        })}
-                      </span>
-                      <span className="range-ammo-meta">
-                        {a.ammo.caliber}
-                        {" · "}
-                        {a.ammo.projectileType}
-                        {" · "}
-                        v0{" "}
-                        {displayV0MpsForAmmo({
-                          ammoId: a.id,
-                          catalogV0: a.ammo.v0,
-                          rifleId: rifle?.id,
-                          realLoadProfiles,
-                        })}
-                      </span>
-                    </span>
-                    <span
-                      className={
-                        empty
-                          ? "range-ammo-qty is-empty"
-                          : "range-ammo-qty"
-                      }
-                    >
-                      {rounds}
-                      <span className="range-ammo-qty-label">stk</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {setupLocked ? (
-            <p className="range-setup-lock">
-              Serie i gang — trykk «Ny serie» for å bytte avstand eller ammo.
-            </p>
-          ) : null}
-        </div>
-      </section>
-      ) : null}
+      {!setupUnderHud ? rangeSerieSetup : null}
 
       <div className="range-status-strip">
-        <span className="range-shot-count">
-          Serie {shots.length} skudd
-        </span>
         <span className="shop-row-note">
           Zero {effectiveZero.xMm.toFixed(0)} mm side /{" "}
           {effectiveZero.yMm.toFixed(0)} mm høyde
@@ -2701,6 +2628,7 @@ export function ShootingRange({
           elevationClicksPerRev={scopeElevationClicksPerRev(scope.scope)}
           windageClicksPerRev={scopeWindageClicksPerRev(scope.scope)}
           hideShooterDials={tubeMode}
+          belowTabs={setupUnderHud ? rangeSerieSetup : undefined}
           enviroPanel={
             <HuntShotConditions
               rangeM={distanceM}
@@ -2752,6 +2680,7 @@ export function ShootingRange({
                     )
                   : null
               }
+              forceLapuaApp
             />
           }
           chronoPanel={
@@ -2807,6 +2736,40 @@ export function ShootingRange({
               />
             ) : undefined
           }
+          realDataPanel={
+            holdHintRows ? (
+              <div
+                className="range-real-data-panel"
+                aria-label={
+                  hasKestrel
+                    ? "CB Real loads — ballistisk dropp"
+                    : "CB Real loads — omtrentlige hold"
+                }
+              >
+                <p className="range-setup-label">CB Real loads</p>
+                <p className="shop-row-note">
+                  {hasKestrel
+                    ? "Hold (Kestrel) — nøyaktig dropp fra real load."
+                    : "Hold (ca.) — finn klikk og skriv DOPE selv."}
+                </p>
+                <div className="range-cb-real-drops-grid">
+                  {holdHintRows.map((row) => (
+                    <div
+                      key={row.distanceM}
+                      className={
+                        row.distanceM === distanceM
+                          ? "range-cb-real-drop is-active"
+                          : "range-cb-real-drop"
+                      }
+                    >
+                      <span>{row.distanceM} m</span>
+                      <strong>{row.label}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : undefined
+          }
           actions={
             <>
               <button
@@ -2824,7 +2787,7 @@ export function ShootingRange({
               </button>
               <button
                 type="button"
-                className="intro-button sheriff-secondary"
+                className="intro-button"
                 disabled={!rifle || !scope || !selectedAmmo}
                 onClick={addCurrentToDope}
                 title="Lagre ammo + avstand + klikk til felt-DOPE"
@@ -2833,7 +2796,7 @@ export function ShootingRange({
               </button>
               <button
                 type="button"
-                className="intro-button sheriff-secondary"
+                className="intro-button"
                 onClick={() => setView("dope")}
               >
                 Se/edit DOPE ({dopeCard.length})
@@ -2851,6 +2814,9 @@ export function ShootingRange({
         />
       ) : (
         <div className="scope-stage" tabIndex={0}>
+          <p className="range-series-shot-count" aria-live="polite">
+            Serie {shots.length} skudd
+          </p>
           <BarrelHeatBar
             className="range-barrel-heat"
             heat01={barrelHeat01}

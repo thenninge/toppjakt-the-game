@@ -1,6 +1,6 @@
 /** Range ambience and shot SFX under /public/music/range/. */
 
-import { readSfxVolume } from "@/lib/audio/volumes";
+import { effectiveSfxVolume } from "@/lib/audio/volumes";
 
 export const RANGE_AUDIO = {
   enter: "/music/range/to%20gunrange.mp3",
@@ -17,7 +17,7 @@ const AFTER_SHOT_VOLUME = 0.5;
 const SILENT_AFTER_SHOT_VOLUME = 0.12;
 
 function scaledVolume(base: number): number {
-  return Math.min(1, base * readSfxVolume());
+  return Math.min(1, base * effectiveSfxVolume());
 }
 
 function playOneShot(
@@ -54,9 +54,14 @@ export type RangeShotAudioOptions = {
   hasSuppressor: boolean;
   /** Subsonic + suppressor — use silencer clip at very low volume. */
   silent?: boolean;
+  /**
+   * Play casing / after-shot tail after the crack.
+   * Default true (range). False in the field — no brass ping outdoors.
+   */
+  afterShot?: boolean;
 };
 
-/** Shot crack → after-shot tail (suppressor picks the shot clip). */
+/** Shot crack → optional after-shot tail (suppressor picks the shot clip). */
 export function playRangeShotSequence(
   hasSuppressorOrOptions: boolean | RangeShotAudioOptions,
 ): void {
@@ -65,6 +70,7 @@ export function playRangeShotSequence(
       ? { hasSuppressor: hasSuppressorOrOptions }
       : hasSuppressorOrOptions;
   const silent = !!opts.silent && opts.hasSuppressor;
+  const playAfter = opts.afterShot !== false;
   const shotSrc =
     opts.hasSuppressor || silent
       ? RANGE_AUDIO.shotWithSilencer
@@ -72,7 +78,13 @@ export function playRangeShotSequence(
   const shotVol = silent ? SILENT_SHOT_VOLUME : SHOT_VOLUME;
   const afterVol = silent ? SILENT_AFTER_SHOT_VOLUME : AFTER_SHOT_VOLUME;
 
-  playOneShot(shotSrc, shotVol, () => {
-    playOneShot(RANGE_AUDIO.afterShot, afterVol);
-  });
+  playOneShot(
+    shotSrc,
+    shotVol,
+    playAfter
+      ? () => {
+          playOneShot(RANGE_AUDIO.afterShot, afterVol);
+        }
+      : undefined,
+  );
 }

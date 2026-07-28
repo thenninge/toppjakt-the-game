@@ -18,6 +18,7 @@ type TownLocation = {
   blurb: string;
 };
 
+/** Core town list (no Admin, no Jegerprøven — those live elsewhere). */
 const LOCATIONS: TownLocation[] = [
   {
     id: "home",
@@ -25,9 +26,9 @@ const LOCATIONS: TownLocation[] = [
     blurb: "Inventory, kit, kart — og ut på jakt.",
   },
   {
-    id: "jegerprove",
-    name: "Jegerprøven",
-    blurb: "Ta prøven på nytt — eller se beviset (byen krever bestått).",
+    id: "shooting-range",
+    name: "Shooting Range",
+    blurb: "Zeroing, practice, and pattern boards.",
   },
   {
     id: "xxl",
@@ -40,14 +41,14 @@ const LOCATIONS: TownLocation[] = [
     blurb: "Børsemaker, CNC-pipe, finish og home loads.",
   },
   {
-    id: "meat-market",
-    name: "Meat Market",
-    blurb: "Selg tiur og orrfugl — finansier mer kit.",
-  },
-  {
     id: "rulles",
     name: "Rulles Kebab, Pizza, Bar & Fine Dining",
     blurb: "Snøvling, påspandering — og nye grunneiere.",
+  },
+  {
+    id: "meat-market",
+    name: "Meat Market",
+    blurb: "Selg tiur og orrfugl — finansier mer kit.",
   },
   {
     id: "sheriff",
@@ -55,28 +56,24 @@ const LOCATIONS: TownLocation[] = [
     blurb: "Kølapp, våpensøknad, og andre feil luke.",
   },
   {
-    id: "shooting-range",
-    name: "Shooting Range",
-    blurb: "Zeroing, practice, and pattern boards.",
-  },
-  {
     id: "how-to-play",
     name: "How to play",
     blurb:
-      "BODY/MIND, Kestrel, Track/ettersøk, zero, dV/dT, DOPE — det som faktisk betyr noe.",
-  },
-  {
-    id: "admin-office",
-    name: "Admin office",
-    blurb: "Kalibrer spotting-percher og test optikk.",
+      "Realism, BODY/MIND, Kestrel, Track/ettersøk, zero, DOPE — det som betyr noe.",
   },
 ];
+
+const ADMIN_LOCATION: TownLocation = {
+  id: "admin-office",
+  name: "Admin office",
+  blurb: "Kalibrer spotting-percher og test optikk.",
+};
 
 type TownHubProps = {
   playerName: string;
   nickname: string;
   onEnter: (location: TownLocationId) => void;
-  /** When true, show Admin office under How to play. */
+  /** When true, Admin office is pinned above Home. */
   adminUnlocked?: boolean;
 };
 
@@ -87,8 +84,8 @@ export function TownHub({
   adminUnlocked = false,
 }: TownHubProps) {
   const locations = adminUnlocked
-    ? LOCATIONS
-    : LOCATIONS.filter((loc) => loc.id !== "admin-office");
+    ? [ADMIN_LOCATION, ...LOCATIONS]
+    : LOCATIONS;
 
   return (
     <div className="town-hub">

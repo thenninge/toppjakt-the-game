@@ -404,13 +404,13 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Zero Compromise",
     name: "ZCO 5-27x56 MCT",
     priceNok: 54990,
-    note: "FFP · MPCT mil-retikkel · 0.1 mil klikk · 36 mm rør.",
+    note: "FFP · MPCT3X mil-retikkel · 0.1 mil klikk · 36 mm rør.",
     scope: {
       tubeDiameterMm: 36,
       minZoom: 5,
       maxZoom: 27,
       focalPlane: "FFP",
-      reticleId: "zco-527-mpct",
+      reticleId: "mpct3x",
       clickUnit: "MRAD",
       zeroStop: -5,
       /** ~35 mrad / multi-rev elevation travel. */
@@ -515,6 +515,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
+      focusZoomEnabled: true,
+      focusZoomMultiplier: 1.2,
+      focusViewportScale: 1.25,
     },
   },
   {
@@ -587,6 +590,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.03,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
+      focusZoomEnabled: true,
+      focusZoomMultiplier: 1.2,
+      focusViewportScale: 1.2,
     },
   },
   {

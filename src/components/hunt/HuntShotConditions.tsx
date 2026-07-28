@@ -61,6 +61,10 @@ type HuntShotConditionsProps = {
   lrfLabel?: string | null;
   /** Absolute elev clicks for current range (Victory display). */
   lrfElevClicks?: number | null;
+  /**
+   * Shooting range: always Lapua in App-tab (LRF device UIs stay for hunt).
+   */
+  forceLapuaApp?: boolean;
 };
 
 /**
@@ -87,6 +91,7 @@ export function HuntShotConditions({
   lrfBrand = null,
   lrfLabel = null,
   lrfElevClicks = null,
+  forceLapuaApp = false,
 }: HuntShotConditionsProps) {
   const tempC = Number.isFinite(temperatureC)
     ? temperatureC
@@ -98,10 +103,15 @@ export function HuntShotConditions({
   const windFrom = ((Math.round(windFromDeg) % 360) + 360) % 360;
   const shotCompass = compassLabelFromDeg(bearing);
   const windCompass = formatWindCompass(windFrom);
-  const useZeissLrf = isZeissVictoryLrf({ id: lrfId, brand: lrfBrand });
-  const useSigBdx = !useZeissLrf && isSigKilo3000Bdx({ id: lrfId });
+  const useZeissLrf =
+    !forceLapuaApp && isZeissVictoryLrf({ id: lrfId, brand: lrfBrand });
+  const useSigBdx =
+    !forceLapuaApp && !useZeissLrf && isSigKilo3000Bdx({ id: lrfId });
   const useElRange =
-    !useZeissLrf && !useSigBdx && isSwarovskiElRange({ id: lrfId });
+    !forceLapuaApp &&
+    !useZeissLrf &&
+    !useSigBdx &&
+    isSwarovskiElRange({ id: lrfId });
 
   const nearest =
     rifleId && ammoId
@@ -183,13 +193,19 @@ export function HuntShotConditions({
 
         {!hasKestrel ? (
           <p className="hunt-shot-cond-hint">
-            {useZeissLrf
+            {forceLapuaApp
+              ? "Uten Kestrel: App starter blank — knote range/vind/temp selv. Skriv DOPE fra skudd."
+              : useZeissLrf
               ? "Zeiss Victory RF: avstand → elev-klikk i LRF-displayet."
               : useSigBdx
                 ? "Sig BDX: range fra LRF. Mål enviro med Kestrel i Aware for auto vind/temp, eller still manuelt (huskes). Tid går ×5 her; fuglen blir nervøs."
                 : useElRange
                   ? "EL Range: temp/trykk/fukt fra værmelding. Sett vindstyrke og crosswind angle selv. Tid går ×5 her; fuglen blir nervøs."
                   : "Uten Kestrel: App starter blank — knote range/vind/temp selv. Tid går ×5 her; fuglen blir nervøs."}
+          </p>
+        ) : forceLapuaApp ? (
+          <p className="hunt-shot-cond-hint">
+            Kestrel: App prefyller live. Nøyaktig dropp i hold-kortet over.
           </p>
         ) : useSigBdx ? (
           <p className="hunt-shot-cond-hint">

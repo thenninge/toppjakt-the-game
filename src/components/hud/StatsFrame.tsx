@@ -45,6 +45,7 @@ const MENU_COPY: Record<
     close: string;
     cancel: string;
     save: string;
+    hunterExam: string;
   }
 > = {
   nb: {
@@ -67,6 +68,7 @@ const MENU_COPY: Record<
     close: "Lukk",
     cancel: "Avbryt",
     save: "Lagre",
+    hunterExam: "Jegerprøven",
   },
   en: {
     settings: "Settings",
@@ -88,6 +90,7 @@ const MENU_COPY: Record<
     close: "Close",
     cancel: "Cancel",
     save: "Save",
+    hunterExam: "Hunter exam",
   },
   ja: {
     settings: "Settings",
@@ -109,6 +112,7 @@ const MENU_COPY: Record<
     close: "閉じる",
     cancel: "キャンセル",
     save: "保存",
+    hunterExam: "猟銃試験",
   },
 };
 
@@ -118,6 +122,8 @@ type StatsFrameProps = {
   onDeleteUser?: () => void;
   onLangChange?: (lang: GameLang) => void;
   onRealismChange?: (realism: GameRealism) => void;
+  /** Open Jegerprøven (retake / certificate). */
+  onOpenJegerprove?: () => void;
   /** Google / CBAware account status. */
   authEmail?: string | null;
   onGoogleLogin?: () => void;
@@ -142,6 +148,7 @@ export function StatsFrame({
   onDeleteUser,
   onLangChange,
   onRealismChange,
+  onOpenJegerprove,
   authEmail,
   onGoogleLogin,
   onGoogleLogout,
@@ -162,6 +169,7 @@ export function StatsFrame({
     !!onRename ||
     !!onDeleteUser ||
     !!onLangChange ||
+    !!onOpenJegerprove ||
     !!onGoogleLogin ||
     !!onGoogleLogout ||
     !!onAdminUnlock;
@@ -290,6 +298,18 @@ export function StatsFrame({
                       onClick={openRename}
                     >
                       {copy.rename}
+                    </button>
+                  ) : null}
+                  {onOpenJegerprove ? (
+                    <button
+                      type="button"
+                      className="stats-menu-item"
+                      onClick={() => {
+                        closeMenu();
+                        onOpenJegerprove();
+                      }}
+                    >
+                      {copy.hunterExam}
                     </button>
                   ) : null}
                 </section>

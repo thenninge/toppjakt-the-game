@@ -3130,8 +3130,6 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                             }
                           />
                         </div>
-                        </ScopeFocusZoom>
-                        <div className="scope-vignette" aria-hidden />
                         {calIllum &&
                         liveIllumination?.region &&
                         hashRingPxPerMil > 0 ? (
@@ -3189,33 +3187,6 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                             )}
                           </div>
                         ) : null}
-                        {((calMaxZoom || calMinZoom) &&
-                          fovRingPxPerMrad > 0) ? (
-                          <div
-                            className="admin-scope-mil-rings is-fov"
-                            aria-hidden
-                          >
-                            {Array.from(
-                              {
-                                length: Math.max(
-                                  1,
-                                  Math.floor(fovHalfMrad + 1e-6),
-                                ),
-                              },
-                              (_, i) => i + 1,
-                            ).map((m) => {
-                              const d = 2 * m * fovRingPxPerMrad;
-                              return (
-                                <span
-                                  key={`fov-${m}`}
-                                  className="admin-scope-mil-rings-ring"
-                                  data-mil={m}
-                                  style={{ width: d, height: d }}
-                                />
-                              );
-                            })}
-                          </div>
-                        ) : null}
                         {calHashmarks && hashRingPxPerUnit > 0 ? (
                           <div
                             className={
@@ -3237,6 +3208,35 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                                   className="admin-scope-mil-rings-ring"
                                   data-mil={n}
                                   data-unit={hashUnitShort}
+                                  style={{ width: d, height: d }}
+                                />
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        </ScopeFocusZoom>
+                        <div className="scope-vignette" aria-hidden />
+                        {((calMaxZoom || calMinZoom) &&
+                          fovRingPxPerMrad > 0) ? (
+                          <div
+                            className="admin-scope-mil-rings is-fov"
+                            aria-hidden
+                          >
+                            {Array.from(
+                              {
+                                length: Math.max(
+                                  1,
+                                  Math.floor(fovHalfMrad + 1e-6),
+                                ),
+                              },
+                              (_, i) => i + 1,
+                            ).map((m) => {
+                              const d = 2 * m * fovRingPxPerMrad;
+                              return (
+                                <span
+                                  key={`fov-${m}`}
+                                  className="admin-scope-mil-rings-ring"
+                                  data-mil={m}
                                   style={{ width: d, height: d }}
                                 />
                               );

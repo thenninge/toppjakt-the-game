@@ -32,9 +32,24 @@ export {
 } from "@/lib/ballistics/dispersion";
 
 export const RANGE_DISTANCE_M = 100;
-/** Selectable lane distances on the zeroing range. */
+/** Calibrated skive / CB Real drop card distances. */
 export const RANGE_DISTANCES_M = [100, 200, 300, 400, 500] as const;
 export type RangeDistanceM = (typeof RANGE_DISTANCES_M)[number];
+/** Quick-pick dropdown distances on zeroing (100–1000). */
+export const RANGE_DISTANCE_PRESETS_M = [
+  100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
+] as const;
+/** Free numeric range for zeroing lane (metres). */
+export const RANGE_DISTANCE_MIN_M = 100;
+export const RANGE_DISTANCE_MAX_M = 1000;
+
+export function clampRangeDistanceM(raw: number): number {
+  if (!Number.isFinite(raw)) return RANGE_DISTANCE_M;
+  return Math.max(
+    RANGE_DISTANCE_MIN_M,
+    Math.min(RANGE_DISTANCE_MAX_M, Math.round(raw)),
+  );
+}
 
 /**
  * CBA detail image calibration (cba-detail.png, 949×1024).

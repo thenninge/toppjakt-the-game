@@ -3,7 +3,7 @@
  * Gain is above HTMLAudioElement.volume (max 1) so clicks cut through music.
  */
 
-import { readSfxVolume } from "@/lib/audio/volumes";
+import { effectiveSfxVolume } from "@/lib/audio/volumes";
 
 export const TURRET_AUDIO = {
   click: "/sfx/turret/click.mp3",
@@ -38,7 +38,7 @@ function getAudioCtx(): AudioContext | null {
 }
 
 function effectiveGain(base: number): number {
-  return base * readSfxVolume();
+  return base * effectiveSfxVolume();
 }
 
 function playWithGain(src: string, gainValue: number, loop: boolean): BurstHandle | null {

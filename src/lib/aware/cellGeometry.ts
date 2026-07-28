@@ -46,6 +46,29 @@ export function clampCellPoint(p: CellPoint): CellPoint {
   };
 }
 
+/**
+ * True when the point lies on the Aware stage (0–100 %).
+ * Markers / track clicks only exist inside this rectangle — off-map
+ * birds cannot get søkespor for ettersøk.
+ */
+export function isCellPointOnAwareMap(
+  p: CellPoint,
+  margin = 0,
+): boolean {
+  if (![p.x, p.y].every((n) => Number.isFinite(n))) return false;
+  const lo = margin;
+  const hi = 100 - margin;
+  return p.x >= lo && p.x <= hi && p.y >= lo && p.y <= hi;
+}
+
+/**
+ * Pull an off-map seat onto the playable inset (same as hunter clamp).
+ * Prefer calling this when locking a bird so ettersøk land stays clickable.
+ */
+export function ensureCellPointOnAwareMap(p: CellPoint): CellPoint {
+  return isCellPointOnAwareMap(p) ? p : clampCellPoint(p);
+}
+
 /** Compass bearing from `from` → `to` (0 = north / up on map). */
 export function bearingDegFromTo(from: CellPoint, to: CellPoint): number {
   const dx = to.x - from.x;

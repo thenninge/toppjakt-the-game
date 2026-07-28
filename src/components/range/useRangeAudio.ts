@@ -2,10 +2,15 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import {
+  effectiveSfxVolume,
+  subscribeAudioVolumes,
+} from "@/lib/audio/volumes";
+import {
   playRangeShotSequence,
   startRangeAmbient,
   type RangeShotAudioOptions,
 } from "@/lib/range/audio";
+import { stopTurretBurst } from "@/lib/range/turretAudio";
 
 type UseRangeAudioOptions = {
   enabled: boolean;
@@ -23,22 +28,41 @@ export function useRangeAudio({
   const stopAmbientRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!enabled || !ambient) {
+    function stopAmbient() {
       stopAmbientRef.current?.();
       stopAmbientRef.current = null;
-      return;
     }
 
-    stopAmbientRef.current = startRangeAmbient();
+    function syncAmbient() {
+      stopAmbient();
+      if (!enabled || !ambient) return;
+      if (effectiveSfxVolume() <= 0) return;
+      stopAmbientRef.current = startRangeAmbient();
+    }
+
+    syncAmbient();
+    const unsub = subscribeAudioVolumes(() => {
+      if (effectiveSfxVolume() <= 0) {
+        stopAmbient();
+        stopTurretBurst();
+        return;
+      }
+      // Master mute lifted — restart ambient if still on range.
+      if (enabled && ambient && !stopAmbientRef.current) {
+        stopAmbientRef.current = startRangeAmbient();
+      }
+    });
+
     return () => {
-      stopAmbientRef.current?.();
-      stopAmbientRef.current = null;
+      unsub();
+      stopAmbient();
     };
   }, [enabled, ambient]);
 
   const playShot = useCallback(
     (hasSuppressorOrOptions: boolean | RangeShotAudioOptions) => {
       if (!enabled) return;
+      if (effectiveSfxVolume() <= 0) return;
       playRangeShotSequence(hasSuppressorOrOptions);
     },
     [enabled],

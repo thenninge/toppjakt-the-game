@@ -25,6 +25,7 @@ import {
   cellCenterOnAwareMap,
   bearingDegFromTo,
   distanceMBetween,
+  isCellPointOnAwareMap,
   stepByKeys,
   stepToward,
   type CellPoint,
@@ -388,7 +389,7 @@ function DangerOverlay({
 }: {
   wedges: DangerWedge[];
   center: CellPoint;
-  /** Locked LRF / F mark compass bearing (direction only). */
+  /** Shot arrow bearing from ring centre (toward bird or last LRF). */
   bearingDeg: number;
   shotSafe: boolean;
   /** Map-% radius of the 1000 m Aware ring. */
@@ -432,7 +433,7 @@ function DangerOverlay({
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        {/* Direction only — LRF / F mark bearing from ring centre. */}
+        {/* Shot direction — toward engage-bird, or last LRF when no bird. */}
         <line
           x1={center.x}
           y1={center.y}
@@ -532,6 +533,15 @@ export function AwareAppView({
     }
     return initialRest;
   });
+  /** Sticky Deploy across Til spotting / remount — prop wins when already out. */
+  useEffect(() => {
+    if (initialGunDeployed) setGunDeployed(true);
+  }, [initialGunDeployed]);
+  useEffect(() => {
+    if (!initialGunDeployed) return;
+    if (initialRest === "bipod" && hasBipod) setRest("bipod");
+    else if (initialRest === "backpack" && hasBackpack) setRest("backpack");
+  }, [initialGunDeployed, initialRest, hasBipod, hasBackpack]);
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? cellCenterOnAwareMap(cell, map),
   );
@@ -643,14 +653,27 @@ export function AwareAppView({
     map,
     mapMaxM,
   ]);
+  /**
+   * Track clicks only work on the stage (0–100 %). Shooting an off-map
+   * bird makes ettersøk impossible — gate Use gun scope / Fire.
+   */
+  const birdOnMap = isCellPointOnAwareMap(birdWorld);
 
   const liveDistanceM = distanceMBetween(hunter, birdWorld, metersPerPct);
   const liveBearing = bearingDegFromTo(hunter, birdWorld);
   /** Clicked map mål: preview Aware cakes + direction from there (planning). */
   const planOrigin = destination ?? hunter;
   const planDistanceM = distanceMBetween(planOrigin, birdWorld, metersPerPct);
-  /** Locked LRF / F mark — direction only (not toward live bird seat). */
+  /** Locked LRF / F mark — used when no engage bird (field review / prep). */
   const measuredBearing = normalizeBearingDeg(birdBearingDeg);
+  /**
+   * Shot arrow + bakgrunn: toward engage-bird from stand when stalking;
+   * otherwise last LRF/F compass (no bird to aim at yet).
+   */
+  const planShotBearing = gunPrepOnly
+    ? measuredBearing
+    : bearingDegFromTo(planOrigin, birdWorld);
+  const liveShotBearing = gunPrepOnly ? measuredBearing : liveBearing;
   const planning = destination != null;
   /** Walk distance from current stand to the clicked Aware plan point. */
   const walkToPlanM = planning
@@ -683,7 +706,7 @@ export function AwareAppView({
   const shotCrosswind = crosswindMs(
     windSnap.windSpeedMs,
     windSnap.windFromDeg,
-    measuredBearing,
+    planShotBearing,
   );
   const density = densityRatioFromTempC(windSnap.temperatureC);
   const holdHint =
@@ -694,19 +717,19 @@ export function AwareAppView({
         })
       : null;
 
-  /** Preview safety from plan stand (or hunter if no mål) along LRF/F bearing. */
-  const bakgrunnOk = bearingIsSafe(measuredBearing, dangerWedges);
+  /** Preview safety from plan stand (or hunter) along shot arrow. */
+  const bakgrunnOk = bearingIsSafe(planShotBearing, dangerWedges);
   const blockingWedge = dangerWedges.find((w) =>
-    bearingHitsWedge(measuredBearing, w),
+    bearingHitsWedge(planShotBearing, w),
   );
   const safeHab = !dangerWedges.some(
-    (w) => w.kind === "habitation" && bearingHitsWedge(measuredBearing, w),
+    (w) => w.kind === "habitation" && bearingHitsWedge(planShotBearing, w),
   );
   const safeTerrain = !dangerWedges.some(
-    (w) => w.kind === "terrain" && bearingHitsWedge(measuredBearing, w),
+    (w) => w.kind === "terrain" && bearingHitsWedge(planShotBearing, w),
   );
-  /** Actual stand — Klar til skudd must use where you are now. */
-  const liveBakgrunnOk = bearingIsSafe(measuredBearing, liveDangerWedges);
+  /** Actual stand — Skuddklar / Use gun scope must use where you are now. */
+  const liveBakgrunnOk = bearingIsSafe(liveShotBearing, liveDangerWedges);
   const coverFactor = useMemo(
     () => coverFactorForCell(map.id, cell),
     [map.id, cell],
@@ -1012,7 +1035,9 @@ export function AwareAppView({
     const nTerr = dangerHazards.filter((h) => h.kind === "terrain").length;
     const cakes =
       nHab + nTerr === 0
-        ? "Ingen farlige kakestykker i denne cellen (stiplet 1000 m-sirkel · grønn/rød = LRF/F-retning)."
+        ? gunPrepOnly
+          ? "Ingen farlige kakestykker i denne cellen (stiplet 1000 m-sirkel · grønn/rød = siste LRF)."
+          : "Ingen farlige kakestykker i denne cellen (stiplet 1000 m-sirkel · grønn/rød = skuddretning mot fugl)."
         : `Kakestykker fra punktet: ${nHab} bebyggelse · ${nTerr} terreng (i 1000 m-sirkel).`;
     const birdBit = hasActiveBird
       ? ` · ${Math.round(distanceMBetween(point, birdWorld, metersPerPct))} m til fugl`
@@ -1364,6 +1389,18 @@ export function AwareAppView({
       setStatus("Deploy gun først — ta rifla frem før tårn / skudd.");
       return;
     }
+    if (hasActiveBird && !birdOnMap) {
+      setStatus(
+        "Fuglen er utenfor kartet — umulig å legge søkespor ved ettersøk. Gå nærmere / annen stand, eller Avbryt og lås på nytt.",
+      );
+      return;
+    }
+    if (hasActiveBird && !liveBakgrunnOk) {
+      setStatus(
+        "Farlig bakgrunn herfra — gå til trygg sone (grønn pil) før skudd.",
+      );
+      return;
+    }
     onProceedToShoot({
       bearingDeg: hasActiveBird ? liveBearing : measuredBearing,
       distanceM: hasActiveBird ? liveDistanceM : birdDistanceM,
@@ -1705,7 +1742,7 @@ export function AwareAppView({
                 <DangerOverlay
                   wedges={dangerWedges}
                   center={planOrigin}
-                  bearingDeg={measuredBearing}
+                  bearingDeg={planShotBearing}
                   shotSafe={bakgrunnOk}
                   ringRadiusPct={ringRadiusPct}
                 />
@@ -2129,27 +2166,32 @@ export function AwareAppView({
               type="button"
               className="intro-button"
               disabled={
-                (!gunPrepOnly && !liveBakgrunnOk) ||
-                (!focusPairId && !postShotSkuddparMode && !gunDeployed)
+                !gunDeployed ||
+                (hasActiveBird && !birdOnMap) ||
+                (hasActiveBird && !liveBakgrunnOk)
               }
               title={
-                gunPrepOnly
-                  ? gunDeployed
-                    ? "Gun — still tårn / prep (ingen skudd)"
-                    : "Deploy gun først"
-                  : !gunDeployed
-                    ? "Deploy gun først — ta rifla frem"
-                    : liveBakgrunnOk
-                      ? planning
-                        ? "Bakgrunn OK her — gå til målet om du vil skyte derfra"
-                        : "Gun · Skuddklar — bakgrunn OK"
-                      : planning
-                        ? "Bakgrunn ikke klar der du står nå — gå til et trygt mål"
-                        : "Flytt deg til sone uten farlig bakgrunn"
+                !gunDeployed
+                  ? "Deploy gun først — ta rifla frem"
+                  : hasActiveBird && !birdOnMap
+                    ? "Fugl utenfor kartet — kan ikke skyte (ettersøk krever søkespor på kartet)"
+                    : hasActiveBird && !liveBakgrunnOk
+                      ? "Farlig bakgrunn herfra — gå til trygg sone (grønn pil)"
+                      : gunPrepOnly
+                        ? "Use gun scope — tårn / finn fugl (F). Fokus/avtrekk når mål er satt."
+                        : "Skuddklar — trygg bakgrunn, gun deployed"
               }
               onClick={proceed}
             >
-              {gunPrepOnly ? "Gun · tårn" : "Gun · Skuddklar"}
+              {!gunDeployed
+                ? "Deploy gun først"
+                : hasActiveBird && !birdOnMap
+                  ? "Fugl utenfor kart"
+                  : hasActiveBird && !liveBakgrunnOk
+                    ? "Farlig bakgrunn"
+                    : gunPrepOnly
+                      ? "Use gun scope"
+                      : "Skuddklar"}
             </button>
           )}
           </div>
@@ -2167,8 +2209,18 @@ export function AwareAppView({
                     <dt>Avstand fra deg til fugl</dt>
                     <dd>
                       {Math.round(liveDistanceM)} m · {Math.round(liveBearing)}°
+                      {!birdOnMap ? " · utenfor kart" : ""}
                     </dd>
                   </div>
+                  {!birdOnMap ? (
+                    <div>
+                      <dt>Kart</dt>
+                      <dd>
+                        Fuglen er utenfor kartbildet — ingen skudd (ettersøk
+                        umulig).
+                      </dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>Avstand fra Aware-point til fugl</dt>
                     <dd>
@@ -2191,10 +2243,23 @@ export function AwareAppView({
                 </dd>
               </div>
               <div>
-                <dt>LRF / F-retning</dt>
+                <dt>{gunPrepOnly ? "LRF / F-retning" : "Skuddretning"}</dt>
                 <dd>
-                  {measuredBearing}° ({compassLabel(measuredBearing)})
-                  {bakgrunnOk ? " · trygg" : " · farlig bakgrunn"}
+                  {Math.round(
+                    gunPrepOnly ? measuredBearing : liveShotBearing,
+                  )}
+                  ° (
+                  {compassLabel(
+                    gunPrepOnly ? measuredBearing : liveShotBearing,
+                  )}
+                  )
+                  {gunPrepOnly
+                    ? bakgrunnOk
+                      ? " · trygg"
+                      : " · farlig bakgrunn"
+                    : liveBakgrunnOk
+                      ? " · trygg"
+                      : " · farlig bakgrunn"}
                 </dd>
               </div>
             </dl>
@@ -2390,7 +2455,10 @@ export function AwareAppView({
                   <>
                     Ingen farlige kakestykker i denne cellen
                     {planning ? " (fra målet)" : ""} — stiplet sirkel = 1000 m;
-                    grønn/rød pil = LRF/F-retning
+                    grønn/rød pil ={" "}
+                    {gunPrepOnly
+                      ? "siste LRF-retning"
+                      : "skuddretning mot fugl"}
                     {bakgrunnOk ? " (trygg)" : " (farlig)"}.
                   </>
                 ) : (

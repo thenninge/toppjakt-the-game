@@ -1433,6 +1433,10 @@ export function IntroScreen() {
               stats={stats}
               onRename={renameHunter}
               onDeleteUser={requestDeleteUser}
+              onOpenJegerprove={() => {
+                setLocation("jegerprove");
+                setPhase("location");
+              }}
               onLangChange={(lang) =>
                 setStats((prev) =>
                   prev.lang === lang ? prev : { ...prev, lang },
@@ -2073,12 +2077,6 @@ export function IntroScreen() {
           </div>
         )}
       </main>
-
-      {(phase === "loading" || phase === "chapter" || phase === "name") && (
-        <p className="intro-footer">
-          Drop your landscape art in /public/intro-bg.png
-        </p>
-      )}
 
       {deleteConfirmOpen ? (
         <GameConfirmDialog

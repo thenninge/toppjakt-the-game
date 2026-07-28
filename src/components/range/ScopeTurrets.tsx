@@ -50,8 +50,13 @@ export function turretNudgeMoved(
   return moved;
 }
 
-/** Field HUD tabs — Shooter dials + optional Enviro / Chrono / Kestrel. */
-export type ScopeHudTab = "shooter" | "enviro" | "chrono" | "kestrel";
+/** Field HUD tabs — Shooter dials + optional Enviro / Chrono / Real data / Kestrel. */
+export type ScopeHudTab =
+  | "shooter"
+  | "enviro"
+  | "chrono"
+  | "realdata"
+  | "kestrel";
 
 type TurretView = "overhead" | "shooter";
 
@@ -85,11 +90,20 @@ type ScopeTurretsProps = {
    */
   chronoPanel?: ReactNode;
   /**
+   * Real data tab (CB Real loads hold table). Pass when real load is active.
+   */
+  realDataPanel?: ReactNode;
+  /**
    * Kestrel / Vindmåler tab content. Only pass when a wind meter is in kit.
    */
   kestrelPanel?: ReactNode;
   /** Tab label — «Kestrel» or «Vindmåler». */
   meterTabLabel?: string;
+  /**
+   * Optional content under the Shooter / Enviro/App tab strip
+   * (e.g. range distance + ammo when realism is high).
+   */
+  belowTabs?: ReactNode;
   /** Fires when the active HUD tab changes (e.g. Enviro time pressure). */
   onHudTabChange?: (tab: ScopeHudTab) => void;
   /**
@@ -138,6 +152,7 @@ function readStoredTab(allowed: ScopeHudTab[]): ScopeHudTab {
       normalized === "shooter" ||
       normalized === "enviro" ||
       normalized === "chrono" ||
+      normalized === "realdata" ||
       normalized === "kestrel"
     ) {
       if (allowed.includes(normalized)) return normalized;
@@ -745,18 +760,22 @@ export function ScopeTurrets({
   actions,
   enviroPanel,
   chronoPanel,
+  realDataPanel,
   kestrelPanel,
   meterTabLabel = "Kestrel",
+  belowTabs,
   onHudTabChange,
   hideShooterDials = false,
 }: ScopeTurretsProps) {
   const hasEnviro = enviroPanel != null;
   const hasChrono = chronoPanel != null;
+  const hasRealData = realDataPanel != null;
   const hasKestrel = kestrelPanel != null;
   const allowedTabs: ScopeHudTab[] = [
     "shooter",
     ...(hasEnviro ? (["enviro"] as const) : []),
     ...(hasChrono ? (["chrono"] as const) : []),
+    ...(hasRealData ? (["realdata"] as const) : []),
     ...(hasKestrel ? (["kestrel"] as const) : []),
   ];
 
@@ -777,7 +796,7 @@ export function ScopeTurrets({
   useEffect(() => {
     setTab(readStoredTab(allowedTabs));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedTabs derived from panels
-  }, [hasEnviro, hasChrono, hasKestrel]);
+  }, [hasEnviro, hasChrono, hasRealData, hasKestrel]);
 
   useEffect(() => {
     onHudTabChange?.(tab);
@@ -802,6 +821,7 @@ export function ScopeTurrets({
   const showTurrets = tab === "shooter" && !hideShooterDials;
   const showEnviro = tab === "enviro" && hasEnviro;
   const showChrono = tab === "chrono" && hasChrono;
+  const showRealData = tab === "realdata" && hasRealData;
   const showKestrel = tab === "kestrel" && hasKestrel;
 
   return (
@@ -859,6 +879,22 @@ export function ScopeTurrets({
             Chrono
           </button>
         ) : null}
+        {hasRealData ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "realdata"}
+            className={
+              tab === "realdata"
+                ? "scope-turrets-view-btn is-active"
+                : "scope-turrets-view-btn"
+            }
+            disabled={disabled}
+            onClick={() => setAndStoreTab("realdata")}
+          >
+            Real data
+          </button>
+        ) : null}
         {hasKestrel ? (
           <button
             type="button"
@@ -876,6 +912,10 @@ export function ScopeTurrets({
           </button>
         ) : null}
       </div>
+
+      {belowTabs ? (
+        <div className="scope-turrets-below-tabs">{belowTabs}</div>
+      ) : null}
 
       {showTurrets ? (
         <>
@@ -946,6 +986,15 @@ export function ScopeTurrets({
           role="tabpanel"
         >
           {chronoPanel}
+        </div>
+      ) : null}
+
+      {showRealData ? (
+        <div
+          className="scope-turrets-app-panel scope-turrets-app-panel--realdata"
+          role="tabpanel"
+        >
+          {realDataPanel}
         </div>
       ) : null}
 

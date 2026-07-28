@@ -1,10 +1,13 @@
 /**
  * Player volume prefs — music vs SFX, persisted in localStorage.
  * Values are 0–1 multipliers on each channel’s base gain.
+ *
+ * Status-bar «Music: Off» mutes music *and* SFX (master audio gate).
  */
 
 const MUSIC_KEY = "toppjakt-music-volume";
 const SFX_KEY = "toppjakt-sfx-volume";
+const MUSIC_ENABLED_KEY = "toppjakt-music-enabled";
 
 const DEFAULT_MUSIC = 1;
 const DEFAULT_SFX = 1;
@@ -29,12 +32,36 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
+/** Status-bar music toggle — also gates SFX when false. */
+export function readMusicEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = window.localStorage.getItem(MUSIC_ENABLED_KEY);
+  if (stored === null) return true;
+  return stored === "true";
+}
+
+export function writeMusicEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MUSIC_ENABLED_KEY, String(enabled));
+  emit();
+}
+
 export function readMusicVolume(): number {
   return readStored(MUSIC_KEY, DEFAULT_MUSIC);
 }
 
+/** Stored SFX preference (slider) — ignores master mute. */
 export function readSfxVolume(): number {
   return readStored(SFX_KEY, DEFAULT_SFX);
+}
+
+/**
+ * Live SFX multiplier for playback.
+ * 0 when Music is Off (status bar), else the SFX slider value.
+ */
+export function effectiveSfxVolume(): number {
+  if (!readMusicEnabled()) return 0;
+  return readSfxVolume();
 }
 
 export function writeMusicVolume(volume: number): void {
@@ -49,7 +76,7 @@ export function writeSfxVolume(volume: number): void {
   emit();
 }
 
-/** Notify when either volume changes (live slider updates). */
+/** Notify when volume or master mute changes (live slider / Music Off). */
 export function subscribeAudioVolumes(listener: Listener): () => void {
   listeners.add(listener);
   return () => {
