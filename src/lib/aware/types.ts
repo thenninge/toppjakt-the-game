@@ -106,6 +106,14 @@ export function shotPairAimPoint(pair: ShotPair): CellLocalPoint {
   return pair.target ?? pair.impact;
 }
 
+/**
+ * True bird location after the shot — tree fall (seat) or flee land.
+ * «Hent ved treet» must use this, not a noisy/default skuddpar aim.
+ */
+export function shotPairTrueBirdPoint(pair: ShotPair): CellLocalPoint {
+  return pair.impact;
+}
+
 export type BirdLosReading = {
   /** 0–1: how clearly the bird can see the hunter. */
   birdSeesPlayer: number;

@@ -36,6 +36,7 @@ import {
 } from "@/lib/aware/ettersok";
 import {
   shotPairAimPoint,
+  shotPairTrueBirdPoint,
   type AwareAppMode,
   type ShotPair,
 } from "@/lib/aware/types";
@@ -173,6 +174,17 @@ export type AwareShootStance = {
   rest?: HuntShootRest;
 };
 
+/**
+ * Snapshot when leaving Aware (Til spotting / Tilbake).
+ * Gun + rest + Kestrel stick across spotting; camcorder / chrono / triggercam do not.
+ */
+export type AwareLeaveOpts = {
+  hunter?: CellPoint;
+  gunDeployed?: boolean;
+  rest?: HuntShootRest;
+  kestrelEnviroReady?: boolean;
+};
+
 type AwareAppViewProps = {
   map: HuntMapAsset;
   cell: HuntGridCell;
@@ -263,8 +275,11 @@ type AwareAppViewProps = {
   onNerveChange?: (nerve: number) => void;
   /** Footer leave button label (default Back to Spot). */
   abortLabel?: string;
-  /** Leave Aware; pass current stand so the next bird can resume here. */
-  onAbort: (opts?: { hunter?: CellPoint }) => void;
+  /**
+   * Leave Aware; pass current stand + sticky gear so Til spotting can restore
+   * Deploy / rest / Kestrel without re-paying (cam/chrono/triggercam reset).
+   */
+  onAbort: (opts?: AwareLeaveOpts) => void;
   /** Called when a skuddpar is confirmed found (tree / ettersøk). */
   onPairFound?: (
     pair: ShotPair,
@@ -875,14 +890,18 @@ export function AwareAppView({
     actionableTrackPairs[0] ??
     null;
 
-  /** Walk distance from current stand to this pair's tree (aim point). */
+  /** Walk distance from current stand to this pair's tree (true fall). */
   const recoveryWalkM =
     trackActivePair &&
     (trackActivePair.resultKind === "instant_kill" ||
       trackActivePair.resultKind === "vital_kill") &&
     trackActivePair.found !== true
       ? Math.round(
-          distanceMBetween(hunter, shotPairAimPoint(trackActivePair), metersPerPct),
+          distanceMBetween(
+            hunter,
+            shotPairTrueBirdPoint(trackActivePair),
+            metersPerPct,
+          ),
         )
       : null;
   const recoveryMinutes =
@@ -1276,7 +1295,7 @@ export function AwareAppView({
     ) {
       return;
     }
-    const tree = shotPairAimPoint(trackActivePair);
+    const tree = shotPairTrueBirdPoint(trackActivePair);
     const walkM = Math.round(distanceMBetween(hunter, tree, metersPerPct));
     const recoverMin = treeRecoveryMinutes(walkM);
     onGameSeconds(recoverMin * 60);
@@ -1326,9 +1345,11 @@ export function AwareAppView({
 
   function trackPairPickLabel(pair: ShotPair): string {
     const bird = pairBirdShortNb(pair);
-    const walkM = Math.round(
-      distanceMBetween(hunter, shotPairAimPoint(pair), metersPerPct),
-    );
+    const point =
+      pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill"
+        ? shotPairTrueBirdPoint(pair)
+        : shotPairAimPoint(pair);
+    const walkM = Math.round(distanceMBetween(hunter, point, metersPerPct));
     const verb =
       pair.resultKind === "ettersok" ? "Søk" : "Hent";
     return `${verb} ${bird} ${walkM}m`;
@@ -1360,7 +1381,8 @@ export function AwareAppView({
 
   function deployGun() {
     if (gunDeployed || flushedRef.current) return;
-    // Nerve only once per «gun out» cycle — remount after Til spotting must not re-charge.
+    // Nerve only once per «gun out» cycle — Til spotting keeps gun deployed
+    // (no re-click). Mount refunds Deploy QR so Redeploy is a single charge.
     const cost = gunPrepOnly ? 0 : Math.max(0, gunDeployNerve);
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
@@ -1389,22 +1411,25 @@ export function AwareAppView({
 
   function mountGun() {
     if (!gunDeployed || flushedRef.current) return;
-    // Clear anlegg (refund rest nerve) — deploy cost stays paid.
-    if (rest !== "none") {
-      const revert = shootRestNerve(rest, bipodWeaponCalm);
-      const cleared = Math.max(0, nerveRef.current - revert);
-      nerveRef.current = cleared;
-      flushSync(() => {
-        setNerve(cleared);
-        setRest("none");
-        setGunDeployed(false);
-      });
-      onNerveChangeRef.current?.(cleared);
-    } else {
-      flushSync(() => {
-        setGunDeployed(false);
-      });
-    }
+    /**
+     * Refund Deploy QR + anlegg. Leaving deploy on the bird meant Mount →
+     * Deploy stacked the same backpack QR cost twice (deploy + deploy).
+     * Til spotting with gun still out never hits this path.
+     */
+    const restRefund =
+      rest !== "none" ? shootRestNerve(rest, bipodWeaponCalm) : 0;
+    const deployRefund = gunPrepOnly ? 0 : Math.max(0, gunDeployNerve);
+    const cleared = Math.max(
+      0,
+      nerveRef.current - restRefund - deployRefund,
+    );
+    nerveRef.current = cleared;
+    flushSync(() => {
+      setNerve(cleared);
+      setRest("none");
+      setGunDeployed(false);
+    });
+    onNerveChangeRef.current?.(cleared);
     onMountGun?.();
     setStatus(
       gunPrepOnly
@@ -2038,7 +2063,14 @@ export function AwareAppView({
             <button
               type="button"
               className="intro-button sheriff-secondary"
-              onClick={() => onAbort({ hunter: { ...hunter } })}
+              onClick={() =>
+                onAbort({
+                  hunter: { ...hunter },
+                  gunDeployed,
+                  rest,
+                  kestrelEnviroReady,
+                })
+              }
             >
               {abortLabel}
             </button>

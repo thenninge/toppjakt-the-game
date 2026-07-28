@@ -121,7 +121,7 @@ import {
 import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { ShotVideoView } from "@/components/hunt/ShotVideoView";
-import { AwareAppView, type AwareShootStance } from "@/components/aware/AwareAppView";
+import { AwareAppView, type AwareShootStance, type AwareLeaveOpts } from "@/components/aware/AwareAppView";
 import { BAG_REST_BIPOD_SPEC, type HuntShootRest } from "@/lib/hunt/shootRest";
 import {
   computeFeltRecoil,
@@ -230,8 +230,6 @@ import {
   estimateVisibleShotPair,
   generateFleeObservation,
   impactFromShot,
-  SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
-  SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
   SWAROVSKI_EL_RANGE_ID,
 } from "@/lib/aware/ettersok";
 import {
@@ -450,17 +448,17 @@ type AwareSession = {
   recoveryOnly?: boolean;
   /** Nerve to restore when returning from shoot (Back to Aware). */
   returnNerve?: number;
-  /** Camcorder was already deployed this encounter. */
+  /** Camcorder was already deployed this encounter (not sticky across Til spotting). */
   returnCamcorderActive?: boolean;
-  /** Chronograph was already deployed this encounter. */
+  /** Chronograph was already deployed this encounter (not sticky across Til spotting). */
   returnChronoActive?: boolean;
-  /** Kestrel enviro already measured this encounter. */
+  /** Kestrel enviro already measured — sticky across Til spotting. */
   returnKestrelEnviroActive?: boolean;
-  /** Triggercam already started this encounter. */
+  /** Triggercam already started this encounter (not sticky across Til spotting). */
   returnTriggercamActive?: boolean;
-  /** Rifle already deployed this encounter. */
+  /** Rifle already deployed — sticky across Til spotting until Mount. */
   returnGunDeployed?: boolean;
-  /** Rest choice already made this encounter. */
+  /** Rest choice already made — sticky across Til spotting with Deploy. */
   returnRest?: HuntShootRest;
   /**
    * Map/spot Aware without a live engage — Gun opens turret prep only.
@@ -656,7 +654,13 @@ export function HuntMapView({
    * Rifle is out of the pack this cell — survives Til spotting / Back to Aware
    * so Deploy gun nerve is only paid once until Mount (or auto-mount).
    */
-  const [fieldGunDeployed, setFieldGunDeployed] = useState(false);
+  const [fieldGunDeployed, setFieldGunDeployedState] = useState(false);
+  /** Sync guard — setState alone can let mountFieldGun run twice in one tick. */
+  const fieldGunDeployedRef = useRef(false);
+  function setFieldGunDeployed(out: boolean) {
+    fieldGunDeployedRef.current = out;
+    setFieldGunDeployedState(out);
+  }
   /**
    * Bird locked from gun-prep scope (F) — Aware opens only when player chooses.
    */
@@ -2070,7 +2074,7 @@ export function HuntMapView({
    * No-op if already mounted. Spotted/engaged bird is not bumped.
    */
   function mountFieldGun(opts?: { silent?: boolean; cell?: HuntGridCell }) {
-    if (!fieldGunDeployed) return 0;
+    if (!fieldGunDeployedRef.current) return 0;
     setFieldGunDeployed(false);
     const at = opts?.cell ?? pos;
     const here = birdsInCell(birds, at);
@@ -2641,7 +2645,7 @@ export function HuntMapView({
       : { x: 50, y: 50 };
   }
 
-  function abortAware(opts?: { hunter?: CellPoint }) {
+  function abortAware(opts?: AwareLeaveOpts) {
     rememberAwareStand(opts?.hunter);
     if (awareSession?.ettersokPairId) {
       const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
@@ -2674,7 +2678,7 @@ export function HuntMapView({
   }
 
   /** Leave Aware stalk back to Spot — nerve keeps running; Engage stays live. */
-  function backToSpotFromAware(opts?: { hunter?: CellPoint }) {
+  function backToSpotFromAware(opts?: AwareLeaveOpts) {
     rememberAwareStand(opts?.hunter);
     if (awareSession?.ettersokPairId) {
       abortAware(opts);
@@ -2682,6 +2686,23 @@ export function HuntMapView({
     }
     const session = awareSession;
     const hunter = opts?.hunter ?? recalledAwareStand();
+    const stickyGun =
+      opts?.gunDeployed ?? fieldGunDeployed;
+    const stickyRest =
+      stickyGun && opts?.rest && opts.rest !== "none" ? opts.rest : "none";
+    const stickyKestrel = !!opts?.kestrelEnviroReady;
+    /**
+     * Across Til spotting: keep Deploy / sekk|tofot / Kestrel (nerve already paid).
+     * Camcorder, chrono and triggercam must be set up again.
+     */
+    const stickyGear = {
+      returnGunDeployed: stickyGun,
+      returnRest: stickyRest as HuntShootRest,
+      returnKestrelEnviroActive: stickyKestrel,
+      returnCamcorderActive: false,
+      returnChronoActive: false,
+      returnTriggercamActive: false,
+    };
     let distanceByBirdId:
       | Record<string, { distanceM: number; fromDistanceM?: number }>
       | undefined;
@@ -2736,7 +2757,7 @@ export function HuntMapView({
           ),
         },
         returnNerve: nerve,
-        returnGunDeployed: fieldGunDeployed,
+        ...stickyGear,
       });
     } else if (session) {
       const nerve =
@@ -2755,7 +2776,7 @@ export function HuntMapView({
         ...session,
         hunterPos: hunter,
         returnNerve: nerve,
-        returnGunDeployed: fieldGunDeployed,
+        ...stickyGear,
       });
     }
     setAwareSession(null);
@@ -2767,7 +2788,11 @@ export function HuntMapView({
       initialMode: "binos",
     });
     setLog(
-      "Til spotting — mål gjerne avstand på nytt. Engage er fortsatt aktiv.",
+      stickyGun
+        ? stickyRest !== "none"
+          ? "Til spotting — gun/anlegg/Kestrel følger med. Camcorder, chrono og triggercam må settes opp på nytt."
+          : "Til spotting — gun følger med. Camcorder, chrono og triggercam må settes opp på nytt."
+        : "Til spotting — mål gjerne avstand på nytt. Engage er fortsatt aktiv.",
     );
   }
 
@@ -3231,14 +3256,19 @@ export function HuntMapView({
 
   /** Fallback uncommitted pair when the 60 s register window expires. */
   function createFallbackPairFromGhost(g: PostShotGhost): ShotPair {
-    const bearingDeg = SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG;
-    const distanceM = SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M;
-    const target = impactFromShot({
-      stand: g.stand,
-      bearingDeg,
-      distanceM,
-      metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
-    });
+    const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
+    /**
+     * Never invent 0° / 250 m — that dragged tree-kills to due north on Track.
+     * Tree drop: aim = impact = seat. Ettersøk: aim = seat (birdAim), land = impact.
+     */
+    const target = g.recoveryOnly
+      ? { ...g.impact }
+      : { ...g.birdAim };
+    const distanceM = Math.max(
+      1,
+      Math.round(distanceMBetween(g.stand, target, mPerPct)),
+    );
+    const bearingDeg = Math.round(bearingDegFromTo(g.stand, target));
     return {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
@@ -3246,7 +3276,7 @@ export function HuntMapView({
       cellLabel: cellLabel(pos),
       stand: g.stand,
       target,
-      impact: g.impact,
+      impact: g.recoveryOnly ? { ...target } : g.impact,
       distanceM,
       bearingDeg,
       resultKind: g.resultKind,
@@ -3838,16 +3868,30 @@ export function HuntMapView({
     let pairNote = "";
 
     if (autoVisible) {
+      const treeKill =
+        result.kind === "instant_kill" || result.kind === "vital_kill";
+      const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
+      /** Tree drop stays at the seat — don't offset aim with cam noise. */
+      const pairTarget = treeKill ? impact : autoVisible.target;
+      const pairDist = treeKill
+        ? Math.max(
+            1,
+            Math.round(distanceMBetween(stand, impact, mPerPct)),
+          )
+        : autoVisible.distanceM;
+      const pairBearing = treeKill
+        ? Math.round(bearingDegFromTo(stand, impact))
+        : autoVisible.bearingDeg;
       pair = {
         id: `pair-${Date.now()}`,
         atMs: Date.now(),
         cell: { ...pos },
         cellLabel: cellLabel(pos),
         stand,
-        target: autoVisible.target,
+        target: pairTarget,
         impact,
-        distanceM: autoVisible.distanceM,
-        bearingDeg: autoVisible.bearingDeg,
+        distanceM: pairDist,
+        bearingDeg: pairBearing,
         resultKind: result.kind,
         trackPoints: [],
         found: null,
@@ -3864,9 +3908,22 @@ export function HuntMapView({
             ? " Camcorder lagret skuddpar (±10 m)."
             : " Triggercam lagret skuddpar (±30 m).";
     } else if (manualPair && result.kind !== "miss") {
+      const treeKill =
+        result.kind === "instant_kill" || result.kind === "vital_kill";
+      const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
       pair = {
         ...manualPair,
         impact,
+        ...(treeKill
+          ? {
+              target: { ...impact },
+              distanceM: Math.max(
+                1,
+                Math.round(distanceMBetween(stand, impact, mPerPct)),
+              ),
+              bearingDeg: Math.round(bearingDegFromTo(stand, impact)),
+            }
+          : {}),
         resultKind: result.kind,
         harvestDraft,
         fleeObservation,
@@ -3879,7 +3936,7 @@ export function HuntMapView({
       );
       pairNote = " Skuddpar fra Shoot er koblet til skuddet.";
     } else if (
-      result.kind === "instant_kill" &&
+      (result.kind === "instant_kill" || result.kind === "vital_kill") &&
       result.trueDistanceM < CLOSE_RANGE_TREE_HENT_MAX_M
     ) {
       // Close-range tree kill: always allow «Hent ved treet» without cam/skuddpar.
@@ -4610,7 +4667,7 @@ export function HuntMapView({
         subtitle={
           isUgle
             ? UGLE_FUNN_SUBTITLE
-            : "Fuglen er i sekken — klar for Vebjørn på kjøttmarkedet."
+            : "Fuglen er i sekken."
         }
         durationMinutes={0}
         holdMs={isUgle ? 7000 : 4500}
@@ -4824,6 +4881,13 @@ export function HuntMapView({
             if (!prev) return prev;
             const next = { ...prev, nerve };
             birdEncounterRef.current = next;
+            const latent = latentSpotNerveRef.current[prev.birdId];
+            if (latent) {
+              latentSpotNerveRef.current[prev.birdId] = {
+                ...latent,
+                nerve,
+              };
+            }
             return next;
           });
         }}
@@ -4831,7 +4895,7 @@ export function HuntMapView({
           awareSession.postShotSkuddpar
             ? "Tilbake"
             : awareSession.ettersokPairId
-              ? "Avbryt"
+              ? "To spotting"
               : "Til spotting"
         }
         onAbort={
