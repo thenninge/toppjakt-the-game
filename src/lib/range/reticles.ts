@@ -12,7 +12,8 @@
  * ZCO MPCT3 ({@code zco527b.png}): full tree, FFP. In-game 27× (premium FOV)
  * ≈7.2 mrad centre→edge (real ZCO @ 27×).
  *
- * Measure `centerTo1MilPx` on the native PNG (center → 1.0 mil hash).
+ * Measure `centerTo1MilPx` on the native PNG (center → 1.0 mil hash on
+ * MRAD scopes, or center → 1.0 MOA hash on MOA scopes — same field name).
  * Optional `opticalCenterX/Y` if the crosshair is not at the image midpoint.
  */
 
@@ -102,9 +103,10 @@ export const RETICLES: Record<string, ReticleDef> = {
   },
   /**
    * Nightforce MOA tree (nf_moa.png, 1279×1280).
-   * Native: ~15.1 px/MOA (10 MOA label @ 151 px from centre).
-   * Divided by 4 so 1 MOA ≈ 4 squares on MOA-scaled paper
-   * (1 cm ≈ ¼ MOA); diamond-calibration would otherwise put 1 MOA on 1 square.
+   * Admin hash rings (clickUnit=MOA): `centerTo1MilPx` = native px → 1 MOA.
+   * NX8 4-32 MOA FOV: {@code zoomMagCal: 0.235}, {@code minZoomMagCal: 0.1}
+   * (catalog). Native ≈ 15.1 px/MOA (10 MOA @ 151 px); value below is the
+   * paper-aligned subtension used with MOA range scale.
    */
   nf_moa: {
     id: "nf_moa",

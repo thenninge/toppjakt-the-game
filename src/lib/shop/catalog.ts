@@ -326,6 +326,11 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.06,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
+      minZoomMagCal: 0.1,
+      zoomMagCal: 0.235,
+      focusZoomEnabled: true,
+      focusZoomMultiplier: 1.2,
+      focusViewportScale: 1.25,
     },
   },
   {

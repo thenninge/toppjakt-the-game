@@ -943,8 +943,9 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const catalogClickUnit =
     repoScopeOverride?.clickUnit ??
     (scope?.clickUnit === "MOA" ? "MOA" : "MRAD");
-  /** Native px per 0.1 mil click (MRAD scopes). */
-  const pxPerClick = centerTo1MilPx * 0.1;
+  /** Native px per turret click (0.1 mil / 0.25 MOA). */
+  const pxPerClick =
+    clickUnit === "MOA" ? centerTo1MilPx * 0.25 : centerTo1MilPx * 0.1;
   const nativeW =
     reticleNativeOverride?.width ?? reticleDef?.nativeWidth ?? 0;
   const nativeH =
@@ -1045,7 +1046,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     Math.abs(liveMaxZoom - catalogMaxZoom) > 1e-6 ||
     liveClickUnit !== catalogClickUnit;
 
-  const hashRingPxPerMil =
+  const hashRingPxPerUnit =
     liveScope && (reticleDef || reticleNativeOverride) && reticleImgScale > 0
       ? reticleDisplaySizePx(
           liveScope,
@@ -1072,6 +1073,11 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               },
         ).scale * centerTo1MilPx
       : 0;
+  /** Alias — illumination / legacy call sites. */
+  const hashRingPxPerMil = hashRingPxPerUnit;
+  const hashUnitIsMoa = clickUnit === "MOA";
+  const hashUnitShort = hashUnitIsMoa ? "MOA" : "mil";
+  const hashRingCount = hashUnitIsMoa ? 15 : 12;
   const glassRadiusPx =
     (SCOPE_VIEWPORT_REF_PX / 2) * fovDiameterScale;
   /** Centre→edge mils at current zoom (shared FOV lock @ 27× ±7.2). */
@@ -2255,10 +2261,15 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                     : "intro-button admin-spot-btn"
                 }
                 aria-pressed={calHashmarks}
-                title="Hash spacing — centerTo1MilPx + mil-ringer på retikkel"
+                title={
+                  hashUnitIsMoa
+                    ? "Hash spacing — centerTo1MilPx (= px → 1 MOA) + MOA-ringer på retikkel"
+                    : "Hash spacing — centerTo1MilPx (= px → 1 mil) + mil-ringer på retikkel"
+                }
                 onClick={() => setCalHashmarks((v) => !v)}
               >
-                Calibrate reticle hashmarks {calHashmarks ? "på" : "av"}
+                Calibrate reticle hashmarks ({hashUnitShort}){" "}
+                {calHashmarks ? "på" : "av"}
               </button>
               <button
                 type="button"
@@ -2293,10 +2304,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                   <input
                     type="range"
                     className="admin-scope-rot-slider"
-                    min={0.7}
+                    min={0.1}
                     max={1.4}
                     step={0.005}
-                    value={Math.min(1.4, Math.max(0.7, zoomMagCal))}
+                    value={Math.min(1.4, Math.max(0.1, zoomMagCal))}
                     onChange={(e) => {
                       const n = Number(e.target.value);
                       if (!Number.isFinite(n)) return;
@@ -2309,7 +2320,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                   type="button"
                   className="intro-button admin-spot-btn"
                   onClick={() =>
-                    setZoomMagCal((v) => Math.round((v - 0.01) * 1000) / 1000)
+                    setZoomMagCal(
+                      (v) =>
+                        Math.round(Math.max(0.1, v - 0.01) * 1000) / 1000,
+                    )
                   }
                 >
                   −0.01
@@ -2318,7 +2332,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                   type="button"
                   className="intro-button admin-spot-btn"
                   onClick={() =>
-                    setZoomMagCal((v) => Math.round((v + 0.01) * 1000) / 1000)
+                    setZoomMagCal(
+                      (v) =>
+                        Math.round(Math.min(1.4, v + 0.01) * 1000) / 1000,
+                    )
                   }
                 >
                   +0.01
@@ -2569,7 +2586,9 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             {calHashmarks ? (
               <div className="admin-spot-row">
                 <label className="admin-spot-field admin-scope-rot-field">
-                  <span>centerTo1MilPx {centerTo1MilPx.toFixed(3)}</span>
+                  <span>
+                    px → 1 {hashUnitShort} {centerTo1MilPx.toFixed(3)}
+                  </span>
                   <input
                     type="range"
                     className="admin-scope-rot-slider"
@@ -2582,7 +2601,11 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                       if (!Number.isFinite(n)) return;
                       setCenterTo1MilPx(Math.round(n * 1000) / 1000);
                     }}
-                    aria-label="Reticle center to 1 mil px"
+                    aria-label={
+                      hashUnitIsMoa
+                        ? "Reticle center to 1 MOA px"
+                        : "Reticle center to 1 mil px"
+                    }
                   />
                 </label>
                 <label className="admin-spot-field admin-spot-scale">
@@ -3191,25 +3214,31 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                             })}
                           </div>
                         ) : null}
-                        {calHashmarks && hashRingPxPerMil > 0 ? (
+                        {calHashmarks && hashRingPxPerUnit > 0 ? (
                           <div
-                            className="admin-scope-mil-rings is-hash"
+                            className={
+                              hashUnitIsMoa
+                                ? "admin-scope-mil-rings is-hash is-moa"
+                                : "admin-scope-mil-rings is-hash"
+                            }
                             aria-hidden
                           >
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map(
-                              (m) => {
-                                const d = 2 * m * hashRingPxPerMil;
-                                if (d > glassRadiusPx * 2.05) return null;
-                                return (
-                                  <span
-                                    key={`hash-${m}`}
-                                    className="admin-scope-mil-rings-ring"
-                                    data-mil={m}
-                                    style={{ width: d, height: d }}
-                                  />
-                                );
-                              },
-                            )}
+                            {Array.from(
+                              { length: hashRingCount },
+                              (_, i) => i + 1,
+                            ).map((n) => {
+                              const d = 2 * n * hashRingPxPerUnit;
+                              if (d > glassRadiusPx * 2.05) return null;
+                              return (
+                                <span
+                                  key={`hash-${hashUnitShort}-${n}`}
+                                  className="admin-scope-mil-rings-ring"
+                                  data-mil={n}
+                                  data-unit={hashUnitShort}
+                                  style={{ width: d, height: d }}
+                                />
+                              );
+                            })}
                           </div>
                         ) : null}
                         {helpCross ? (
