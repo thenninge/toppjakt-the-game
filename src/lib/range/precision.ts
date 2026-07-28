@@ -152,6 +152,12 @@ export type GroupMeasurement = {
   /** Average distance of shots from group center. */
   meanRadiusMm: number;
   meanRadiusMoa: number;
+  /**
+   * Distance from group center (POI) to the outermost shot center —
+   * radius of the circle that encloses all hits with the extreme shot on the rim.
+   */
+  enclosingRadiusMm: number;
+  enclosingRadiusMoa: number;
   /** Group center (POI) relative to bullseye: +x right, +y low. */
   poiXMm: number;
   poiYMm: number;
@@ -263,6 +269,8 @@ function emptyGroup(shotCount: number, poi?: ShotImpact): GroupMeasurement {
     groupMoa: 0,
     meanRadiusMm: 0,
     meanRadiusMoa: 0,
+    enclosingRadiusMm: 0,
+    enclosingRadiusMoa: 0,
     poiXMm: poi?.xMm ?? 0,
     poiYMm: poi?.yMm ?? 0,
     shotCount,
@@ -292,11 +300,11 @@ export function measureGroup(
     }
   }
 
-  const meanRadiusMm =
-    shots.reduce(
-      (sum, s) => sum + Math.hypot(s.xMm - poiXMm, s.yMm - poiYMm),
-      0,
-    ) / shots.length;
+  const radii = shots.map((s) =>
+    Math.hypot(s.xMm - poiXMm, s.yMm - poiYMm),
+  );
+  const meanRadiusMm = radii.reduce((a, b) => a + b, 0) / radii.length;
+  const enclosingRadiusMm = Math.max(...radii);
 
   const mmPerMoa = MM_PER_MOA_AT_100M * (distanceM / 100);
 
@@ -307,6 +315,8 @@ export function measureGroup(
     groupMoa: extremeSpreadMm / mmPerMoa,
     meanRadiusMm,
     meanRadiusMoa: meanRadiusMm / mmPerMoa,
+    enclosingRadiusMm,
+    enclosingRadiusMoa: enclosingRadiusMm / mmPerMoa,
     poiXMm,
     poiYMm,
     shotCount: shots.length,

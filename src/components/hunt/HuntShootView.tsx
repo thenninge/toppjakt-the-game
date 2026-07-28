@@ -150,6 +150,7 @@ import {
   NECK_LUCKY_KILL_TEXT,
   SCOPE_VIEWPORT_REF_PX,
   isShotCamItemId,
+  type HuntAdminShotDebug,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
@@ -233,6 +234,11 @@ type HuntShootViewProps = {
   kestrelEnviroActive?: boolean;
   /** Triggercam started in Aware — AAR replay after the shot. */
   triggercamActive?: boolean;
+  /**
+   * Admin PIN session — AAR after every shot (hit or miss) with aim/POA
+   * markers and effect breakdown.
+   */
+  isAdmin?: boolean;
   /**
    * Aware rest choice. Bipod calm only when `"bipod"`; backpack uses
    * synthetic calm=20. Default `"none"` = no bipod/bag rest calm.
@@ -434,6 +440,7 @@ export function HuntShootView({
   chronoActive = false,
   kestrelEnviroActive = true,
   triggercamActive = false,
+  isAdmin = false,
   shootRest = "none",
   gunPrepOnly = false,
   scanBirdPlacements = [],
@@ -666,6 +673,9 @@ export function HuntShootView({
     diameterMm: number;
   } | null>(null);
   const [replay, setReplay] = useState<HuntShotResult | null>(null);
+  const [adminDebug, setAdminDebug] = useState<HuntAdminShotDebug | null>(
+    null,
+  );
 
   // Shoot HUD: same still-nerve rate as Aware (real seconds). Enviro only speeds the clock.
   useEffect(() => {
@@ -1008,6 +1018,11 @@ export function HuntShootView({
     };
     let poa: { xMm: number; yMm: number };
     let seriesGroupEnvelopeMoa: number | null = null;
+    let pullMm = { xMm: 0, yMm: 0 };
+    let envelopeMoaAtFire = 0;
+    const mindScale = usingReal
+      ? 1
+      : fatigueDispersionFactor(fatigueRef.current);
     if (usingReal) {
       poa = { xMm: aimRef.current.x, yMm: aimRef.current.y };
       const mean = simAmmo.systemGroupMoaOverride;
@@ -1020,13 +1035,18 @@ export function HuntShootView({
       ) {
         seriesGroupEnvelopeMoa = sampleRealSystemGroupMoa(mean, best);
       }
+      envelopeMoaAtFire =
+        seriesGroupEnvelopeMoa != null && seriesGroupEnvelopeMoa > 0
+          ? seriesGroupEnvelopeMoa
+          : combinedDispersionMoa(dispersionInput);
     } else {
-      const envelopeMoa = combinedDispersionMoa(dispersionInput);
+      envelopeMoaAtFire = combinedDispersionMoa(dispersionInput);
       const pull = triggerPullOffsetMm(
         triggerPullRef.current * customsTriggerPullScale,
-        envelopeMoa,
+        envelopeMoaAtFire,
         distanceRef.current,
       );
+      pullMm = pull;
       poa = {
         xMm: aimRef.current.x + w.x + pull.xMm,
         yMm: aimRef.current.y + w.y + pull.yMm,
@@ -1250,9 +1270,60 @@ export function HuntShootView({
         chronoNote,
     );
 
-    if (hasTriggercam) {
+    const showAar = hasTriggercam || isAdmin;
+    if (showAar) {
+      if (isAdmin) {
+        const fatigue = fatigueRef.current;
+        setAdminDebug({
+          aimMm: { x: aimRef.current.x, y: aimRef.current.y },
+          poaMm: { x: poa.xMm, y: poa.yMm },
+          impactMm: { x: impact.xMm, y: impact.yMm },
+          effects: {
+            v0SampledMps: shot.v0,
+            v0NominalMps: ammoLive.v0,
+            deltaV0Mps: shot.deltaV0,
+            dropBelowLosMm: dropMm,
+            spinDriftMm: shot.spinDriftMm,
+            windDriftMm: hold.windDriftMm,
+            crosswindMs: crosswindRef.current,
+            windSpeedMs,
+            windFromDeg,
+            shotBearingDeg,
+            densityRatio: densityRef.current,
+            temperatureC: powderTempRef.current,
+            envelopeMoa: envelopeMoaAtFire,
+            mindDispersionScale: mindScale,
+            mentalFatigue: fatigue.mentalFatigue,
+            physicalFatigue: fatigue.physicalFatigue,
+            heartRateBpm: heartRateBpmRef.current,
+            weaponCalm: weaponCalmRef.current,
+            angularScatterMoa: { x: shot.xMoa, y: shot.yMoa },
+            scatterMm: { x: scatterXMm, y: scatterYMm },
+            wobbleMm: usingReal ? { x: 0, y: 0 } : { x: w.x, y: w.y },
+            triggerPull: triggerPullRef.current,
+            triggerPullMm: { x: pullMm.xMm, y: pullMm.yMm },
+            zeroMm: { x: realizedZero.xMm, y: realizedZero.yMm },
+            mountDriftMm: {
+              x: angularMmAtDistance(
+                mountHuntDriftMm.xMm,
+                distanceRef.current,
+              ),
+              y: angularMmAtDistance(
+                mountHuntDriftMm.yMm,
+                distanceRef.current,
+              ),
+            },
+            cantDeg: liveCantDeg(),
+            trueDistanceM: distanceRef.current,
+            measuredDistanceM,
+          },
+        });
+      } else {
+        setAdminDebug(null);
+      }
       setReplay(result);
     } else {
+      setAdminDebug(null);
       window.setTimeout(() => onShotResult(result), 900);
     }
   };
@@ -1903,9 +1974,16 @@ export function HuntShootView({
   if (replay && lastImpact) {
     return (
       <HuntShotAarView
-        title="Triggercam — after action"
+        title={
+          isAdmin
+            ? hasTriggercam
+              ? "Admin AAR · Triggercam"
+              : "Admin AAR — after action"
+            : "Triggercam — after action"
+        }
         birdFlip={birdFlip}
         birdSpriteId={birdSpriteId}
+        adminDebug={adminDebug}
         hit={{
           xMm: lastImpact.xMm,
           yMm: lastImpact.yMm,

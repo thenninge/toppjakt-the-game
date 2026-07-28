@@ -1,9 +1,13 @@
 /**
  * Zeroing-lane skyteskiver — assets + paper calibration (bullseye, mm↔px).
  *
- * Impact / aim coords are physical mm on the paper. Each PNG has its own
- * px/mm from printed grid or labeled angular size at the design distance.
- * `visualScale` enlarges the board in the scope so angular size matches reality.
+ * Impact / aim coords are physical mm on the paper. Calibrate {@link pxPerMm}
+ * from the **printed thin grid** only (1 cm or 2 cm squares on the PNG) —
+ * never from “Dot 0.5 mrad” diamond tip-to-tip (that label is angular at
+ * distance, not paper millimetres) and never by counting every other line.
+ *
+ * `visualScale` enlarges the board in the scope (angular size); it does not
+ * replace {@link pxPerMm} for hole / aim placement on the texture.
  */
 
 import type { RangeDistanceM } from "@/lib/range/precision";
@@ -26,7 +30,7 @@ export type RangeTargetDef = {
   nativeHeight: number;
   bullseyeXPx: number;
   bullseyeYPx: number;
-  /** Native pixels per physical millimetre on the paper. */
+  /** Native pixels per physical millimetre on the paper (windage / X). */
   pxPerMm: number;
   /**
    * Optional separate Y calibration (elevation). When omitted, use {@link pxPerMm}.
@@ -41,8 +45,9 @@ export type RangeTargetDef = {
 };
 
 /**
- * CBA detail (cba-detail.png): diamond tip 10 mm = 115 px.
- * Bullseye measured on asset (not geometric centre).
+ * CBA detail (cba-detail.png). Admin-calibrated from printed grid.
+ * Note: reticle 1 mil ↔ diamond tip still uses the separate CBA tip contract
+ * in precision.ts — keep pxPerMm coherent with that if dial/hash must match tip.
  */
 export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
   "cba-100": {
@@ -52,9 +57,9 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     src: "/range/cba-detail.png",
     nativeWidth: 949,
     nativeHeight: 1024,
-    bullseyeXPx: 487,
-    bullseyeYPx: 538,
-    pxPerMm: 115 / 10,
+    bullseyeXPx: 485.6,
+    bullseyeYPx: 538.4,
+    pxPerMm: 13.036,
     visualScale: 1,
   },
   /**
@@ -79,7 +84,7 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     visualScale: 2,
   },
   /**
-   * target200.png — dotted grid ≈ 60.5 px ≈ 2 cm; ×2 visual for real size.
+   * target200.png — thin dotted 2 cm grid ≈ 60 px.
    */
   "target-200": {
     id: "target-200",
@@ -88,14 +93,14 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     src: "/range/target200.png",
     nativeWidth: 646,
     nativeHeight: 554,
-    bullseyeXPx: 327,
-    bullseyeYPx: 272,
-    pxPerMm: 60.5 / 20,
+    bullseyeXPx: 327.6,
+    bullseyeYPx: 270.8,
+    pxPerMm: 3.047,
     visualScale: 2,
   },
   /**
-   * target300.png — centre diamond tip-to-tip ≈ 123 px = Dot 0.5 mrad @ 300 m
-   * (0.5 × 300 mm = 150 mm). ×1.95 visual.
+   * target300.png — thin dotted 2 cm grid ≈ 67 px.
+   * Do not use “Dot 0.5 mrad” tip-to-tip as mm.
    */
   "target-300": {
     id: "target-300",
@@ -104,13 +109,14 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     src: "/range/target300.png",
     nativeWidth: 1852,
     nativeHeight: 1312,
-    bullseyeXPx: 927,
-    bullseyeYPx: 657,
-    pxPerMm: 123 / 150,
-    visualScale: 1.95,
+    bullseyeXPx: 928.2,
+    bullseyeYPx: 655.7,
+    pxPerMm: 6.551,
+    pxPerMmY: 6.572,
+    visualScale: 2,
   },
   /**
-   * target400.png — Dot 0.5 mrad @ 400 m = 200 mm tip-to-tip (~104 px).
+   * target400.png — thin dotted 2 cm grid ≈ 89.5 px.
    */
   "target-400": {
     id: "target-400",
@@ -119,13 +125,14 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     src: "/range/target400.png",
     nativeWidth: 1241,
     nativeHeight: 874,
-    bullseyeXPx: 623,
-    bullseyeYPx: 437,
-    pxPerMm: 104 / 200,
-    visualScale: 1.42 * 2,
+    bullseyeXPx: 623.3,
+    bullseyeYPx: 436.4,
+    pxPerMm: 89.5 / 20,
+    visualScale: 2.84,
   },
   /**
-   * target500.png — 2 cm grid ≈ 123.5 px; ×2 visual for real size.
+   * target500.png — thin dotted 2 cm grid ≈ 133 px (H) / 129 px (V).
+   * 88 px was a half-feature mis-read (~1.5× too few px/mm).
    */
   "target-500": {
     id: "target-500",
@@ -134,9 +141,10 @@ export const RANGE_TARGETS: Record<RangeTargetId, RangeTargetDef> = {
     src: "/range/target500.png",
     nativeWidth: 1852,
     nativeHeight: 1312,
-    bullseyeXPx: 926,
-    bullseyeYPx: 657,
-    pxPerMm: 123.5 / 20,
+    bullseyeXPx: 925.4,
+    bullseyeYPx: 656.4,
+    pxPerMm: 6.578,
+    pxPerMmY: 6.551,
     visualScale: 2,
   },
 };
@@ -167,12 +175,38 @@ export function targetPxPerMm(
   return target.pxPerMm * (imageWidthPx / target.nativeWidth);
 }
 
+export function targetPxPerMmY(
+  target: RangeTargetDef,
+  imageHeightPx: number = target.nativeHeight,
+): number {
+  const ppm = target.pxPerMmY ?? target.pxPerMm;
+  return ppm * (imageHeightPx / target.nativeHeight);
+}
+
 export function mmToPxOnTarget(
   mm: number,
   target: RangeTargetDef,
   imageWidthPx: number = target.nativeWidth,
 ): number {
   return mm * targetPxPerMm(target, imageWidthPx);
+}
+
+/** Windage (X) — native / rendered width basis. */
+export function mmToPxOnTargetX(
+  mm: number,
+  target: RangeTargetDef,
+  imageWidthPx: number = target.nativeWidth,
+): number {
+  return mm * targetPxPerMm(target, imageWidthPx);
+}
+
+/** Elevation (Y) — uses {@link RangeTargetDef.pxPerMmY} when set. */
+export function mmToPxOnTargetY(
+  mm: number,
+  target: RangeTargetDef,
+  imageHeightPx: number = target.nativeHeight,
+): number {
+  return mm * targetPxPerMmY(target, imageHeightPx);
 }
 
 /** Offset from image centre (50%/50%) to bullseye, in rendered pixel space. */

@@ -32,6 +32,8 @@ export function aimMmDeltaFromPointerDrag(opts: {
   dyClientPx: number;
   scale: number;
   pxPerMm: number;
+  /** Elevation scale; defaults to {@link pxPerMm}. */
+  pxPerMmY?: number;
   /** 1 = normal; use focus slow-mult for fine drag. */
   sensitivity?: number;
   /**
@@ -51,10 +53,14 @@ export function aimMmDeltaFromPointerDrag(opts: {
     dx = local.dx;
     dy = local.dy;
   }
-  const denom = Math.max(1e-6, opts.scale * opts.pxPerMm);
+  const denomX = Math.max(1e-6, opts.scale * opts.pxPerMm);
+  const denomY = Math.max(
+    1e-6,
+    opts.scale * (opts.pxPerMmY ?? opts.pxPerMm),
+  );
   return {
-    x: (-dx * sens) / denom,
-    y: (-dy * sens) / denom,
+    x: (-dx * sens) / denomX,
+    y: (-dy * sens) / denomY,
   };
 }
 

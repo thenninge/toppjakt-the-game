@@ -254,6 +254,49 @@ export type HuntShotResult = {
 };
 
 /**
+ * Admin-only after-action breakdown — snapped at fire in HuntShootView.
+ * Coordinates are mm from vital centre (+x right, +y down).
+ */
+export type HuntAdminShotDebug = {
+  /** Reticle seat only (no wobble / pull). */
+  aimMm: { x: number; y: number };
+  /** Effective POA when the shot broke (aim + wobble + pull). */
+  poaMm: { x: number; y: number };
+  /** Impact (= result x/y). */
+  impactMm: { x: number; y: number };
+  effects: {
+    v0SampledMps: number;
+    v0NominalMps: number;
+    deltaV0Mps: number;
+    dropBelowLosMm: number;
+    spinDriftMm: number;
+    windDriftMm: number;
+    crosswindMs: number;
+    windSpeedMs: number;
+    windFromDeg: number;
+    shotBearingDeg: number;
+    densityRatio: number;
+    temperatureC: number;
+    envelopeMoa: number;
+    mindDispersionScale: number;
+    mentalFatigue: number;
+    physicalFatigue: number;
+    heartRateBpm: number;
+    weaponCalm: number;
+    angularScatterMoa: { x: number; y: number };
+    scatterMm: { x: number; y: number };
+    wobbleMm: { x: number; y: number };
+    triggerPull: number;
+    triggerPullMm: { x: number; y: number };
+    zeroMm: { x: number; y: number };
+    mountDriftMm: { x: number; y: number };
+    cantDeg: number;
+    trueDistanceM: number;
+    measuredDistanceM: number;
+  };
+};
+
+/**
  * Player-facing impact label. Engine stores +y down; UI høyde uses +up.
  * e.g. low hit (yMm=+52) → "+0 mm side / −52 mm høyde".
  */

@@ -9,6 +9,7 @@ import {
   HEADSHOT_AAR_TEXT,
   neckOffsetFromVitalMm,
   NECK_LUCKY_KILL_TEXT,
+  type HuntAdminShotDebug,
   type HuntShotResultKind,
   type HuntShotZone,
 } from "@/lib/hunt/shoot";
@@ -34,12 +35,24 @@ type HuntShotAarViewProps = {
   birdSpriteId?: BirdSpriteId;
   /** Extra class on the bird img (e.g. IMPACT orange figure). */
   birdClassName?: string;
+  /** Admin: reticle seat + effect breakdown. */
+  adminDebug?: HuntAdminShotDebug | null;
   onContinue: () => void;
 };
+
+function fmtMm(n: number, digits = 1): string {
+  const t = Math.abs(n) < 0.05 ? 0 : n;
+  return `${t >= 0 ? "+" : ""}${t.toFixed(digits)}`;
+}
+
+function fmtSigned(n: number, digits = 1, unit = ""): string {
+  return `${n >= 0 ? "+" : ""}${n.toFixed(digits)}${unit}`;
+}
 
 /**
  * After-action / find fasit: topp sprite + CSS vital rings + impact hole.
  * Target PNGs are analysis-only (zone centres); never shown to the player.
+ * With {@link adminDebug}, also marks aim/POA and lists shot effects.
  */
 export function HuntShotAarView({
   hit,
@@ -49,6 +62,7 @@ export function HuntShotAarView({
   birdFlip = false,
   birdSpriteId = "tiur-1",
   birdClassName,
+  adminDebug = null,
   onContinue,
 }: HuntShotAarViewProps) {
   const geom = birdShotGeom(birdSpriteId);
@@ -78,6 +92,35 @@ export function HuntShotAarView({
   const neckCx = zoneCx + mmToPx(neckOff.xMm) * aarScale;
   const neckCy = zoneCy + mmToPx(neckOff.yMm) * aarScale;
 
+  const aimMark = adminDebug
+    ? {
+        x:
+          (geom.nativeW / 2 +
+            vitalOff.x +
+            mmToPx(adminDebug.aimMm.x)) *
+          aarScale,
+        y:
+          (geom.nativeH / 2 +
+            vitalOff.y +
+            mmToPx(adminDebug.aimMm.y)) *
+          aarScale,
+      }
+    : null;
+  const poaMark = adminDebug
+    ? {
+        x:
+          (geom.nativeW / 2 +
+            vitalOff.x +
+            mmToPx(adminDebug.poaMm.x)) *
+          aarScale,
+        y:
+          (geom.nativeH / 2 +
+            vitalOff.y +
+            mmToPx(adminDebug.poaMm.y)) *
+          aarScale,
+      }
+    : null;
+
   const isHeadshot = hit.zone === "head";
   const isNeck = hit.zone === "neck";
   const detail =
@@ -87,6 +130,8 @@ export function HuntShotAarView({
       : isNeck
         ? NECK_LUCKY_KILL_TEXT
         : `Treff ${formatHuntImpactOffsetMm(hit.xMm, hit.yMm)} (fra vital-senter) · sone ${hit.zone}`);
+
+  const e = adminDebug?.effects;
 
   return (
     <div
@@ -172,6 +217,20 @@ export function HuntShotAarView({
               title="Nakke (flaks)"
             />
           ) : null}
+          {aimMark ? (
+            <span
+              className="triggercam-aar-aim"
+              style={{ left: aimMark.x, top: aimMark.y }}
+              title="Siktepunkt (reticle)"
+            />
+          ) : null}
+          {poaMark ? (
+            <span
+              className="triggercam-aar-poa"
+              style={{ left: poaMark.x, top: poaMark.y }}
+              title="POA (sikte + wobble + avtrekk)"
+            />
+          ) : null}
           <span
             className="bullet-hole triggercam-aar-hole"
             style={{
@@ -184,13 +243,104 @@ export function HuntShotAarView({
             }}
           />
         </div>
-        <p className="spot-binos-hint">
-          {isHeadshot
-            ? "Gul sone — headshot · instant kill"
-            : isNeck
-              ? "Oransje sone — nakke (flaks) · instant kill"
-              : "Rød = vital · grønn = instant kill · rødt hull = treffpunkt"}
-        </p>
+
+        {adminDebug && e ? (
+          <div className="admin-hunt-aar-panel">
+            <p className="admin-hunt-aar-heading">Admin AAR</p>
+            <dl className="admin-hunt-aar-grid">
+              <dt>Treffpunkt (fra vital)</dt>
+              <dd>
+                {fmtMm(hit.xMm)} mm side · {fmtMm(-hit.yMm)} mm høyde
+                {" · "}
+                {hit.kind}/{hit.zone}
+              </dd>
+              <dt>Siktepunkt (reticle)</dt>
+              <dd>
+                {fmtMm(adminDebug.aimMm.x)} · {fmtMm(-adminDebug.aimMm.y)} mm
+                høyde
+              </dd>
+              <dt>POA (effektiv)</dt>
+              <dd>
+                {fmtMm(adminDebug.poaMm.x)} · {fmtMm(-adminDebug.poaMm.y)} mm
+                høyde
+              </dd>
+              <dt>Avvik treff − sikte</dt>
+              <dd>
+                {fmtMm(hit.xMm - adminDebug.aimMm.x)} ·{" "}
+                {fmtMm(-(hit.yMm - adminDebug.aimMm.y))} mm
+              </dd>
+              <dt>v₀</dt>
+              <dd>
+                {e.v0SampledMps.toFixed(1)} m/s (nom{" "}
+                {e.v0NominalMps.toFixed(1)}
+                {", "}
+                Δ{fmtSigned(e.deltaV0Mps, 1, " m/s")})
+              </dd>
+              <dt>Drop / spinn</dt>
+              <dd>
+                drop {e.dropBelowLosMm.toFixed(1)} mm · spinn{" "}
+                {fmtSigned(e.spinDriftMm, 1, " mm")}
+              </dd>
+              <dt>Vind</dt>
+              <dd>
+                tw {e.crosswindMs.toFixed(2)} m/s → drift{" "}
+                {fmtSigned(e.windDriftMm, 1, " mm")}
+                {" · "}
+                {e.windSpeedMs.toFixed(1)} m/s fra {e.windFromDeg.toFixed(0)}°
+                {" · skudd "}
+                {e.shotBearingDeg.toFixed(0)}°
+              </dd>
+              <dt>Atmosfære</dt>
+              <dd>
+                ρ {e.densityRatio.toFixed(3)} · {e.temperatureC.toFixed(1)}°C
+                {" · "}
+                {e.trueDistanceM.toFixed(0)} m (målt{" "}
+                {e.measuredDistanceM.toFixed(0)} m)
+              </dd>
+              <dt>Spredning</dt>
+              <dd>
+                envelope {e.envelopeMoa.toFixed(3)} MOA · mind×
+                {e.mindDispersionScale.toFixed(2)} (fatigue{" "}
+                {(e.mentalFatigue * 100).toFixed(0)}%)
+                {" · angular "}
+                {fmtSigned(e.angularScatterMoa.x, 3)}/
+                {fmtSigned(e.angularScatterMoa.y, 3)} MOA
+                {" → "}
+                {fmtSigned(e.scatterMm.x, 1)}/
+                {fmtSigned(e.scatterMm.y, 1)} mm
+              </dd>
+              <dt>Skytter</dt>
+              <dd>
+                wobble {fmtSigned(e.wobbleMm.x, 1)}/
+                {fmtSigned(e.wobbleMm.y, 1)} mm · pull{" "}
+                {(e.triggerPull * 100).toFixed(0)}% →{" "}
+                {fmtSigned(e.triggerPullMm.x, 1)}/
+                {fmtSigned(e.triggerPullMm.y, 1)} mm
+                {" · calm "}
+                {e.weaponCalm.toFixed(2)} · puls {e.heartRateBpm.toFixed(0)} ·
+                body {(e.physicalFatigue * 100).toFixed(0)}%
+              </dd>
+              <dt>Zero / mount / cant</dt>
+              <dd>
+                zero {fmtSigned(e.zeroMm.x, 1)}/{fmtSigned(e.zeroMm.y, 1)} mm ·
+                mount {fmtSigned(e.mountDriftMm.x, 1)}/
+                {fmtSigned(e.mountDriftMm.y, 1)} mm · cant{" "}
+                {fmtSigned(e.cantDeg, 2, "°")}
+              </dd>
+            </dl>
+            <p className="admin-hunt-aar-legend">
+              Cyan = siktepunkt · gul = POA · rødt hull = treffpunkt
+            </p>
+          </div>
+        ) : (
+          <p className="spot-binos-hint">
+            {isHeadshot
+              ? "Gul sone — headshot · instant kill"
+              : isNeck
+                ? "Oransje sone — nakke (flaks) · instant kill"
+                : "Rød = vital · grønn = instant kill · rødt hull = treffpunkt"}
+          </p>
+        )}
         <button type="button" className="intro-button" onClick={onContinue}>
           {continueLabel}
         </button>

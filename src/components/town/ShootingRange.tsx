@@ -80,7 +80,8 @@ import {
   DEFAULT_TARGET_BY_DISTANCE,
   RANGE_TARGET_IDS,
   getRangeTarget,
-  mmToPxOnTarget,
+  mmToPxOnTargetX,
+  mmToPxOnTargetY,
   targetBullseyeOffsetFromImageCenterPx,
   type RangeTargetId,
 } from "@/lib/range/targets";
@@ -1156,6 +1157,7 @@ export function ShootingRange({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: targetPxPerMmRef.current,
+      pxPerMmY: targetPxPerMmYRef.current,
       sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
       viewportEl: e.currentTarget,
     });
@@ -1369,8 +1371,9 @@ export function ShootingRange({
       const scale = targetScaleRef.current;
       const off = bullseyeOffRef.current;
       const pxPerMm = targetPxPerMmRef.current;
+      const pxPerMmY = targetPxPerMmYRef.current;
       const panPxX = (off.x + ax * pxPerMm) * scale;
-      const panPxY = (off.y + ay * pxPerMm) * scale;
+      const panPxY = (off.y + ay * pxPerMmY) * scale;
       el.style.transform =
         `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
         `scale(${scale})`;
@@ -3077,11 +3080,11 @@ export function ShootingRange({
                     {shots.map((s, i) => {
                       const hx =
                         bullseyeOff.x +
-                        mmToPxOnTarget(s.xMm, target, target.nativeWidth);
+                        mmToPxOnTargetX(s.xMm, target, target.nativeWidth);
                       const hy =
                         bullseyeOff.y +
-                        mmToPxOnTarget(s.yMm, target, target.nativeWidth);
-                      const d = mmToPxOnTarget(
+                        mmToPxOnTargetY(s.yMm, target, target.nativeHeight);
+                      const d = mmToPxOnTargetX(
                         s.diameterMm,
                         target,
                         target.nativeWidth,

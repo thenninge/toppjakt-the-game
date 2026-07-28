@@ -2159,6 +2159,84 @@ body {
   transform-origin: center center;
 }
 
+.admin-targets-frame {
+  position: relative;
+  width: min(100%, 52rem);
+  margin: 0 auto;
+  cursor: crosshair;
+  border: 1px solid #6b5238;
+  background: #fff;
+  overflow: hidden;
+  aspect-ratio: auto;
+}
+
+.admin-targets-scroll {
+  width: 100%;
+  max-height: min(70vh, 48rem);
+  overflow: auto;
+  border: 1px solid #6b5238;
+  background: #1a120a;
+}
+
+.admin-targets-scroll .admin-targets-frame {
+  margin: 0;
+  border: none;
+  max-width: none;
+}
+
+.admin-targets-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+}
+
+.admin-targets-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.admin-targets-bull {
+  stroke: #c62828;
+  stroke-width: 2;
+}
+
+.admin-targets-bull-dot {
+  fill: #c62828;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.admin-targets-grid-box {
+  fill: rgba(46, 125, 50, 0.08);
+  stroke: #2e7d32;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.admin-targets-grid-multi {
+  fill: rgba(21, 101, 192, 0.06);
+  stroke: #1565c0;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.admin-targets-anchor {
+  fill: #1565c0;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.admin-targets-measure {
+  stroke: #f9a825;
+  stroke-width: 2.5;
+  stroke-dasharray: 8 5;
+}
+
 .admin-spot-btn.is-selected {
   border-color: #8ecf9a;
   color: #8ecf9a;
@@ -5600,6 +5678,102 @@ body {
 
 .triggercam-aar-hole {
   z-index: 3;
+}
+
+.triggercam-aar-aim,
+.triggercam-aar-poa {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  pointer-events: none;
+  z-index: 4;
+  box-sizing: border-box;
+}
+
+.triggercam-aar-aim {
+  border: 2px solid #4fc3f7;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.triggercam-aar-aim::before,
+.triggercam-aar-aim::after {
+  content: "";
+  position: absolute;
+  background: #4fc3f7;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.triggercam-aar-aim::before {
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+}
+
+.triggercam-aar-aim::after {
+  top: 50%;
+  left: -3px;
+  right: -3px;
+  height: 2px;
+  margin-top: -1px;
+}
+
+.triggercam-aar-poa {
+  border: 2px solid #f9a825;
+  transform: rotate(45deg);
+  background: rgba(249, 168, 37, 0.25);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.admin-hunt-aar-panel {
+  width: min(100%, 28rem);
+  margin: 0 auto;
+  padding: 0.55rem 0.7rem 0.65rem;
+  background: #1a1510;
+  border: 1px solid #6b5238;
+  color: #e8dcc8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.admin-hunt-aar-heading {
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+  color: #f0c14b;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.admin-hunt-aar-grid {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.2rem 0.55rem;
+  margin: 0;
+}
+
+.admin-hunt-aar-grid dt {
+  margin: 0;
+  color: rgba(196, 165, 116, 0.9);
+  font-weight: 600;
+}
+
+.admin-hunt-aar-grid dd {
+  margin: 0;
+  color: #f4efe6;
+}
+
+.admin-hunt-aar-legend {
+  margin: 0.45rem 0 0;
+  color: rgba(196, 165, 116, 0.85);
+  font-size: 0.68rem;
 }
 
 .walk-view-frame {

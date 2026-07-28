@@ -1867,6 +1867,7 @@ export function IntroScreen() {
                   : { ...prev, nickname: PINK_MIST_NICKNAME },
               )
             }
+            isAdmin={adminUnlocked}
           />
         ) : null}
 

@@ -6,7 +6,8 @@ import {
   type ShotImpact,
 } from "@/lib/range/precision";
 import {
-  mmToPxOnTarget,
+  mmToPxOnTargetX,
+  mmToPxOnTargetY,
   targetBullseyePx,
   type RangeTargetDef,
 } from "@/lib/range/targets";
@@ -35,8 +36,8 @@ export function SeriesMeasureView({
   const bull = targetBullseyePx(target, imageWidth, imageHeight);
   const cx = bull.x;
   const cy = bull.y;
-  const toX = (xMm: number) => cx + mmToPxOnTarget(xMm, target, imageWidth);
-  const toY = (yMm: number) => cy + mmToPxOnTarget(yMm, target, imageWidth);
+  const toX = (xMm: number) => cx + mmToPxOnTargetX(xMm, target, imageWidth);
+  const toY = (yMm: number) => cy + mmToPxOnTargetY(yMm, target, imageHeight);
 
   const xs = shots.map((s) => toX(s.xMm));
   const ys = shots.map((s) => toY(s.yMm));
@@ -48,8 +49,12 @@ export function SeriesMeasureView({
 
   const poiX = toX(measurement.poiXMm);
   const poiY = toY(measurement.poiYMm);
-  const meanR = mmToPxOnTarget(measurement.meanRadiusMm, target, imageWidth);
-  const cross = Math.max(6, mmToPxOnTarget(2, target, imageWidth));
+  // Circle through outermost shot centre, centred on POI.
+  const encloseR = Math.max(
+    ...shots.map((s) => Math.hypot(toX(s.xMm) - poiX, toY(s.yMm) - poiY)),
+    4,
+  );
+  const cross = Math.max(6, mmToPxOnTargetX(2, target, imageWidth));
 
   return (
     <div className="series-measure" aria-live="polite">
@@ -82,11 +87,11 @@ export function SeriesMeasureView({
               className="series-poi-line"
             />
 
-            {/* Mean radius circle */}
+            {/* Enclosing circle: POI centre, outermost shot on rim */}
             <circle
               cx={poiX}
               cy={poiY}
-              r={Math.max(meanR, 4)}
+              r={encloseR}
               className="series-mean-circle"
             />
 
@@ -103,7 +108,7 @@ export function SeriesMeasureView({
             {shots.map((s, i) => {
               const x = toX(s.xMm);
               const y = toY(s.yMm);
-              const holeR = mmToPxOnTarget(s.diameterMm / 2, target, imageWidth);
+              const holeR = mmToPxOnTargetX(s.diameterMm / 2, target, imageWidth);
               return (
                 <g key={`shot-${i}`}>
                   <circle

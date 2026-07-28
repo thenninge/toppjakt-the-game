@@ -327,6 +327,8 @@ type HuntMapViewProps = {
   onAwareHuntChange?: (next: AwareHuntState | null) => void;
   /** Headshot (yellow zone) — rename player to Pink Mist. */
   onHeadshotNickname?: () => void;
+  /** Admin PIN unlocked — hunt AAR after every shot. */
+  isAdmin?: boolean;
 };
 
 type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
@@ -607,6 +609,7 @@ export function HuntMapView({
   awareHunt = null,
   onAwareHuntChange,
   onHeadshotNickname,
+  isAdmin = false,
 }: HuntMapViewProps) {
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
@@ -4768,6 +4771,7 @@ export function HuntMapView({
         chronoActive={!!shootSession.chronoActive}
         kestrelEnviroActive={!!shootSession.kestrelEnviroActive}
         triggercamActive={!!shootSession.triggercamActive}
+        isAdmin={isAdmin}
         shootRest={shootSession.rest ?? "none"}
         gunPrepOnly={!!shootSession.gunPrepOnly}
         scanBirdPlacements={shootSession.scanBirdPlacements}

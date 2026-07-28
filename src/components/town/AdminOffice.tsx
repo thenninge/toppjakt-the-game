@@ -8,6 +8,7 @@ import { AdminJaktfeltPanel } from "@/components/town/AdminJaktfeltPanel";
 import { AdminSceneCreationPanel } from "@/components/town/AdminSceneCreationPanel";
 import { AdminRealismControlsPanel } from "@/components/town/AdminRealismControlsPanel";
 import { AdminScopeTestPanel } from "@/components/town/AdminScopeTestPanel";
+import { AdminTargetsPanel } from "@/components/town/AdminTargetsPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
 import {
   BIRD_SPRITE_SCALE_DEFAULT,
@@ -60,6 +61,7 @@ type AdminTab =
   | "jaktfelt"
   | "treff"
   | "scopes"
+  | "targets"
   | "realism";
 
 function spotLabel(src: string): string {
@@ -255,6 +257,15 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
     );
   }
 
+  if (tab === "targets") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminTargetsPanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
   if (tab === "jaktfelt") {
     return (
       <div className="admin-office-shell">
@@ -365,6 +376,19 @@ function AdminTabBar({
         onClick={() => onTab("scopes")}
       >
         Scopes
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "targets"}
+        className={
+          tab === "targets"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("targets")}
+      >
+        Targets
       </button>
       <button
         type="button"
