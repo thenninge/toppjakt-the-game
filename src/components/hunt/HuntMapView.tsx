@@ -3379,39 +3379,34 @@ export function HuntMapView({
     setPanel("arrived");
   }
 
-  /** Fallback pair when the 60 s register window expires / Fortsett spotting. */
+  /** Fallback when the 60 s register window expires / Fortsett spotting.
+   * Keeps hidden true land for Track — no visible skuddpar that spoils the seat.
+   */
   function createFallbackPairFromGhost(g: PostShotGhost): ShotPair {
-    const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
     /**
-     * Never invent 0° / 250 m — that dragged tree-kills to due north on Track.
-     * Tree drop: aim = impact = seat. Ettersøk: aim = seat (birdAim), land = impact.
-     * True geometry + shot cell stick for the whole hunt day (until Gi opp / 17:00).
+     * Temporary bird marker is gone. Store impact for ettersøk/hent only.
+     * Visible target stays at stand until the player dials Shoot from memory.
+     * Do not copy true range/bearing into the pair — that would autofill Shoot.
      */
-    const target = g.recoveryOnly
-      ? { ...g.impact }
-      : { ...g.birdAim };
-    const distanceM = Math.max(
-      1,
-      Math.round(distanceMBetween(g.stand, target, mPerPct)),
-    );
-    const bearingDeg = Math.round(bearingDegFromTo(g.stand, target));
+    const impact = { ...g.impact };
+    const stand = { ...g.stand };
     return {
       id: `pair-${Date.now()}`,
       atMs: Date.now(),
       cell: { ...g.cell },
       cellLabel: g.cellLabel,
-      stand: g.stand,
-      target,
-      impact: g.recoveryOnly ? { ...target } : { ...g.impact },
-      distanceM,
-      bearingDeg,
+      stand,
+      target: { ...stand },
+      impact,
+      distanceM: 200,
+      bearingDeg: 0,
       resultKind: g.resultKind,
       trackPoints: [],
       found: null,
       harvestDraft: g.harvestDraft,
       fleeObservation: g.fleeObservation,
       hitFasit: g.hitFasit,
-      skuddparCommitted: true,
+      skuddparCommitted: false,
     };
   }
 
@@ -3438,7 +3433,7 @@ export function HuntMapView({
     };
   }
 
-  /** 60 s window timed out — create default pair so Track still works. */
+  /** 60 s window timed out — hide marker; keep bird for Track (no visible skuddpar). */
   function expirePostShotGhost() {
     const g = postShotGhostRef.current;
     if (!g) return;
@@ -3460,7 +3455,7 @@ export function HuntMapView({
           },
     );
     setLog(
-      "Skuddpar lagret (sete huskes hele jaktdagen). Åpne Aware → Hent/søk når du er klar — eller juster skuddpar senere i Shoot.",
+      "Fuglemarkør borte — skuddpar ble ikke registrert. Fuglen ligger fortsatt til Hent/søk i denne cella; dial skuddpar fra hukommelse i Shoot når du vil.",
     );
     // If still in Aware registering, kick back to map.
     setAwareSession((prev) => (prev?.postShotSkuddpar ? null : prev));
@@ -4142,7 +4137,7 @@ export function HuntMapView({
       // No cam / no pre-save: 60 s window to register skuddpar on Aware.
       pair = null;
       pairNote =
-        " Registrer skuddpar i Aware innen 60 s (fugleposisjonen er synlig), ellers lagres et standard skuddpar.";
+        " Registrer skuddpar i Aware innen 60 s (fuglemarkør synlig). Etter det forsvinner markøren — fuglen ligger fortsatt til ettersøk, men uten synlig skuddpar.";
     }
 
     const clip = pickShotVideoForResult(result.kind);

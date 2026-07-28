@@ -95,16 +95,22 @@ export type ShotPair = {
   /** True impact on bird — revealed when the bird/tree is found. */
   hitFasit?: ShotHitFasit;
   /**
-   * Camcorder / triggercam auto-save, player saved in Shoot, or true-geometry
-   * fallback after the post-shot window. Open pairs stay in their shot cell
-   * all hunt day; forfeit only via «Gi opp søket», skuddlys (17:00), or
-   * end of hunt / midnatt.
+   * True when cam/EL Range auto-saved or the player dialed Shoot.
+   * Timeout after the 60 s window keeps the bird for Track (`impact` +
+   * harvestDraft) but leaves this false so no visible stand→tre overlay
+   * spoils the seat — player must register from memory.
+   * Open pairs stay in their shot cell all hunt day; forfeit only via
+   * «Gi opp søket», skuddlys (17:00), or end of hunt / midnatt.
    */
   skuddparCommitted?: boolean;
 };
 
 /** Map endpoint for the visible skuddpar (aim / tree marker). */
 export function shotPairAimPoint(pair: ShotPair): CellLocalPoint {
+  /** Unregistered timeout pairs must not leak true seat via overlay. */
+  if (pair.skuddparCommitted === false) {
+    return pair.target ?? pair.stand;
+  }
   /**
    * Tree kills: overlay must match «Hent ved treet» (impact), not a dialed
    * aim that may have defaulted to 0° north.

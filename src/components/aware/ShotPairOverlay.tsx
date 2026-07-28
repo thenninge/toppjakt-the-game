@@ -20,12 +20,15 @@ type ShotPairOverlayProps = {
 
 /**
  * Visible skuddpar: stand → dashed line → aim point + ~20 m search ring.
+ * Hidden for timeout pairs until the player dials Shoot (`skuddparCommitted`).
  */
 export function ShotPairOverlay({
   pair,
   active = false,
   metersPerPct = AWARE_METERS_PER_PCT,
 }: ShotPairOverlayProps) {
+  if (pair.skuddparCommitted === false) return null;
+
   const aim = shotPairAimPoint(pair);
   const ringPct = (SHOT_PAIR_SEARCH_RADIUS_M / metersPerPct) * 2;
 

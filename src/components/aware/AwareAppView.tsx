@@ -1130,18 +1130,23 @@ export function AwareAppView({
       (focusPairId && shotPairs.find((p) => p.id === focusPairId)) ||
       (trackActivePair?.harvestDraft ? trackActivePair : null);
     if (editPair?.harvestDraft && editPair.found == null) {
-      const rangeM = Math.max(
-        50,
-        Math.min(mapMaxM, Math.round(editPair.distanceM / 5) * 5),
-      );
+      const blank = editPair.skuddparCommitted === false;
+      const rangeM = blank
+        ? 200
+        : Math.max(
+            50,
+            Math.min(mapMaxM, Math.round(editPair.distanceM / 5) * 5),
+          );
       setShootWizard({
         phase: "range",
         stand,
         rangeM,
-        bearingDeg: normalizeBearingDeg(editPair.bearingDeg),
+        bearingDeg: blank ? 0 : normalizeBearingDeg(editPair.bearingDeg),
       });
       setStatus(
-        `Juster skuddpar (hukommelse): stand = der du står. Forrige ${editPair.distanceM} m / ${Math.round(editPair.bearingDeg)}° — lagre oppdaterer siktepunktet (sann fall beholdes).`,
+        blank
+          ? "Skuddpar fra hukommelse: stand = der du står. Markøren er borte — sett avstand og retning selv, deretter lagre."
+          : `Juster skuddpar (hukommelse): stand = der du står. Forrige ${editPair.distanceM} m / ${Math.round(editPair.bearingDeg)}° — lagre oppdaterer siktepunktet (sann fall beholdes).`,
       );
       return;
     }
@@ -1466,13 +1471,16 @@ export function AwareAppView({
 
   function trackPairPickLabel(pair: ShotPair): string {
     const bird = pairBirdShortNb(pair);
+    const verb =
+      pair.resultKind === "ettersok" ? "Søk" : "Hent";
+    if (pair.skuddparCommitted === false) {
+      return `${verb} ${bird} · dial skuddpar`;
+    }
     const point =
       pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill"
         ? shotPairTrueBirdPoint(pair)
         : shotPairAimPoint(pair);
     const walkM = Math.round(distanceMBetween(hunter, point, metersPerPct));
-    const verb =
-      pair.resultKind === "ettersok" ? "Søk" : "Hent";
     return `${verb} ${bird} ${walkM}m`;
   }
 
@@ -1960,7 +1968,8 @@ export function AwareAppView({
               />
               {mode === "track" &&
               trackActivePair?.fleeObservation &&
-              trackActivePair.resultKind === "ettersok" ? (
+              trackActivePair.resultKind === "ettersok" &&
+              trackActivePair.skuddparCommitted !== false ? (
                 <FleeDirectionCue
                   origin={trackActivePair.target}
                   bearingDeg={trackActivePair.fleeObservation.observedBearingDeg}
@@ -2262,13 +2271,15 @@ export function AwareAppView({
               type="button"
               className="intro-button"
               disabled={
-                !gunDeployed ||
-                (hasActiveBird && !birdOnMap) ||
-                (hasActiveBird && !liveBakgrunnOk)
+                gunDeployed &&
+                ((hasActiveBird && !birdOnMap) ||
+                  (hasActiveBird && !liveBakgrunnOk))
               }
               title={
                 !gunDeployed
-                  ? "Deploy gun i panelet under først"
+                  ? gunPrepOnly
+                    ? "Ta rifla frem for tårn-prep"
+                    : `Deploy gun — backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve`
                   : hasActiveBird && !birdOnMap
                     ? "Fugl utenfor kartet — kan ikke skyte (ettersøk krever søkespor på kartet)"
                     : hasActiveBird && !liveBakgrunnOk
@@ -2277,10 +2288,10 @@ export function AwareAppView({
                         ? "Use gun scope — tårn / finn fugl (F). Fokus/avtrekk når mål er satt."
                         : "Skuddklar — trygg bakgrunn, gun deployed"
               }
-              onClick={proceed}
+              onClick={!gunDeployed ? deployGun : proceed}
             >
               {!gunDeployed
-                ? "(deploy gun)"
+                ? "Deploy gun"
                 : hasActiveBird && !birdOnMap
                   ? "Fugl utenfor kart"
                   : hasActiveBird && !liveBakgrunnOk
@@ -2400,11 +2411,7 @@ export function AwareAppView({
                     : `Backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → 0 %, 1 QR → +10 %)`
                 }
               >
-                {gunDeployed
-                  ? "Gun deployed"
-                  : gunPrepOnly
-                    ? "Deploy gun"
-                    : `Deploy gun (+${Math.round(gunDeployNerve * 100)}% nervøsitet)`}
+                {gunDeployed ? "Gun deployed" : "Deploy gun"}
               </button>
               {gunDeployed ? (
                 <button
@@ -2598,7 +2605,12 @@ export function AwareAppView({
                 {postShotSkuddparMode
                   ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen).`
                   : focusPairId || trackActivePair?.harvestDraft
-                    ? "Juster skuddpar fra hukommelse (hele jaktdagen). Stand = der du står; sann fall beholdes."
+                    ? trackActivePair?.skuddparCommitted === false ||
+                        (focusPairId &&
+                          shotPairs.find((p) => p.id === focusPairId)
+                            ?.skuddparCommitted === false)
+                      ? "Ingen synlig skuddpar ennå — dial stand → tre fra hukommelse. Sann fall er lagret skjult."
+                      : "Juster skuddpar fra hukommelse (hele jaktdagen). Stand = der du står; sann fall beholdes."
                     : skuddparAutofill
                       ? "Cam i bruk: avstand/retning prefylles — juster ved behov under kartet."
                       : "Sett avstand (sirkel) og retning under kartet — uten cam ingen autofyll."}
@@ -2711,10 +2723,10 @@ export function AwareAppView({
                     trackActivePair.resultKind === "vital_kill") ? (
                     <>
                       <p className="shop-row-note">
-                        Drept fugl i treet. Tid fra der du står nå —{" "}
-                        {recoveryMinutes} min (
-                        {TREE_RECOVERY_MINUTES_PER_100M} min/100 m ·{" "}
-                        {recoveryWalkM} m).
+                        Drept fugl i treet.
+                        {trackActivePair.skuddparCommitted === false
+                          ? " Ingen synlig skuddpar — dial i Shoot fra hukommelse, eller hent ved treet på magefølelse."
+                          : ` Tid fra der du står nå — ${recoveryMinutes} min (${TREE_RECOVERY_MINUTES_PER_100M} min/100 m · ${recoveryWalkM} m).`}
                       </p>
                       <button
                         type="button"
@@ -2722,17 +2734,31 @@ export function AwareAppView({
                         disabled={trackActivePair.found === true}
                         onClick={markRecoveredAtTree}
                       >
-                        Hent ved treet ({recoveryMinutes} min)
+                        {trackActivePair.skuddparCommitted === false
+                          ? "Hent ved treet"
+                          : `Hent ved treet (${recoveryMinutes} min)`}
                       </button>
                     </>
                   ) : trackActivePair?.resultKind === "ettersok" ? (
                     <>
                       <ol className="aware-ettersok-steps">
                         <li>
-                          Trykk på kartet og legg et <strong>søkespor</strong>{" "}
-                          ut fra lagret skuddpar (
-                          {ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt +{" "}
-                          {MINUTES_PER_100M} min/100 m).
+                          {trackActivePair.skuddparCommitted === false ? (
+                            <>
+                              Dial <strong>skuddpar</strong> i Shoot fra
+                              hukommelse (markøren er borte), deretter legg{" "}
+                              <strong>søkespor</strong> (
+                              {ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt +{" "}
+                              {MINUTES_PER_100M} min/100 m).
+                            </>
+                          ) : (
+                            <>
+                              Trykk på kartet og legg et{" "}
+                              <strong>søkespor</strong> ut fra lagret skuddpar (
+                              {ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt +{" "}
+                              {MINUTES_PER_100M} min/100 m).
+                            </>
+                          )}
                         </li>
                         <li>
                           Kjør <strong>Ettersøk</strong> — tid = punkter +
