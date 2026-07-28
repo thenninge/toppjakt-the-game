@@ -3,6 +3,7 @@
  */
 
 import {
+  AWARE_MAP_MAX_M,
   AWARE_METERS_PER_PCT,
   bearingDegFromTo,
   distanceMBetween,
@@ -128,6 +129,8 @@ export type GenerateFleeObservationOpts = {
    * scope-track cue without cams.
    */
   feltRecoil?: number;
+  /** Terrain Aware scale (m per map %). */
+  metersPerPct?: number;
   random?: () => number;
 };
 
@@ -147,10 +150,11 @@ export function generateFleeObservation(
   opts: GenerateFleeObservationOpts,
 ): GeneratedFlee {
   const random = opts.random ?? Math.random;
+  const mPerPct = opts.metersPerPct ?? AWARE_METERS_PER_PCT;
   const range = flyDistanceRangeM(opts.hitZone);
   const trueFleeBearing = random() * 360;
   const trueFlyDistM = range.min + random() * (range.max - range.min);
-  const pct = trueFlyDistM / AWARE_METERS_PER_PCT;
+  const pct = trueFlyDistM / mPerPct;
   const rad = ((trueFleeBearing - 90) * Math.PI) / 180;
   const landPos: CellPoint = {
     x: clampPct(opts.birdAtShot.x + Math.cos(rad) * pct),
@@ -159,7 +163,7 @@ export function generateFleeObservation(
 
   // Cue frame: from perched bird → land (not from hunter stand).
   const trueLandBearing = bearingDegFromTo(opts.birdAtShot, landPos);
-  const trueLandDistM = distanceMBetween(opts.birdAtShot, landPos);
+  const trueLandDistM = distanceMBetween(opts.birdAtShot, landPos, mPerPct);
 
   const feltRecoil =
     opts.feltRecoil != null && Number.isFinite(opts.feltRecoil)
@@ -458,6 +462,12 @@ export function impactFromShot(opts: {
 export const SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG = 0;
 export const SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M = 250;
 
+/**
+ * Instant kill inside this range: «Hent ved treet» without cam / saved skuddpar.
+ * Longer tree kills still need camcorder, triggercam, EL Range, or a registered pair.
+ */
+export const CLOSE_RANGE_TREE_HENT_MAX_M = 200;
+
 /** Auto skuddpar distance noise when gear filmed the shot. */
 export const TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M = 30;
 export const CAMCORDER_SHOT_PAIR_UNCERTAINTY_M = 10;
@@ -502,16 +512,21 @@ export function estimateVisibleShotPair(opts: {
   hasCamcorder: boolean;
   /** Swarovski EL Range in kit — exact skuddpar. */
   hasElRange?: boolean;
+  metersPerPct?: number;
+  /** Cap for dialed skuddpar distance (terrain Aware max). */
+  maxDistanceM?: number;
   random?: () => number;
 }): VisibleShotPairEstimate | null {
   const random = opts.random ?? Math.random;
+  const mPerPct = opts.metersPerPct ?? AWARE_METERS_PER_PCT;
+  const maxDist = opts.maxDistanceM ?? AWARE_MAP_MAX_M;
   const trueBearing = bearingDegFromTo(opts.stand, opts.trueAim);
-  const trueDist = distanceMBetween(opts.stand, opts.trueAim);
+  const trueDist = distanceMBetween(opts.stand, opts.trueAim, mPerPct);
 
   if (opts.hasElRange) {
     const distanceM = Math.max(
       50,
-      Math.min(450, Math.round(trueDist)),
+      Math.min(maxDist, Math.round(trueDist)),
     );
     const bearingDeg = Math.round(normalizeDeg(trueBearing));
     return {
@@ -519,6 +534,7 @@ export function estimateVisibleShotPair(opts: {
         stand: opts.stand,
         bearingDeg,
         distanceM,
+        metersPerPct: mPerPct,
       }),
       distanceM,
       bearingDeg,
@@ -534,7 +550,7 @@ export function estimateVisibleShotPair(opts: {
     const err = (random() * 2 - 1) * band;
     const distanceM = Math.max(
       50,
-      Math.min(450, Math.round(trueDist + err)),
+      Math.min(maxDist, Math.round(trueDist + err)),
     );
     const bearingDeg = Math.round(normalizeDeg(trueBearing));
     return {
@@ -542,6 +558,7 @@ export function estimateVisibleShotPair(opts: {
         stand: opts.stand,
         bearingDeg,
         distanceM,
+        metersPerPct: mPerPct,
       }),
       distanceM,
       bearingDeg,
@@ -553,7 +570,7 @@ export function estimateVisibleShotPair(opts: {
     const err = (random() * 2 - 1) * TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M;
     const distanceM = Math.max(
       50,
-      Math.min(450, Math.round(trueDist + err)),
+      Math.min(maxDist, Math.round(trueDist + err)),
     );
     const bearingDeg = Math.round(normalizeDeg(trueBearing));
     return {
@@ -561,6 +578,7 @@ export function estimateVisibleShotPair(opts: {
         stand: opts.stand,
         bearingDeg,
         distanceM,
+        metersPerPct: mPerPct,
       }),
       distanceM,
       bearingDeg,

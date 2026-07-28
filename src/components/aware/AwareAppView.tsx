@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -19,7 +20,9 @@ import {
   type DangerWedge,
 } from "@/lib/aware/cellSafety";
 import {
-  AWARE_METERS_PER_PCT,
+  awareMapMaxMFor,
+  awareMetersPerPctFor,
+  cellCenterOnAwareMap,
   bearingDegFromTo,
   distanceMBetween,
   stepByKeys,
@@ -27,6 +30,7 @@ import {
   type CellPoint,
 } from "@/lib/aware/cellGeometry";
 import {
+  CLOSE_RANGE_TREE_HENT_MAX_M,
   estimateEttersokFind,
   impactFromShot,
 } from "@/lib/aware/ettersok";
@@ -89,10 +93,65 @@ import {
 } from "@/lib/weather/spec";
 import type { AmmoSpec } from "@/lib/ammo/spec";
 
-/** Aware Shoot / Track map zoom — not used in stalk (Aware tab). */
-const AWARE_MAP_ZOOM_MIN = 1;
-const AWARE_MAP_ZOOM_MAX = 3;
-const AWARE_MAP_ZOOM_FACTOR = 1.25;
+/** Aware map zoom (Aware / Shoot / Track).
+ * UI 1× = former ~2.4× visual scale (full terrain, player-centred). */
+const AWARE_MAP_ZOOM_BASE = 2.4;
+/** Discrete UI zoom levels — outs below 1×, then mild steps up to 2.5×. */
+const AWARE_MAP_ZOOM_UI_STEPS = [
+  0.25, 0.5, 0.75, 1, 1.25, 1.56, 1.95, 2.5,
+] as const;
+const AWARE_MAP_ZOOM_UI_MIN = AWARE_MAP_ZOOM_UI_STEPS[0];
+const AWARE_MAP_ZOOM_UI_DEFAULT = 1;
+const AWARE_MAP_ZOOM_UI_MAX =
+  AWARE_MAP_ZOOM_UI_STEPS[AWARE_MAP_ZOOM_UI_STEPS.length - 1]!;
+const AWARE_MAP_ZOOM_MIN = AWARE_MAP_ZOOM_BASE * AWARE_MAP_ZOOM_UI_MIN;
+const AWARE_MAP_ZOOM_DEFAULT = AWARE_MAP_ZOOM_BASE * AWARE_MAP_ZOOM_UI_DEFAULT;
+const AWARE_MAP_ZOOM_MAX = AWARE_MAP_ZOOM_BASE * AWARE_MAP_ZOOM_UI_MAX;
+
+function awareZoomUi(actualZoom: number): number {
+  return actualZoom / AWARE_MAP_ZOOM_BASE;
+}
+
+function awareZoomFromUi(ui: number): number {
+  return ui * AWARE_MAP_ZOOM_BASE;
+}
+
+function awareZoomUiLabel(actualZoom: number): string {
+  const ui = awareZoomUi(actualZoom);
+  return `${ui.toFixed(2).replace(/\.?0+$/, "")}×`;
+}
+
+function nearestAwareZoomUiStep(ui: number): number {
+  let best = AWARE_MAP_ZOOM_UI_STEPS[0]!;
+  let bestDist = Math.abs(ui - best);
+  for (const step of AWARE_MAP_ZOOM_UI_STEPS) {
+    const d = Math.abs(ui - step);
+    if (d < bestDist) {
+      best = step;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+function bumpAwareZoomUi(ui: number, dir: 1 | -1): number {
+  const current = nearestAwareZoomUiStep(ui);
+  const idx = AWARE_MAP_ZOOM_UI_STEPS.indexOf(
+    current as (typeof AWARE_MAP_ZOOM_UI_STEPS)[number],
+  );
+  const nextIdx = Math.max(
+    0,
+    Math.min(AWARE_MAP_ZOOM_UI_STEPS.length - 1, idx + dir),
+  );
+  return AWARE_MAP_ZOOM_UI_STEPS[nextIdx]!;
+}
+
+function mapZoomAllowsPan(zoom: number): boolean {
+  return Math.abs(zoom - 1) > 0.001;
+}
+
+/** Map click tool under Aware tab (above Til spotting / Gun). */
+type AwareMapTool = "aware" | "measure";
 
 export type AwareShootStance = {
   bearingDeg: number;
@@ -195,6 +254,11 @@ type AwareAppViewProps = {
     distanceM: number;
   }) => void;
   onProceedToShoot: (stance?: AwareShootStance) => void;
+  /**
+   * Give up wounded ettersøk for one pair (active Track bird only).
+   * Bird lost + mental hit — not used for tree-hent.
+   */
+  onAbandonSearch?: (pairId: string) => void;
   onBirdFlushed: (nervousness: number) => void;
   /** Live nerve for global HUD BIRD bar (0–cap). */
   onNerveChange?: (nerve: number) => void;
@@ -235,7 +299,6 @@ type MoveKeys = {
 };
 
 const MOVE_SPEED_MPS = 14;
-const MOVE_PCT_PER_SEC = MOVE_SPEED_MPS / AWARE_METERS_PER_PCT;
 /** Game seconds per real second while sneaking toward an Aware plan point. */
 const AWARE_SNEAK_TIME_FACTOR = 10;
 /** Ambient Aware clock when standing still (unchanged feel). */
@@ -299,71 +362,84 @@ function sliceWedgePath(
   return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
 }
 
-/** Extend hunter→bird past the bird so backstop vs kakestykker is obvious. */
-function shotRayPoints(
-  hunter: CellPoint,
-  bird: CellPoint,
-  extendPast = 1.35,
-): { x1: number; y1: number; x2: number; y2: number } {
-  const dx = bird.x - hunter.x;
-  const dy = bird.y - hunter.y;
-  return {
-    x1: hunter.x,
-    y1: hunter.y,
-    x2: hunter.x + dx * extendPast,
-    y2: hunter.y + dy * extendPast,
-  };
-}
+/** Aware safety ring — kakestykker are drawn inside this radius. */
+const AWARE_RING_RADIUS_M = 1000;
 
 function DangerOverlay({
   wedges,
   center,
-  hunter,
-  bird,
+  bearingDeg,
   shotSafe,
+  ringRadiusPct,
 }: {
   wedges: DangerWedge[];
   center: CellPoint;
-  hunter: CellPoint;
-  bird: CellPoint;
+  /** Locked LRF / F mark compass bearing (direction only). */
+  bearingDeg: number;
   shotSafe: boolean;
+  /** Map-% radius of the 1000 m Aware ring. */
+  ringRadiusPct: number;
 }) {
-  const r = 48;
-  const ray = shotRayPoints(hunter, bird);
+  const tipRad = ((bearingDeg - 90) * Math.PI) / 180;
+  const tipX = center.x + ringRadiusPct * 0.92 * Math.cos(tipRad);
+  const tipY = center.y + ringRadiusPct * 0.92 * Math.sin(tipRad);
+  const ringDiamPct = ringRadiusPct * 2;
   return (
-    <svg
-      className="aware-hab-svg"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      {wedges.map((w, i) => (
-        <path
-          key={`${w.kind}-${i}`}
-          d={sliceWedgePath(center.x, center.y, r, w.bearingDeg, w.halfAngleDeg)}
-          fill={w.fill}
-          stroke="rgba(255,220,160,0.35)"
-          strokeWidth="0.25"
+    <>
+      <div
+        className="aware-safety-ring"
+        style={{
+          left: `${center.x}%`,
+          top: `${center.y}%`,
+          width: `${ringDiamPct}%`,
+        }}
+        title={`${AWARE_RING_RADIUS_M} m`}
+        aria-hidden
+      />
+      <svg
+        className="aware-hab-svg"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        aria-hidden
+      >
+        {wedges.map((w, i) => (
+          <path
+            key={`${w.kind}-${i}`}
+            d={sliceWedgePath(
+              center.x,
+              center.y,
+              ringRadiusPct,
+              w.bearingDeg,
+              w.halfAngleDeg,
+            )}
+            fill={w.fill}
+            stroke="rgba(255,220,160,0.55)"
+            strokeWidth="0.35"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {/* Direction only — LRF / F mark bearing from ring centre. */}
+        <line
+          x1={center.x}
+          y1={center.y}
+          x2={tipX}
+          y2={tipY}
+          stroke={
+            shotSafe ? "rgba(143, 239, 106, 0.95)" : "rgba(240, 80, 70, 0.95)"
+          }
+          strokeWidth="0.7"
+          strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
         />
-      ))}
-      {/* Shot line in the SAME % space as wedges + Klar til skudd. */}
-      <line
-        x1={ray.x1}
-        y1={ray.y1}
-        x2={ray.x2}
-        y2={ray.y2}
-        stroke={shotSafe ? "rgba(143, 239, 106, 0.95)" : "rgba(240, 80, 70, 0.95)"}
-        strokeWidth="0.7"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-      <polygon
-        points="0,-2.2 1.4,1.2 -1.4,1.2"
-        fill={shotSafe ? "rgba(143, 239, 106, 0.95)" : "rgba(240, 80, 70, 0.95)"}
-        transform={`translate(${bird.x} ${bird.y}) rotate(${Math.atan2(bird.x - hunter.x, -(bird.y - hunter.y)) * (180 / Math.PI)})`}
-      />
-    </svg>
+        <polygon
+          points="0,-2.2 1.4,1.2 -1.4,1.2"
+          fill={
+            shotSafe ? "rgba(143, 239, 106, 0.95)" : "rgba(240, 80, 70, 0.95)"
+          }
+          transform={`translate(${tipX} ${tipY}) rotate(${bearingDeg})`}
+        />
+      </svg>
+    </>
   );
 }
 
@@ -410,6 +486,7 @@ export function AwareAppView({
   onAwareSneakRealSec,
   onEttersokEffort,
   onProceedToShoot,
+  onAbandonSearch,
   onBirdFlushed,
   onNerveChange,
   abortLabel = "Til spotting",
@@ -442,9 +519,12 @@ export function AwareAppView({
     return initialRest;
   });
   const [hunter, setHunter] = useState<CellPoint>(
-    () => initialHunter ?? { x: 50, y: 50 },
+    () => initialHunter ?? cellCenterOnAwareMap(cell, map),
   );
   const [destination, setDestination] = useState<CellPoint | null>(null);
+  const [mapTool, setMapTool] = useState<AwareMapTool>("aware");
+  const [measureA, setMeasureA] = useState<CellPoint | null>(null);
+  const [measureB, setMeasureB] = useState<CellPoint | null>(null);
   const [nerve, setNerve] = useState(() =>
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, initialBirdNerve)),
   );
@@ -481,8 +561,10 @@ export function AwareAppView({
     focusPairId,
   );
   /** Map zoom for Shoot (skuddpar) + Track only. Cap 3×. */
-  const [mapZoom, setMapZoom] = useState(AWARE_MAP_ZOOM_MIN);
+  const [mapZoom, setMapZoom] = useState(AWARE_MAP_ZOOM_DEFAULT);
   const [mapPanPx, setMapPanPx] = useState({ x: 0, y: 0 });
+  const mapZoomRef = useRef(mapZoom);
+  mapZoomRef.current = mapZoom;
 
   const keysRef = useRef<MoveKeys>({
     up: false,
@@ -525,25 +607,46 @@ export function AwareAppView({
   const camoRef = useRef(camoSneakPct);
   camoRef.current = camoSneakPct;
 
-  /** Bird world position — fixed from LRF/init, or resumed for ettersøk. */
-  const birdWorld = useMemo(
-    () =>
-      initialBird ??
-      birdMarkerOnAwareMap(birdDistanceM, birdBearingDeg),
-    [initialBird, birdDistanceM, birdBearingDeg],
-  );
+  /** Per-terrain Aware distance scale (Finnskogen default when unset). */
+  const mapMaxM = awareMapMaxMFor(map);
+  const metersPerPct = awareMetersPerPctFor(map);
+  const movePctPerSec = MOVE_SPEED_MPS / metersPerPct;
 
-  const liveDistanceM = distanceMBetween(hunter, birdWorld);
+  /** Bird world position — fixed from LRF/init, or resumed for ettersøk. */
+  const birdWorld = useMemo(() => {
+    if (initialBird) return initialBird;
+    const origin = initialHunter ?? cellCenterOnAwareMap(cell, map);
+    return birdMarkerOnAwareMap(birdDistanceM, birdBearingDeg, {
+      origin,
+      maxM: mapMaxM,
+    });
+  }, [
+    initialBird,
+    initialHunter,
+    birdDistanceM,
+    birdBearingDeg,
+    cell,
+    map,
+    mapMaxM,
+  ]);
+
+  const liveDistanceM = distanceMBetween(hunter, birdWorld, metersPerPct);
   const liveBearing = bearingDegFromTo(hunter, birdWorld);
-  /** Clicked map mål: preview Aware cakes + shot line from there (planning). */
+  /** Clicked map mål: preview Aware cakes + direction from there (planning). */
   const planOrigin = destination ?? hunter;
-  const planDistanceM = distanceMBetween(planOrigin, birdWorld);
-  const planBearing = bearingDegFromTo(planOrigin, birdWorld);
+  const planDistanceM = distanceMBetween(planOrigin, birdWorld, metersPerPct);
+  /** Locked LRF / F mark — direction only (not toward live bird seat). */
+  const measuredBearing = normalizeBearingDeg(birdBearingDeg);
   const planning = destination != null;
   /** Walk distance from current stand to the clicked Aware plan point. */
   const walkToPlanM = planning
-    ? distanceMBetween(hunter, destination)
+    ? distanceMBetween(hunter, destination, metersPerPct)
     : null;
+  const measureDistM =
+    measureA && measureB
+      ? distanceMBetween(measureA, measureB, metersPerPct)
+      : null;
+  const ringRadiusPct = AWARE_RING_RADIUS_M / metersPerPct;
 
   /** Fixed far hazards for this cell — bearing + width frozen for the encounter. */
   const dangerHazards = useMemo(
@@ -566,7 +669,7 @@ export function AwareAppView({
   const shotCrosswind = crosswindMs(
     windSnap.windSpeedMs,
     windSnap.windFromDeg,
-    planBearing,
+    measuredBearing,
   );
   const density = densityRatioFromTempC(windSnap.temperatureC);
   const holdHint =
@@ -577,19 +680,19 @@ export function AwareAppView({
         })
       : null;
 
-  /** Preview safety from plan stand (or hunter if no mål). */
-  const bakgrunnOk = bearingIsSafe(planBearing, dangerWedges);
+  /** Preview safety from plan stand (or hunter if no mål) along LRF/F bearing. */
+  const bakgrunnOk = bearingIsSafe(measuredBearing, dangerWedges);
   const blockingWedge = dangerWedges.find((w) =>
-    bearingHitsWedge(planBearing, w),
+    bearingHitsWedge(measuredBearing, w),
   );
   const safeHab = !dangerWedges.some(
-    (w) => w.kind === "habitation" && bearingHitsWedge(planBearing, w),
+    (w) => w.kind === "habitation" && bearingHitsWedge(measuredBearing, w),
   );
   const safeTerrain = !dangerWedges.some(
-    (w) => w.kind === "terrain" && bearingHitsWedge(planBearing, w),
+    (w) => w.kind === "terrain" && bearingHitsWedge(measuredBearing, w),
   );
   /** Actual stand — Klar til skudd must use where you are now. */
-  const liveBakgrunnOk = bearingIsSafe(liveBearing, liveDangerWedges);
+  const liveBakgrunnOk = bearingIsSafe(measuredBearing, liveDangerWedges);
   const coverFactor = useMemo(
     () => coverFactorForCell(map.id, cell),
     [map.id, cell],
@@ -610,27 +713,11 @@ export function AwareAppView({
   /** Stand→bird while defining skuddpar (wizard stand is frozen). */
   const wizardBirdDistanceM =
     shootWizardActive && skuddparAutofill
-      ? distanceMBetween(shootWizard.stand, birdWorld)
+      ? distanceMBetween(shootWizard.stand, birdWorld, metersPerPct)
       : null;
   const wizardBirdBearingDeg =
     shootWizardActive && skuddparAutofill
       ? bearingDegFromTo(shootWizard.stand, birdWorld)
-      : null;
-
-  const shootPreviewImpact =
-    shootWizard.phase === "range" || shootWizard.phase === "direction"
-      ? (() => {
-          const dialed = impactFromShot({
-            stand: shootWizard.stand,
-            bearingDeg: shootWizard.bearingDeg,
-            distanceM: shootWizard.rangeM,
-          });
-          if (!skuddparAutofill) return dialed;
-          // Keep preview on the bird when dial matches (slider step rounding).
-          return distanceMBetween(dialed, birdWorld) <= 12
-            ? birdWorld
-            : dialed;
-        })()
       : null;
 
   // Keyboard: arrow movement while stalking (not during skuddpar wizard)
@@ -692,11 +779,11 @@ export function AwareAppView({
         if (moving) {
           moveHoldRef.current += dt;
           onAwareSneakRealSecRef.current?.(dt);
-          const step = MOVE_PCT_PER_SEC * dt;
+          const step = movePctPerSec * dt;
           let next = hunterRef.current;
           if (dest && (sneakBtnMoving || arrowMoving)) {
             next = stepToward(next, dest, step);
-            if (distanceMBetween(next, dest) < AWARE_METERS_PER_PCT * 0.4) {
+            if (distanceMBetween(next, dest, metersPerPct) < metersPerPct * 0.4) {
               setDestination(null);
               destRef.current = null;
               if (sneakToPointHeldRef.current) {
@@ -729,7 +816,7 @@ export function AwareAppView({
         }
 
         if (!postShotSkuddparMode && !gunPrepOnly) {
-          const dist = distanceMBetween(hunterRef.current, birdWorld);
+          const dist = distanceMBetween(hunterRef.current, birdWorld, metersPerPct);
           const nerveDt = moving ? dt * AWARE_SNEAK_NERVE_MULT : dt;
           const result = tickEncounterNerve(nerveRef.current, nerveDt, {
             distanceM: dist,
@@ -763,30 +850,60 @@ export function AwareAppView({
     return () => cancelAnimationFrame(raf);
   }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode, gunPrepOnly]);
 
-  const activePair =
-    shotPairs.find((p) => p.id === activePairId) ?? shotPairs[0] ?? null;
+  const activePair = shotPairs.find((p) => p.id === activePairId) ?? null;
+
+  /**
+   * Track actions only for pairs tied to a real shot (harvestDraft).
+   * Planning-only Shoot skuddpar must not appear as «Søk tiur».
+   */
+  const actionableTrackPairs = useMemo(() => {
+    const open = shotPairs.filter(
+      (p) =>
+        p.found == null &&
+        !!p.harvestDraft &&
+        (p.resultKind === "instant_kill" ||
+          p.resultKind === "vital_kill" ||
+          p.resultKind === "ettersok"),
+    );
+    const onCell = open.filter(
+      (p) => p.cell.row === cell.row && p.cell.col === cell.col,
+    );
+    return onCell.length > 0 ? onCell : open;
+  }, [shotPairs, cell.row, cell.col]);
+
+  const trackActivePair =
+    actionableTrackPairs.find((p) => p.id === activePairId) ??
+    actionableTrackPairs[0] ??
+    null;
+
   /** Walk distance from current stand to this pair's tree (aim point). */
   const recoveryWalkM =
-    activePair &&
-    (activePair.resultKind === "instant_kill" ||
-      activePair.resultKind === "vital_kill") &&
-    activePair.found !== true
+    trackActivePair &&
+    (trackActivePair.resultKind === "instant_kill" ||
+      trackActivePair.resultKind === "vital_kill") &&
+    trackActivePair.found !== true
       ? Math.round(
-          distanceMBetween(hunter, shotPairAimPoint(activePair)),
+          distanceMBetween(hunter, shotPairAimPoint(trackActivePair), metersPerPct),
         )
       : null;
   const recoveryMinutes =
     recoveryWalkM != null ? treeRecoveryMinutes(recoveryWalkM) : null;
   /**
    * Don't spoil exact land / bird seat during ettersøk or hent/søk — player
-   * uses skuddpar (stand → aim) + flee cue. Hide on every tab (incl. Shoot).
-   * Keep visible during the 60 s post-shot skuddpar window, and during stalk.
+   * uses skuddpar (stand → aim) + flee cue. Also never show the live bird X on
+   * Shoot/Track tabs (pair aim uses a distinct tre-marker). Keep visible during
+   * the 60 s post-shot skuddpar window, and during Aware stalk.
    */
   const hideTrueLand =
     !postShotSkuddparMode &&
     !!focusPairId &&
     !!activePair &&
     activePair.found !== true;
+  /**
+   * Active bird encounter (LRF/Engage stalk or post-shot ghost).
+   * Gun-prep / review / hidden ettersøk — no bird distances.
+   */
+  const hasActiveBird = !gunPrepOnly && !hideTrueLand;
   /** Skuddpar on this cell map (stand → aim + søkeradius). */
   const pairsOnCell = shotPairs.filter(
     (p) => p.cell.row === cell.row && p.cell.col === cell.col,
@@ -800,18 +917,42 @@ export function AwareAppView({
     };
   }
 
-  const mapZoomEnabled = mode === "shoot" || mode === "track";
+  /** Pan so `point` (map %) sits at the viewport centre (clamped to map). */
+  function panToMapPoint(
+    point: CellPoint,
+    zoom: number,
+  ): { x: number; y: number } {
+    const frame = mapFrameRef.current;
+    if (!frame || !mapZoomAllowsPan(zoom)) return { x: 0, y: 0 };
+    const w = frame.clientWidth;
+    const h = frame.clientHeight;
+    if (w < 2 || h < 2) return { x: 0, y: 0 };
+    const nx = point.x / 100;
+    const ny = point.y / 100;
+    return clampMapPan(
+      {
+        x: -w * (nx - 0.5) * zoom,
+        y: -h * (ny - 0.5) * zoom,
+      },
+      zoom,
+    );
+  }
+
+  function panToPlayer(zoom: number): { x: number; y: number } {
+    return panToMapPoint(hunterRef.current, zoom);
+  }
 
   function clampMapPan(
     pan: { x: number; y: number },
     zoom: number,
   ): { x: number; y: number } {
     const frame = mapFrameRef.current;
-    if (!frame || zoom <= 1.001) return { x: 0, y: 0 };
+    if (!frame || !mapZoomAllowsPan(zoom)) return { x: 0, y: 0 };
     const w = frame.clientWidth;
     const h = frame.clientHeight;
-    const maxX = ((zoom - 1) / 2) * w;
-    const maxY = ((zoom - 1) / 2) * h;
+    // zoom > 1: pan within magnified excess; zoom < 1: nudge shrunk map in frame.
+    const maxX = (Math.abs(zoom - 1) / 2) * w;
+    const maxY = (Math.abs(zoom - 1) / 2) * h;
     return {
       x: Math.max(-maxX, Math.min(maxX, pan.x)),
       y: Math.max(-maxY, Math.min(maxY, pan.y)),
@@ -820,50 +961,88 @@ export function AwareAppView({
 
   function bumpMapZoom(dir: 1 | -1) {
     setMapZoom((z) => {
-      const next =
-        dir > 0
-          ? Math.min(AWARE_MAP_ZOOM_MAX, z * AWARE_MAP_ZOOM_FACTOR)
-          : Math.max(AWARE_MAP_ZOOM_MIN, z / AWARE_MAP_ZOOM_FACTOR);
-      const rounded = Math.round(next * 100) / 100;
-      const clamped = Math.max(
-        AWARE_MAP_ZOOM_MIN,
-        Math.min(AWARE_MAP_ZOOM_MAX, rounded),
-      );
+      const nextUi = bumpAwareZoomUi(awareZoomUi(z), dir);
+      const clamped = awareZoomFromUi(nextUi);
       setMapPanPx((pan) => clampMapPan(pan, clamped));
       return clamped;
     });
   }
 
   function resetMapZoom() {
-    setMapZoom(AWARE_MAP_ZOOM_MIN);
-    setMapPanPx({ x: 0, y: 0 });
+    setMapZoom(AWARE_MAP_ZOOM_DEFAULT);
+    setMapPanPx(panToPlayer(AWARE_MAP_ZOOM_DEFAULT));
   }
 
-  useEffect(() => {
-    if (!mapZoomEnabled) resetMapZoom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset when leaving Shoot/Track
-  }, [mapZoomEnabled]);
+  // Default 1× (base 2.4) centred on the player; re-centre when stand cell / map changes.
+  useLayoutEffect(() => {
+    const frame = mapFrameRef.current;
+    if (!frame) return;
+    const apply = () => setMapPanPx(panToPlayer(mapZoomRef.current));
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(frame);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pan helpers close over hunter/map
+  }, [cell.row, cell.col, map.id, map.cols, map.rows]);
 
   function setMapDestination(e: MouseEvent<HTMLDivElement>) {
     if (!stalking || mode !== "aware") return;
     const point = mapClickPoint(e);
     setDestination(point);
-    const walkM = Math.round(distanceMBetween(hunter, point));
-    const birdM = Math.round(distanceMBetween(point, birdWorld));
+    const walkM = Math.round(distanceMBetween(hunter, point, metersPerPct));
+    const nHab = dangerHazards.filter((h) => h.kind === "habitation").length;
+    const nTerr = dangerHazards.filter((h) => h.kind === "terrain").length;
+    const cakes =
+      nHab + nTerr === 0
+        ? "Ingen farlige kakestykker i denne cellen (stiplet 1000 m-sirkel · grønn/rød = LRF/F-retning)."
+        : `Kakestykker fra punktet: ${nHab} bebyggelse · ${nTerr} terreng (i 1000 m-sirkel).`;
+    const birdBit = hasActiveBird
+      ? ` · ${Math.round(distanceMBetween(point, birdWorld, metersPerPct))} m til fugl`
+      : "";
     setStatus(
-      `Planleggingsmål satt (${walkM} m å gå · ${birdM} m til fugl derfra). Hold piltast — eller «Sneak to Aware-point» på mobil — for å snike dit.`,
+      `${cakes} (${walkM} m å gå${birdBit}). Hold piltast — eller «Sneak to Aware-point» — for å snike dit.`,
     );
     stageRef.current?.focus();
+  }
+
+  function setMapMeasurePoint(e: MouseEvent<HTMLDivElement>) {
+    if (!stalking || mode !== "aware") return;
+    const point = mapClickPoint(e);
+    if (!measureA || measureB) {
+      setMeasureA(point);
+      setMeasureB(null);
+      setStatus("Measure: punkt 1 satt — klikk punkt 2 for avstand.");
+    } else {
+      setMeasureB(point);
+      const m = Math.round(distanceMBetween(measureA, point, metersPerPct));
+      setStatus(`Measure: ${m} m mellom punktene.`);
+    }
+    stageRef.current?.focus();
+  }
+
+  function selectMapTool(tool: AwareMapTool) {
+    setMapTool(tool);
+    if (tool === "measure") {
+      setStatus("Measure: klikk to punkter på kartet for å måle avstand.");
+    } else {
+      setMeasureA(null);
+      setMeasureB(null);
+      if (stalking) {
+        setStatus(
+          "Aware: klikk på kartet for å regne kakestykker fra det punktet.",
+        );
+      }
+    }
   }
 
   function startShootPair() {
     const stand = { ...hunter };
     if (skuddparAutofill) {
-      const exactDist = distanceMBetween(stand, birdWorld);
+      const exactDist = distanceMBetween(stand, birdWorld, metersPerPct);
       const exactBearing = bearingDegFromTo(stand, birdWorld);
       const rangeM = Math.max(
         50,
-        Math.min(450, Math.round(exactDist / 5) * 5),
+        Math.min(mapMaxM, Math.round(exactDist / 5) * 5),
       );
       const bearingDeg = normalizeBearingDeg(exactBearing);
       setShootWizard({
@@ -889,9 +1068,10 @@ export function AwareAppView({
     );
   }
 
+  /** Cancel only the skuddpar wizard — does not abort ettersøk / Aware. */
   function cancelShootWizard() {
     setShootWizard({ phase: "idle" });
-    setStatus("Shoot avbrutt.");
+    setStatus("Skuddpar-registrering avbrutt.");
   }
 
   function saveShootPair() {
@@ -901,12 +1081,13 @@ export function AwareAppView({
       stand,
       bearingDeg,
       distanceM: rangeM,
+      metersPerPct,
     });
     // Snap to true bird only when cam autofill is allowed (within one slider step).
-    const snapM = distanceMBetween(dialed, birdWorld);
+    const snapM = distanceMBetween(dialed, birdWorld, metersPerPct);
     const target =
       skuddparAutofill && snapM <= 12 ? { ...birdWorld } : dialed;
-    const distanceM = Math.round(distanceMBetween(stand, target));
+    const distanceM = Math.round(distanceMBetween(stand, target, metersPerPct));
     const bearing = Math.round(bearingDegFromTo(stand, target));
 
     if (postShotSkuddparMode && onPostShotSkuddparSaved) {
@@ -936,28 +1117,27 @@ export function AwareAppView({
       skuddparCommitted: true,
     };
     onShotPairsChange([pair, ...shotPairs]);
-    setActivePairId(pair.id);
     setShootWizard({ phase: "idle" });
     setStatus(
-      `Skuddpar lagret: ${pair.distanceM} m / ${compassLabel(pair.bearingDeg)} — synlig på kartet (stand → tre + 20 m).`,
+      `Skuddpar lagret: ${pair.distanceM} m / ${compassLabel(pair.bearingDeg)} — synlig på kartet (stand → tre + 20 m). Kobles til neste treff i denne cella.`,
     );
-    setMode("track");
+    // Stay on Shoot — planning pairs are not Track targets until a shot lands.
   }
 
   function addTrackPoint(e: MouseEvent<HTMLDivElement>) {
-    if (!activePair || mode !== "track") return;
-    if (activePair.found === true) return;
+    if (!trackActivePair || mode !== "track") return;
+    if (trackActivePair.found === true) return;
     // Tree kills: only «Hent ved treet» — no søkespor / ettersøk.
     if (
-      activePair.resultKind === "instant_kill" ||
-      activePair.resultKind === "vital_kill"
+      trackActivePair.resultKind === "instant_kill" ||
+      trackActivePair.resultKind === "vital_kill"
     ) {
       return;
     }
-    if (activePair.resultKind !== "ettersok") return;
+    if (trackActivePair.resultKind !== "ettersok") return;
     const point = mapClickPoint(e);
     const next = shotPairs.map((p) =>
-      p.id === activePair.id
+      p.id === trackActivePair.id
         ? {
             ...p,
             trackPoints: [
@@ -968,18 +1148,21 @@ export function AwareAppView({
         : p,
     );
     onShotPairsChange(next);
-    const nextN = activePair.trackPoints.length + 1;
-    const searchMin = ettersokMinutesForSearch(nextN, activePair.distanceM);
+    const nextN = trackActivePair.trackPoints.length + 1;
+    const searchMin = ettersokMinutesForSearch(
+      nextN,
+      trackActivePair.distanceM,
+    );
     setStatus(
       `Søkespor #${nextN} markert (${searchMin} min) — trykk «Utfør ettersøk» når sporet er klart.`,
     );
   }
 
   function clearDraftTrack() {
-    if (!activePair || activePair.found === true) return;
-    if (activePair.trackPoints.length === 0) return;
+    if (!trackActivePair || trackActivePair.found === true) return;
+    if (trackActivePair.trackPoints.length === 0) return;
     const next = shotPairs.map((p) =>
-      p.id === activePair.id ? { ...p, trackPoints: [] } : p,
+      p.id === trackActivePair.id ? { ...p, trackPoints: [] } : p,
     );
     onShotPairsChange(next);
     setStatus(
@@ -989,11 +1172,14 @@ export function AwareAppView({
 
   function onStageClick(e: MouseEvent<HTMLDivElement>) {
     if (mode === "track") addTrackPoint(e);
-    else if (mode === "aware" && stalking) setMapDestination(e);
+    else if (mode === "aware" && stalking) {
+      if (mapTool === "measure") setMapMeasurePoint(e);
+      else setMapDestination(e);
+    }
   }
 
   function onMapPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!mapZoomEnabled || mapZoom <= 1.001) return;
+    if (!mapZoomAllowsPan(mapZoom)) return;
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     mapPanDragRef.current = {
@@ -1032,31 +1218,34 @@ export function AwareAppView({
   }
 
   function runEttersokSearch() {
-    if (!activePair || activePair.found === true) return;
-    const trackN = activePair.trackPoints.length;
+    if (!trackActivePair || trackActivePair.found === true) return;
+    const trackN = trackActivePair.trackPoints.length;
     if (trackN < 1) {
       setStatus(
         `Legg minst ett søkespor først (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt + ${MINUTES_PER_100M} min/100 m).`,
       );
       return;
     }
-    const searchMin = ettersokMinutesForSearch(trackN, activePair.distanceM);
+    const searchMin = ettersokMinutesForSearch(
+      trackN,
+      trackActivePair.distanceM,
+    );
     onGameSeconds(searchMin * 60);
     onEttersokEffort?.({
       minutes: searchMin,
-      distanceM: ettersokSearchDistanceM(trackN, activePair.distanceM),
+      distanceM: ettersokSearchDistanceM(trackN, trackActivePair.distanceM),
     });
-    const attemptNo = (activePair.ettersokAttempts ?? 0) + 1;
-    const est = estimateEttersokFind(activePair);
+    const attemptNo = (trackActivePair.ettersokAttempts ?? 0) + 1;
+    const est = estimateEttersokFind(trackActivePair);
     const sweep = {
-      points: [...activePair.trackPoints],
+      points: [...trackActivePair.trackPoints],
       atMs: Date.now(),
       found: est.found,
     };
     const updated: ShotPair = {
-      ...activePair,
+      ...trackActivePair,
       ettersokAttempts: attemptNo,
-      searchedTracks: [...(activePair.searchedTracks ?? []), sweep],
+      searchedTracks: [...(trackActivePair.searchedTracks ?? []), sweep],
       // New draft for the next attempt; completed sweep stays on the map.
       trackPoints: [],
       lastEttersok: {
@@ -1069,7 +1258,7 @@ export function AwareAppView({
       found: est.found ? true : null,
     };
     const next = shotPairs.map((p) =>
-      p.id === activePair.id ? updated : p,
+      p.id === trackActivePair.id ? updated : p,
     );
     onShotPairsChange(next);
     setStatus(
@@ -1081,15 +1270,15 @@ export function AwareAppView({
   }
 
   function markRecoveredAtTree() {
-    if (!activePair || activePair.found === true) return;
+    if (!trackActivePair || trackActivePair.found === true) return;
     if (
-      activePair.resultKind !== "instant_kill" &&
-      activePair.resultKind !== "vital_kill"
+      trackActivePair.resultKind !== "instant_kill" &&
+      trackActivePair.resultKind !== "vital_kill"
     ) {
       return;
     }
-    const tree = shotPairAimPoint(activePair);
-    const walkM = Math.round(distanceMBetween(hunter, tree));
+    const tree = shotPairAimPoint(trackActivePair);
+    const walkM = Math.round(distanceMBetween(hunter, tree, metersPerPct));
     const recoverMin = treeRecoveryMinutes(walkM);
     onGameSeconds(recoverMin * 60);
     onEttersokEffort?.({
@@ -1099,9 +1288,9 @@ export function AwareAppView({
     // Next hent starts from this tree (e.g. another bird 10 m away).
     hunterRef.current = tree;
     setHunter(tree);
-    const updated: ShotPair = { ...activePair, found: true };
+    const updated: ShotPair = { ...trackActivePair, found: true };
     const next = shotPairs.map((p) =>
-      p.id === activePair.id ? updated : p,
+      p.id === trackActivePair.id ? updated : p,
     );
     onShotPairsChange(next);
     setStatus(
@@ -1119,34 +1308,27 @@ export function AwareAppView({
     return "Tiur";
   }
 
-  /** Open tree-hent / ettersøk pairs the player can still work on. */
-  const actionableTrackPairs = useMemo(() => {
-    const open = shotPairs.filter(
-      (p) =>
-        p.found !== true &&
-        p.found !== false &&
-        (p.resultKind === "instant_kill" ||
-          p.resultKind === "vital_kill" ||
-          p.resultKind === "ettersok"),
-    );
-    const onCell = open.filter(
-      (p) => p.cell.row === cell.row && p.cell.col === cell.col,
-    );
-    return onCell.length > 0 ? onCell : open;
-  }, [shotPairs, cell.row, cell.col]);
-
   useEffect(() => {
-    if (actionableTrackPairs.length === 0) return;
+    if (actionableTrackPairs.length === 0) {
+      // Planning-only skuddpar must not stay selected as a Track target.
+      if (
+        activePairId &&
+        !shotPairs.some((p) => p.id === activePairId && !!p.harvestDraft)
+      ) {
+        setActivePairId(null);
+      }
+      return;
+    }
     const stillOpen = actionableTrackPairs.some((p) => p.id === activePairId);
     if (!stillOpen) {
       setActivePairId(actionableTrackPairs[0]!.id);
     }
-  }, [actionableTrackPairs, activePairId]);
+  }, [actionableTrackPairs, activePairId, shotPairs]);
 
   function trackPairPickLabel(pair: ShotPair): string {
     const bird = pairBirdShortNb(pair);
     const walkM = Math.round(
-      distanceMBetween(hunter, shotPairAimPoint(pair)),
+      distanceMBetween(hunter, shotPairAimPoint(pair), metersPerPct),
     );
     const verb =
       pair.resultKind === "ettersok" ? "Søk" : "Hent";
@@ -1163,8 +1345,8 @@ export function AwareAppView({
       return;
     }
     onProceedToShoot({
-      bearingDeg: liveBearing,
-      distanceM: liveDistanceM,
+      bearingDeg: hasActiveBird ? liveBearing : measuredBearing,
+      distanceM: hasActiveBird ? liveDistanceM : birdDistanceM,
       hunter,
       bird: birdWorld,
       camcorderActive: hasCamcorder && camcorderReady,
@@ -1398,7 +1580,7 @@ export function AwareAppView({
       <div className="aware-phone">
         <header className="aware-phone-bar">
           <span className="aware-brand">AWARE</span>
-          {rangeSource === "lrf" ? (
+          {rangeSource === "lrf" && hasActiveBird ? (
             <span
               className="lrf-range-callout"
               aria-label={
@@ -1454,7 +1636,7 @@ export function AwareAppView({
         <div
           ref={mapFrameRef}
           className={
-            mapZoomEnabled && mapZoom > 1.001
+            mapZoomAllowsPan(mapZoom)
               ? "aware-map-frame is-zoomed"
               : "aware-map-frame"
           }
@@ -1463,10 +1645,8 @@ export function AwareAppView({
             className="aware-map-zoom-layer"
             style={
               {
-                transform: `translate(${mapPanPx.x}px, ${mapPanPx.y}px) scale(${mapZoomEnabled ? mapZoom : 1})`,
-                ["--aware-marker-inv-zoom"]: String(
-                  1 / (mapZoomEnabled ? mapZoom : 1),
-                ),
+                transform: `translate(${mapPanPx.x}px, ${mapPanPx.y}px) scale(${mapZoom})`,
+                ["--aware-marker-inv-zoom"]: String(1 / mapZoom),
               } as CSSProperties
             }
           >
@@ -1476,15 +1656,6 @@ export function AwareAppView({
               src={map.src}
               alt={map.label}
               draggable={false}
-            />
-            <div
-              className="aware-cell-highlight"
-              style={{
-                left: `${(cell.col / map.cols) * 100}%`,
-                bottom: `${(cell.row / map.rows) * 100}%`,
-                width: `${100 / map.cols}%`,
-                height: `${100 / map.rows}%`,
-              }}
             />
             <div
               ref={stageRef}
@@ -1506,9 +1677,9 @@ export function AwareAppView({
                 <DangerOverlay
                   wedges={dangerWedges}
                   center={planOrigin}
-                  hunter={planOrigin}
-                  bird={birdWorld}
+                  bearingDeg={measuredBearing}
                   shotSafe={bakgrunnOk}
+                  ringRadiusPct={ringRadiusPct}
                 />
               ) : null}
               {stalking && destination && mode === "aware" ? (
@@ -1518,18 +1689,62 @@ export function AwareAppView({
                   title="Gå hit"
                 />
               ) : null}
+              {mode === "aware" && measureA ? (
+                <div className="aware-measure-overlay" aria-hidden>
+                  {measureB ? (
+                    <svg
+                      className="aware-measure-line"
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                    >
+                      <line
+                        x1={measureA.x}
+                        y1={measureA.y}
+                        x2={measureB.x}
+                        y2={measureB.y}
+                      />
+                    </svg>
+                  ) : null}
+                  <span
+                    className="aware-measure-dot"
+                    style={{ left: `${measureA.x}%`, top: `${measureA.y}%` }}
+                    title="Punkt 1"
+                  />
+                  {measureB ? (
+                    <>
+                      <span
+                        className="aware-measure-dot"
+                        style={{ left: `${measureB.x}%`, top: `${measureB.y}%` }}
+                        title="Punkt 2"
+                      />
+                      {measureDistM != null ? (
+                        <span
+                          className="aware-measure-label"
+                          style={{
+                            left: `${(measureA.x + measureB.x) / 2}%`,
+                            top: `${(measureA.y + measureB.y) / 2}%`,
+                          }}
+                        >
+                          {Math.round(measureDistM)} m
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               {pairsOnCell.map((pair) => (
                 <ShotPairOverlay
                   key={pair.id}
                   pair={pair}
-                  active={pair.id === activePair?.id}
+                  active={pair.id === (trackActivePair ?? activePair)?.id}
+                  metersPerPct={metersPerPct}
                 />
               ))}
               {pairsOnCell.map((pair) => (
                 <SearchTrackOverlay
                   key={`track-${pair.id}`}
                   pair={pair}
-                  active={pair.id === activePair?.id}
+                  active={pair.id === (trackActivePair ?? activePair)?.id}
                 />
               ))}
               {mode === "shoot" &&
@@ -1538,38 +1753,35 @@ export function AwareAppView({
                   <ShotPairRangeRing
                     stand={shootWizard.stand}
                     distanceM={shootWizard.rangeM}
+                    metersPerPct={metersPerPct}
                   />
-                  {shootWizard.phase === "direction" &&
-                  shootPreviewImpact ? (
-                    <>
-                      <ShotPairPreview
-                        stand={shootWizard.stand}
-                        aim={shootPreviewImpact}
-                      />
-                      <div
-                        className="aware-bearing-needle aware-shot-bearing"
-                        style={{
-                          left: `${shootWizard.stand.x}%`,
-                          top: `${shootWizard.stand.y}%`,
-                          transform: `translate(-50%, -100%) rotate(${shootWizard.bearingDeg}deg) scale(var(--aware-marker-inv-zoom, 1))`,
-                        }}
-                        aria-hidden
-                      />
-                    </>
+                  {shootWizard.phase === "direction" ? (
+                    <ShotPairPreview
+                      stand={shootWizard.stand}
+                      bearingDeg={shootWizard.bearingDeg}
+                      rangeM={shootWizard.rangeM}
+                      metersPerPct={metersPerPct}
+                    />
                   ) : null}
                 </>
               ) : null}
-              {/* Hunter always shown. Bird/land hidden on wounded ettersøk (use cue). */}
+              {/* Hunter always shown. True bird only on Aware stalk (or post-shot aim cue). */}
               <span
                 className="aware-hunter-marker"
                 style={{ left: `${hunter.x}%`, top: `${hunter.y}%` }}
                 title="Deg"
               />
-              {!hideTrueLand && !gunPrepOnly ? (
+              {!hideTrueLand &&
+              !gunPrepOnly &&
+              (mode === "aware" || postShotSkuddparMode) ? (
                 <span
                   className="aware-bird-marker"
                   style={{ left: `${birdWorld.x}%`, top: `${birdWorld.y}%` }}
-                  title={`Fugl ${Math.round(liveDistanceM)} m`}
+                  title={
+                    postShotSkuddparMode
+                      ? `Siktepunkt ${Math.round(liveDistanceM)} m`
+                      : `Fugl ${Math.round(liveDistanceM)} m`
+                  }
                 >
                   <span className="aware-bird-x" aria-hidden />
                   <span className="aware-bird-label">
@@ -1586,22 +1798,22 @@ export function AwareAppView({
                 aria-hidden
               />
               {mode === "track" &&
-              activePair?.fleeObservation &&
-              activePair.resultKind === "ettersok" ? (
+              trackActivePair?.fleeObservation &&
+              trackActivePair.resultKind === "ettersok" ? (
                 <FleeDirectionCue
-                  origin={activePair.target}
-                  bearingDeg={activePair.fleeObservation.observedBearingDeg}
-                  compassLabel={activePair.fleeObservation.compassLabel}
+                  origin={trackActivePair.target}
+                  bearingDeg={trackActivePair.fleeObservation.observedBearingDeg}
+                  compassLabel={trackActivePair.fleeObservation.compassLabel}
                   observedLandDistanceM={
-                    activePair.fleeObservation.observedLandDistanceM
+                    trackActivePair.fleeObservation.observedLandDistanceM
                   }
+                  metersPerPct={metersPerPct}
                 />
               ) : null}
             </div>
           </div>
 
-          {mapZoomEnabled ? (
-            <div className="aware-map-zoom" role="group" aria-label="Kartzoom">
+          <div className="aware-map-zoom" role="group" aria-label="Kartzoom">
               <button
                 type="button"
                 className="aware-map-zoom-btn"
@@ -1615,9 +1827,9 @@ export function AwareAppView({
                 type="button"
                 className="aware-map-zoom-label"
                 onClick={resetMapZoom}
-                title="Tilbakestill zoom"
+                title="Tilbakestill til 3× på aktiv rute"
               >
-                {mapZoom.toFixed(2).replace(/\.?0+$/, "")}×
+                {awareZoomUiLabel(mapZoom)}
               </button>
               <button
                 type="button"
@@ -1629,7 +1841,6 @@ export function AwareAppView({
                 +
               </button>
             </div>
-          ) : null}
         </div>
 
         {stalking && mode === "aware" && destination ? (
@@ -1670,22 +1881,173 @@ export function AwareAppView({
           </div>
         ) : null}
 
-        <div className="aware-map-actions">
-          <button
-            type="button"
-            className="intro-button sheriff-secondary"
-            onClick={() => onAbort({ hunter: { ...hunter } })}
-          >
-            {abortLabel}
-          </button>
+        <div
+          className={
+            mode === "shoot"
+              ? "aware-map-actions aware-map-actions-shoot"
+              : mode === "aware"
+                ? "aware-map-actions aware-map-actions-aware"
+                : "aware-map-actions"
+          }
+        >
+          {mode === "shoot" ? (
+            <>
+              {shootWizard.phase === "idle" ? (
+                <button
+                  type="button"
+                  className="intro-button"
+                  onClick={startShootPair}
+                >
+                  Registrer nytt skuddpar
+                </button>
+              ) : null}
+
+              {shootWizard.phase === "range" ? (
+                <>
+                  <p className="shop-row-note aware-shoot-step">
+                    1/2 — Skuddavstand
+                    {wizardBirdDistanceM != null
+                      ? ` · fugl ${Math.round(wizardBirdDistanceM)} m`
+                      : ""}
+                  </p>
+                  <label className="shop-filter aware-shoot-slider">
+                    Avstand {shootWizard.rangeM} m
+                    <input
+                      type="range"
+                      min={50}
+                      max={mapMaxM}
+                      step={5}
+                      value={shootWizard.rangeM}
+                      onChange={(e) =>
+                        setShootWizard({
+                          ...shootWizard,
+                          rangeM: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="aware-shoot-nav">
+                    <button
+                      type="button"
+                      className="intro-button sheriff-secondary"
+                      onClick={cancelShootWizard}
+                    >
+                      Avbryt
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={() =>
+                        setShootWizard({ ...shootWizard, phase: "direction" })
+                      }
+                    >
+                      Neste: retning
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {shootWizard.phase === "direction" ? (
+                <>
+                  <p className="shop-row-note aware-shoot-step">
+                    2/2 — Skuddretning ({compassLabel(shootWizard.bearingDeg)})
+                    {wizardBirdBearingDeg != null
+                      ? ` · fugl ${normalizeBearingDeg(wizardBirdBearingDeg)}°`
+                      : ""}
+                  </p>
+                  <label className="shop-filter aware-shoot-slider">
+                    Retning {normalizeBearingDeg(shootWizard.bearingDeg)}° (0° =
+                    N)
+                    <input
+                      type="range"
+                      min={-180}
+                      max={180}
+                      step={1}
+                      value={bearingToSliderOffset(shootWizard.bearingDeg)}
+                      onChange={(e) =>
+                        setShootWizard({
+                          ...shootWizard,
+                          bearingDeg: sliderOffsetToBearing(
+                            Number(e.target.value),
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="aware-shoot-nav">
+                    <button
+                      type="button"
+                      className="intro-button sheriff-secondary"
+                      onClick={() =>
+                        setShootWizard({ ...shootWizard, phase: "range" })
+                      }
+                    >
+                      Tilbake
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={saveShootPair}
+                    >
+                      Lagre skuddpar
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+          {mode === "aware" ? (
+            <div className="aware-map-tool-tabs" role="tablist" aria-label="Kartverktøy">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mapTool === "aware"}
+                className={
+                  mapTool === "aware"
+                    ? "aware-map-tool aware-map-tool-active"
+                    : "aware-map-tool"
+                }
+                onClick={() => selectMapTool("aware")}
+              >
+                Aware
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mapTool === "measure"}
+                className={
+                  mapTool === "measure"
+                    ? "aware-map-tool aware-map-tool-active"
+                    : "aware-map-tool"
+                }
+                onClick={() => selectMapTool("measure")}
+              >
+                Measure
+                {measureDistM != null
+                  ? ` · ${Math.round(measureDistM)} m`
+                  : ""}
+              </button>
+            </div>
+          ) : null}
+          <div className="aware-map-actions-row">
+          {mode !== "track" ? (
+            <button
+              type="button"
+              className="intro-button sheriff-secondary"
+              onClick={() => onAbort({ hunter: { ...hunter } })}
+            >
+              {abortLabel}
+            </button>
+          ) : null}
           {mode === "track" &&
-          activePair?.resultKind === "ettersok" &&
-          activePair.found !== true ? (
+          trackActivePair?.resultKind === "ettersok" &&
+          trackActivePair.found !== true ? (
             <>
               <button
                 type="button"
                 className="intro-button sheriff-secondary"
-                disabled={activePair.trackPoints.length === 0}
+                disabled={trackActivePair.trackPoints.length === 0}
                 onClick={clearDraftTrack}
               >
                 Fjern spor
@@ -1693,35 +2055,43 @@ export function AwareAppView({
               <button
                 type="button"
                 className="intro-button"
-                disabled={activePair.trackPoints.length === 0}
+                disabled={trackActivePair.trackPoints.length === 0}
                 onClick={runEttersokSearch}
                 title={`Utfør ettersøk (${ettersokMinutesForSearch(
-                  activePair.trackPoints.length,
-                  activePair.distanceM,
+                  trackActivePair.trackPoints.length,
+                  trackActivePair.distanceM,
                 )} min)`}
               >
                 Søk ·{" "}
                 {ettersokMinutesForSearch(
-                  activePair.trackPoints.length,
-                  activePair.distanceM,
+                  trackActivePair.trackPoints.length,
+                  trackActivePair.distanceM,
                 )}{" "}
                 min
               </button>
+              {onAbandonSearch ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  onClick={() => onAbandonSearch(trackActivePair.id)}
+                  title="Gir opp søket etter denne fuglen — fuglen tapes (mentalt −30 %)"
+                >
+                  Gi opp søket
+                </button>
+              ) : null}
             </>
-          ) : focusPairId ? (
+          ) : trackActivePair?.found === true ||
+            (focusPairId &&
+              (trackActivePair ?? activePair)?.found === true) ? (
             <button
               type="button"
               className="intro-button"
               onClick={proceed}
-              title={
-                activePair?.found === true
-                  ? "Ferdig — fugl funnet"
-                  : "Gir opp søket — fuglen tapes (mentalt −30 %)"
-              }
+              title="Ferdig — fugl funnet"
             >
-              {activePair?.found === true ? "Ferdig" : "Avslutt"}
+              Ferdig
             </button>
-          ) : postShotSkuddparMode ? null : (
+          ) : postShotSkuddparMode ? null : focusPairId ? null : (
             <button
               type="button"
               className="intro-button"
@@ -1749,31 +2119,49 @@ export function AwareAppView({
               {gunPrepOnly ? "Gun · tårn" : "Gun · Skuddklar"}
             </button>
           )}
+          </div>
+            </>
+          )}
         </div>
 
         <div className="aware-panel">
           <p className="aware-cell-label">Celle {cellLabel(cell)}</p>
           {stalking || postShotSkuddparMode ? (
             <dl className="aware-distance-list">
-              <div>
-                <dt>Avstand fra deg til fugl</dt>
-                <dd>
-                  {Math.round(liveDistanceM)} m · {Math.round(liveBearing)}°
-                </dd>
-              </div>
-              <div>
-                <dt>Avstand fra Aware-point til fugl</dt>
-                <dd>
-                  {Math.round(planDistanceM)} m · {Math.round(planBearing)}°
-                  {!planning ? " · (point = der du står)" : ""}
-                </dd>
-              </div>
+              {hasActiveBird ? (
+                <>
+                  <div>
+                    <dt>Avstand fra deg til fugl</dt>
+                    <dd>
+                      {Math.round(liveDistanceM)} m · {Math.round(liveBearing)}°
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Avstand fra Aware-point til fugl</dt>
+                    <dd>
+                      {Math.round(planDistanceM)} m ·{" "}
+                      {Math.round(
+                        bearingDegFromTo(planOrigin, birdWorld),
+                      )}
+                      °
+                      {!planning ? " · (point = der du står)" : ""}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
               <div>
                 <dt>Avstand fra deg til Aware-point</dt>
                 <dd>
                   {planning
                     ? `${Math.round(walkToPlanM ?? 0)} m`
                     : "0 m · (ingen point valgt — trykk kart)"}
+                </dd>
+              </div>
+              <div>
+                <dt>LRF / F-retning</dt>
+                <dd>
+                  {measuredBearing}° ({compassLabel(measuredBearing)})
+                  {bakgrunnOk ? " · trygg" : " · farlig bakgrunn"}
                 </dd>
               </div>
             </dl>
@@ -1965,20 +2353,44 @@ export function AwareAppView({
                   : ""}
               </p>
               <p className="shop-row-note">
-                {planning ? "Fra målet — " : ""}
-                Bebyggelse: {safeHab ? "klar" : "i sektor — farlig"}
-                {" · "}
-                Terrengbakgrunn: {safeTerrain ? "ok" : "i sektor — farlig"}
-                {" · "}
-                Skudd:{" "}
-                {bakgrunnOk
-                  ? "tillatt"
-                  : `blokkert (${blockingWedge?.label ?? "faresone"})`}
-                {planning
-                  ? liveBakgrunnOk
-                    ? " · her: klar"
-                    : " · her: ikke klar"
-                  : ""}
+                {dangerHazards.length === 0 ? (
+                  <>
+                    Ingen farlige kakestykker i denne cellen
+                    {planning ? " (fra målet)" : ""} — stiplet sirkel = 1000 m;
+                    grønn/rød pil = LRF/F-retning
+                    {bakgrunnOk ? " (trygg)" : " (farlig)"}.
+                  </>
+                ) : (
+                  <>
+                    {planning ? "Fra målet — " : ""}
+                    Bebyggelse:{" "}
+                    {dangerHazards.some((h) => h.kind === "habitation")
+                      ? safeHab
+                        ? "klar"
+                        : "i sektor — farlig"
+                      : "ingen"}
+                    {" · "}
+                    Terrengbakgrunn:{" "}
+                    {dangerHazards.some((h) => h.kind === "terrain")
+                      ? safeTerrain
+                        ? "ok"
+                        : "i sektor — farlig"
+                      : "ingen"}
+                    {" · "}
+                    Skudd:{" "}
+                    {bakgrunnOk
+                      ? "tillatt"
+                      : `blokkert (${blockingWedge?.label ?? "faresone"})`}
+                    {planning
+                      ? liveBakgrunnOk
+                        ? " · her: klar"
+                        : " · her: ikke klar"
+                      : ""}
+                    {" · "}
+                    {dangerHazards.length} kakestykke
+                    {dangerHazards.length === 1 ? "" : "r"} · 1000 m-sirkel
+                  </>
+                )}
               </p>
             </div>
           ) : null}
@@ -1987,119 +2399,11 @@ export function AwareAppView({
             <div className="aware-actions">
               <p className="shop-row-note">
                 {postShotSkuddparMode
-                  ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen). Fugleprikken er der du siktet.`
+                  ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen).`
                   : skuddparAutofill
-                    ? "Cam i bruk: avstand/retning prefylles fra fugleprikken — juster ved behov."
-                    : "Uten Triggercam/Scopemate/oppsatt camcorder: sett avstand (sirkel), deretter retning selv."}
+                    ? "Cam i bruk: avstand/retning prefylles — juster ved behov under kartet."
+                    : "Sett avstand (sirkel) og retning under kartet — uten cam ingen autofyll."}
               </p>
-
-              {shootWizard.phase === "idle" ? (
-                <button
-                  type="button"
-                  className="intro-button"
-                  onClick={startShootPair}
-                >
-                  Nytt skuddpar (Target)
-                </button>
-              ) : null}
-
-              {shootWizard.phase === "range" ? (
-                <>
-                  <p className="shop-row-note aware-shoot-step">
-                    1/2 — Sett skuddavstand (sirkel fra stand)
-                    {wizardBirdDistanceM != null
-                      ? ` · fugl ${Math.round(wizardBirdDistanceM)} m`
-                      : ""}
-                  </p>
-                  <label className="shop-filter aware-shoot-slider">
-                    Avstand {shootWizard.rangeM} m
-                    <input
-                      type="range"
-                      min={50}
-                      max={450}
-                      step={5}
-                      value={shootWizard.rangeM}
-                      onChange={(e) =>
-                        setShootWizard({
-                          ...shootWizard,
-                          rangeM: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <div className="aware-shoot-nav">
-                    <button
-                      type="button"
-                      className="intro-button sheriff-secondary"
-                      onClick={cancelShootWizard}
-                    >
-                      Avbryt
-                    </button>
-                    <button
-                      type="button"
-                      className="intro-button"
-                      onClick={() =>
-                        setShootWizard({ ...shootWizard, phase: "direction" })
-                      }
-                    >
-                      Neste: retning
-                    </button>
-                  </div>
-                </>
-              ) : null}
-
-              {shootWizard.phase === "direction" ? (
-                <>
-                  <p className="shop-row-note aware-shoot-step">
-                    2/2 — Sett skuddretning (
-                    {compassLabel(shootWizard.bearingDeg)})
-                    {wizardBirdBearingDeg != null
-                      ? ` · fugl ${normalizeBearingDeg(wizardBirdBearingDeg)}°`
-                      : ""}
-                  </p>
-                  <label className="shop-filter aware-shoot-slider">
-                    Retning {normalizeBearingDeg(shootWizard.bearingDeg)}° (0° =
-                    N, midtstilt)
-                    <input
-                      type="range"
-                      min={-180}
-                      max={180}
-                      step={1}
-                      value={bearingToSliderOffset(shootWizard.bearingDeg)}
-                      onChange={(e) =>
-                        setShootWizard({
-                          ...shootWizard,
-                          bearingDeg: sliderOffsetToBearing(
-                            Number(e.target.value),
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <p className="shop-row-note">
-                    Forhåndsvisning: {shootWizard.rangeM} m /{" "}
-                    {compassLabel(shootWizard.bearingDeg)}
-                  </p>
-                  <div className="aware-shoot-nav">
-                    <button
-                      type="button"
-                      className="intro-button sheriff-secondary"
-                      onClick={() =>
-                        setShootWizard({ ...shootWizard, phase: "range" })
-                      }
-                    >
-                      Tilbake
-                    </button>
-                    <button
-                      type="button"
-                      className="intro-button"
-                      onClick={saveShootPair}
-                    >
-                      Lagre skuddpar
-                    </button>
-                  </div>
-                </>
-              ) : null}
 
               {shotPairs.length > 0 ? (
                 <p className="shop-row-note">
@@ -2112,31 +2416,31 @@ export function AwareAppView({
 
           {mode === "track" ? (
             <div className="aware-actions">
-              {shotPairs.length === 0 ? (
+              {actionableTrackPairs.length === 0 ? (
                 <p className="shop-row-note">
-                  Ingen skuddpar ennå. Lag et i Shoot, eller skyt — stand →
-                  tre med ~20 m søkeradius vises på kartet.
+                  Ingen åpne hent/søk. Track krever et treff med camcorder,
+                  triggercam, EL Range, lagret skuddpar etter skudd — eller
+                  instant kill under {CLOSE_RANGE_TREE_HENT_MAX_M} m (hent ved
+                  treet). Planlagte skuddpar uten skudd vises bare på kartet.
                 </p>
               ) : (
                 <>
-                  {actionableTrackPairs.length > 0 ? (
+                  {actionableTrackPairs.length > 1 ? (
                     <div className="aware-track-pick" role="group" aria-label="Velg fugl">
-                      {actionableTrackPairs.length > 1 ? (
-                        <p className="shop-row-note aware-track-pick-label">
-                          Velg hvilken fugl du skal hente / søke
-                        </p>
-                      ) : null}
+                      <p className="shop-row-note aware-track-pick-label">
+                        Velg hvilken fugl du skal hente / søke
+                      </p>
                       <div className="aware-track-pick-btns">
                         {actionableTrackPairs.map((p) => (
                           <button
                             key={p.id}
                             type="button"
                             className={
-                              p.id === activePair?.id
+                              p.id === trackActivePair?.id
                                 ? "intro-button aware-track-pick-btn is-active"
                                 : "intro-button sheriff-secondary aware-track-pick-btn"
                             }
-                            aria-pressed={p.id === activePair?.id}
+                            aria-pressed={p.id === trackActivePair?.id}
                             onClick={() => setActivePairId(p.id)}
                           >
                             {trackPairPickLabel(p)}
@@ -2144,54 +2448,54 @@ export function AwareAppView({
                         ))}
                       </div>
                     </div>
-                  ) : (
+                  ) : trackActivePair ? (
                     <p className="shop-row-note">
-                      Ingen åpne hent/søk her — alle funnet eller avsluttet.
+                      {trackPairPickLabel(trackActivePair)}
                     </p>
-                  )}
+                  ) : null}
 
-                  {activePair?.resultKind === "ettersok" &&
-                  activePair.fleeObservation ? (
+                  {trackActivePair?.resultKind === "ettersok" &&
+                  trackActivePair.fleeObservation ? (
                     <div
                       className="aware-ettersok-flee"
                       role="status"
                     >
                       <strong>Fluktretning</strong>
                       <span>
-                        {activePair.fleeObservation.compassLabel}
-                        {activePair.fleeObservation.hasTriggercam ||
-                        activePair.fleeObservation.hasCamcorder ||
-                        activePair.fleeObservation.fromScopeRecoil
+                        {trackActivePair.fleeObservation.compassLabel}
+                        {trackActivePair.fleeObservation.hasTriggercam ||
+                        trackActivePair.fleeObservation.hasCamcorder ||
+                        trackActivePair.fleeObservation.fromScopeRecoil
                           ? ` (${Math.round(
-                              activePair.fleeObservation.observedBearingDeg,
+                              trackActivePair.fleeObservation.observedBearingDeg,
                             )}°)`
                           : ""}
-                        {activePair.fleeObservation.observedLandDistanceM !=
+                        {trackActivePair.fleeObservation.observedLandDistanceM !=
                         null
-                          ? ` · ca. ${Math.round(activePair.fleeObservation.observedLandDistanceM)} m`
+                          ? ` · ca. ${Math.round(trackActivePair.fleeObservation.observedLandDistanceM)} m`
                           : ""}
                       </span>
-                      <p>{activePair.fleeObservation.text}</p>
+                      <p>{trackActivePair.fleeObservation.text}</p>
                     </div>
                   ) : null}
 
-                  {activePair?.lastEttersok ? (
+                  {trackActivePair?.lastEttersok ? (
                     <div
                       className={
-                        activePair.lastEttersok.found
+                        trackActivePair.lastEttersok.found
                           ? "aware-ettersok-result aware-ettersok-result-found"
                           : "aware-ettersok-result aware-ettersok-result-miss"
                       }
                       role="status"
                     >
                       <strong>
-                        {activePair.lastEttersok.found
+                        {trackActivePair.lastEttersok.found
                           ? "FUNNET"
                           : "IKKE FUNNET"}
                       </strong>
-                      <p>{activePair.lastEttersok.reason}</p>
-                      {!activePair.lastEttersok.found &&
-                      activePair.found !== true ? (
+                      <p>{trackActivePair.lastEttersok.reason}</p>
+                      {!trackActivePair.lastEttersok.found &&
+                      trackActivePair.found !== true ? (
                         <p className="aware-ettersok-hint">
                           Forrige søkespor ligger på kartet. Legg et nytt spor i
                           fluktretningen — {ETTERSOK_MINUTES_PER_TRACK_POINT}{" "}
@@ -2201,11 +2505,11 @@ export function AwareAppView({
                     </div>
                   ) : null}
 
-                  {activePair &&
+                  {trackActivePair &&
                   recoveryMinutes != null &&
                   recoveryWalkM != null &&
-                  (activePair.resultKind === "instant_kill" ||
-                    activePair.resultKind === "vital_kill") ? (
+                  (trackActivePair.resultKind === "instant_kill" ||
+                    trackActivePair.resultKind === "vital_kill") ? (
                     <>
                       <p className="shop-row-note">
                         Drept fugl i treet. Tid fra der du står nå —{" "}
@@ -2216,13 +2520,13 @@ export function AwareAppView({
                       <button
                         type="button"
                         className="intro-button"
-                        disabled={activePair.found === true}
+                        disabled={trackActivePair.found === true}
                         onClick={markRecoveredAtTree}
                       >
                         Hent ved treet ({recoveryMinutes} min)
                       </button>
                     </>
-                  ) : activePair?.resultKind === "ettersok" ? (
+                  ) : trackActivePair?.resultKind === "ettersok" ? (
                     <>
                       <ol className="aware-ettersok-steps">
                         <li>
@@ -2237,36 +2541,20 @@ export function AwareAppView({
                         </li>
                       </ol>
                       <p className="shop-row-note">
-                        Nytt spor: {activePair.trackPoints.length}
-                        {activePair.trackPoints.length > 0
-                          ? ` · ${ettersokMinutesForSearch(activePair.trackPoints.length, activePair.distanceM)} min`
+                        Nytt spor: {trackActivePair.trackPoints.length}
+                        {trackActivePair.trackPoints.length > 0
+                          ? ` · ${ettersokMinutesForSearch(trackActivePair.trackPoints.length, trackActivePair.distanceM)} min`
                           : ""}
-                        {(activePair.searchedTracks?.length ?? 0) > 0
-                          ? ` · lagret på kart: ${activePair.searchedTracks!.length}`
+                        {(trackActivePair.searchedTracks?.length ?? 0) > 0
+                          ? ` · lagret på kart: ${trackActivePair.searchedTracks!.length}`
                           : ""}
-                        {(activePair.ettersokAttempts ?? 0) > 0
-                          ? ` · forsøk: ${activePair.ettersokAttempts}`
+                        {(trackActivePair.ettersokAttempts ?? 0) > 0
+                          ? ` · forsøk: ${trackActivePair.ettersokAttempts}`
                           : ""}
-                        {activePair.found === true ? " · ferdig" : ""}
+                        {trackActivePair.found === true ? " · ferdig" : ""}
                       </p>
-                      {focusPairId && activePair.found !== true ? (
-                        <div className="aware-ettersok-actions">
-                          <button
-                            type="button"
-                            className="intro-button sheriff-secondary"
-                            onClick={proceed}
-                            title="Gir opp søket — fuglen tapes (mentalt −30 %)"
-                          >
-                            Avslutt ettersøk
-                          </button>
-                        </div>
-                      ) : null}
                     </>
-                  ) : (
-                    <p className="shop-row-note">
-                      Ingen gyldig skuddpar for henting/søk.
-                    </p>
-                  )}
+                  ) : null}
                 </>
               )}
             </div>

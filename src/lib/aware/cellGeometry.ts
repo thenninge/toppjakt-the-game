@@ -1,13 +1,43 @@
 /**
  * Aware cell-local geometry: hunter / bird positions on the stage (0–100 %).
- * Scale matches birdMarkerOnAwareMap (450 m → 42 % radius).
+ *
+ * Default scale (Finnskogen): 450 m × 2.2 × 1.27 → ~1257 m at 42 % radius.
+ * Other maps may override via HuntMapAsset.awareMapMaxM.
  */
 
-export const AWARE_MAP_MAX_M = 450;
+import type { HuntGridCell, HuntMapAsset } from "@/lib/hunt/maps";
+
+/** Finnskogen-calibrated default: meters represented by {@link AWARE_MAP_RADIUS_PCT}. */
+export const AWARE_MAP_MAX_M = 450 * 2.2 * 1.27;
 export const AWARE_MAP_RADIUS_PCT = 42;
 export const AWARE_METERS_PER_PCT = AWARE_MAP_MAX_M / AWARE_MAP_RADIUS_PCT;
 
 export type CellPoint = { x: number; y: number };
+
+export type AwareMapScaleSource = Pick<HuntMapAsset, "awareMapMaxM"> | null | undefined;
+
+/** Per-map Aware max range (m at {@link AWARE_MAP_RADIUS_PCT}); Finnskogen default. */
+export function awareMapMaxMFor(map: AwareMapScaleSource): number {
+  const n = map?.awareMapMaxM;
+  return typeof n === "number" && Number.isFinite(n) && n > 0
+    ? n
+    : AWARE_MAP_MAX_M;
+}
+
+export function awareMetersPerPctFor(map: AwareMapScaleSource): number {
+  return awareMapMaxMFor(map) / AWARE_MAP_RADIUS_PCT;
+}
+
+/** Centre of a hunt grid cell in Aware map % (full terrain image). */
+export function cellCenterOnAwareMap(
+  cell: HuntGridCell,
+  map: Pick<HuntMapAsset, "cols" | "rows">,
+): CellPoint {
+  return {
+    x: ((cell.col + 0.5) / map.cols) * 100,
+    y: (1 - (cell.row + 0.5) / map.rows) * 100,
+  };
+}
 
 export function clampCellPoint(p: CellPoint): CellPoint {
   return {
@@ -30,6 +60,28 @@ export function distanceMBetween(
   metersPerPct = AWARE_METERS_PER_PCT,
 ): number {
   return Math.hypot(b.x - a.x, b.y - a.y) * metersPerPct;
+}
+
+/**
+ * Point at `distanceM` along compass bearing from `origin`.
+ * Uses the map's Aware scale (maxM → {@link AWARE_MAP_RADIUS_PCT}).
+ */
+export function pointFromBearingDistance(
+  origin: CellPoint,
+  distanceM: number,
+  bearingDeg: number,
+  maxM: number = AWARE_MAP_MAX_M,
+): CellPoint {
+  const radiusPct = AWARE_MAP_RADIUS_PCT;
+  const pct = Math.min(
+    radiusPct,
+    (Math.max(0, distanceM) / Math.max(1, maxM)) * radiusPct,
+  );
+  const rad = ((bearingDeg - 90) * Math.PI) / 180;
+  return {
+    x: origin.x + Math.cos(rad) * pct,
+    y: origin.y + Math.sin(rad) * pct,
+  };
 }
 
 /** Move `from` toward `to` by `stepPct` (percent of stage). */

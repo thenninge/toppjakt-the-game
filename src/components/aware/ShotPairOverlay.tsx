@@ -14,14 +14,20 @@ export const SHOT_PAIR_SEARCH_RADIUS_M = 20;
 type ShotPairOverlayProps = {
   pair: ShotPair;
   active?: boolean;
+  /** Terrain Aware scale (m per map %). */
+  metersPerPct?: number;
 };
 
 /**
  * Visible skuddpar: stand → dashed line → aim point + ~20 m search ring.
  */
-export function ShotPairOverlay({ pair, active = false }: ShotPairOverlayProps) {
+export function ShotPairOverlay({
+  pair,
+  active = false,
+  metersPerPct = AWARE_METERS_PER_PCT,
+}: ShotPairOverlayProps) {
   const aim = shotPairAimPoint(pair);
-  const ringPct = (SHOT_PAIR_SEARCH_RADIUS_M / AWARE_METERS_PER_PCT) * 2;
+  const ringPct = (SHOT_PAIR_SEARCH_RADIUS_M / metersPerPct) * 2;
 
   return (
     <div
@@ -50,14 +56,13 @@ export function ShotPairOverlay({ pair, active = false }: ShotPairOverlayProps) 
           left: `${aim.x}%`,
           top: `${aim.y}%`,
           width: `${ringPct}%`,
-          height: `${ringPct}%`,
         }}
         title={`Søkeradius ~${SHOT_PAIR_SEARCH_RADIUS_M} m`}
       />
       <span
         className="aware-pair-impact"
         style={{ left: `${aim.x}%`, top: `${aim.y}%` }}
-        title="Skutt mot (tre / fugl)"
+        title="Tre / siktepunkt"
       />
     </div>
   );
@@ -151,40 +156,46 @@ export function SearchTrackOverlay({
 
 type ShotPairPreviewProps = {
   stand: { x: number; y: number };
-  aim: { x: number; y: number };
+  bearingDeg: number;
+  rangeM: number;
+  metersPerPct?: number;
 };
 
-/** Live preview while defining a skuddpar in the Shoot wizard. */
-export function ShotPairPreview({ stand, aim }: ShotPairPreviewProps) {
-  const ringPct = (SHOT_PAIR_SEARCH_RADIUS_M / AWARE_METERS_PER_PCT) * 2;
+/**
+ * Live preview while defining skuddpar direction.
+ * Ray length uses the same width-% as the range ring radius so the tip
+ * sits on the circular range ring even when the map frame is not square.
+ */
+export function ShotPairPreview({
+  stand,
+  bearingDeg,
+  rangeM,
+  metersPerPct = AWARE_METERS_PER_PCT,
+}: ShotPairPreviewProps) {
+  const d = Math.max(1, rangeM);
+  const radiusPct = d / metersPerPct;
+  const searchOnRayPct = ((SHOT_PAIR_SEARCH_RADIUS_M * 2) / d) * 100;
   return (
     <div className="aware-skuddpar aware-skuddpar-preview" aria-hidden>
-      <svg className="aware-skuddpar-line" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <line
-          x1={stand.x}
-          y1={stand.y}
-          x2={aim.x}
-          y2={aim.y}
-          className="aware-skuddpar-dash"
-        />
-      </svg>
       <span
         className="aware-pair-stand"
         style={{ left: `${stand.x}%`, top: `${stand.y}%` }}
       />
       <div
-        className="aware-skuddpar-search"
+        className="aware-skuddpar-ray"
         style={{
-          left: `${aim.x}%`,
-          top: `${aim.y}%`,
-          width: `${ringPct}%`,
-          height: `${ringPct}%`,
+          left: `${stand.x}%`,
+          top: `${stand.y}%`,
+          width: `${radiusPct}%`,
+          transform: `translateY(-50%) rotate(${bearingDeg - 90}deg)`,
         }}
-      />
-      <span
-        className="aware-pair-impact"
-        style={{ left: `${aim.x}%`, top: `${aim.y}%` }}
-      />
+      >
+        <div
+          className="aware-skuddpar-search aware-skuddpar-ray-search"
+          style={{ width: `${searchOnRayPct}%` }}
+        />
+        <span className="aware-pair-impact aware-skuddpar-ray-tip" />
+      </div>
     </div>
   );
 }
@@ -192,13 +203,18 @@ export function ShotPairPreview({ stand, aim }: ShotPairPreviewProps) {
 type ShotPairRangeRingProps = {
   stand: { x: number; y: number };
   distanceM: number;
+  metersPerPct?: number;
 };
 
 /** Distance circle from stand while dialing skuddpar range. */
-export function ShotPairRangeRing({ stand, distanceM }: ShotPairRangeRingProps) {
+export function ShotPairRangeRing({
+  stand,
+  distanceM,
+  metersPerPct = AWARE_METERS_PER_PCT,
+}: ShotPairRangeRingProps) {
   const d = Math.max(0, distanceM);
   if (d < 1) return null;
-  const ringPct = (d / AWARE_METERS_PER_PCT) * 2;
+  const ringPct = (d / metersPerPct) * 2;
   return (
     <div
       className="aware-skuddpar-range-ring"
@@ -206,7 +222,6 @@ export function ShotPairRangeRing({ stand, distanceM }: ShotPairRangeRingProps) 
         left: `${stand.x}%`,
         top: `${stand.y}%`,
         width: `${ringPct}%`,
-        height: `${ringPct}%`,
       }}
       title={`${Math.round(d)} m`}
       aria-hidden
@@ -218,8 +233,9 @@ function pointAlongBearing(
   origin: { x: number; y: number },
   bearingDeg: number,
   meters: number,
+  metersPerPct: number,
 ): { x: number; y: number } {
-  const pct = meters / AWARE_METERS_PER_PCT;
+  const pct = meters / metersPerPct;
   const rad = ((bearingDeg - 90) * Math.PI) / 180;
   return {
     x: origin.x + Math.cos(rad) * pct,
@@ -234,6 +250,7 @@ type FleeDirectionCueProps = {
   compassLabel: string;
   /** Estimated land distance (m) — draws a circle with this radius. */
   observedLandDistanceM?: number;
+  metersPerPct?: number;
 };
 
 /**
@@ -245,6 +262,7 @@ export function FleeDirectionCue({
   bearingDeg,
   compassLabel,
   observedLandDistanceM,
+  metersPerPct = AWARE_METERS_PER_PCT,
 }: FleeDirectionCueProps) {
   const cueDist =
     observedLandDistanceM != null && Number.isFinite(observedLandDistanceM)
@@ -252,11 +270,16 @@ export function FleeDirectionCue({
       : null;
   const ringPct =
     cueDist != null && cueDist > 0
-      ? (cueDist / AWARE_METERS_PER_PCT) * 2
+      ? (cueDist / metersPerPct) * 2
       : null;
   const labelAt =
     cueDist != null
-      ? pointAlongBearing(origin, bearingDeg, Math.min(cueDist, 90))
+      ? pointAlongBearing(
+          origin,
+          bearingDeg,
+          Math.min(cueDist, 90),
+          metersPerPct,
+        )
       : null;
 
   return (
@@ -268,7 +291,6 @@ export function FleeDirectionCue({
             left: `${origin.x}%`,
             top: `${origin.y}%`,
             width: `${ringPct}%`,
-            height: `${ringPct}%`,
           }}
           title={`Estimert avstand ca. ${cueDist} m`}
         />

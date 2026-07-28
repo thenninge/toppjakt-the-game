@@ -9165,7 +9165,10 @@ body {
 
 .aware-map-frame {
   position: relative;
-  flex: 1;
+  /* Fixed footprint on Aware / Shoot / Track — do not grow when panel is short. */
+  flex: 0 0 auto;
+  width: 100%;
+  height: clamp(14rem, 48vmin, 20rem);
   min-height: 14rem;
   border-radius: 0.55rem;
   overflow: hidden;
@@ -9186,7 +9189,7 @@ body {
   position: absolute;
   inset: 0;
   transform-origin: center center;
-  will-change: transform;
+  /* No will-change: stale compositor layers made zoomed maps look soft until tab switch. */
 }
 
 .aware-map-zoom {
@@ -9275,6 +9278,66 @@ body {
   white-space: nowrap;
 }
 
+.aware-map-actions-aware {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.aware-map-tool-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+}
+
+.aware-map-tool {
+  border: 1px solid var(--panel-edge);
+  background: #2a2118;
+  color: var(--canyon-dust);
+  font-family: var(--font-terminal), monospace;
+  font-size: 0.88rem;
+  padding: 0.32rem 0.2rem;
+  cursor: pointer;
+}
+
+.aware-map-tool-active {
+  background: #3d3224;
+  color: var(--canyon-sand);
+  border-color: var(--accent-gold);
+}
+
+.aware-map-actions-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+.aware-map-actions-row .intro-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.45rem 0.4rem;
+  font-size: 0.82rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.aware-map-actions-shoot {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.aware-map-actions-shoot .intro-button {
+  flex: 0 0 auto;
+  white-space: normal;
+}
+
+.aware-map-actions-shoot .aware-shoot-nav {
+  width: 100%;
+}
+
 @media (hover: none), (max-width: 720px) {
   .aware-sneak-touch {
     display: block;
@@ -9289,15 +9352,6 @@ body {
   opacity: 0.85;
   filter: saturate(0.85) contrast(1.05);
   pointer-events: none;
-}
-
-.aware-cell-highlight {
-  position: absolute;
-  box-sizing: border-box;
-  border: 2px solid rgba(224, 168, 58, 0.9);
-  background: rgba(224, 168, 58, 0.12);
-  pointer-events: none;
-  z-index: 1;
 }
 
 .aware-cell-stage {
@@ -9315,6 +9369,19 @@ body {
   pointer-events: none;
   z-index: 2;
   overflow: visible;
+}
+
+.aware-safety-ring {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  height: auto;
+  aspect-ratio: 1;
+  border: 1.5px dashed rgba(232, 212, 168, 0.8);
+  border-radius: 50%;
+  pointer-events: none;
+  background: rgba(232, 212, 168, 0.04);
+  box-shadow: inset 0 0 16px rgba(232, 212, 168, 0.08);
+  z-index: 2;
 }
 
 .aware-shot-radius {
@@ -9363,6 +9430,8 @@ body {
 .aware-skuddpar-search {
   position: absolute;
   transform: translate(-50%, -50%);
+  height: auto;
+  aspect-ratio: 1;
   border: 1.5px dashed rgba(196, 92, 58, 0.85);
   border-radius: 50%;
   pointer-events: none;
@@ -9378,6 +9447,17 @@ body {
 .aware-skuddpar-preview .aware-skuddpar-search {
   border-color: rgba(96, 165, 250, 0.9);
   background: rgba(37, 99, 235, 0.08);
+}
+
+/** Direction ray — length = range-ring radius (same width-% basis). */
+.aware-skuddpar-ray {
+  position: absolute;
+  height: 0;
+  border-top: 2.5px dashed rgba(96, 165, 250, 0.95);
+  transform-origin: left center;
+  pointer-events: none;
+  z-index: 4;
+  box-sizing: border-box;
 }
 
 .aware-shot-bearing {
@@ -9431,6 +9511,23 @@ body {
   /* Counter map zoom so markers stay screen-sized. */
   transform: translate(-50%, -50%) scale(var(--aware-marker-inv-zoom, 1));
   pointer-events: none;
+}
+
+/* Tip / search ring sit at the end of the direction ray. */
+.aware-skuddpar-ray-tip.aware-pair-impact {
+  left: auto;
+  top: auto;
+  right: 0;
+  transform: translate(50%, -50%) scale(var(--aware-marker-inv-zoom, 1));
+}
+
+.aware-skuddpar-ray-search.aware-skuddpar-search {
+  left: auto;
+  top: auto;
+  right: 0;
+  transform: translate(50%, -50%);
+  height: auto;
+  aspect-ratio: 1;
 }
 
 .aware-pair-stand {
@@ -9487,6 +9584,53 @@ body {
   z-index: 3;
   pointer-events: none;
   animation: aware-dest-pulse 1.2s ease-in-out infinite;
+}
+
+.aware-measure-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.aware-measure-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.aware-measure-line line {
+  stroke: #7ec8e8;
+  stroke-width: 0.45;
+  stroke-dasharray: 1.2 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.aware-measure-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%) scale(var(--aware-marker-inv-zoom, 1));
+  border: 2px solid #7ec8e8;
+  border-radius: 50%;
+  background: rgba(126, 200, 232, 0.35);
+  z-index: 4;
+}
+
+.aware-measure-label {
+  position: absolute;
+  transform: translate(-50%, -130%) scale(var(--aware-marker-inv-zoom, 1));
+  padding: 0.12rem 0.35rem;
+  border-radius: 0.25rem;
+  background: rgba(12, 10, 8, 0.85);
+  border: 1px solid #5a7a8a;
+  color: #c8e8f5;
+  font-family: var(--font-terminal), monospace;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  z-index: 5;
 }
 
 @keyframes aware-dest-pulse {
@@ -9594,6 +9738,7 @@ body {
   margin: 0 !important;
 }
 
+/** Skuddpar aim / tre — gold + crosshair (not the red bird X). */
 .aware-pair-impact {
   width: 14px;
   height: 14px;
@@ -9608,21 +9753,24 @@ body {
 .aware-pair-impact::after {
   content: "";
   position: absolute;
+  background: #e0a83a;
+  border-radius: 1px;
+}
+
+.aware-pair-impact::before {
   left: 50%;
   top: 0;
   width: 3px;
   height: 100%;
   margin-left: -1.5px;
-  border-radius: 1px;
-  background: #e04637;
-}
-
-.aware-pair-impact::before {
-  transform: rotate(45deg);
 }
 
 .aware-pair-impact::after {
-  transform: rotate(-45deg);
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 3px;
+  margin-top: -1.5px;
 }
 
 .aware-track-dot {
@@ -9725,6 +9873,8 @@ body {
 .aware-flee-land-ring {
   position: absolute;
   transform: translate(-50%, -50%);
+  height: auto;
+  aspect-ratio: 1;
   border: 1.5px dashed rgba(224, 168, 58, 0.75);
   border-radius: 50%;
   background: rgba(224, 168, 58, 0.06);
@@ -9736,6 +9886,8 @@ body {
 .aware-skuddpar-range-ring {
   position: absolute;
   transform: translate(-50%, -50%);
+  height: auto;
+  aspect-ratio: 1;
   border: 1.5px solid rgba(120, 190, 220, 0.85);
   border-radius: 50%;
   background: rgba(80, 150, 190, 0.08);
@@ -9865,6 +10017,9 @@ body {
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.15rem 0.25rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .aware-cell-label {

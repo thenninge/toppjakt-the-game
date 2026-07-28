@@ -34,6 +34,11 @@ export type HuntMapAsset = {
   start: HuntGridCell;
   /** Hunt maps — all cutouts are playable (same 7×6 grid for now). */
   playable: boolean;
+  /**
+   * Aware map scale: meters represented by the 42 % radius around the hunter.
+   * Omit → Finnskogen default (`AWARE_MAP_MAX_M`). Calibrate per terrain.
+   */
+  awareMapMaxM?: number;
 };
 
 export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
@@ -113,6 +118,8 @@ export const HUNT_MAPS: Record<HuntMapId, HuntMapAsset> = {
     /** No start overlay yet — trailhead at B6. */
     start: { row: 1, col: 5 }, // B6
     playable: true,
+    /** Calibrated Aware distance scale (450 × 2.2 × 1.27). */
+    awareMapMaxM: 450 * 2.2 * 1.27,
   },
 };
 

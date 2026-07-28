@@ -22,6 +22,11 @@ import {
   cantedDropWindageMm,
   clampCantDeg,
 } from "@/lib/range/cant";
+import {
+  AWARE_MAP_MAX_M,
+  pointFromBearingDistance,
+  type CellPoint,
+} from "@/lib/aware/cellGeometry";
 
 /**
  * Sea-level density ratio from temperature (ICAO-ish).
@@ -49,21 +54,22 @@ export function windDriftMm(
   return crosswindMs * lagS * 1000;
 }
 
-/** Marker position on Aware cell stage (hunter at 50,50). */
+/**
+ * Bird / aim seat on the Aware map.
+ * Defaults: origin map centre (50,50), Finnskogen scale — prefer passing
+ * the active cell stand + map.awareMapMaxM so green-bracket (etc.) ranges land correctly.
+ */
 export function birdMarkerOnAwareMap(
   distanceM: number,
   bearingDeg: number,
-): { x: number; y: number } {
-  // Same geometry as impactFromShot / skuddpar dial (450 m → 42 % radius).
-  const maxM = 450;
-  const radiusPct = 42;
-  const pct =
-    Math.min(radiusPct, (Math.max(0, distanceM) / maxM) * radiusPct);
-  const rad = ((bearingDeg - 90) * Math.PI) / 180;
-  return {
-    x: 50 + Math.cos(rad) * pct,
-    y: 50 + Math.sin(rad) * pct,
-  };
+  opts?: { origin?: CellPoint; maxM?: number },
+): CellPoint {
+  return pointFromBearingDistance(
+    opts?.origin ?? { x: 50, y: 50 },
+    distanceM,
+    bearingDeg,
+    opts?.maxM ?? AWARE_MAP_MAX_M,
+  );
 }
 
 export type BallisticHoldSolution = {

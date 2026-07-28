@@ -55,6 +55,9 @@ const CELL_CENTER: CellPoint = { x: 50, y: 50 };
  */
 const HALF_ANGLE_SCALE = 0.75;
 
+/** Per kind: chance a cell gets that danger (habitation / terrain). Was 1.0. */
+const DANGER_ZONE_CHANCE = 0.5;
+
 export type DangerKind = "habitation" | "terrain";
 
 /**
@@ -117,7 +120,8 @@ export function habitationSlicesForCell(
 ): HabitationSlice[] {
   const seed = hashStr(`${mapId}:${cellLabel(cell)}:hab`);
   const rnd = mulberry32(seed);
-  const count = 1 + Math.floor(rnd() * 4); // 1–4
+  if (rnd() >= DANGER_ZONE_CHANCE) return [];
+  const count = 1 + Math.floor(rnd() * 4); // 1–4 when present
   const slices: HabitationSlice[] = [];
   for (let i = 0; i < count; i++) {
     const cat = CATEGORIES[Math.floor(rnd() * CATEGORIES.length)]!;
@@ -141,7 +145,8 @@ function terrainHazardsForCell(
 ): DangerHazard[] {
   const seed = hashStr(`${mapId}:${cellLabel(cell)}:back`);
   const rnd = mulberry32(seed);
-  const badCount = 1 + Math.floor(rnd() * 2);
+  if (rnd() >= DANGER_ZONE_CHANCE) return [];
+  const badCount = 1 + Math.floor(rnd() * 2); // 1–2 when present
   const hazards: DangerHazard[] = [];
   for (let i = 0; i < badCount; i++) {
     const bearingDeg = rnd() * 360;

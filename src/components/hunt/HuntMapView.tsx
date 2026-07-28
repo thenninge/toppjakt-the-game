@@ -226,6 +226,7 @@ import {
 import type { ShotHitFasit, ShotPair } from "@/lib/aware/types";
 import { caliberBulletDiameterMm, computeWeaponCalmFactor } from "@/lib/range/precision";
 import {
+  CLOSE_RANGE_TREE_HENT_MAX_M,
   estimateVisibleShotPair,
   generateFleeObservation,
   impactFromShot,
@@ -240,6 +241,9 @@ import {
   type AwareHuntState,
 } from "@/lib/aware/shotPairStorage";
 import {
+  awareMapMaxMFor,
+  awareMetersPerPctFor,
+  cellCenterOnAwareMap,
   distanceMBetween,
   bearingDegFromTo,
   type CellPoint,
@@ -2453,9 +2457,14 @@ export function HuntMapView({
      * Prefer stand→bird geometry whenever the bird seat is already known.
      */
     const placementTrue = info.placement.distanceM;
+    const mPerPct = map ? awareMetersPerPctFor(map) : undefined;
+    const maxM = map ? awareMapMaxMFor(map) : undefined;
     const trueDist =
       prior?.birdPos != null
-        ? Math.max(40, Math.round(distanceMBetween(stand, prior.birdPos)))
+        ? Math.max(
+            40,
+            Math.round(distanceMBetween(stand, prior.birdPos, mPerPct)),
+          )
         : placementTrue;
     let measured: number;
     if (hasExactBallistics) {
@@ -2473,12 +2482,17 @@ export function HuntMapView({
       measured = info.measuredDistanceM;
     }
     // Same bird → same Aware-map seat; first lock follows spotting compass + frame X.
-    // Place at true range so stand→bird distance stays physically correct after walking.
+    // Place at true range from the stand (cell centre) using this terrain's Aware scale
+    // so green-bracket (240–300 m) etc. land at the correct map distance.
     const birdBearing =
       prior?.bearingDeg ??
       bearingFromSpotFrame(viewBearingDeg, info.placement.x);
     const birdPos =
-      prior?.birdPos ?? birdMarkerOnAwareMap(trueDist, birdBearing);
+      prior?.birdPos ??
+      birdMarkerOnAwareMap(trueDist, birdBearing, {
+        origin: stand,
+        maxM,
+      });
     if (!prior) {
       setBirdMapContacts((prev) => ({
         ...prev,
@@ -2531,8 +2545,10 @@ export function HuntMapView({
       setSpotSession(null);
       setEngageResume(null);
     }
+    const cellCentre = map ? cellCenterOnAwareMap(pos, map) : { x: 50, y: 50 };
     const resumedStand =
-      Math.abs(stand.x - 50) > 0.5 || Math.abs(stand.y - 50) > 0.5;
+      Math.abs(stand.x - cellCentre.x) > 0.5 ||
+      Math.abs(stand.y - cellCentre.y) > 0.5;
     const session: AwareSession = {
       imageSrc,
       bird: {
@@ -2608,7 +2624,12 @@ export function HuntMapView({
   }
 
   function recalledAwareStand(): CellPoint {
-    return awareStandByCell[`${pos.row},${pos.col}`] ?? { x: 50, y: 50 };
+    const key = `${pos.row},${pos.col}`;
+    if (awareStandByCell[key]) return awareStandByCell[key]!;
+    // Default: centre of the active hunt cell (not the full-map midpoint).
+    return map
+      ? cellCenterOnAwareMap(pos, map)
+      : { x: 50, y: 50 };
   }
 
   function abortAware(opts?: { hunter?: CellPoint }) {
@@ -2658,7 +2679,13 @@ export function HuntMapView({
     if (session?.birdPos) {
       const newDist = Math.max(
         40,
-        Math.round(distanceMBetween(hunter, session.birdPos)),
+        Math.round(
+          distanceMBetween(
+            hunter,
+            session.birdPos,
+            map ? awareMetersPerPctFor(map) : undefined,
+          ),
+        ),
       );
       const fromDist = session.trueDistanceM || session.bird.distanceM;
       distanceByBirdId = {
@@ -2726,7 +2753,8 @@ export function HuntMapView({
     beginSpot({
       reuseImageSrc: session?.imageSrc,
       distanceByBirdId,
-      focusBirdId: session?.bird.birdId,
+      // Do not focusBirdId / panToCenterOnBird — that would snap binos onto the
+      // bird after Aware (cheat). Player must find it again in the landscape.
       initialMode: "binos",
     });
     setLog(
@@ -2750,7 +2778,13 @@ export function HuntMapView({
     if (session.birdPos) {
       const newDist = Math.max(
         40,
-        Math.round(distanceMBetween(hunter, session.birdPos)),
+        Math.round(
+          distanceMBetween(
+            hunter,
+            session.birdPos,
+            map ? awareMetersPerPctFor(map) : undefined,
+          ),
+        ),
       );
       const fromDist = session.trueDistanceM || session.bird.distanceM;
       next = {
@@ -2806,7 +2840,7 @@ export function HuntMapView({
 
   /**
    * Give up wounded ettersøk without a find — bird lost, mental stamina −30%.
-   * Only via «Avslutt ettersøk» (not Avbryt / Tilbake).
+   * Only via «Gi opp søket» for the active Track bird (not Avbryt / Tilbake).
    * Shows a dedicated pause view (like flukt) so the consequence is not buried in the log.
    */
   function abandonEttersok(pairId: string) {
@@ -2871,11 +2905,16 @@ export function HuntMapView({
     const session = awareSession;
     const bearingDeg = stance?.bearingDeg ?? session.birdBearingDeg;
     const hunterStand =
-      stance?.hunter ?? session.hunterPos ?? { x: 50, y: 50 };
+      stance?.hunter ??
+      session.hunterPos ??
+      (map ? cellCenterOnAwareMap(pos, map) : { x: 50, y: 50 });
     const birdPt =
       stance?.bird ??
       session.birdPos ??
-      birdMarkerOnAwareMap(session.trueDistanceM, bearingDeg);
+      birdMarkerOnAwareMap(session.trueDistanceM, bearingDeg, {
+        origin: hunterStand,
+        maxM: map ? awareMapMaxMFor(map) : undefined,
+      });
     /**
      * Ballistics truth = stand → bird after walking to a safe Aware seat —
      * never the stale spotting LRF range.
@@ -2883,7 +2922,12 @@ export function HuntMapView({
     const trueDistanceM = Math.max(
       40,
       Math.round(
-        stance?.distanceM ?? distanceMBetween(hunterStand, birdPt),
+        stance?.distanceM ??
+          distanceMBetween(
+            hunterStand,
+            birdPt,
+            map ? awareMetersPerPctFor(map) : undefined,
+          ),
       ),
     );
     /** Keep original LRF scale bias on the new true range (unless AB is exact). */
@@ -3184,6 +3228,7 @@ export function HuntMapView({
       stand: g.stand,
       bearingDeg,
       distanceM,
+      metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
     });
     return {
       id: `pair-${Date.now()}`,
@@ -3431,7 +3476,13 @@ export function HuntMapView({
     if (birdId && contact && placement && layout) {
       const dist = Math.max(
         40,
-        Math.round(distanceMBetween(stand, contact.birdPos)),
+        Math.round(
+          distanceMBetween(
+            stand,
+            contact.birdPos,
+            map ? awareMetersPerPctFor(map) : undefined,
+          ),
+        ),
       );
       const fromDist = placement.distanceM || enc?.distanceM || dist;
       const cw = crosswindMs(
@@ -3513,9 +3564,21 @@ export function HuntMapView({
       pickSpotImage();
     const scanPlacements = prepared?.birdPlacements ?? layout?.placements ?? [];
     const sceneWidthPct = medianPlacementWidthPct(scanPlacements, 2);
-    const birdPos = birdMarkerOnAwareMap(150, 0);
+    const birdPos = birdMarkerOnAwareMap(150, 0, {
+      origin: stand,
+      maxM: map ? awareMapMaxMFor(map) : undefined,
+    });
     const bearing = bearingDegFromTo(stand, birdPos);
-    const dist = Math.max(40, Math.round(distanceMBetween(stand, birdPos)));
+    const dist = Math.max(
+      40,
+      Math.round(
+        distanceMBetween(
+          stand,
+          birdPos,
+          map ? awareMetersPerPctFor(map) : undefined,
+        ),
+      ),
+    );
     const sprite = getBirdSprite("tiur-1");
     setEngageResume(null);
     setBirdEncounter(null);
@@ -3633,6 +3696,7 @@ export function HuntMapView({
         stand,
         bearingDeg: shootSession.bearingDeg,
         distanceM: result.trueDistanceM,
+        metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
       });
     }
     let fleeObservation: ShotPair["fleeObservation"];
@@ -3705,6 +3769,7 @@ export function HuntMapView({
         hasTriggercam: triggercamOn,
         hasCamcorder: camcorderOn,
         feltRecoil,
+        metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
       });
       impact = flee.landPos;
       fleeObservation = flee.observation;
@@ -3738,6 +3803,8 @@ export function HuntMapView({
       hasTriggercam: triggercamOn,
       hasCamcorder: camcorderOn,
       hasElRange: elRangeOn,
+      metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
+      maxDistanceM: map ? awareMapMaxMFor(map) : undefined,
     });
 
     /** Pre-saved Shoot skuddpar on this cell (no harvest yet) — no-cam fallback. */
@@ -3793,6 +3860,41 @@ export function HuntMapView({
         prev.map((p) => (p.id === manualPair.id ? pair! : p)),
       );
       pairNote = " Skuddpar fra Shoot er koblet til skuddet.";
+    } else if (
+      result.kind === "instant_kill" &&
+      result.trueDistanceM < CLOSE_RANGE_TREE_HENT_MAX_M
+    ) {
+      // Close-range tree kill: always allow «Hent ved treet» without cam/skuddpar.
+      const distanceM = Math.max(
+        1,
+        Math.round(
+          distanceMBetween(
+            stand,
+            birdPos,
+            map ? awareMetersPerPctFor(map) : undefined,
+          ),
+        ),
+      );
+      const bearingDeg = Math.round(bearingDegFromTo(stand, birdPos));
+      pair = {
+        id: `pair-${Date.now()}`,
+        atMs: Date.now(),
+        cell: { ...pos },
+        cellLabel: cellLabel(pos),
+        stand,
+        target: birdPos,
+        impact: birdPos,
+        distanceM,
+        bearingDeg,
+        resultKind: result.kind,
+        trackPoints: [],
+        found: null,
+        harvestDraft,
+        hitFasit,
+        skuddparCommitted: true,
+      };
+      setShotPairs((prev) => [pair!, ...prev]);
+      pairNote = ` Nærhold (<${CLOSE_RANGE_TREE_HENT_MAX_M} m): hent ved treet uten lagret skuddpar.`;
     } else if (result.kind !== "miss") {
       // No cam / no pre-save: 60 s window to register skuddpar on Aware.
       pair = null;
@@ -4697,6 +4799,7 @@ export function HuntMapView({
         onAwareSneakRealSec={onAwareSneakRealSec}
         onEttersokEffort={applyEttersokEffort}
         onProceedToShoot={proceedFromAware}
+        onAbandonSearch={abandonEttersok}
         onBirdFlushed={onAwareBirdFlushed}
         onNerveChange={(nerve) => {
           setBirdEncounter((prev) => {
