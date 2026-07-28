@@ -4,10 +4,14 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
+  type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type SetStateAction,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   clickSizeMmAt100,
   clickUnitLabel,
@@ -15,12 +19,36 @@ import {
   mmAt100ToAngular,
   mmAt100ToScopeClicks,
 } from "@/lib/optics/clicks";
-import type { ScopeClickUnit } from "@/lib/optics/spec";
+import {
+  DEFAULT_CLICKS_PER_REV_MOA,
+  DEFAULT_CLICKS_PER_REV_MRAD,
+  type ScopeClickUnit,
+} from "@/lib/optics/spec";
 import {
   playTurretClick,
   startTurretBurst,
   stopTurretBurst,
 } from "@/lib/range/turretAudio";
+
+/**
+ * Apply a turret mm nudge via React setState; returns whether the value
+ * actually changed (false at zero-stop / travel end — skip click SFX).
+ * Uses flushSync so the moved flag is reliable under React 19 batching.
+ */
+export function turretNudgeMoved(
+  setMm: Dispatch<SetStateAction<number>>,
+  nextFromPrev: (prev: number) => number,
+): boolean {
+  let moved = false;
+  flushSync(() => {
+    setMm((prev) => {
+      const next = nextFromPrev(prev);
+      moved = next !== prev;
+      return next;
+    });
+  });
+  return moved;
+}
 
 /** Field HUD tabs — Shooter dials + optional Enviro / Chrono / Kestrel. */
 export type ScopeHudTab = "shooter" | "enviro" | "chrono" | "kestrel";
@@ -33,10 +61,18 @@ type ScopeTurretsProps = {
   /** Session dial mm-at-100 m (+x = right, +y = down). */
   sessionZeroXMm: number;
   sessionZeroYMm: number;
-  onNudge: (axis: "x" | "y", deltaMm: number) => void;
+  /**
+   * Apply one click of travel. Return {@code false} when clamped at an
+   * end-stop so click SFX is skipped.
+   */
+  onNudge: (axis: "x" | "y", deltaMm: number) => boolean | void;
   disabled?: boolean;
   /** Equipped scope click unit — drives step size and readouts. */
   clickUnit?: ScopeClickUnit;
+  /** Elevation drum clicks per revolution (dual-row face wrap). */
+  elevationClicksPerRev?: number;
+  /** Windage drum clicks per revolution (R↔L wrap labels). */
+  windageClicksPerRev?: number;
   /** Optional actions under/ beside the turrets (save zero, abort, …). */
   actions?: ReactNode;
   /**
@@ -112,7 +148,7 @@ function readStoredTab(allowed: ScopeHudTab[]): ScopeHudTab {
   return "shooter";
 }
 
-function useHoldRepeat(action: () => void, disabled: boolean) {
+function useHoldRepeat(action: () => boolean, disabled: boolean) {
   const actionRef = useRef(action);
   actionRef.current = action;
   const timersRef = useRef<{ delay?: number; interval?: number }>({});
@@ -124,12 +160,19 @@ function useHoldRepeat(action: () => void, disabled: boolean) {
     if (disabled) return;
     clear();
     holdingRef.current = true;
+    const moved = actionRef.current();
+    if (!moved) return;
     playTurretClick();
-    actionRef.current();
     timersRef.current.delay = window.setTimeout(() => {
       startTurretBurst();
       timersRef.current.interval = window.setInterval(() => {
-        actionRef.current();
+        if (!actionRef.current()) {
+          stopTurretBurst();
+          if (timersRef.current.interval != null) {
+            window.clearInterval(timersRef.current.interval);
+            timersRef.current.interval = undefined;
+          }
+        }
       }, 70);
     }, 380);
   }
@@ -189,6 +232,11 @@ const SHOOTER_TICK_PX_WIND = 6;
 const SHOOTER_HALF_SPAN_ELEV = 8;
 /** Windage: fill ~11.5rem drum at 6px/tick (31 marks ≈ 186px). */
 const SHOOTER_HALF_SPAN_WIND = 15;
+/**
+ * Knurl scroll per full turret revolution (px) — matches illumination
+ * (`--illum-t * -48px` over full travel).
+ */
+const KNURL_SHIFT_PER_REV_PX = 48;
 
 type TurretDialProps = {
   title: string;
@@ -206,10 +254,10 @@ type TurretDialProps = {
   milSuffix: string;
   clickText: string;
   disabled?: boolean;
-  onNeg: () => void;
-  onPos: () => void;
+  onNeg: () => boolean;
+  onPos: () => boolean;
   /** Called with delta in face-clicks when dragging the shooter drum. */
-  onFaceDelta: (deltaClicks: number) => void;
+  onFaceDelta: (deltaClicks: number) => boolean;
   negAria: string;
   posAria: string;
   negMark: string;
@@ -221,6 +269,8 @@ type TurretDialProps = {
   /** e.g. "0.1 mil / klikk · …" or "0.25 MOA / klikk · …" */
   stepHint: string;
   clickUnit: ScopeClickUnit;
+  /** Clicks in one full turret revolution for this axis (face labels). */
+  clicksPerRev: number;
 };
 
 function OverheadDrum({
@@ -285,65 +335,74 @@ function OverheadDrum({
  * Drum face markings by click unit:
  * - MRAD: semi every 5 (0.5 mil), numbered every 10 (1 mil)
  * - MOA:  semi every 2 (0.5 MOA), numbered every 4 (1 MOA)
- * Windage face is R-positive: 1R / 2R … and 1L / 2L … (ZCO-style).
- * Elevation: dual rows — primary wraps per revolution, upper = primary + rev.
+ * Windage: one-rev wrap — R up to half-turn, then L descending back to 0
+ *   (e.g. 150 clk/rev → …6R 7R | 7L 6L…).
+ * Elevation: dual rows — primary wraps per rev, upper = primary + units/rev.
  */
-/** Mils (or MOA) per elevation turret revolution — ZCO-style dual row. */
-const ELEV_REV_UNITS = 15;
+function clicksPerMajorUnit(unit: ScopeClickUnit): number {
+  return unit === "MOA" ? 4 : 10;
+}
+
+function formatFaceUnit(units: number): string {
+  if (Number.isInteger(units)) return String(units);
+  const t = Math.round(units * 100) / 100;
+  return String(t);
+}
+
+/**
+ * Windage drum label for a face-click position, wrapped to one revolution.
+ * R-positive face: 0 → …R → half → …L → 0.
+ */
+export function windageWrapLabel(
+  faceClicks: number,
+  clicksPerRev: number,
+  unit: ScopeClickUnit,
+): string {
+  const rev = Math.max(4, Math.round(clicksPerRev));
+  const major = clicksPerMajorUnit(unit);
+  const half = rev / 2;
+  const pos = ((Math.round(faceClicks) % rev) + rev) % rev;
+  if (pos === 0) return "0";
+  if (pos <= half) {
+    return `${formatFaceUnit(pos / major)}R`;
+  }
+  const fromZeroL = rev - pos;
+  return `${formatFaceUnit(fromZeroL / major)}L`;
+}
 
 function shooterTickMarks(
   tick: number,
   unit: ScopeClickUnit,
   kind: "elevation" | "windage" = "elevation",
+  clicksPerRev: number = unit === "MOA"
+    ? DEFAULT_CLICKS_PER_REV_MOA
+    : DEFAULT_CLICKS_PER_REV_MRAD,
 ): { isMajor: boolean; isSemi: boolean; label: string; rev2: string } {
-  if (unit === "MOA") {
-    const isMajor = tick % 4 === 0;
-    const isSemi = !isMajor && tick % 2 === 0;
-    const moa = tick / 4;
-    let label = "";
-    let rev2 = "";
-    if (isMajor) {
-      if (kind === "windage") {
-        if (moa === 0) label = "0";
-        else if (moa > 0) label = `${Number.isInteger(moa) ? moa : moa.toFixed(2)}R`;
-        else label = `${Number.isInteger(-moa) ? -moa : (-moa).toFixed(2)}L`;
-      } else {
-        const unitVal = Math.trunc(moa);
-        const primary =
-          ((unitVal % ELEV_REV_UNITS) + ELEV_REV_UNITS) % ELEV_REV_UNITS;
-        label = String(primary);
-        rev2 = String(primary + ELEV_REV_UNITS);
-      }
-    }
-    return { isMajor, isSemi, label, rev2 };
-  }
-  const isMajor = tick % 10 === 0;
-  const isSemi = !isMajor && tick % 5 === 0;
-  const mil = tick / 10;
+  const majorEvery = clicksPerMajorUnit(unit);
+  const semiEvery = unit === "MOA" ? 2 : 5;
+  const isMajor = tick % majorEvery === 0;
+  const isSemi = !isMajor && tick % semiEvery === 0;
   let label = "";
   let rev2 = "";
-  if (isMajor) {
-    if (kind === "windage") {
-      if (mil === 0) label = "0";
-      else if (mil > 0) {
-        label = `${Number.isInteger(mil) ? mil : mil.toFixed(1)}R`;
-      } else {
-        label = `${Number.isInteger(-mil) ? -mil : (-mil).toFixed(1)}L`;
-      }
-    } else {
-      const unitVal = Math.trunc(mil);
-      const primary =
-        ((unitVal % ELEV_REV_UNITS) + ELEV_REV_UNITS) % ELEV_REV_UNITS;
-      label = String(primary);
-      rev2 = String(primary + ELEV_REV_UNITS);
-    }
+  if (!isMajor) return { isMajor, isSemi, label, rev2 };
+
+  if (kind === "windage") {
+    label = windageWrapLabel(tick, clicksPerRev, unit);
+    return { isMajor, isSemi, label, rev2 };
   }
+
+  const unitsPerRev = Math.max(1, Math.round(clicksPerRev / majorEvery));
+  const unitVal = Math.trunc(tick / majorEvery);
+  const primary = ((unitVal % unitsPerRev) + unitsPerRev) % unitsPerRev;
+  label = String(primary);
+  rev2 = String(primary + unitsPerRev);
   return { isMajor, isSemi, label, rev2 };
 }
 
 function ShooterDrum({
   faceClicks,
   clickUnit,
+  clicksPerRev,
   baseLegend,
   kind = "elevation",
   disabled,
@@ -359,10 +418,11 @@ function ShooterDrum({
 }: {
   faceClicks: number;
   clickUnit: ScopeClickUnit;
+  clicksPerRev: number;
   baseLegend?: string;
   kind?: "elevation" | "windage";
   disabled?: boolean;
-  onFaceDelta: (deltaClicks: number) => void;
+  onFaceDelta: (deltaClicks: number) => boolean;
   orientation: "horizontal" | "vertical";
   scaleDir: 1 | -1;
 }) {
@@ -425,8 +485,14 @@ function ShooterDrum({
     const clicksMoved = Math.trunc((-delta * scaleDir) / tickPx);
     if (clicksMoved !== drag.lastEmitted) {
       const step = clicksMoved - drag.lastEmitted;
-      if (step !== 0) playTurretClick();
-      onFaceDelta(step);
+      /* One SFX per hashmark — apply click-by-click so end-stop can cut short. */
+      if (step !== 0) {
+        const dir = step > 0 ? 1 : -1;
+        for (let i = 0; i < Math.abs(step); i++) {
+          if (!onFaceDelta(dir)) break;
+          playTurretClick();
+        }
+      }
       drag.lastEmitted = clicksMoved;
     }
   }
@@ -443,7 +509,12 @@ function ShooterDrum({
   }
 
   function tickClass(tick: number): string {
-    const { isMajor, isSemi } = shooterTickMarks(tick, clickUnit, kind);
+    const { isMajor, isSemi } = shooterTickMarks(
+      tick,
+      clickUnit,
+      kind,
+      clicksPerRev,
+    );
     const isCurrent = tick === faceClicks;
     const parts = ["scope-turret-shooter-tick"];
     if (isMajor) parts.push("is-major");
@@ -456,6 +527,14 @@ function ShooterDrum({
     orientation === "vertical"
       ? "scope-turret-shooter scope-turret-shooter--vertical"
       : "scope-turret-shooter scope-turret-shooter--horizontal";
+
+  /* Same sense as illumination: higher face → negative knurl shift. */
+  const knurlShiftPx =
+    -(faceClicks / Math.max(4, clicksPerRev)) * KNURL_SHIFT_PER_REV_PX;
+
+  const knurlStyle = {
+    ["--knurl-shift" as string]: String(knurlShiftPx),
+  } as CSSProperties;
 
   const base = (
     <div className="scope-turret-shooter-base">
@@ -472,7 +551,7 @@ function ShooterDrum({
   );
 
   return (
-    <div className={rootClass} aria-hidden>
+    <div className={rootClass} aria-hidden style={knurlStyle}>
       {orientation === "horizontal" ? (
         <div className="scope-turret-shooter-knurl" />
       ) : null}
@@ -494,7 +573,12 @@ function ShooterDrum({
           <div className="scope-turret-shooter-shade scope-turret-shooter-shade--b" />
           <div className="scope-turret-shooter-band">
             {ticks.map((tick) => {
-              const marks = shooterTickMarks(tick, clickUnit, kind);
+              const marks = shooterTickMarks(
+                tick,
+                clickUnit,
+                kind,
+                clicksPerRev,
+              );
               /* Only engraved majors/semis — no boxed “current click” readout. */
               const label = marks.label;
               return (
@@ -543,6 +627,7 @@ function TurretDial({
   hideClickButtons = false,
   stepHint,
   clickUnit,
+  clicksPerRev,
 }: TurretDialProps) {
   const negHold = useHoldRepeat(onNeg, !!disabled);
   const posHold = useHoldRepeat(onPos, !!disabled);
@@ -567,6 +652,7 @@ function TurretDial({
             <ShooterDrum
               faceClicks={faceClicks}
               clickUnit={clickUnit}
+              clicksPerRev={clicksPerRev}
               baseLegend={baseLegend}
               kind={kind}
               disabled={disabled}
@@ -654,6 +740,8 @@ export function ScopeTurrets({
   onNudge,
   disabled = false,
   clickUnit = "MRAD",
+  elevationClicksPerRev,
+  windageClicksPerRev,
   actions,
   enviroPanel,
   chronoPanel,
@@ -675,6 +763,16 @@ export function ScopeTurrets({
   const [tab, setTab] = useState<ScopeHudTab>("shooter");
   const clickMm = clickSizeMmAt100(clickUnit);
   const stepHint = formatClickStepHint(clickUnit);
+  const elevRev =
+    elevationClicksPerRev != null && elevationClicksPerRev >= 4
+      ? Math.round(elevationClicksPerRev)
+      : clickUnit === "MOA"
+        ? DEFAULT_CLICKS_PER_REV_MOA
+        : DEFAULT_CLICKS_PER_REV_MRAD;
+  const windRev =
+    windageClicksPerRev != null && windageClicksPerRev >= 4
+      ? Math.round(windageClicksPerRev)
+      : elevRev;
 
   useEffect(() => {
     setTab(readStoredTab(allowedTabs));
@@ -794,11 +892,13 @@ export function ScopeTurrets({
             disabled={disabled}
             stepHint={stepHint}
             clickUnit={clickUnit}
-            onNeg={() => onNudge("y", -clickMm)}
-            onPos={() => onNudge("y", clickMm)}
+            clicksPerRev={elevRev}
+            onNeg={() => reportTurretMoved(onNudge("y", -clickMm))}
+            onPos={() => reportTurretMoved(onNudge("y", clickMm))}
             onFaceDelta={(d) => {
               /* face UP+ → session y − */
-              if (d !== 0) onNudge("y", -d * clickMm);
+              if (d === 0) return false;
+              return reportTurretMoved(onNudge("y", -d * clickMm));
             }}
             negAria="Elevation opp (ett klikk)"
             posAria="Elevation ned (ett klikk)"
@@ -819,10 +919,12 @@ export function ScopeTurrets({
             disabled={disabled}
             stepHint={stepHint}
             clickUnit={clickUnit}
-            onNeg={() => onNudge("x", -clickMm)}
-            onPos={() => onNudge("x", clickMm)}
+            clicksPerRev={windRev}
+            onNeg={() => reportTurretMoved(onNudge("x", -clickMm))}
+            onPos={() => reportTurretMoved(onNudge("x", clickMm))}
             onFaceDelta={(d) => {
-              if (d !== 0) onNudge("x", d * clickMm);
+              if (d === 0) return false;
+              return reportTurretMoved(onNudge("x", d * clickMm));
             }}
             negAria="Windage venstre (ett klikk)"
             posAria="Windage høyre (ett klikk)"
@@ -860,12 +962,22 @@ export function ScopeTurrets({
 
 type ScopeAxisDialProps = {
   sessionZeroMm: number;
-  onNudge: (deltaMm: number) => void;
+  /**
+   * Apply mm travel. Return {@code false} at end-stop so click SFX is skipped.
+   */
+  onNudge: (deltaMm: number) => boolean | void;
   disabled?: boolean;
   clickUnit?: ScopeClickUnit;
+  /** Clicks per full revolution for this dial’s drum face. */
+  clicksPerRev?: number;
   /** Admin tube: drag-only, no U/D or ◀/▶ buttons. */
   hideClickButtons?: boolean;
 };
+
+function reportTurretMoved(result: boolean | void): boolean {
+  /* void = treat as moved (legacy); explicit false = end-stop. */
+  return result !== false;
+}
 
 /** Standalone elevation dial — for tube layout (admin prototype). */
 export function ScopeElevationDial({
@@ -873,11 +985,18 @@ export function ScopeElevationDial({
   onNudge,
   disabled = false,
   clickUnit = "MRAD",
+  clicksPerRev,
   hideClickButtons = true,
 }: ScopeAxisDialProps) {
   const clickMm = clickSizeMmAt100(clickUnit);
   const elevClicks = mmAt100ToScopeClicks(sessionZeroMm, clickUnit);
   const elevFace = -elevClicks;
+  const rev =
+    clicksPerRev != null && clicksPerRev >= 4
+      ? Math.round(clicksPerRev)
+      : clickUnit === "MOA"
+        ? DEFAULT_CLICKS_PER_REV_MOA
+        : DEFAULT_CLICKS_PER_REV_MRAD;
   return (
     <TurretDial
       title="Elevation"
@@ -893,10 +1012,12 @@ export function ScopeElevationDial({
       hideClickButtons={hideClickButtons}
       stepHint={formatClickStepHint(clickUnit)}
       clickUnit={clickUnit}
-      onNeg={() => onNudge(-clickMm)}
-      onPos={() => onNudge(clickMm)}
+      clicksPerRev={rev}
+      onNeg={() => reportTurretMoved(onNudge(-clickMm))}
+      onPos={() => reportTurretMoved(onNudge(clickMm))}
       onFaceDelta={(d) => {
-        if (d !== 0) onNudge(-d * clickMm);
+        if (d === 0) return false;
+        return reportTurretMoved(onNudge(-d * clickMm));
       }}
       negAria="Elevation opp (ett klikk)"
       posAria="Elevation ned (ett klikk)"
@@ -913,11 +1034,18 @@ export function ScopeWindageDial({
   onNudge,
   disabled = false,
   clickUnit = "MRAD",
+  clicksPerRev,
   hideClickButtons = true,
 }: ScopeAxisDialProps) {
   const clickMm = clickSizeMmAt100(clickUnit);
   const windClicks = mmAt100ToScopeClicks(sessionZeroMm, clickUnit);
   const windFace = windClicks;
+  const rev =
+    clicksPerRev != null && clicksPerRev >= 4
+      ? Math.round(clicksPerRev)
+      : clickUnit === "MOA"
+        ? DEFAULT_CLICKS_PER_REV_MOA
+        : DEFAULT_CLICKS_PER_REV_MRAD;
   return (
     <TurretDial
       title="Windage"
@@ -933,10 +1061,12 @@ export function ScopeWindageDial({
       hideClickButtons={hideClickButtons}
       stepHint={formatClickStepHint(clickUnit)}
       clickUnit={clickUnit}
-      onNeg={() => onNudge(-clickMm)}
-      onPos={() => onNudge(clickMm)}
+      clicksPerRev={rev}
+      onNeg={() => reportTurretMoved(onNudge(-clickMm))}
+      onPos={() => reportTurretMoved(onNudge(clickMm))}
       onFaceDelta={(d) => {
-        if (d !== 0) onNudge(d * clickMm);
+        if (d === 0) return false;
+        return reportTurretMoved(onNudge(d * clickMm));
       }}
       negAria="Windage venstre (ett klikk)"
       posAria="Windage høyre (ett klikk)"

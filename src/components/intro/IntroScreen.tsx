@@ -22,6 +22,7 @@ import {
   grantStarterGear,
   grantUncleRifle,
   ensureNamedStarterGear,
+  applyAdminSessionPerks,
   isAutoSupplyFoodItem,
   isCheatPlayerName,
   isVipPlayerName,
@@ -237,6 +238,12 @@ export function IntroScreen() {
       /* private mode / SSR */
     }
   }, []);
+
+  /** Admin PIN session: Finnskogen sesongkort + 999 CB Real loads. */
+  useEffect(() => {
+    if (!adminUnlocked) return;
+    setStats((prev) => applyAdminSessionPerks(prev));
+  }, [adminUnlocked, stats.name]);
 
   useEffect(() => {
     statsRef.current = stats;
@@ -1392,6 +1399,7 @@ export function IntroScreen() {
                   /* ignore */
                 }
                 setAdminUnlocked(true);
+                setStats((prev) => applyAdminSessionPerks(prev));
               }}
               onAdminLock={() => {
                 try {

@@ -673,6 +673,14 @@ export function HuntMapView({
    * Null until first shoot view writes a dial.
    */
   const huntScopeTurretsRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Parallax + illumination drums sticky across engages (like elevation/windage).
+   * Null → defaults 100 m / OFF until first shoot view writes a dial.
+   */
+  const huntSideDrumsRef = useRef<{
+    parallaxFocusM: number;
+    reticleIllum: number;
+  } | null>(null);
   const [awareSession, setAwareSession] = useState<AwareSession | null>(null);
   const [shotPairs, setShotPairs] = useState<ShotPair[]>([]);
   /** Hit fasit overlay after finding a dead bird (with or without Triggercam). */
@@ -1201,6 +1209,7 @@ export function HuntMapView({
     setShootSession(null);
     setAwareSession(null);
     huntScopeTurretsRef.current = null;
+    huntSideDrumsRef.current = null;
     setPendingPostShot(null);
     setPostShotGhost(null);
     setPostShotGhostSecLeft(0);
@@ -4329,6 +4338,10 @@ export function HuntMapView({
         initialSessionZeroMm={huntScopeTurretsRef.current}
         onSessionZeroChange={(xMm, yMm) => {
           huntScopeTurretsRef.current = { x: xMm, y: yMm };
+        }}
+        initialSideDrums={huntSideDrumsRef.current}
+        onSideDrumsChange={(parallaxFocusM, reticleIllum) => {
+          huntSideDrumsRef.current = { parallaxFocusM, reticleIllum };
         }}
         crosswindMs={shootSession.crosswindMs}
         densityRatio={shootSession.densityRatio}

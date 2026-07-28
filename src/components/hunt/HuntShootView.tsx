@@ -65,10 +65,12 @@ import {
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
+import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
 import {
   ScopeElevationDial,
   ScopeTurrets,
   ScopeWindageDial,
+  turretNudgeMoved,
   type ScopeHudTab,
 } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -110,7 +112,14 @@ import {
   type ShotLogEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError, scopeFovDiameterScale } from "@/lib/optics/spec";
+import {
+  applyScopeClickError,
+  scopeElevationClicksPerRev,
+  scopeFocusViewportBoost,
+  scopeFocusZoomBoost,
+  scopeFovDiameterScale,
+  scopeWindageClicksPerRev,
+} from "@/lib/optics/spec";
 import {
   isAmmoItem,
   isBipodItem,
@@ -289,6 +298,13 @@ type HuntShootViewProps = {
   /** Persist dial changes for the rest of this hunt. */
   onSessionZeroChange?: (xMm: number, yMm: number) => void;
   /**
+   * Parallax / illumination drums sticky across engages in the same hunt.
+   * Null → defaults: 100 m focus, illumination off.
+   */
+  initialSideDrums?: { parallaxFocusM: number; reticleIllum: number } | null;
+  /** Persist side-drum changes for the rest of this hunt. */
+  onSideDrumsChange?: (parallaxFocusM: number, reticleIllum: number) => void;
+  /**
    * medium = classic HUD dials; high = tube-mounted realistic turrets.
    */
   realism?: GameRealism;
@@ -316,6 +332,10 @@ const FOCUS_AIM_SPEED_MULT = 0.14;
 /** Arrow tap while F held — fraction of the unfocused tap step. */
 const FOCUS_AIM_TAP_MULT = 0.15;
 const DEFAULT_SCOPE_ZOOM = 12;
+/** Side-focus default when no prior engagement this hunt. */
+const DEFAULT_PARALLAX_FOCUS_M = 100;
+/** Illumination default — off (black etched). */
+const DEFAULT_RETICLE_ILLUM = 0;
 
 /** Aim (mm from vital) that puts landscape centre under the reticle. */
 function aimMmForLandscapeCenter(opts: {
@@ -405,6 +425,8 @@ export function HuntShootView({
   onBackToAware,
   initialSessionZeroMm = null,
   onSessionZeroChange,
+  initialSideDrums = null,
+  onSideDrumsChange,
   realism = "medium",
 }: HuntShootViewProps) {
   const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
@@ -460,8 +482,21 @@ export function HuntShootView({
         )
       : 0,
   );
-  const [parallaxFocusM, setParallaxFocusM] = useState(trueDistanceM);
-  const [reticleIllum, setReticleIllum] = useState(0);
+  /**
+   * Side drums sticky across engages (same as elevation/windage).
+   * Defaults when nothing saved yet: 100 m / illumination off.
+   */
+  const [parallaxFocusM, setParallaxFocusM] = useState(() => {
+    const saved = initialSideDrums?.parallaxFocusM;
+    return saved != null && Number.isFinite(saved)
+      ? saved
+      : DEFAULT_PARALLAX_FOCUS_M;
+  });
+  const [reticleIllum, setReticleIllum] = useState(() => {
+    const saved = initialSideDrums?.reticleIllum;
+    if (saved == null || !Number.isFinite(saved)) return DEFAULT_RETICLE_ILLUM;
+    return Math.max(0, Math.min(1, saved));
+  });
   const tubeMode = realism === "high";
   const blurPx = tubeMode
     ? focusBlurPx(trueDistanceM, parallaxFocusM)
@@ -475,6 +510,8 @@ export function HuntShootView({
   );
   const onSessionZeroChangeRef = useRef(onSessionZeroChange);
   onSessionZeroChangeRef.current = onSessionZeroChange;
+  const onSideDrumsChangeRef = useRef(onSideDrumsChange);
+  onSideDrumsChangeRef.current = onSideDrumsChange;
   const [hudTab, setHudTab] = useState<ScopeHudTab>("shooter");
   const hudTabRef = useRef(hudTab);
   hudTabRef.current = hudTab;
@@ -498,6 +535,8 @@ export function HuntShootView({
     phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
+  /** Drives focus-zoom re-render when F is held. */
+  const [focusHeld, setFocusHeld] = useState(false);
   const [triggerUi, setTriggerUi] = useState({
     pending: false,
     targetPct: 0,
@@ -512,6 +551,7 @@ export function HuntShootView({
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
+  const focusZoomBoostRef = useRef(1);
   const vitalOffRef = useRef({ x: 0, y: 0 });
   const geomRef = useRef(shotGeom);
   geomRef.current = shotGeom;
@@ -834,6 +874,9 @@ export function HuntShootView({
     onSessionZeroChangeRef.current?.(sessionZeroXMm, sessionZeroYMm);
   }, [sessionZeroXMm, sessionZeroYMm]);
   useEffect(() => {
+    onSideDrumsChangeRef.current?.(parallaxFocusM, reticleIllum);
+  }, [parallaxFocusM, reticleIllum]);
+  useEffect(() => {
     if (!rifle || !scope || !selectedAmmo) return;
     onEnsureZeroing(rifle.id, scope.id, selectedAmmo.id);
   }, [rifle, scope, selectedAmmo, onEnsureZeroing]);
@@ -1150,6 +1193,7 @@ export function HuntShootView({
   function beginFocus(nowMs: number) {
     if (focusRef.current.held || firedRef.current) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
+    setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -1162,6 +1206,7 @@ export function HuntShootView({
 
   function endFocus() {
     focusRef.current = { held: false, startedAtMs: 0 };
+    setFocusHeld(false);
     if (triggerRef.current.held) {
       abortTrigger("Fokus sluppet — avtrekk avbrutt.");
     }
@@ -1463,7 +1508,9 @@ export function HuntShootView({
       let limitY: number;
       if (landscapeSrcRef.current) {
         // Scene pan in mm — slower acquire; focus multiplies further below.
-        const visibleScenePx = SCOPE_VIEWPORT_REF_PX / Math.max(0.01, scale);
+        const visibleScenePx =
+          SCOPE_VIEWPORT_REF_PX /
+          Math.max(0.01, scale * focusZoomBoostRef.current);
         speed = ((visibleScenePx * LANDSCAPE_AIM_FOV_FRAC) / pxPerMm) * dt;
         const sceneW = g.nativeW * (100 / seat.widthPct);
         const sceneH = sceneW / Math.max(0.25, landAspectRef.current);
@@ -1615,13 +1662,14 @@ export function HuntShootView({
     birdFlip,
   ]);
 
-  function nudgeZero(axis: "x" | "y", deltaMm: number) {
-    if (fired) return;
+  function nudgeZero(axis: "x" | "y", deltaMm: number): boolean {
+    if (fired) return false;
     if (axis === "x") {
-      setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
-      return;
+      return turretNudgeMoved(setSessionZeroXMm, (prev) =>
+        clampTurretMm(prev + deltaMm),
+      );
     }
-    setSessionZeroYMm((prev) =>
+    return turretNudgeMoved(setSessionZeroYMm, (prev) =>
       clampElevationTurretMm(prev + deltaMm, scope?.scope),
     );
   }
@@ -1638,15 +1686,17 @@ export function HuntShootView({
   }
 
   const birdWidthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
+  const focusZoomBoost = scopeFocusZoomBoost(scope.scope, focusHeld);
+  const focusViewportBoost = scopeFocusViewportBoost(scope.scope, focusHeld);
   const targetScale = birdScopeImageScale(
-    zoom,
-    scope.scope,
-    trueDistanceM,
-    shotGeom.nativeW,
-    birdSpriteId,
-    // Landscape hunt: use placement width (perch/sprite scales) not bare 1/d.
-    landscapeSrc ? birdWidthPct : undefined,
-  );
+      zoom,
+      scope.scope,
+      trueDistanceM,
+      shotGeom.nativeW,
+      birdSpriteId,
+      // Landscape hunt: use placement width (perch/sprite scales) not bare 1/d.
+      landscapeSrc ? birdWidthPct : undefined,
+    );
   /** FFP reticle: optic zoom only — not bird size/distance. */
   const reticleScale = opticReticleImgScale(zoom, scope.scope);
   const vitalBase = birdVitalOffsetFromImageCenterPx(shotGeom);
@@ -1655,12 +1705,14 @@ export function HuntShootView({
     ? { x: -vitalBase.x, y: vitalBase.y }
     : vitalBase;
   targetScaleRef.current = targetScale;
+  focusZoomBoostRef.current = focusZoomBoost;
   vitalOffRef.current = vitalOff;
 
   const sceneW = landscapeSrc
     ? shotGeom.nativeW * (100 / birdWidthPct)
     : shotGeom.nativeW;
   const sceneH = landscapeSrc ? sceneW / landAspect : shotGeom.nativeH;
+  const worldRollDeg = -liveCantDeg();
 
   const abFasitHold =
     ballisticHold && selectedAmmo && ballisticsAmmo
@@ -1799,6 +1851,8 @@ export function HuntShootView({
           onNudge={nudgeZero}
           disabled={fired}
           clickUnit={scope?.scope.clickUnit ?? "MRAD"}
+          elevationClicksPerRev={scopeElevationClicksPerRev(scope?.scope)}
+          windageClicksPerRev={scopeWindageClicksPerRev(scope?.scope)}
           hideShooterDials={tubeMode}
           onHudTabChange={setHudTab}
           meterTabLabel={
@@ -1959,11 +2013,12 @@ export function HuntShootView({
             <ScopeElevationDial
               sessionZeroMm={sessionZeroYMm}
               onNudge={(d) =>
-                setSessionZeroYMm((y) =>
+                turretNudgeMoved(setSessionZeroYMm, (y) =>
                   clampElevationTurretMm(y + d, scope.scope),
                 )
               }
               clickUnit={scope.scope.clickUnit ?? "MRAD"}
+              clicksPerRev={scopeElevationClicksPerRev(scope.scope)}
               disabled={fired}
             />
           }
@@ -1985,9 +2040,12 @@ export function HuntShootView({
             <ScopeWindageDial
               sessionZeroMm={sessionZeroXMm}
               onNudge={(d) =>
-                setSessionZeroXMm((x) => clampTurretMm(x + d))
+                turretNudgeMoved(setSessionZeroXMm, (x) =>
+                  clampTurretMm(x + d),
+                )
               }
               clickUnit={scope.scope.clickUnit ?? "MRAD"}
+              clicksPerRev={scopeWindageClicksPerRev(scope.scope)}
               disabled={fired}
             />
           }
@@ -2084,10 +2142,22 @@ export function HuntShootView({
               ) : null}
 
               <div
-                className={
+                className={[
+                  "scope-optic",
                   scopeFovDiameterScale(scope.scope) > 1
-                    ? "scope-optic is-fov-premium"
-                    : "scope-optic"
+                    ? "is-fov-premium"
+                    : "",
+                  focusViewportBoost > 1 ? "is-focus-immersive" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={
+                  focusViewportBoost > 1
+                    ? ({
+                        ["--focus-viewport-scale" as string]:
+                          focusViewportBoost,
+                      } as CSSProperties)
+                    : undefined
                 }
               >
             <div
@@ -2112,12 +2182,22 @@ export function HuntShootView({
               onPointerLeave={onAimPointerLeave}
               onLostPointerCapture={onAimPointerUp}
             >
+              <ScopeFocusZoom scale={focusZoomBoost}>
               <div
                 ref={scopeWorldRef}
                 className="scope-world"
                 style={
-                  blurPx > 0.05
-                    ? { filter: `blur(${blurPx.toFixed(2)}px)` }
+                  blurPx > 0.05 || Math.abs(worldRollDeg) > 0.02
+                    ? {
+                        filter:
+                          blurPx > 0.05
+                            ? `blur(${blurPx.toFixed(2)}px)`
+                            : undefined,
+                        transform:
+                          Math.abs(worldRollDeg) > 0.02
+                            ? `rotate(${worldRollDeg.toFixed(3)}deg)`
+                            : undefined,
+                      }
                     : undefined
                 }
               >
@@ -2161,7 +2241,7 @@ export function HuntShootView({
                           style={{
                             width: "100%",
                             height: "100%",
-                            transform: birdFlip ? "scaleX(-1)" : undefined,
+                        transform: birdFlip ? "scaleX(-1)" : undefined,
                           }}
                         />
                         {lastImpact ? (
@@ -2218,6 +2298,7 @@ export function HuntShootView({
                 imgScale={reticleScale}
                 illumination={tubeMode ? reticleIllum : 0}
               />
+              </ScopeFocusZoom>
             </div>
             <ScopeZoomRing
               scope={scope.scope}

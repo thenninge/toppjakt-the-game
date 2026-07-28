@@ -20,6 +20,11 @@ export const SCOPE_FOV_DIAMETER_PREMIUM = 1.15;
 /** Default max elevation UP clicks when a scope omits `elevationUpClicks`. */
 export const DEFAULT_ELEVATION_UP_CLICKS = 200;
 
+/** MRAD turret: 0.1 mil/click → 15 mil/rev = 150 clicks (ZCO-class). */
+export const DEFAULT_CLICKS_PER_REV_MRAD = 150;
+/** MOA turret: ¼ MOA/click → 20 MOA/rev = 80 clicks (common NF). */
+export const DEFAULT_CLICKS_PER_REV_MOA = 80;
+
 export type ScopeSpec = {
   /**
    * Main tube outer diameter (mm). Mounts must match exactly —
@@ -48,6 +53,16 @@ export type ScopeSpec = {
    */
   elevationUpClicks?: number;
   /**
+   * Clicks per full elevation turret revolution (drum face wrap / dual-row).
+   * Omit → {@link DEFAULT_CLICKS_PER_REV_MRAD} or {@link DEFAULT_CLICKS_PER_REV_MOA}.
+   */
+  elevationClicksPerRev?: number;
+  /**
+   * Clicks per full windage turret revolution (R↔L wrap labels on drum).
+   * Omit → same default as elevation for the click unit.
+   */
+  windageClicksPerRev?: number;
+  /**
    * Symmetric turret click-size error (± percent of nominal).
    * 0 = exact 0.1 mil / ¼ MOA; 10 = each dialed click may realize ±10%.
    * Applied to player dials (saved + session), not factory cold-bore base.
@@ -60,11 +75,35 @@ export type ScopeSpec = {
    */
   zeroRetentionInaccuracy: number;
   /**
-   * Extra image-scale multiplier at all zooms (FOV fine-tune).
+   * Extra image-scale multiplier at {@link maxZoom} (FOV fine-tune).
    * 1 = default shared FOV; >1 = narrower FOV (more magnification feel).
+   * Interpolated with {@link minZoomMagCal} across the zoom range.
    * Omit → {@link SCOPE_ZOOM_MAG_CAL} / 1.
    */
   zoomMagCal?: number;
+  /**
+   * Extra image-scale at {@link minZoom} — how low power “feels” in the glass.
+   * Interpolated toward {@link zoomMagCal} as zoom increases.
+   * Omit → same as {@link zoomMagCal} (single-point FOV cal).
+   */
+  minZoomMagCal?: number;
+  /**
+   * When true, holding F (focus) applies {@link focusZoomMultiplier} to
+   * reticle + target/landscape — perceived zoom while settling the shot.
+   * Omit / false → no focus zoom (game default off until admin enables).
+   */
+  focusZoomEnabled?: boolean;
+  /**
+   * Extra optic scale while focus (F) is held. 1 = no boost, default 2, max 5.
+   * Only used when {@link focusZoomEnabled} is true.
+   */
+  focusZoomMultiplier?: number;
+  /**
+   * Scope-glass diameter scale while focus immersion is active.
+   * 1 = unchanged; default 1.25 (+25%). Glass draws over elev/wind/para/illum drums.
+   * Only used when {@link focusZoomEnabled} is true and F is held.
+   */
+  focusViewportScale?: number;
   /**
    * Scope-circle diameter multiplier vs medium glass (Element = 1).
    * Premium (ZCO/Kahles/NF/SB/Razor) = {@link SCOPE_FOV_DIAMETER_PREMIUM}.
@@ -72,6 +111,36 @@ export type ScopeSpec = {
    */
   fovDiameterScale?: number;
 };
+
+function defaultClicksPerRev(unit: ScopeClickUnit): number {
+  return unit === "MOA"
+    ? DEFAULT_CLICKS_PER_REV_MOA
+    : DEFAULT_CLICKS_PER_REV_MRAD;
+}
+
+/** Elevation clicks in one full turret revolution (for face labels). */
+export function scopeElevationClicksPerRev(
+  scope:
+    | Pick<ScopeSpec, "clickUnit" | "elevationClicksPerRev">
+    | null
+    | undefined,
+): number {
+  const n = scope?.elevationClicksPerRev;
+  if (n != null && Number.isFinite(n) && n >= 4) return Math.round(n);
+  return defaultClicksPerRev(scope?.clickUnit ?? "MRAD");
+}
+
+/** Windage clicks in one full turret revolution (for R/L wrap labels). */
+export function scopeWindageClicksPerRev(
+  scope:
+    | Pick<ScopeSpec, "clickUnit" | "windageClicksPerRev">
+    | null
+    | undefined,
+): number {
+  const n = scope?.windageClicksPerRev;
+  if (n != null && Number.isFinite(n) && n >= 4) return Math.round(n);
+  return defaultClicksPerRev(scope?.clickUnit ?? "MRAD");
+}
 
 /**
  * Elevation face-click window (UP-positive face, absolute mechanical).
@@ -130,6 +199,83 @@ export function scopeFovDiameterScale(
   const s = scope?.fovDiameterScale;
   if (s != null && Number.isFinite(s) && s > 0) return s;
   return SCOPE_FOV_DIAMETER_STANDARD;
+}
+
+/** Default focus-zoom boost when enabled and multiplier omitted. */
+export const DEFAULT_FOCUS_ZOOM_MULTIPLIER = 2;
+export const FOCUS_ZOOM_MULTIPLIER_MIN = 1;
+export const FOCUS_ZOOM_MULTIPLIER_MAX = 5;
+
+/** Default glass growth while focus immersion is on (+25%). */
+export const DEFAULT_FOCUS_VIEWPORT_SCALE = 1.25;
+export const FOCUS_VIEWPORT_SCALE_MIN = 1;
+export const FOCUS_VIEWPORT_SCALE_MAX = 1.8;
+
+export function scopeFocusZoomEnabled(
+  scope: Pick<ScopeSpec, "focusZoomEnabled"> | null | undefined,
+): boolean {
+  return scope?.focusZoomEnabled === true;
+}
+
+/** Clamped catalog multiplier (1–5). Does not check enabled flag. */
+export function scopeFocusZoomMultiplier(
+  scope: Pick<ScopeSpec, "focusZoomMultiplier"> | null | undefined,
+): number {
+  const m = scope?.focusZoomMultiplier;
+  if (m != null && Number.isFinite(m)) {
+    return Math.min(
+      FOCUS_ZOOM_MULTIPLIER_MAX,
+      Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, m),
+    );
+  }
+  return DEFAULT_FOCUS_ZOOM_MULTIPLIER;
+}
+
+/** Clamped glass diameter scale (1–1.8). Does not check enabled flag. */
+export function scopeFocusViewportScale(
+  scope: Pick<ScopeSpec, "focusViewportScale"> | null | undefined,
+): number {
+  const s = scope?.focusViewportScale;
+  if (s != null && Number.isFinite(s)) {
+    return Math.min(
+      FOCUS_VIEWPORT_SCALE_MAX,
+      Math.max(FOCUS_VIEWPORT_SCALE_MIN, s),
+    );
+  }
+  return DEFAULT_FOCUS_VIEWPORT_SCALE;
+}
+
+/**
+ * Effective view scale boost while holding F.
+ * 1 when disabled, not focusing, or multiplier is 1×.
+ */
+export function scopeFocusZoomBoost(
+  scope:
+    | Pick<ScopeSpec, "focusZoomEnabled" | "focusZoomMultiplier">
+    | null
+    | undefined,
+  focusHeld: boolean,
+): number {
+  if (!focusHeld || !scopeFocusZoomEnabled(scope)) return 1;
+  return scopeFocusZoomMultiplier(scope);
+}
+
+/**
+ * Glass diameter CSS scale while focus immersion is active.
+ * 1 when disabled / not focusing.
+ */
+export function scopeFocusViewportBoost(
+  scope:
+    | Pick<
+        ScopeSpec,
+        "focusZoomEnabled" | "focusViewportScale"
+      >
+    | null
+    | undefined,
+  focusHeld: boolean,
+): number {
+  if (!focusHeld || !scopeFocusZoomEnabled(scope)) return 1;
+  return scopeFocusViewportScale(scope);
 }
 
 /**

@@ -853,6 +853,8 @@ body {
   max-width: 100%;
   margin: 0 auto;
   padding: 0;
+  /* Focus immersion scales glass over drums — do not clip. */
+  overflow: visible;
 }
 
 /* Realism High: short focus / avtrekk bars in the row above para / wind. */
@@ -915,6 +917,12 @@ body {
   /* Above elev/para/wind so zoom knob & ticks paint over turret housings. */
   position: relative;
   z-index: 4;
+}
+
+/* Focus immersion: glass grows over all side drums. */
+.scope-tube-optic:has(.scope-optic.is-focus-immersive),
+.admin-scope-tube-optic:has(.scope-optic.is-focus-immersive) {
+  z-index: 30;
 }
 
 .scope-tube-wind,
@@ -1171,7 +1179,8 @@ body {
 
 .scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-cylinder,
 .admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-cylinder {
-  height: 4.1rem;
+  /* Was 4.1rem — ~1rem void above rev2; keep ~20% of that top black. */
+  height: 3.3rem;
 }
 
 .scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-num,
@@ -1278,7 +1287,8 @@ body {
 }
 
 .parallax-drum .scope-turret-shooter-cylinder.parallax-drum-cylinder {
-  width: 3.6rem;
+  /* Was 3.6rem — trim ~70% of the empty black left of the numerals. */
+  width: 2.35rem;
   height: auto;
   min-height: var(--admin-tube-turret-span, 11.5rem);
   align-self: stretch;
@@ -1372,29 +1382,25 @@ body {
 .parallax-drum-mark {
   position: absolute;
   left: 0.12rem;
-  right: 0;
+  right: 0.06rem;
   top: 50%;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.18rem;
+  gap: 0;
   margin-top: 0;
   will-change: transform;
 }
 
 .parallax-drum-hash {
-  flex: 0 0 auto;
-  width: 0.55rem;
-  height: 1.5px;
-  background: rgba(240, 240, 240, 0.55);
-  order: 2;
+  display: none;
 }
 
 .parallax-drum-num {
   font-family: var(--font-ui, system-ui), sans-serif;
   font-size: var(--scope-tube-para-num-size, 0.72rem);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 400;
+  letter-spacing: 0.01em;
   color: #f2f2f2;
   line-height: 1;
   text-shadow: 0 1px 0 #000;
@@ -1418,8 +1424,8 @@ body {
 }
 
 .illum-drum {
-  min-height: calc(var(--admin-tube-turret-span, 11.5rem) * 0.58);
-  height: calc(var(--admin-tube-turret-span, 11.5rem) * 0.58);
+  min-height: calc(var(--admin-tube-turret-span, 11.5rem) * 0.696);
+  height: calc(var(--admin-tube-turret-span, 11.5rem) * 0.696);
   width: auto;
   max-width: none;
 }
@@ -1434,12 +1440,15 @@ body {
 }
 
 .illum-drum-face {
+  /* Knurl (−40 % from 0.75rem) + black panel for 0 / sun marks. */
+  --illum-knurl-w: 0.45rem;
   position: relative;
-  width: 1.55rem;
+  width: calc(var(--illum-knurl-w) + 1.35rem);
   height: 100%;
   overflow: hidden;
   border: 1px solid #0a0806;
-  border-radius: 3px 0 0 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #141414 0%, #050505 55%, #0a0a0a 100%);
   cursor: ns-resize;
   touch-action: none;
   box-shadow:
@@ -1450,7 +1459,10 @@ body {
 
 .illum-drum-knurl {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--illum-knurl-w, 0.45rem);
   background:
     repeating-linear-gradient(
       -58deg,
@@ -1463,6 +1475,8 @@ body {
   /* Stepless “rotation” feedback. */
   background-position: 0 calc(var(--illum-t, 0) * -48px);
   opacity: 0.95;
+  border-right: 1px solid rgba(0, 0, 0, 0.65);
+  box-shadow: inset -2px 0 4px rgba(0, 0, 0, 0.35);
 }
 
 .illum-drum-shade {
@@ -1475,17 +1489,17 @@ body {
 .illum-drum-shade--a {
   background: linear-gradient(
     90deg,
-    rgba(0, 0, 0, 0.55) 0%,
-    transparent 38%,
-    transparent 62%,
-    rgba(0, 0, 0, 0.5) 100%
+    rgba(0, 0, 0, 0.45) 0%,
+    transparent 28%,
+    transparent 72%,
+    rgba(0, 0, 0, 0.4) 100%
   );
 }
 
 .illum-drum-shade--b {
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.1) 0%,
     transparent 28%,
     transparent 72%,
     rgba(0, 0, 0, 0.55) 100%
@@ -1515,7 +1529,11 @@ body {
 
 .illum-drum-band {
   position: absolute;
-  inset: 0;
+  /* Sit entirely on the black panel (right of knurl). */
+  left: var(--illum-knurl-w, 0.45rem);
+  right: 0;
+  top: 0;
+  bottom: 0;
   z-index: 2;
   pointer-events: none;
   overflow: hidden;
@@ -1540,31 +1558,6 @@ body {
   color: #f2f2f2;
   line-height: 1;
   text-shadow: 0 1px 0 #000;
-}
-
-.illum-index-base {
-  position: relative;
-  flex: 0 0 auto;
-  width: 0.55rem;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  background: linear-gradient(270deg, #030303 0%, #141414 55%, #0a0a0a 100%);
-  border: 1px solid #000;
-  border-left: none;
-  border-radius: 0 2px 2px 0;
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
-}
-
-.illum-index {
-  width: 0;
-  height: 0;
-  border-top: 0.28rem solid transparent;
-  border-bottom: 0.28rem solid transparent;
-  border-right: 0.38rem solid #fff;
-  margin-left: -0.08rem;
 }
 
 .scope-turret--illum.is-disabled .illum-drum-face {
@@ -1756,6 +1749,34 @@ body {
   color: #40c8ff;
 }
 
+/** Illumination region outline (Admin → Scopes). */
+.admin-scope-illum-region {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  pointer-events: none;
+}
+
+.admin-scope-illum-region-circle,
+.admin-scope-illum-region-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(255, 72, 96, 0.95);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  opacity: 0.9;
+}
+
+.admin-scope-illum-region-circle {
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.admin-scope-illum-region-rect {
+  /* left/top set inline as calc(50% + offset) from optical centre. */
+}
+
 .admin-hit-zones {
   display: flex;
   flex-direction: column;
@@ -1856,6 +1877,20 @@ body {
   flex: 0 1 auto;
   font-size: 0.72rem;
   color: #c9b89a;
+}
+
+.admin-spot-field.admin-spot-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding-bottom: 0.35rem;
+}
+
+.admin-spot-field.admin-spot-check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #c4a574;
 }
 
 .admin-spot-field-wide {
@@ -7205,6 +7240,8 @@ body {
       #120e0a 6px 9px,
       #2e2218 9px 12px
     );
+  /* Scroll with face (elevation) — same idea as illumination knurl. */
+  background-position: calc(var(--knurl-shift, 0) * 1px) 0;
   box-shadow:
     inset 0 1px 0 rgba(232, 212, 168, 0.12),
     0 2px 4px rgba(0, 0, 0, 0.35);
@@ -7225,6 +7262,8 @@ body {
       #120e0a 6px 9px,
       #2e2218 9px 12px
     );
+  /* Scroll with face (windage / parallax). */
+  background-position: 0 calc(var(--knurl-shift, 0) * 1px);
 }
 
 .scope-turret-shooter-cylinder {
@@ -7610,6 +7649,51 @@ body {
   /* Room for the power-ring knob outside the glass */
   padding: var(--scope-optic-pad);
   box-sizing: border-box;
+  /* 1 when idle; focus immersion sets this on the element. */
+  --focus-viewport-scale: 1;
+}
+
+/**
+ * Focus (F) immersion — grow glass (viewport + zoom ring) over elev / wind /
+ * para / illum drums and the bubble level. Bubble stays fixed size/position.
+ */
+.scope-optic.is-focus-immersive {
+  z-index: 30;
+}
+
+.scope-optic .scope-viewport,
+.scope-optic .scope-zoom-ring {
+  transform-origin: center center;
+  transition: transform 0.22s ease-out;
+}
+
+.scope-optic.is-focus-immersive .scope-viewport {
+  position: relative;
+  z-index: 12;
+  transform: scale(var(--focus-viewport-scale, 1.25));
+}
+
+.scope-optic.is-focus-immersive .scope-zoom-ring {
+  z-index: 13;
+  transform: scale(var(--focus-viewport-scale, 1.25));
+}
+
+/* Under the grown glass while immersed (same idea as side drums). */
+.scope-optic.is-focus-immersive .bubble-level-dock {
+  z-index: 1;
+}
+
+/**
+ * Focus (F) content zoom — reticle + world grow together with a soft ease.
+ * Vignette stays a sibling outside this layer.
+ */
+.scope-focus-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+  transform: scale(var(--focus-zoom-scale, 1));
+  transition: transform 0.22s ease-out;
+  pointer-events: none;
 }
 
 /** Premium glass: larger circle — same as SCOPE_FOV_DIAMETER_PREMIUM. */
@@ -7868,31 +7952,36 @@ body {
 
 @keyframes scope-recoil {
   0% {
-    transform: translate(0, 0) rotate(0deg);
+    transform: translate(0, 0) rotate(0deg)
+      scale(var(--focus-viewport-scale, 1));
   }
   12% {
     transform: translate(
         calc(-5px * var(--recoil-kick, 1)),
         calc(11px * var(--recoil-kick, 1))
       )
-      rotate(calc(-0.55deg * var(--recoil-kick, 1)));
+      rotate(calc(-0.55deg * var(--recoil-kick, 1)))
+      scale(var(--focus-viewport-scale, 1));
   }
   28% {
     transform: translate(
         calc(4px * var(--recoil-kick, 1)),
         calc(7px * var(--recoil-kick, 1))
       )
-      rotate(calc(0.35deg * var(--recoil-kick, 1)));
+      rotate(calc(0.35deg * var(--recoil-kick, 1)))
+      scale(var(--focus-viewport-scale, 1));
   }
   55% {
     transform: translate(
         calc(-2px * var(--recoil-kick, 1)),
         calc(3px * var(--recoil-kick, 1))
       )
-      rotate(calc(-0.15deg * var(--recoil-kick, 1)));
+      rotate(calc(-0.15deg * var(--recoil-kick, 1)))
+      scale(var(--focus-viewport-scale, 1));
   }
   100% {
-    transform: translate(0, 0) rotate(0deg);
+    transform: translate(0, 0) rotate(0deg)
+      scale(var(--focus-viewport-scale, 1));
   }
 }
 

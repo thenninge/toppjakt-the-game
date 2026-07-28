@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   PARALLAX_MARKS_M,
   parallaxDialIndexFromFocusM,
@@ -16,6 +16,8 @@ import {
  * (was ~40% at 184px against an 11.5rem / 184px drum).
  */
 const PARA_TRAVEL_PX = 368;
+/** Knurl scroll over full near→∞ — same px as illumination full travel. */
+const PARA_KNURL_SHIFT_PX = 48;
 
 type ParallaxTurretProps = {
   /** Focus distance in meters; Infinity = ∞. */
@@ -96,6 +98,11 @@ export function ParallaxTurret({
           : "scope-turret scope-turret--parallax scope-turret--compact"
       }
       aria-label="Parallax fokus"
+      style={
+        {
+          ["--knurl-shift" as string]: String(-faceT * PARA_KNURL_SHIFT_PX),
+        } as CSSProperties
+      }
     >
       <div
         className="scope-turret-shooter scope-turret-shooter--vertical parallax-drum"

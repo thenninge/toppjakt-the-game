@@ -4,10 +4,13 @@ import type { CSSProperties } from "react";
 import type { ScopeSpec } from "@/lib/optics/spec";
 import {
   getReticleDef,
+  normalizeReticleIllumination,
   reticleDisplaySizePx,
+  reticleIlluminationClipPath,
   reticleOpticalCenter,
   resolveReticleForZoom,
   type ReticleDef,
+  type ReticleIllumination,
 } from "@/lib/range/reticles";
 
 type ScopeReticleProps = {
@@ -17,8 +20,8 @@ type ScopeReticleProps = {
   imgScale: number;
   /**
    * Reticle illumination 0–1.
-   * 0 = black etched, 1 = full red. Whole reticle for now —
-   * later we can mask which strokes light up.
+   * 0 = black etched, 1 = full red. Which strokes light is defined per
+   * reticle via {@link ReticleDef.illumination} (mask and/or region).
    */
   illumination?: number;
   /**
@@ -36,6 +39,15 @@ type ScopeReticleProps = {
    * Used by Admin → Scopes hashmark calibration.
    */
   centerTo1MilPx?: number;
+  /**
+   * Override catalog {@link ReticleDef.illumination} (Admin live cal).
+   * Pass `null` / empty to force whole-reticle illumination.
+   */
+  illuminationDef?: ReticleIllumination | null;
+  /** Override PNG src (Admin upload preview / cache-bust). */
+  srcOverride?: string;
+  /** Override native size when srcOverride is a new asset. */
+  nativeSizeOverride?: { width: number; height: number };
 };
 
 function clamp01(v: number) {
@@ -69,19 +81,62 @@ export function ScopeReticle({
   rotationDeg,
   opticalCenterPx,
   centerTo1MilPx,
+  illuminationDef,
+  srcOverride,
+  nativeSizeOverride,
 }: ScopeReticleProps) {
   const base = getReticleDef(scope.reticleId);
-  if (!base) {
+  const hasUploadPreview =
+    !!srcOverride &&
+    !!nativeSizeOverride &&
+    nativeSizeOverride.width > 0 &&
+    nativeSizeOverride.height > 0;
+
+  if (!base && !hasUploadPreview) {
     return <GenericReticle illumination={illumination} />;
   }
 
-  const resolved = resolveReticleForZoom(base, zoom, scope.maxZoom);
-  const def: ReticleDef =
+  const resolved = base
+    ? resolveReticleForZoom(base, zoom, scope.maxZoom)
+    : ({
+        id: scope.reticleId ?? "upload",
+        label: "Upload",
+        src: srcOverride!,
+        nativeWidth: nativeSizeOverride!.width,
+        nativeHeight: nativeSizeOverride!.height,
+        centerTo1MilPx:
+          centerTo1MilPx && centerTo1MilPx > 0
+            ? centerTo1MilPx
+            : Math.min(
+                nativeSizeOverride!.width,
+                nativeSizeOverride!.height,
+              ) / 20,
+      } satisfies ReticleDef);
+
+  let def: ReticleDef =
     centerTo1MilPx != null &&
     Number.isFinite(centerTo1MilPx) &&
     centerTo1MilPx > 0
       ? { ...resolved, centerTo1MilPx }
       : resolved;
+  if (srcOverride) {
+    def = {
+      ...def,
+      src: srcOverride,
+      ...(nativeSizeOverride &&
+      nativeSizeOverride.width > 0 &&
+      nativeSizeOverride.height > 0
+        ? {
+            nativeWidth: nativeSizeOverride.width,
+            nativeHeight: nativeSizeOverride.height,
+          }
+        : null),
+    };
+  }
+  if (illuminationDef !== undefined) {
+    const next = normalizeReticleIllumination(illuminationDef);
+    def = { ...def, illumination: next };
+  }
   const { width, height, scale } = reticleDisplaySizePx(
     scope,
     zoom,
@@ -115,6 +170,27 @@ export function ScopeReticle({
       : null),
   };
 
+  const illumClip = reticleIlluminationClipPath(def, optical, scale);
+  const illumMaskSrc = def.illumination?.maskSrc;
+  const illumStyle: CSSProperties = {
+    ...imgStyle,
+    opacity: i,
+    filter: ILLUM_RED_FILTER,
+    ...(illumClip ? { clipPath: illumClip } : null),
+    ...(illumMaskSrc
+      ? {
+          WebkitMaskImage: `url(${illumMaskSrc})`,
+          maskImage: `url(${illumMaskSrc})`,
+          WebkitMaskSize: "100% 100%",
+          maskSize: "100% 100%",
+          WebkitMaskRepeat: "no-repeat",
+          maskRepeat: "no-repeat",
+          WebkitMaskPosition: "center",
+          maskPosition: "center",
+        }
+      : null),
+  };
+
   return (
     <div className="scope-reticle scope-reticle--image" aria-hidden>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -136,11 +212,7 @@ export function ScopeReticle({
           draggable={false}
           width={def.nativeWidth}
           height={def.nativeHeight}
-          style={{
-            ...imgStyle,
-            opacity: i,
-            filter: ILLUM_RED_FILTER,
-          }}
+          style={illumStyle}
         />
       ) : null}
     </div>

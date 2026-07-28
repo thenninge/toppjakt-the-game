@@ -133,6 +133,25 @@ export function parallaxDialIndexFromFocusM(focusM: number): number {
   return marks.length - 1 + t;
 }
 
+/** Nearest engraved parallax mark (m) for a subject distance. */
+export function nearestParallaxMarkM(distanceM: number): number {
+  if (!Number.isFinite(distanceM) || distanceM >= PARALLAX_INF_M) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const m = Math.max(10, distanceM);
+  let best: number = PARALLAX_MARKS_M[0]!;
+  let bestErr = Math.abs(best - m);
+  for (let i = 1; i < PARALLAX_MARKS_M.length; i++) {
+    const mark = PARALLAX_MARKS_M[i]!;
+    const err = Math.abs(mark - m);
+    if (err < bestErr) {
+      best = mark;
+      bestErr = err;
+    }
+  }
+  return best;
+}
+
 /** Visual 0–1 position on the uneven rail for a dial index. */
 export function parallaxRailTFromDialIndex(index: number): number {
   const max = PARALLAX_MARKS_M.length;

@@ -23,6 +23,42 @@ import {
   scopeImageScale,
 } from "@/lib/range/precision";
 
+/**
+ * Which etched strokes light up (red overlay). Omit = whole PNG.
+ *
+ * - {@link ReticleIllumination.maskSrc}: stroke-accurate alpha/luminance mask
+ *   (same framing as the reticle PNG; white/opaque = lights).
+ * - {@link ReticleIllumination.region}: quick circle / rect clip (native px or
+ *   mils from optical centre). Combined as mask ∩ region when both set.
+ */
+export type ReticleIlluminationRegion =
+  | {
+      shape: "circle";
+      /** Native px; omit → optical centre. */
+      cx?: number;
+      cy?: number;
+      /** Radius in native image pixels. */
+      r: number;
+    }
+  | {
+      shape: "rect";
+      /** Top-left + size in native image pixels. */
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }
+  | {
+      /** Circle on optical crosshair; radius in mils (× {@code centerTo1MilPx}). */
+      shape: "circleMils";
+      rMils: number;
+    };
+
+export type ReticleIllumination = {
+  maskSrc?: string;
+  region?: ReticleIlluminationRegion;
+};
+
 export type ReticleDef = {
   id: string;
   label: string;
@@ -39,6 +75,8 @@ export type ReticleDef = {
   opticalCenterY?: number;
   /** Clockwise image rotation in degrees (CSS `rotate`), around optical centre. */
   imageRotationDeg?: number;
+  /** Partial illumination — see {@link ReticleIllumination}. */
+  illumination?: ReticleIllumination;
   /**
    * Optional sharper / illuminated asset at scope {@code maxZoom}
    * (same subtension contract via its own {@code centerTo1MilPx}).
@@ -80,8 +118,12 @@ export const RETICLES: Record<string, ReticleDef> = {
    * ZCO 5-27 MPCT3-style mil tree ({@code zco527b.png}).
    * CALIBRATED reference reticle — see `.cursor/skills/scope-reticle-calibration`.
    * Full Christmas-tree hold grid; ~55.5 px/mil.
-    * Optical centre: −2.47 klikk X / +0.85 klikk Y (1 klikk = 0.1 mil) + 0.27° CW.
+       * Optical centre: −2.47 klikk X / +0.85 klikk Y (1 klikk = 0.1 mil) + 0.42° CW.
    * FOV: ±7.2 mrad @ 27× (shared {@code SCOPE_FOV_CAL_HALF_MRAD}). Hold-over: CAL=1.
+   *
+   * Illumination (optional): clip centre-only with
+   * `{ region: { shape: "circleMils", rMils: 1.5 } }`, or a stroke mask PNG via
+   * `{ maskSrc: "/range/reticles/zco527b-illum-mask.png" }`.
    */
   "zco-527-mpct": {
     id: "zco-527-mpct",
@@ -95,7 +137,10 @@ export const RETICLES: Record<string, ReticleDef> = {
     /** 865 + 5.35×0.1×55.5 — shift reticle 5.35 clicks up on glass. */
     opticalCenterY: 894.6925,
     /** CSS positive = clockwise. */
-    imageRotationDeg: 0.27,
+    imageRotationDeg: 0.42,
+    illumination: {
+      region: { shape: "rect", x: 458, y: 415, w: 899, h: 1254 },
+    },
   },
   /**
    * Kahles SKMR-style mil tree (kahles.png, 1200²).
@@ -161,6 +206,72 @@ export function reticleOpticalCenter(reticle: ReticleDef): {
   return {
     x: reticle.opticalCenterX ?? reticle.nativeWidth / 2,
     y: reticle.opticalCenterY ?? reticle.nativeHeight / 2,
+  };
+}
+
+/**
+ * CSS {@code clip-path} for the illuminated overlay, in display pixels
+ * ({@code scale} = CSS px per native px). Undefined = no region clip.
+ */
+export function reticleIlluminationClipPath(
+  reticle: ReticleDef,
+  optical: { x: number; y: number },
+  scale: number,
+): string | undefined {
+  const region = reticle.illumination?.region;
+  if (!region || !(scale > 0)) return undefined;
+
+  if (region.shape === "circle" || region.shape === "circleMils") {
+    const cx =
+      region.shape === "circle" && region.cx != null
+        ? region.cx
+        : optical.x;
+    const cy =
+      region.shape === "circle" && region.cy != null
+        ? region.cy
+        : optical.y;
+    const rNative =
+      region.shape === "circleMils"
+        ? region.rMils * reticle.centerTo1MilPx
+        : region.r;
+    if (!(rNative > 0)) return undefined;
+    return `circle(${rNative * scale}px at ${cx * scale}px ${cy * scale}px)`;
+  }
+
+  const { x, y, w, h } = region;
+  if (!(w > 0) || !(h > 0)) return undefined;
+  const x0 = x * scale;
+  const y0 = y * scale;
+  const x1 = (x + w) * scale;
+  const y1 = (y + h) * scale;
+  return `polygon(${x0}px ${y0}px, ${x1}px ${y0}px, ${x1}px ${y1}px, ${x0}px ${y1}px)`;
+}
+
+/** Stable key for dirty-check / bake compare. `"whole"` = no clip/mask. */
+export function reticleIlluminationKey(
+  illum: ReticleIllumination | null | undefined,
+): string {
+  if (!illum) return "whole";
+  const mask = illum.maskSrc?.trim() || "";
+  const region = illum.region;
+  if (!mask && !region) return "whole";
+  return JSON.stringify({
+    maskSrc: mask || undefined,
+    region: region ?? undefined,
+  });
+}
+
+/** Drop empty illumination (whole reticle). */
+export function normalizeReticleIllumination(
+  illum: ReticleIllumination | null | undefined,
+): ReticleIllumination | undefined {
+  if (!illum) return undefined;
+  const maskSrc = illum.maskSrc?.trim() || undefined;
+  const region = illum.region;
+  if (!maskSrc && !region) return undefined;
+  return {
+    ...(maskSrc ? { maskSrc } : null),
+    ...(region ? { region } : null),
   };
 }
 

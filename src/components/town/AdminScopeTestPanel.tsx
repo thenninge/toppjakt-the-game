@@ -5,16 +5,19 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent,
 } from "react";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
+import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { ParallaxTurret } from "@/components/range/ParallaxTurret";
 import { IlluminationTurret } from "@/components/range/IlluminationTurret";
 import {
   ScopeElevationDial,
   ScopeWindageDial,
+  turretNudgeMoved,
 } from "@/components/range/ScopeTurrets";
 import {
   allBirdSpriteIds,
@@ -39,8 +42,25 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
 } from "@/lib/hunt/shoot";
-import { angularMmAtDistance, clampElevationTurretMm } from "@/lib/player";
-import { scopeFovDiameterScale } from "@/lib/optics/spec";
+import {
+  angularMmAtDistance,
+  clampElevationTurretMm,
+  clampTurretMm,
+} from "@/lib/player";
+import {
+  DEFAULT_FOCUS_VIEWPORT_SCALE,
+  DEFAULT_FOCUS_ZOOM_MULTIPLIER,
+  FOCUS_VIEWPORT_SCALE_MAX,
+  FOCUS_VIEWPORT_SCALE_MIN,
+  FOCUS_ZOOM_MULTIPLIER_MAX,
+  FOCUS_ZOOM_MULTIPLIER_MIN,
+  scopeElevationClicksPerRev,
+  scopeFocusViewportBoost,
+  scopeFocusZoomBoost,
+  scopeFovDiameterScale,
+  scopeWindageClicksPerRev,
+  type ScopeClickUnit,
+} from "@/lib/optics/spec";
 import {
   focusBlurHint,
   focusBlurPx,
@@ -62,11 +82,16 @@ import {
   SCOPE_VIEWPORT_REF_PX,
   clampScopeZoom,
   RANGE_EASY_ZERO_SCALE,
+  scopeZoomMagCalAt,
 } from "@/lib/range/precision";
 import {
   getReticleDef,
+  normalizeReticleIllumination,
   reticleDisplaySizePx,
+  reticleIlluminationKey,
   reticleOpticalCenter,
+  type ReticleIllumination,
+  type ReticleIlluminationRegion,
 } from "@/lib/range/reticles";
 import {
   aimMmDeltaFromPointerDrag,
@@ -88,6 +113,8 @@ import { getCatalogByCategory } from "@/lib/shop/catalog";
 import { isScopeItem, type ScopeShopItem } from "@/lib/shop/types";
 
 type SubjectKind = "range" | "bird";
+
+type IllumShapeMode = "whole" | "circleMils" | "circle" | "rect";
 
 type AimKeys = {
   up: number | null;
@@ -127,6 +154,108 @@ function isTypingTarget(el: EventTarget | null): boolean {
   );
 }
 
+function buildLiveIllumination(opts: {
+  shape: IllumShapeMode;
+  rMils: number;
+  rPx: number;
+  rectX: number;
+  rectY: number;
+  rectW: number;
+  rectH: number;
+  maskSrc: string;
+}): ReticleIllumination | null {
+  let region: ReticleIlluminationRegion | undefined;
+  if (opts.shape === "circleMils" && opts.rMils > 0) {
+    region = {
+      shape: "circleMils",
+      rMils: Math.round(opts.rMils * 1000) / 1000,
+    };
+  } else if (opts.shape === "circle" && opts.rPx > 0) {
+    region = { shape: "circle", r: Math.round(opts.rPx * 1000) / 1000 };
+  } else if (
+    opts.shape === "rect" &&
+    opts.rectW > 0 &&
+    opts.rectH > 0
+  ) {
+    region = {
+      shape: "rect",
+      x: Math.round(opts.rectX * 1000) / 1000,
+      y: Math.round(opts.rectY * 1000) / 1000,
+      w: Math.round(opts.rectW * 1000) / 1000,
+      h: Math.round(opts.rectH * 1000) / 1000,
+    };
+  }
+  return (
+    normalizeReticleIllumination({
+      maskSrc: opts.maskSrc.trim() || undefined,
+      region,
+    }) ?? null
+  );
+}
+
+function hydrateIllumStateFromCatalog(
+  illum: ReticleIllumination | null | undefined,
+): {
+  shape: IllumShapeMode;
+  rMils: number;
+  rPx: number;
+  rectX: number;
+  rectY: number;
+  rectW: number;
+  rectH: number;
+  maskSrc: string;
+} {
+  const n = normalizeReticleIllumination(illum ?? undefined);
+  const maskSrc = n?.maskSrc ?? "";
+  const region = n?.region;
+  if (!region) {
+    return {
+      shape: "whole",
+      rMils: 1.5,
+      rPx: 80,
+      rectX: 0,
+      rectY: 0,
+      rectW: 200,
+      rectH: 200,
+      maskSrc,
+    };
+  }
+  if (region.shape === "circleMils") {
+    return {
+      shape: "circleMils",
+      rMils: region.rMils,
+      rPx: 80,
+      rectX: 0,
+      rectY: 0,
+      rectW: 200,
+      rectH: 200,
+      maskSrc,
+    };
+  }
+  if (region.shape === "circle") {
+    return {
+      shape: "circle",
+      rMils: 1.5,
+      rPx: region.r,
+      rectX: 0,
+      rectY: 0,
+      rectW: 200,
+      rectH: 200,
+      maskSrc,
+    };
+  }
+  return {
+    shape: "rect",
+    rMils: 1.5,
+    rPx: 80,
+    rectX: region.x,
+    rectY: region.y,
+    rectW: region.w,
+    rectH: region.h,
+    maskSrc,
+  };
+}
+
 /** Admin: free scope + target/bird pick — same glass math as 100 m zeroing. */
 export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const scopeItems = useMemo(
@@ -163,17 +292,75 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const [opticalCenterY, setOpticalCenterY] = useState(0);
   const [centerTo1MilPx, setCenterTo1MilPx] = useState(55.5);
   const [zoomMagCal, setZoomMagCal] = useState(1);
+  const [minZoomMagCal, setMinZoomMagCal] = useState(1);
+  const [liveMinZoom, setLiveMinZoom] = useState(() => scope?.minZoom ?? 5);
+  const [liveMaxZoom, setLiveMaxZoom] = useState(() => scope?.maxZoom ?? 27);
+  const [liveClickUnit, setLiveClickUnit] = useState<ScopeClickUnit>(() =>
+    scope?.clickUnit === "MOA" ? "MOA" : "MRAD",
+  );
+  const [reticleSrcOverride, setReticleSrcOverride] = useState<string | null>(
+    null,
+  );
+  const [reticleNativeOverride, setReticleNativeOverride] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [uploadedReticleId, setUploadedReticleId] = useState<string | null>(
+    null,
+  );
+  const [uploadingReticle, setUploadingReticle] = useState(false);
   const [calMaxZoom, setCalMaxZoom] = useState(false);
+  const [calMinZoom, setCalMinZoom] = useState(false);
+  const [focusZoomEnabled, setFocusZoomEnabled] = useState(false);
+  const [focusZoomMultiplier, setFocusZoomMultiplier] = useState(
+    DEFAULT_FOCUS_ZOOM_MULTIPLIER,
+  );
+  const [focusViewportScale, setFocusViewportScale] = useState(
+    DEFAULT_FOCUS_VIEWPORT_SCALE,
+  );
+  /** Local sticky lock for focus preview (optional; F-hold is the primary). */
+  const [previewFocusSticky, setPreviewFocusSticky] = useState(false);
+  /** Momentary F-held focus preview. */
+  const [previewFocusHeld, setPreviewFocusHeld] = useState(false);
+  const previewFocusZoom = previewFocusSticky || previewFocusHeld;
+  const focusZoomEnabledRef = useRef(false);
+  const previewFocusStickyRef = useRef(false);
+  focusZoomEnabledRef.current = focusZoomEnabled;
+  previewFocusStickyRef.current = previewFocusSticky;
   const [calHashmarks, setCalHashmarks] = useState(false);
+  const [calIllum, setCalIllum] = useState(false);
+  const [illumShape, setIllumShape] = useState<IllumShapeMode>("whole");
+  const [illumRMils, setIllumRMils] = useState(1.5);
+  const [illumRPx, setIllumRPx] = useState(80);
+  const [illumRectX, setIllumRectX] = useState(0);
+  const [illumRectY, setIllumRectY] = useState(0);
+  const [illumRectW, setIllumRectW] = useState(200);
+  const [illumRectH, setIllumRectH] = useState(200);
+  const [illumMaskSrc, setIllumMaskSrc] = useState("");
   /** After «Lagre til repo», treat these as clean until scope change / HMR. */
   const [repoCalOverride, setRepoCalOverride] = useState<{
     rot: number;
     x: number;
     y: number;
     hashPx: number;
+    illumination: ReticleIllumination | null;
   } | null>(null);
-  const [repoFovOverride, setRepoFovOverride] = useState<number | null>(null);
+  const [repoFovOverride, setRepoFovOverride] = useState<{
+    zoomMagCal: number;
+    minZoomMagCal: number;
+  } | null>(null);
+  const [repoFocusZoomOverride, setRepoFocusZoomOverride] = useState<{
+    focusZoomEnabled: boolean;
+    focusZoomMultiplier: number;
+    focusViewportScale: number;
+  } | null>(null);
+  const [repoScopeOverride, setRepoScopeOverride] = useState<{
+    minZoom: number;
+    maxZoom: number;
+    clickUnit: ScopeClickUnit;
+  } | null>(null);
   const [cantDeg, setCantDeg] = useState(() => rollEntryCantDeg());
+  const [cantEnabled, setCantEnabled] = useState(false);
   const [aimDragging, setAimDragging] = useState(false);
   const [spriteScaleEpoch, setSpriteScaleEpoch] = useState(0);
   const [bakingScales, setBakingScales] = useState(false);
@@ -223,6 +410,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   const cantDegRef = useRef(cantDeg);
   cantDegRef.current = cantDeg;
+  const effectiveCantDeg = cantEnabled ? cantDeg : 0;
+  const worldRollDeg = -effectiveCantDeg;
 
   useEffect(() => {
     aimRef.current = aimMm;
@@ -239,6 +428,13 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   /** Snap to engraved max power when switching scope — matches range calibration. */
   useEffect(() => {
     if (!scope) return;
+    setLiveMinZoom(scope.minZoom);
+    setLiveMaxZoom(scope.maxZoom);
+    setLiveClickUnit(scope.clickUnit === "MOA" ? "MOA" : "MRAD");
+    setReticleSrcOverride(null);
+    setReticleNativeOverride(null);
+    setUploadedReticleId(null);
+    setRepoScopeOverride(null);
     setZoom(scope.maxZoom);
   }, [scopeId, scope]);
 
@@ -252,17 +448,99 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         ? scope.zoomMagCal
         : 1,
     );
+    setMinZoomMagCal(
+      scope?.minZoomMagCal != null && scope.minZoomMagCal > 0
+        ? scope.minZoomMagCal
+        : scope?.zoomMagCal != null && scope.zoomMagCal > 0
+          ? scope.zoomMagCal
+          : 1,
+    );
+    setFocusZoomEnabled(scope?.focusZoomEnabled === true);
+    setFocusZoomMultiplier(
+      scope?.focusZoomMultiplier != null &&
+        Number.isFinite(scope.focusZoomMultiplier)
+        ? Math.min(
+            FOCUS_ZOOM_MULTIPLIER_MAX,
+            Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, scope.focusZoomMultiplier),
+          )
+        : DEFAULT_FOCUS_ZOOM_MULTIPLIER,
+    );
+    setFocusViewportScale(
+      scope?.focusViewportScale != null &&
+        Number.isFinite(scope.focusViewportScale)
+        ? Math.min(
+            FOCUS_VIEWPORT_SCALE_MAX,
+            Math.max(FOCUS_VIEWPORT_SCALE_MIN, scope.focusViewportScale),
+          )
+        : DEFAULT_FOCUS_VIEWPORT_SCALE,
+    );
+    setPreviewFocusSticky(false);
+    setPreviewFocusHeld(false);
     if (def) {
       const c = reticleOpticalCenter(def);
       setOpticalCenterX(c.x);
       setOpticalCenterY(c.y);
+      const h = hydrateIllumStateFromCatalog(def.illumination);
+      setIllumShape(h.shape);
+      setIllumRMils(h.rMils);
+      setIllumRPx(h.rPx);
+      setIllumRectX(h.rectX);
+      setIllumRectY(h.rectY);
+      setIllumRectW(h.rectW);
+      setIllumRectH(h.rectH);
+      setIllumMaskSrc(h.maskSrc);
     } else {
       setOpticalCenterX(0);
       setOpticalCenterY(0);
+      const h = hydrateIllumStateFromCatalog(undefined);
+      setIllumShape(h.shape);
+      setIllumRMils(h.rMils);
+      setIllumRPx(h.rPx);
+      setIllumRectX(h.rectX);
+      setIllumRectY(h.rectY);
+      setIllumRectW(h.rectW);
+      setIllumRectH(h.rectH);
+      setIllumMaskSrc(h.maskSrc);
     }
     setRepoCalOverride(null);
     setRepoFovOverride(null);
-  }, [scopeId, scope?.reticleId, scope?.zoomMagCal]);
+    setRepoFocusZoomOverride(null);
+  }, [
+    scopeId,
+    scope?.reticleId,
+    scope?.zoomMagCal,
+    scope?.minZoomMagCal,
+    scope?.focusZoomEnabled,
+    scope?.focusZoomMultiplier,
+    scope?.focusViewportScale,
+  ]);
+
+  function applyIlluminationToState(
+    illum: ReticleIllumination | null | undefined,
+  ) {
+    const n = normalizeReticleIllumination(illum ?? undefined);
+    setIllumMaskSrc(n?.maskSrc ?? "");
+    const region = n?.region;
+    if (!region) {
+      setIllumShape("whole");
+      return;
+    }
+    if (region.shape === "circleMils") {
+      setIllumShape("circleMils");
+      setIllumRMils(region.rMils);
+      return;
+    }
+    if (region.shape === "circle") {
+      setIllumShape("circle");
+      setIllumRPx(region.r);
+      return;
+    }
+    setIllumShape("rect");
+    setIllumRectX(region.x);
+    setIllumRectY(region.y);
+    setIllumRectW(region.w);
+    setIllumRectH(region.h);
+  }
 
   useEffect(() => {
     setAimMm({ x: 0, y: 0 });
@@ -323,6 +601,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       }
       if (e.key === "q" || e.key === "Q") {
         e.preventDefault();
+        if (!cantEnabled) return;
         if (keysRef.current.ccw != null) return;
         keysRef.current.ccw = performance.now();
         setCantDeg((c) => nudgeCantDeg(c, -CANT_KEY_DEG_PER_SEC * 0.08));
@@ -330,9 +609,17 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       }
       if (e.key === "e" || e.key === "E") {
         e.preventDefault();
+        if (!cantEnabled) return;
         if (keysRef.current.cw != null) return;
         keysRef.current.cw = performance.now();
         setCantDeg((c) => nudgeCantDeg(c, CANT_KEY_DEG_PER_SEC * 0.08));
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
+        if (!focusZoomEnabledRef.current) return;
+        if (e.repeat) return;
+        e.preventDefault();
+        setPreviewFocusHeld(true);
       }
     }
 
@@ -343,6 +630,9 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       if (e.key === "ArrowRight") keysRef.current.right = null;
       if (e.key === "q" || e.key === "Q") keysRef.current.ccw = null;
       if (e.key === "e" || e.key === "E") keysRef.current.cw = null;
+      if (e.key === "f" || e.key === "F") {
+        setPreviewFocusHeld(false);
+      }
     }
 
     let raf = 0;
@@ -368,7 +658,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       }
       const cantCcw = scopeAimHoldMult(k.ccw, now);
       const cantCw = scopeAimHoldMult(k.cw, now);
-      if (cantCcw > 0 || cantCw > 0) {
+      if (cantEnabled && (cantCcw > 0 || cantCw > 0)) {
         let next = cantDegRef.current;
         if (cantCcw > 0) {
           next = nudgeCantDeg(next, -CANT_KEY_DEG_PER_SEC * dt * cantCcw);
@@ -397,7 +687,22 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const rangeTarget = getRangeTarget(rangeTargetId);
   const birdGeom = useMemo(() => birdShotGeom(birdId), [birdId]);
 
-  const paperUnit = scope?.clickUnit === "MOA" ? "MOA" : "MRAD";
+  const paperUnit = liveClickUnit === "MOA" ? "MOA" : "MRAD";
+
+  const liveScope = scope
+    ? {
+        ...scope,
+        zoomMagCal,
+        minZoomMagCal,
+        minZoom: liveMinZoom,
+        maxZoom: liveMaxZoom,
+        clickUnit: liveClickUnit,
+        focusZoomEnabled,
+        focusZoomMultiplier,
+        focusViewportScale,
+        ...(uploadedReticleId ? { reticleId: uploadedReticleId } : null),
+      }
+    : null;
 
   let targetScale = 1;
   let pxPerMm = 1;
@@ -408,9 +713,14 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   let imgH = 1;
   let imgAlt = "";
   let reticleImgScale = 0;
+  const focusZoomBoost = liveScope
+    ? scopeFocusZoomBoost(liveScope, previewFocusZoom)
+    : 1;
+  const focusViewportBoost = liveScope
+    ? scopeFocusViewportBoost(liveScope, previewFocusZoom)
+    : 1;
 
-  if (scope && subjectKind === "range") {
-    const liveScope = { ...scope, zoomMagCal };
+  if (liveScope && subjectKind === "range") {
     const scales = zeroingTargetAndReticleScale({
       zoom,
       scope: liveScope,
@@ -430,8 +740,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     imgW = rangeTarget.nativeWidth;
     imgH = rangeTarget.nativeHeight;
     imgAlt = rangeTarget.label;
-  } else if (scope && subjectKind === "bird") {
-    const liveScope = { ...scope, zoomMagCal };
+  } else if (liveScope && subjectKind === "bird") {
     targetScale = birdScopeImageScale(
       zoom,
       liveScope,
@@ -448,7 +757,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     imgH = birdGeom.nativeH;
     imgAlt = birdId;
     // Same optic zoom as skive — reticle must not track bird size/distance.
-    reticleImgScale = opticReticleImgScale(zoom, liveScope, false);
+    reticleImgScale = opticReticleImgScale(zoom, liveScope);
   }
 
   targetScaleRef.current = targetScale;
@@ -464,7 +773,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   const fovDiameterScale = scope ? scopeFovDiameterScale(scope) : 1;
   const reticleDef = scope?.reticleId ? getReticleDef(scope.reticleId) : null;
-  const clickUnit = scope?.clickUnit === "MOA" ? "MOA" : "MRAD";
+  const clickUnit = liveClickUnit;
   const catalogRotDeg =
     repoCalOverride?.rot ?? reticleDef?.imageRotationDeg ?? 0;
   const catalogCenter = repoCalOverride
@@ -474,15 +783,34 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       : { x: 0, y: 0 };
   const catalogHashPx =
     repoCalOverride?.hashPx ?? reticleDef?.centerTo1MilPx ?? 55.5;
+  const catalogIllum =
+    repoCalOverride != null
+      ? repoCalOverride.illumination
+      : (reticleDef?.illumination ?? null);
   const catalogZoomMag =
-    repoFovOverride ??
+    repoFovOverride?.zoomMagCal ??
     (scope?.zoomMagCal != null && scope.zoomMagCal > 0
       ? scope.zoomMagCal
       : 1);
+  const catalogHasMinZoomMag =
+    repoFovOverride?.minZoomMagCal != null ||
+    (scope?.minZoomMagCal != null && scope.minZoomMagCal > 0);
+  const catalogMinZoomMag = catalogHasMinZoomMag
+    ? (repoFovOverride?.minZoomMagCal ?? (scope?.minZoomMagCal as number))
+    : catalogZoomMag;
+  const catalogMinZoom = repoScopeOverride?.minZoom ?? scope?.minZoom ?? 5;
+  const catalogMaxZoom = repoScopeOverride?.maxZoom ?? scope?.maxZoom ?? 27;
+  const catalogClickUnit =
+    repoScopeOverride?.clickUnit ??
+    (scope?.clickUnit === "MOA" ? "MOA" : "MRAD");
   /** Native px per 0.1 mil click (MRAD scopes). */
   const pxPerClick = centerTo1MilPx * 0.1;
-  const midX = reticleDef ? reticleDef.nativeWidth / 2 : 0;
-  const midY = reticleDef ? reticleDef.nativeHeight / 2 : 0;
+  const nativeW =
+    reticleNativeOverride?.width ?? reticleDef?.nativeWidth ?? 0;
+  const nativeH =
+    reticleNativeOverride?.height ?? reticleDef?.nativeHeight ?? 0;
+  const midX = nativeW / 2;
+  const midY = nativeH / 2;
   /** Positive = reticle shifted right / up on glass vs image midpoint. */
   const shiftRightClicks =
     reticleDef && pxPerClick > 0
@@ -492,27 +820,108 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     reticleDef && pxPerClick > 0
       ? (opticalCenterY - midY) / pxPerClick
       : 0;
+
+  const liveIllumination = buildLiveIllumination({
+    shape: illumShape,
+    rMils: illumRMils,
+    rPx: illumRPx,
+    rectX: illumRectX,
+    rectY: illumRectY,
+    rectW: illumRectW,
+    rectH: illumRectH,
+    maskSrc: illumMaskSrc,
+  });
+
   const calDirty =
-    !!reticleDef &&
+    !!(reticleDef || reticleSrcOverride) &&
     (reticleRotDeg !== catalogRotDeg ||
       Math.abs(opticalCenterX - catalogCenter.x) > 1e-6 ||
       Math.abs(opticalCenterY - catalogCenter.y) > 1e-6 ||
-      Math.abs(centerTo1MilPx - catalogHashPx) > 1e-6);
-  const fovDirty = Math.abs(zoomMagCal - catalogZoomMag) > 1e-6;
+      Math.abs(centerTo1MilPx - catalogHashPx) > 1e-6 ||
+      reticleIlluminationKey(liveIllumination) !==
+        reticleIlluminationKey(catalogIllum));
+  const fovDirty =
+    Math.abs(zoomMagCal - catalogZoomMag) > 1e-6 ||
+    Math.abs(minZoomMagCal - catalogMinZoomMag) > 1e-6 ||
+    !catalogHasMinZoomMag;
+  const minFovDirty =
+    Math.abs(minZoomMagCal - catalogMinZoomMag) > 1e-6 ||
+    !catalogHasMinZoomMag;
+  const catalogFocusZoomEnabled =
+    repoFocusZoomOverride?.focusZoomEnabled ??
+    scope?.focusZoomEnabled === true;
+  const catalogFocusZoomMultiplier =
+    repoFocusZoomOverride?.focusZoomMultiplier ??
+    (scope?.focusZoomMultiplier != null &&
+    Number.isFinite(scope.focusZoomMultiplier)
+      ? Math.min(
+          FOCUS_ZOOM_MULTIPLIER_MAX,
+          Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, scope.focusZoomMultiplier),
+        )
+      : DEFAULT_FOCUS_ZOOM_MULTIPLIER);
+  const catalogFocusViewportScale =
+    repoFocusZoomOverride?.focusViewportScale ??
+    (scope?.focusViewportScale != null &&
+    Number.isFinite(scope.focusViewportScale)
+      ? Math.min(
+          FOCUS_VIEWPORT_SCALE_MAX,
+          Math.max(FOCUS_VIEWPORT_SCALE_MIN, scope.focusViewportScale),
+        )
+      : DEFAULT_FOCUS_VIEWPORT_SCALE);
+  const focusZoomDirty =
+    focusZoomEnabled !== catalogFocusZoomEnabled ||
+    Math.abs(focusZoomMultiplier - catalogFocusZoomMultiplier) > 1e-6 ||
+    Math.abs(focusViewportScale - catalogFocusViewportScale) > 1e-6 ||
+    (focusZoomEnabled &&
+      repoFocusZoomOverride == null &&
+      scope?.focusZoomEnabled !== true);
+  const scopeSpecDirty =
+    Math.abs(liveMinZoom - catalogMinZoom) > 1e-6 ||
+    Math.abs(liveMaxZoom - catalogMaxZoom) > 1e-6 ||
+    liveClickUnit !== catalogClickUnit;
 
   const hashRingPxPerMil =
-    scope && reticleDef && reticleImgScale > 0
-      ? reticleDisplaySizePx(scope, zoom, reticleImgScale, {
-          ...reticleDef,
-          centerTo1MilPx,
-        }).scale * centerTo1MilPx
+    liveScope && (reticleDef || reticleNativeOverride) && reticleImgScale > 0
+      ? reticleDisplaySizePx(
+          liveScope,
+          zoom,
+          reticleImgScale,
+          reticleDef
+            ? {
+                ...reticleDef,
+                centerTo1MilPx,
+                ...(reticleNativeOverride
+                  ? {
+                      nativeWidth: reticleNativeOverride.width,
+                      nativeHeight: reticleNativeOverride.height,
+                    }
+                  : null),
+              }
+            : {
+                id: "upload",
+                label: "Upload",
+                src: reticleSrcOverride ?? "",
+                nativeWidth: reticleNativeOverride!.width,
+                nativeHeight: reticleNativeOverride!.height,
+                centerTo1MilPx,
+              },
+        ).scale * centerTo1MilPx
       : 0;
   const glassRadiusPx =
     (SCOPE_VIEWPORT_REF_PX / 2) * fovDiameterScale;
   /** Centre→edge mils at current zoom (shared FOV lock @ 27× ±7.2). */
   const fovHalfMrad =
     (SCOPE_FOV_CAL_HALF_MRAD * SCOPE_FOV_CAL_ZOOM) /
-    (Math.max(0.01, zoom) * Math.max(0.01, zoomMagCal));
+    (Math.max(0.01, zoom) *
+      Math.max(
+        0.01,
+        scopeZoomMagCalAt(zoom, {
+          minZoom: liveMinZoom,
+          maxZoom: liveMaxZoom,
+          zoomMagCal,
+          minZoomMagCal,
+        }),
+      ));
   const fovRingPxPerMrad = glassRadiusPx / Math.max(0.01, fovHalfMrad);
 
   function round2(n: number) {
@@ -528,10 +937,20 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setOpticalCenterX(catalogCenter.x);
     setOpticalCenterY(catalogCenter.y);
     setCenterTo1MilPx(catalogHashPx);
+    const h = hydrateIllumStateFromCatalog(catalogIllum);
+    setIllumShape(h.shape);
+    setIllumRMils(h.rMils);
+    setIllumRPx(h.rPx);
+    setIllumRectX(h.rectX);
+    setIllumRectY(h.rectY);
+    setIllumRectW(h.rectW);
+    setIllumRectH(h.rectH);
+    setIllumMaskSrc(h.maskSrc);
   }
 
   async function bakeReticleCalToRepo() {
-    if (!reticleDef) return;
+    const reticleId = reticleDef?.id ?? uploadedReticleId;
+    if (!reticleId) return;
     setBakingReticleCal(true);
     setBakeStatus("Skriver retikkel-kalibrering…");
     try {
@@ -539,11 +958,12 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reticleId: reticleDef.id,
+          reticleId,
           imageRotationDeg: reticleRotDeg,
           opticalCenterX,
           opticalCenterY,
           centerTo1MilPx,
+          illumination: liveIllumination,
         }),
       });
       const data = (await res.json()) as {
@@ -554,6 +974,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         opticalCenterX?: number;
         opticalCenterY?: number;
         centerTo1MilPx?: number;
+        illumination?: ReticleIllumination | null;
       };
       if (!res.ok || !data.ok) {
         setBakeStatus(data.error ?? `Feil ${res.status}`);
@@ -571,14 +992,28 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       if (typeof data.centerTo1MilPx === "number") {
         setCenterTo1MilPx(data.centerTo1MilPx);
       }
+      const savedIllum =
+        data.illumination !== undefined
+          ? (data.illumination ?? null)
+          : liveIllumination;
+      const h = hydrateIllumStateFromCatalog(savedIllum);
+      setIllumShape(h.shape);
+      setIllumRMils(h.rMils);
+      setIllumRPx(h.rPx);
+      setIllumRectX(h.rectX);
+      setIllumRectY(h.rectY);
+      setIllumRectW(h.rectW);
+      setIllumRectH(h.rectH);
+      setIllumMaskSrc(h.maskSrc);
       setRepoCalOverride({
         rot: data.imageRotationDeg ?? reticleRotDeg,
         x: data.opticalCenterX ?? opticalCenterX,
         y: data.opticalCenterY ?? opticalCenterY,
         hashPx: data.centerTo1MilPx ?? centerTo1MilPx,
+        illumination: savedIllum,
       });
       setBakeStatus(
-        `OK → ${data.path ?? "reticles.ts"} (${reticleDef.id}). Commit + push.`,
+        `OK → ${data.path ?? "reticles.ts"} (${reticleId}). Commit + push.`,
       );
     } catch (err) {
       setBakeStatus(
@@ -594,7 +1029,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setBakingReticleCal(true);
     setBakeStatus("Skriver FOV / max-zoom…");
     try {
-      const res = await fetch("/api/admin/scope-fov-cal", {
+      const res = await fetch("/api/admin/scope-cal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scopeId, zoomMagCal }),
@@ -611,7 +1046,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       }
       if (typeof data.zoomMagCal === "number") {
         setZoomMagCal(data.zoomMagCal);
-        setRepoFovOverride(data.zoomMagCal);
+        setRepoFovOverride({
+          zoomMagCal: data.zoomMagCal,
+          minZoomMagCal: catalogMinZoomMag,
+        });
       }
       setBakeStatus(
         `OK → ${data.path ?? "catalog.ts"} zoomMagCal=${data.zoomMagCal}. Commit + push.`,
@@ -622,6 +1060,247 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       );
     } finally {
       setBakingReticleCal(false);
+    }
+  }
+
+  async function bakeMinFovCalToRepo() {
+    if (!scopeId) return;
+    const clamped =
+      Math.round(Math.min(1.9, Math.max(0.1, minZoomMagCal)) * 1000) / 1000;
+    setMinZoomMagCal(clamped);
+    setBakingReticleCal(true);
+    setBakeStatus("Skriver min-zoom FOV til repo…");
+    try {
+      const res = await fetch("/api/admin/scope-cal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeId, minZoomMagCal: clamped }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        path?: string;
+        minZoomMagCal?: number;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const saved =
+        typeof data.minZoomMagCal === "number" ? data.minZoomMagCal : clamped;
+      setMinZoomMagCal(saved);
+      setRepoFovOverride({
+        zoomMagCal: catalogZoomMag,
+        minZoomMagCal: saved,
+      });
+      setBakeStatus(
+        `OK → ${data.path ?? "catalog.ts"} minZoomMagCal=${saved}. Commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
+  async function bakeFocusZoomToRepo() {
+    if (!scopeId) return;
+    const clamped =
+      Math.round(
+        Math.min(
+          FOCUS_ZOOM_MULTIPLIER_MAX,
+          Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, focusZoomMultiplier),
+        ) * 100,
+      ) / 100;
+    const clampedViewport =
+      Math.round(
+        Math.min(
+          FOCUS_VIEWPORT_SCALE_MAX,
+          Math.max(FOCUS_VIEWPORT_SCALE_MIN, focusViewportScale),
+        ) * 1000,
+      ) / 1000;
+    setFocusZoomMultiplier(clamped);
+    setFocusViewportScale(clampedViewport);
+    setBakingReticleCal(true);
+    setBakeStatus("Skriver focus zoom til repo…");
+    try {
+      const res = await fetch("/api/admin/scope-cal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopeId,
+          focusZoomEnabled,
+          focusZoomMultiplier: clamped,
+          focusViewportScale: clampedViewport,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        path?: string;
+        focusZoomEnabled?: boolean;
+        focusZoomMultiplier?: number;
+        focusViewportScale?: number;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const savedEnabled =
+        typeof data.focusZoomEnabled === "boolean"
+          ? data.focusZoomEnabled
+          : focusZoomEnabled;
+      const savedMult =
+        typeof data.focusZoomMultiplier === "number"
+          ? data.focusZoomMultiplier
+          : clamped;
+      const savedViewport =
+        typeof data.focusViewportScale === "number"
+          ? data.focusViewportScale
+          : clampedViewport;
+      setFocusZoomEnabled(savedEnabled);
+      setFocusZoomMultiplier(savedMult);
+      setFocusViewportScale(savedViewport);
+      setRepoFocusZoomOverride({
+        focusZoomEnabled: savedEnabled,
+        focusZoomMultiplier: savedMult,
+        focusViewportScale: savedViewport,
+      });
+      setBakeStatus(
+        `OK → ${data.path ?? "catalog.ts"} focusZoom ${savedEnabled ? "på" : "av"} ×${savedMult} glass×${savedViewport}. Commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
+  async function bakeScopeSpecToRepo() {
+    if (!scopeId) return;
+    setBakingReticleCal(true);
+    setBakeStatus("Skriver zoom / klikkenhet…");
+    try {
+      const res = await fetch("/api/admin/scope-cal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopeId,
+          minZoom: liveMinZoom,
+          maxZoom: liveMaxZoom,
+          clickUnit: liveClickUnit,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        path?: string;
+        minZoom?: number;
+        maxZoom?: number;
+        clickUnit?: ScopeClickUnit;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      if (typeof data.minZoom === "number") setLiveMinZoom(data.minZoom);
+      if (typeof data.maxZoom === "number") setLiveMaxZoom(data.maxZoom);
+      if (data.clickUnit === "MOA" || data.clickUnit === "MRAD") {
+        setLiveClickUnit(data.clickUnit);
+      }
+      setRepoScopeOverride({
+        minZoom: data.minZoom ?? liveMinZoom,
+        maxZoom: data.maxZoom ?? liveMaxZoom,
+        clickUnit: data.clickUnit ?? liveClickUnit,
+      });
+      setBakeStatus(
+        `OK → ${data.path ?? "catalog.ts"} ${data.minZoom}–${data.maxZoom}× · ${data.clickUnit}. Commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
+  async function uploadReticleImage(file: File) {
+    if (!scopeId) return;
+    setUploadingReticle(true);
+    setBakeStatus("Laster opp retikkelbilde…");
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error("Kunne ikke lese filen"));
+        };
+        reader.onerror = () => reject(new Error("Fil-lesing feilet"));
+        reader.readAsDataURL(file);
+      });
+      const dims = await new Promise<{ w: number; h: number }>(
+        (resolve, reject) => {
+          const img = new Image();
+          img.onload = () =>
+            resolve({ w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => reject(new Error("Ugyldig bilde"));
+          img.src = dataUrl;
+        },
+      );
+      const res = await fetch("/api/admin/reticle-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopeId,
+          imageBase64: dataUrl,
+          nativeWidth: dims.w,
+          nativeHeight: dims.h,
+          fileName: file.name,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        src?: string;
+        nativeWidth?: number;
+        nativeHeight?: number;
+        reticleId?: string;
+        path?: string;
+      };
+      if (!res.ok || !data.ok || !data.src) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const bust = `${data.src}?t=${Date.now()}`;
+      setReticleSrcOverride(bust);
+      setReticleNativeOverride({
+        width: data.nativeWidth ?? dims.w,
+        height: data.nativeHeight ?? dims.h,
+      });
+      if (data.reticleId) setUploadedReticleId(data.reticleId);
+      setOpticalCenterX((data.nativeWidth ?? dims.w) / 2);
+      setOpticalCenterY((data.nativeHeight ?? dims.h) / 2);
+      setCenterTo1MilPx(
+        Math.round(
+          (Math.min(data.nativeWidth ?? dims.w, data.nativeHeight ?? dims.h) /
+            20) *
+            10,
+        ) / 10,
+      );
+      setBakeStatus(
+        `OK retikkel → ${data.src} (${data.reticleId}). Calibrate hash/centre, commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Opplasting feilet.",
+      );
+    } finally {
+      setUploadingReticle(false);
     }
   }
 
@@ -700,7 +1379,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setRangeTargetId("cba-100");
     setDistanceM(100);
     setEasy10x(false);
-    if (scope) setZoom(scope.maxZoom);
+    if (scope) setZoom(liveMaxZoom);
     setAimMm({ x: 0, y: 0 });
     setParallaxFocusM(100);
   }
@@ -763,6 +1442,111 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             </select>
           </label>
         </div>
+
+        {scope ? (
+          <>
+            <div className="admin-spot-row">
+              <label className="admin-spot-field admin-spot-scale">
+                <span>Zoom fra</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  min={1}
+                  max={80}
+                  step={0.1}
+                  value={liveMinZoom}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n) || n <= 0) return;
+                    const next = Math.round(n * 100) / 100;
+                    setLiveMinZoom(next);
+                    setZoom((z) =>
+                      Math.min(liveMaxZoom, Math.max(next, z)),
+                    );
+                  }}
+                />
+              </label>
+              <label className="admin-spot-field admin-spot-scale">
+                <span>til</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  min={1}
+                  max={80}
+                  step={0.1}
+                  value={liveMaxZoom}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n) || n <= 0) return;
+                    const next = Math.round(n * 100) / 100;
+                    setLiveMaxZoom(next);
+                    setZoom((z) =>
+                      Math.min(next, Math.max(liveMinZoom, z)),
+                    );
+                  }}
+                />
+              </label>
+              <span className="admin-scope-cal-clicks">×</span>
+              <button
+                type="button"
+                className={
+                  liveClickUnit === "MRAD"
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={liveClickUnit === "MRAD"}
+                onClick={() => setLiveClickUnit("MRAD")}
+              >
+                MIL
+              </button>
+              <button
+                type="button"
+                className={
+                  liveClickUnit === "MOA"
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={liveClickUnit === "MOA"}
+                onClick={() => setLiveClickUnit("MOA")}
+              >
+                MOA
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                disabled={!scopeSpecDirty || bakingReticleCal}
+                onClick={() => void bakeScopeSpecToRepo()}
+              >
+                {bakingReticleCal ? "Skriver…" : "Lagre zoom/enhet"}
+              </button>
+            </div>
+            <div className="admin-spot-row">
+              <label className="admin-spot-field admin-spot-field-wide">
+                <span>
+                  Retikkelbilde
+                  {reticleSrcOverride
+                    ? " · lastet opp"
+                    : reticleDef
+                      ? ` · ${reticleDef.label}`
+                      : " · ingen"}
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/PNG"
+                  disabled={uploadingReticle}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void uploadReticleImage(file);
+                  }}
+                />
+              </label>
+              {uploadingReticle ? (
+                <span className="admin-scope-cal-clicks">Laster…</span>
+              ) : null}
+            </div>
+          </>
+        ) : null}
 
         <div className="admin-spot-row">
           <label className="admin-spot-field">
@@ -894,6 +1678,14 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
           >
             = Range 100 m
           </button>
+          <label className="admin-spot-field admin-spot-check">
+            <input
+              type="checkbox"
+              checked={cantEnabled}
+              onChange={(e) => setCantEnabled(e.target.checked)}
+            />
+            <span>Cant på</span>
+          </label>
         </div>
 
         {subjectKind === "range" && rangeTargetId !== "tracking-test" ? (
@@ -912,27 +1704,39 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               10× {easy10x ? "på" : "av"}
             </button>
             {scope ? (
-              <button
-                type="button"
-                className="intro-button admin-spot-btn"
-                onClick={() => setZoom(scope.maxZoom)}
-              >
-                Max {scope.maxZoom}×
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() => setZoom(liveMinZoom)}
+                >
+                  Min {liveMinZoom}×
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() => setZoom(liveMaxZoom)}
+                >
+                  Max {liveMaxZoom}×
+                </button>
+              </>
             ) : null}
           </div>
         ) : null}
 
-        {scope && reticleDef ? (
+        {scope && (reticleDef || reticleSrcOverride) ? (
           <div className="admin-scope-cal">
             <p className="admin-scope-cal-hint">
               Live kalibrering. «Lagre til repo» skriver rotasjon / optisk
-              senter / <code>centerTo1MilPx</code> til{" "}
-              <code>reticles.ts</code>. «Lagre FOV» skriver{" "}
-              <code>zoomMagCal</code> til <code>catalog.ts</code> (kun
-              dev). Calibrate max zoom: mil-ringer til glasskant @ max.
-              Hashmarks: mil-ringer på retikkel-hasher.
-              {calDirty || fovDirty ? " · lokale endringer" : ""}
+              senter / <code>centerTo1MilPx</code> /{" "}
+              <code>illumination</code> til <code>reticles.ts</code>. «Lagre
+              FOV» / «Lagre til repo» skriver <code>zoomMagCal</code> /{" "}
+              <code>minZoomMagCal</code> / focus zoom til{" "}
+              <code>catalog.ts</code> (kun dev). Calibrate illumination:
+              sirkel/rektangel/maske for hva som lyser rødt.
+              {calDirty || fovDirty || focusZoomDirty
+                ? " · lokale endringer"
+                : ""}
             </p>
 
             <div className="admin-spot-row admin-scope-rot-row">
@@ -1053,12 +1857,37 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 onClick={() => {
                   setCalMaxZoom((v) => {
                     const next = !v;
-                    if (next && scope) setZoom(scope.maxZoom);
+                    if (next) {
+                      setCalMinZoom(false);
+                      setZoom(liveMaxZoom);
+                    }
                     return next;
                   });
                 }}
               >
                 Calibrate max zoom {calMaxZoom ? "på" : "av"}
+              </button>
+              <button
+                type="button"
+                className={
+                  calMinZoom
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={calMinZoom}
+                title="FOV / følelse ved min zoom — mil-ringer + minZoomMagCal"
+                onClick={() => {
+                  setCalMinZoom((v) => {
+                    const next = !v;
+                    if (next) {
+                      setCalMaxZoom(false);
+                      setZoom(liveMinZoom);
+                    }
+                    return next;
+                  });
+                }}
+              >
+                Calibrate min zoom {calMinZoom ? "på" : "av"}
               </button>
               <button
                 type="button"
@@ -1072,6 +1901,27 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 onClick={() => setCalHashmarks((v) => !v)}
               >
                 Calibrate reticle hashmarks {calHashmarks ? "på" : "av"}
+              </button>
+              <button
+                type="button"
+                className={
+                  calIllum
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={calIllum}
+                title="Hvilket felt som lyser — sirkel / rektangel / maske-PNG"
+                onClick={() => {
+                  setCalIllum((v) => {
+                    const next = !v;
+                    if (next) {
+                      setReticleIllum((i) => (i < 0.35 ? 0.85 : i));
+                    }
+                    return next;
+                  });
+                }}
+              >
+                Calibrate illumination {calIllum ? "på" : "av"}
               </button>
             </div>
 
@@ -1094,7 +1944,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                       if (!Number.isFinite(n)) return;
                       setZoomMagCal(Math.round(n * 1000) / 1000);
                     }}
-                    aria-label="FOV zoom mag cal"
+                    aria-label="FOV zoom mag cal at max"
                   />
                 </label>
                 <button
@@ -1118,7 +1968,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 <button
                   type="button"
                   className="intro-button admin-spot-btn"
-                  disabled={!fovDirty}
+                  disabled={Math.abs(zoomMagCal - catalogZoomMag) <= 1e-6}
                   onClick={() => setZoomMagCal(catalogZoomMag)}
                 >
                   Nullstill FOV
@@ -1126,13 +1976,236 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 <button
                   type="button"
                   className="intro-button admin-spot-btn"
-                  disabled={!fovDirty || bakingReticleCal}
+                  disabled={
+                    Math.abs(zoomMagCal - catalogZoomMag) <= 1e-6 ||
+                    bakingReticleCal
+                  }
                   onClick={() => void bakeFovCalToRepo()}
                 >
                   {bakingReticleCal ? "Skriver…" : "Lagre FOV til repo"}
                 </button>
               </div>
             ) : null}
+
+            {calMinZoom ? (
+              <div className="admin-spot-row">
+                <label className="admin-spot-field admin-scope-rot-field">
+                  <span>
+                    minZoomMagCal {minZoomMagCal.toFixed(3)} · FOV ±
+                    {fovHalfMrad.toFixed(2)} mrad @ min
+                  </span>
+                  <input
+                    type="range"
+                    className="admin-scope-rot-slider"
+                    min={0.1}
+                    max={1.9}
+                    step={0.005}
+                    value={Math.min(1.9, Math.max(0.1, minZoomMagCal))}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (!Number.isFinite(n)) return;
+                      setMinZoomMagCal(Math.round(n * 1000) / 1000);
+                    }}
+                    aria-label="FOV zoom mag cal at min"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() =>
+                    setMinZoomMagCal((v) =>
+                      Math.round(Math.max(0.1, v - 0.01) * 1000) / 1000,
+                    )
+                  }
+                >
+                  −0.01
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() =>
+                    setMinZoomMagCal((v) =>
+                      Math.round(Math.min(1.9, v + 0.01) * 1000) / 1000,
+                    )
+                  }
+                >
+                  +0.01
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  disabled={!minFovDirty}
+                  onClick={() => setMinZoomMagCal(catalogMinZoomMag)}
+                >
+                  Nullstill
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  disabled={!minFovDirty || bakingReticleCal}
+                  onClick={() => void bakeMinFovCalToRepo()}
+                >
+                  {bakingReticleCal ? "Skriver…" : "Lagre til repo"}
+                </button>
+              </div>
+            ) : null}
+
+            <div className="admin-spot-row">
+              <label className="admin-spot-field admin-spot-check">
+                <input
+                  type="checkbox"
+                  checked={focusZoomEnabled}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setFocusZoomEnabled(on);
+                    if (!on) {
+                      setPreviewFocusSticky(false);
+                      setPreviewFocusHeld(false);
+                    }
+                  }}
+                />
+                <span>Enable Focus zoom multiplier</span>
+              </label>
+              <button
+                type="button"
+                className={
+                  previewFocusSticky
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={previewFocusSticky}
+                disabled={!focusZoomEnabled}
+                title="Hold F for momentary preview. Knapp låser preview på."
+                onClick={() => setPreviewFocusSticky((v) => !v)}
+              >
+                {previewFocusHeld
+                  ? "F holdt…"
+                  : previewFocusSticky
+                    ? "Lås på"
+                    : "Hold F / lås"}
+              </button>
+            </div>
+            <div className="admin-spot-row">
+              <label className="admin-spot-field admin-scope-rot-field">
+                <span>
+                  Focus zoom multiplier {focusZoomMultiplier.toFixed(2)}×
+                  {focusZoomMultiplier <= 1.001 ? " (off)" : ""}
+                </span>
+                <input
+                  type="range"
+                  className="admin-scope-rot-slider"
+                  min={FOCUS_ZOOM_MULTIPLIER_MIN}
+                  max={FOCUS_ZOOM_MULTIPLIER_MAX}
+                  step={0.05}
+                  value={Math.min(
+                    FOCUS_ZOOM_MULTIPLIER_MAX,
+                    Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, focusZoomMultiplier),
+                  )}
+                  disabled={!focusZoomEnabled}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setFocusZoomMultiplier(Math.round(n * 100) / 100);
+                  }}
+                  aria-label="Focus zoom multiplier"
+                />
+              </label>
+              <label className="admin-spot-field admin-spot-scale">
+                <span>×</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  min={FOCUS_ZOOM_MULTIPLIER_MIN}
+                  max={FOCUS_ZOOM_MULTIPLIER_MAX}
+                  step={0.05}
+                  value={focusZoomMultiplier}
+                  disabled={!focusZoomEnabled}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setFocusZoomMultiplier(
+                      Math.min(
+                        FOCUS_ZOOM_MULTIPLIER_MAX,
+                        Math.max(FOCUS_ZOOM_MULTIPLIER_MIN, Math.round(n * 100) / 100),
+                      ),
+                    );
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                disabled={!focusZoomDirty}
+                onClick={() => {
+                  setFocusZoomEnabled(catalogFocusZoomEnabled);
+                  setFocusZoomMultiplier(catalogFocusZoomMultiplier);
+                  setFocusViewportScale(catalogFocusViewportScale);
+                }}
+              >
+                Nullstill
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                disabled={!focusZoomDirty || bakingReticleCal}
+                onClick={() => void bakeFocusZoomToRepo()}
+              >
+                {bakingReticleCal ? "Skriver…" : "Lagre til repo"}
+              </button>
+            </div>
+            <div className="admin-spot-row">
+              <label className="admin-spot-field admin-scope-rot-field">
+                <span>
+                  Focus glass scale {focusViewportScale.toFixed(2)}×
+                  {Math.abs(focusViewportScale - 1) < 0.001
+                    ? " (ingen vekst)"
+                    : ` (+${Math.round((focusViewportScale - 1) * 100)}%)`}
+                </span>
+                <input
+                  type="range"
+                  className="admin-scope-rot-slider"
+                  min={FOCUS_VIEWPORT_SCALE_MIN}
+                  max={FOCUS_VIEWPORT_SCALE_MAX}
+                  step={0.01}
+                  value={Math.min(
+                    FOCUS_VIEWPORT_SCALE_MAX,
+                    Math.max(FOCUS_VIEWPORT_SCALE_MIN, focusViewportScale),
+                  )}
+                  disabled={!focusZoomEnabled}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setFocusViewportScale(Math.round(n * 1000) / 1000);
+                  }}
+                  aria-label="Focus glass viewport scale"
+                />
+              </label>
+              <label className="admin-spot-field admin-spot-scale">
+                <span>×</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  min={FOCUS_VIEWPORT_SCALE_MIN}
+                  max={FOCUS_VIEWPORT_SCALE_MAX}
+                  step={0.01}
+                  value={focusViewportScale}
+                  disabled={!focusZoomEnabled}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setFocusViewportScale(
+                      Math.min(
+                        FOCUS_VIEWPORT_SCALE_MAX,
+                        Math.max(
+                          FOCUS_VIEWPORT_SCALE_MIN,
+                          Math.round(n * 1000) / 1000,
+                        ),
+                      ),
+                    );
+                  }}
+                />
+              </label>
+            </div>
 
             {calHashmarks ? (
               <div className="admin-spot-row">
@@ -1200,6 +2273,207 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               </div>
             ) : null}
 
+            {calIllum ? (
+              <>
+                <div className="admin-spot-row">
+                  {(
+                    [
+                      ["whole", "Hele"],
+                      ["circleMils", "Sirkel (mil)"],
+                      ["circle", "Sirkel (px)"],
+                      ["rect", "Rektangel"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={
+                        illumShape === mode
+                          ? "intro-button admin-spot-btn is-selected"
+                          : "intro-button admin-spot-btn"
+                      }
+                      aria-pressed={illumShape === mode}
+                      onClick={() => setIllumShape(mode)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {illumShape === "circleMils" ? (
+                  <div className="admin-spot-row">
+                    <label className="admin-spot-field admin-scope-rot-field">
+                      <span>r {illumRMils.toFixed(2)} mil</span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={0.2}
+                        max={8}
+                        step={0.05}
+                        value={Math.min(8, Math.max(0.2, illumRMils))}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setIllumRMils(Math.round(n * 100) / 100);
+                        }}
+                        aria-label="Illum radius mils"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="intro-button admin-spot-btn"
+                      onClick={() =>
+                        setIllumRMils((v) =>
+                          Math.round(Math.max(0.2, v - 0.1) * 100) / 100,
+                        )
+                      }
+                    >
+                      −0.1
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button admin-spot-btn"
+                      onClick={() =>
+                        setIllumRMils((v) =>
+                          Math.round(Math.min(8, v + 0.1) * 100) / 100,
+                        )
+                      }
+                    >
+                      +0.1
+                    </button>
+                  </div>
+                ) : null}
+                {illumShape === "circle" ? (
+                  <div className="admin-spot-row">
+                    <label className="admin-spot-field admin-scope-rot-field">
+                      <span>r {illumRPx.toFixed(0)} native px</span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={10}
+                        max={600}
+                        step={1}
+                        value={Math.min(600, Math.max(10, illumRPx))}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setIllumRPx(Math.round(n));
+                        }}
+                        aria-label="Illum radius native px"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+                {illumShape === "rect" ? (
+                  <div className="admin-spot-row">
+                    <label className="admin-spot-field admin-spot-scale">
+                      <span>x</span>
+                      <input
+                        type="number"
+                        className="admin-spot-scale-num"
+                        value={illumRectX}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setIllumRectX(Math.round(n));
+                        }}
+                      />
+                    </label>
+                    <label className="admin-spot-field admin-spot-scale">
+                      <span>y</span>
+                      <input
+                        type="number"
+                        className="admin-spot-scale-num"
+                        value={illumRectY}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setIllumRectY(Math.round(n));
+                        }}
+                      />
+                    </label>
+                    <label className="admin-spot-field admin-spot-scale">
+                      <span>w</span>
+                      <input
+                        type="number"
+                        className="admin-spot-scale-num"
+                        value={illumRectW}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n) || n <= 0) return;
+                          setIllumRectW(Math.round(n));
+                        }}
+                      />
+                    </label>
+                    <label className="admin-spot-field admin-spot-scale">
+                      <span>h</span>
+                      <input
+                        type="number"
+                        className="admin-spot-scale-num"
+                        value={illumRectH}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n) || n <= 0) return;
+                          setIllumRectH(Math.round(n));
+                        }}
+                      />
+                    </label>
+                    {reticleDef ? (
+                      <button
+                        type="button"
+                        className="intro-button admin-spot-btn"
+                        title="Sentrer 200×200 på optisk senter"
+                        onClick={() => {
+                          const w = 200;
+                          const h = 200;
+                          setIllumRectW(w);
+                          setIllumRectH(h);
+                          setIllumRectX(Math.round(opticalCenterX - w / 2));
+                          setIllumRectY(Math.round(opticalCenterY - h / 2));
+                        }}
+                      >
+                        Sentrer 200²
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="admin-spot-row">
+                  <label className="admin-spot-field admin-scope-rot-field">
+                    <span>maskSrc (valgfri PNG)</span>
+                    <input
+                      type="text"
+                      className="admin-spot-scale-num"
+                      style={{ minWidth: "14rem", flex: 1 }}
+                      placeholder="/range/reticles/…-illum-mask.png"
+                      value={illumMaskSrc}
+                      onChange={(e) => setIllumMaskSrc(e.target.value)}
+                      aria-label="Illumination mask src"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    disabled={
+                      reticleIlluminationKey(liveIllumination) ===
+                      reticleIlluminationKey(catalogIllum)
+                    }
+                    onClick={() => {
+                      const h = hydrateIllumStateFromCatalog(catalogIllum);
+                      setIllumShape(h.shape);
+                      setIllumRMils(h.rMils);
+                      setIllumRPx(h.rPx);
+                      setIllumRectX(h.rectX);
+                      setIllumRectY(h.rectY);
+                      setIllumRectW(h.rectW);
+                      setIllumRectH(h.rectH);
+                      setIllumMaskSrc(h.maskSrc);
+                    }}
+                  >
+                    Nullstill illum
+                  </button>
+                </div>
+              </>
+            ) : null}
+
             <div className="admin-spot-row">
               <button
                 type="button"
@@ -1261,8 +2535,12 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               <button
                 type="button"
                 className="intro-button admin-spot-btn"
-                disabled={!calDirty || bakingReticleCal || !reticleDef}
-                title="Skriv imageRotationDeg + opticalCenterX/Y til reticles.ts"
+                disabled={
+                  !calDirty ||
+                  bakingReticleCal ||
+                  !(reticleDef || uploadedReticleId)
+                }
+                title="Skriv rotasjon / center / hash / illumination til reticles.ts"
                 onClick={() => void bakeReticleCalToRepo()}
               >
                 {bakingReticleCal ? "Skriver…" : "Lagre til repo"}
@@ -1273,7 +2551,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
         <p className="admin-spot-meta">
           {scope
-            ? `${zoom.toFixed(1)}× · ${paperUnit} · ${reticleDef?.label ?? scope.reticleId ?? "generic"}${fovDiameterScale > 1 ? " · premium FOV" : ""}${easy10x ? ` · 10×(×${RANGE_EASY_ZERO_SCALE})` : ""} · ${distanceM} m · fokus ${formatParallaxFocusM(parallaxFocusM)} · ${blurHint} · cant ${cantDeg.toFixed(1)}° · rot ${round2(reticleRotDeg)}° · cx ${round2(opticalCenterX)} cy ${round2(opticalCenterY)} · piltaster / drag`
+            ? `${zoom.toFixed(1)}× · ${paperUnit} · ${reticleDef?.label ?? scope.reticleId ?? "generic"}${fovDiameterScale > 1 ? " · premium FOV" : ""}${easy10x ? ` · 10×(×${RANGE_EASY_ZERO_SCALE})` : ""} · ${distanceM} m · fokus ${formatParallaxFocusM(parallaxFocusM)} · ${blurHint} · cant ${effectiveCantDeg.toFixed(1)}°${cantEnabled ? "" : " (off)"} · rot ${round2(reticleRotDeg)}° · cx ${round2(opticalCenterX)} cy ${round2(opticalCenterY)} · piltaster / drag`
             : "Ingen scope i katalog"}
           {subjectKind === "bird"
             ? ` · hunt-skala (scale ${spriteScalePercent}%) — samme som spotting/jakt`
@@ -1293,11 +2571,12 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               <ScopeElevationDial
                 sessionZeroMm={sessionZeroYMm}
                 onNudge={(d) =>
-                  setSessionZeroYMm((y) =>
+                  turretNudgeMoved(setSessionZeroYMm, (y) =>
                     clampElevationTurretMm(y + d, scope),
                   )
                 }
                 clickUnit={clickUnit}
+                clicksPerRev={scopeElevationClicksPerRev(scope)}
               />
             </div>
             <div className="admin-scope-tube-para scope-tube-para">
@@ -1317,10 +2596,20 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 <ScopeOpticFit>
                   <div className="scope-stage-optic-row">
                     <div
-                      className={
-                        fovDiameterScale > 1
-                          ? "scope-optic is-fov-premium"
-                          : "scope-optic"
+                      className={[
+                        "scope-optic",
+                        fovDiameterScale > 1 ? "is-fov-premium" : "",
+                        focusViewportBoost > 1 ? "is-focus-immersive" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={
+                        focusViewportBoost > 1
+                          ? ({
+                              ["--focus-viewport-scale" as string]:
+                                focusViewportBoost,
+                            } as CSSProperties)
+                          : undefined
                       }
                     >
                       <div
@@ -1347,10 +2636,13 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                           endAimDrag(e.currentTarget, e.pointerId)
                         }
                       >
+                        <ScopeFocusZoom scale={focusZoomBoost}>
                         <div
                           className="scope-world"
                           style={{
-                            transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
+                            transform:
+                              `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
+                              `scale(${targetScale}) rotate(${worldRollDeg.toFixed(3)}deg)`,
                             filter:
                               blurPx > 0.05
                                 ? `blur(${blurPx.toFixed(2)}px)`
@@ -1376,7 +2668,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                         </div>
                         <div className="scope-reticle-offset">
                           <ScopeReticle
-                            scope={scope}
+                            scope={liveScope ?? scope}
                             zoom={zoom}
                             imgScale={reticleImgScale}
                             illumination={reticleIllum}
@@ -1386,10 +2678,74 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                               y: opticalCenterY,
                             }}
                             centerTo1MilPx={centerTo1MilPx}
+                            illuminationDef={liveIllumination}
+                            srcOverride={reticleSrcOverride ?? undefined}
+                            nativeSizeOverride={
+                              reticleNativeOverride ?? undefined
+                            }
                           />
                         </div>
+                        </ScopeFocusZoom>
                         <div className="scope-vignette" aria-hidden />
-                        {calMaxZoom && fovRingPxPerMrad > 0 ? (
+                        {calIllum &&
+                        liveIllumination?.region &&
+                        hashRingPxPerMil > 0 ? (
+                          <div
+                            className="admin-scope-illum-region"
+                            aria-hidden
+                          >
+                            {liveIllumination.region.shape === "circleMils" ||
+                            liveIllumination.region.shape === "circle" ? (
+                              <span
+                                className="admin-scope-illum-region-circle"
+                                style={{
+                                  width:
+                                    liveIllumination.region.shape ===
+                                    "circleMils"
+                                      ? 2 *
+                                        liveIllumination.region.rMils *
+                                        hashRingPxPerMil
+                                      : 2 *
+                                        liveIllumination.region.r *
+                                        (hashRingPxPerMil / centerTo1MilPx),
+                                  height:
+                                    liveIllumination.region.shape ===
+                                    "circleMils"
+                                      ? 2 *
+                                        liveIllumination.region.rMils *
+                                        hashRingPxPerMil
+                                      : 2 *
+                                        liveIllumination.region.r *
+                                        (hashRingPxPerMil / centerTo1MilPx),
+                                }}
+                              />
+                            ) : (
+                              <span
+                                className="admin-scope-illum-region-rect"
+                                style={{
+                                  width:
+                                    liveIllumination.region.w *
+                                    (hashRingPxPerMil / centerTo1MilPx),
+                                  height:
+                                    liveIllumination.region.h *
+                                    (hashRingPxPerMil / centerTo1MilPx),
+                                  left: `calc(50% + ${
+                                    (liveIllumination.region.x -
+                                      opticalCenterX) *
+                                    (hashRingPxPerMil / centerTo1MilPx)
+                                  }px)`,
+                                  top: `calc(50% + ${
+                                    (liveIllumination.region.y -
+                                      opticalCenterY) *
+                                    (hashRingPxPerMil / centerTo1MilPx)
+                                  }px)`,
+                                }}
+                              />
+                            )}
+                          </div>
+                        ) : null}
+                        {((calMaxZoom || calMinZoom) &&
+                          fovRingPxPerMrad > 0) ? (
                           <div
                             className="admin-scope-mil-rings is-fov"
                             aria-hidden
@@ -1448,14 +2804,17 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                         ) : null}
                       </div>
                       <ScopeZoomRing
-                        scope={scope}
+                        scope={liveScope ?? scope}
                         zoom={zoom}
-                        onChange={(z) => setZoom(clampScopeZoom(z, scope))}
+                        onChange={(z) =>
+                          setZoom(clampScopeZoom(z, liveScope ?? scope))
+                        }
                       />
                       <BubbleLevel
                         visualId="ulf"
-                        cantDeg={cantDeg}
+                        cantDeg={effectiveCantDeg}
                         onCantChange={setCantDeg}
+                        disabled={!cantEnabled}
                       />
                     </div>
                   </div>
@@ -1465,8 +2824,13 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             <div className="admin-scope-tube-wind scope-tube-wind">
               <ScopeWindageDial
                 sessionZeroMm={sessionZeroXMm}
-                onNudge={(d) => setSessionZeroXMm((x) => x + d)}
+                onNudge={(d) =>
+                  turretNudgeMoved(setSessionZeroXMm, (x) =>
+                    clampTurretMm(x + d),
+                  )
+                }
                 clickUnit={clickUnit}
+                clicksPerRev={scopeWindageClicksPerRev(scope)}
               />
             </div>
           </div>

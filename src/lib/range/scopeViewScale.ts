@@ -23,20 +23,32 @@ import {
 
 /**
  * {@link ScopeReticle} `imgScale` from optic zoom only (100 m reference).
- * Optional `easy10x` grows the reticle with the readable-paper helper.
+ * `scaleBoost` grows reticle + matched subjects (easy10x → 10, focus zoom → 1–5).
  */
 export function opticReticleImgScale(
   zoom: number,
-  scope?: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal">,
-  easy10x = false,
+  scope?: Pick<
+    ScopeSpec,
+    "minZoom" | "maxZoom" | "zoomMagCal" | "minZoomMagCal"
+  >,
+  scaleBoost: number | boolean = 1,
 ): number {
   const base = scopeImageScale(zoom, scope, RANGE_DISTANCE_M);
-  return easy10x ? base * RANGE_EASY_ZERO_SCALE : base;
+  const boost =
+    typeof scaleBoost === "boolean"
+      ? scaleBoost
+        ? RANGE_EASY_ZERO_SCALE
+        : 1
+      : Math.max(1, scaleBoost);
+  return base * boost;
 }
 
 export function zeroingTargetAndReticleScale(opts: {
   zoom: number;
-  scope: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal">;
+  scope: Pick<
+    ScopeSpec,
+    "minZoom" | "maxZoom" | "zoomMagCal" | "minZoomMagCal"
+  >;
   distanceM: number;
   target: { visualScale: number; pxPerMm: number };
   paperUnit: ScopeClickUnit;
@@ -44,13 +56,20 @@ export function zeroingTargetAndReticleScale(opts: {
   trackingLane?: boolean;
   /** 10× innskyting helper — larger paper + matching reticle. */
   easy10x?: boolean;
+  /**
+   * Extra view scale (focus zoom etc.). Multiplies on top of easy10x.
+   * 1 = none; same as shooting-range 10× but with an arbitrary factor.
+   */
+  scaleBoost?: number;
 }): { targetScale: number; reticleImgScale: number } {
   const moaPaperScale = opts.paperUnit === "MOA" ? MOA_RANGE_TARGET_SCALE : 1;
   const easyBoost =
     opts.easy10x && !opts.trackingLane ? RANGE_EASY_ZERO_SCALE : 1;
+  const focusBoost = Math.max(1, opts.scaleBoost ?? 1);
+  const viewBoost = easyBoost * focusBoost;
   const trueAngularPaper = opts.trackingLane
-    ? 1
-    : RANGE_TRUE_ANGULAR_TARGET_SCALE * easyBoost;
+    ? focusBoost
+    : RANGE_TRUE_ANGULAR_TARGET_SCALE * viewBoost;
   const targetScale =
     scopeImageScale(opts.zoom, opts.scope, opts.distanceM) *
     opts.target.visualScale *
@@ -59,7 +78,7 @@ export function zeroingTargetAndReticleScale(opts: {
   const reticleImgScale = opticReticleImgScale(
     opts.zoom,
     opts.scope,
-    Boolean(opts.easy10x && !opts.trackingLane),
+    opts.trackingLane ? focusBoost : viewBoost,
   );
   return { targetScale, reticleImgScale };
 }

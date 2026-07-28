@@ -81,8 +81,7 @@ function IllumHalfSunIcon({
 /**
  * Compact outer illumination tower — sits left of the parallax knurl
  * (ZCO-style). Stepless vertical drag maps 0→1 black→red on the reticle.
- * Face marks: “0” (OFF), half-sun (50%), full sun (MAX) scroll with knurl;
- * index stays fixed.
+ * Face: knurl strip + black panel with “0” / half-sun / full sun.
  */
 export function IlluminationTurret({
   value,
@@ -217,10 +216,6 @@ export function IlluminationTurret({
                 </span>
               </div>
             </div>
-          </div>
-          {/* Fixed index — does not rotate with knurl. */}
-          <div className="illum-index-base">
-            <span className="illum-index" />
           </div>
         </div>
       </div>

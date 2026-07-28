@@ -54,9 +54,19 @@ import { isPowderItem } from "@/lib/reloading/components";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
+import { createJaktkort } from "@/lib/hunt/jaktkort";
+import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
-import { isAmmoItem, isFoodItem, isMiscItem, isMountItem, isScopeItem, isStockItem } from "@/lib/shop/types";
+import {
+  isAmmoItem,
+  isFoodItem,
+  isMiscItem,
+  isMountItem,
+  isRifleItem,
+  isScopeItem,
+  isStockItem,
+} from "@/lib/shop/types";
 import {
   mountClearsZeroOnMountRemove,
   mountClearsZeroOnScopeRemove,
@@ -768,6 +778,66 @@ export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
     return stats;
   }
   return syncProfileLrf(stats, profile);
+}
+
+/** Admin session: Finnskogen sesongkort + CB Real loads top-up. */
+export const ADMIN_CB_HOMELOAD_ROUNDS = 999;
+export const ADMIN_FINNSKOGEN_TERRAIN_ID = "finnskogen";
+
+/**
+ * When the admin PIN session is active: active Finnskogen season card and
+ * at least {@link ADMIN_CB_HOMELOAD_ROUNDS} CB Customs home-load rounds
+ * matching the equipped rifle caliber (fallback 6,5×55). Free / no balance.
+ * Idempotent ammo top-up; always refreshes the sesongkort to full days.
+ */
+export function applyAdminSessionPerks(stats: PlayerStats): PlayerStats {
+  if (!stats.name) return stats;
+
+  const terrain = getHuntingTerrain(ADMIN_FINNSKOGEN_TERRAIN_ID);
+  const kort = createJaktkort(
+    ADMIN_FINNSKOGEN_TERRAIN_ID,
+    "season",
+    terrain?.pricePerDayNok ?? 1500,
+  );
+
+  const rifle =
+    stats.kit
+      .map((id) => getShopItem(id))
+      .find((i) => i && isRifleItem(i)) ?? null;
+  const caliber = rifle?.caliber ?? "6,5×55";
+  const ammoId =
+    HOME_LOAD_AMMO_BY_CALIBER[caliber] ??
+    HOME_LOAD_AMMO_BY_CALIBER["6,5×55"]!;
+
+  let inventory = stats.inventory;
+  const have = getInventoryQty(inventory, ammoId);
+  if (have < ADMIN_CB_HOMELOAD_ROUNDS) {
+    inventory = addToInventory(
+      inventory,
+      ammoId,
+      ADMIN_CB_HOMELOAD_ROUNDS - have,
+    );
+  }
+
+  const kit = stats.kit.includes(ammoId) ? stats.kit : [...stats.kit, ammoId];
+  const unlockedTerrainIds = stats.unlockedTerrainIds.includes(
+    ADMIN_FINNSKOGEN_TERRAIN_ID,
+  )
+    ? stats.unlockedTerrainIds
+    : [...stats.unlockedTerrainIds, ADMIN_FINNSKOGEN_TERRAIN_ID];
+
+  return {
+    ...stats,
+    selectedHuntingTerrainId: ADMIN_FINNSKOGEN_TERRAIN_ID,
+    jaktkort: kort,
+    inventory,
+    kit,
+    unlockedTerrainIds,
+    customsMods: {
+      ...stats.customsMods,
+      homeLoadsSetup: true,
+    },
+  };
 }
 
 export function createInitialStats(): PlayerStats {

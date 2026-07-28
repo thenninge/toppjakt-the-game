@@ -393,7 +393,10 @@ export function tiurVitalOffsetFromImageCenterPx(): { x: number; y: number } {
  */
 export function birdScopeImageScale(
   zoom: number,
-  scope: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal"> | undefined,
+  scope: Pick<
+    ScopeSpec,
+    "minZoom" | "maxZoom" | "zoomMagCal" | "minZoomMagCal"
+  > | undefined,
   distanceM: number,
   nativeW: number,
   spriteId?: BirdSpriteId,

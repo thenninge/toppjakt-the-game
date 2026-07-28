@@ -320,6 +320,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       focalPlane: "FFP",
       reticleId: "nf_moa",
       clickUnit: "MOA",
+      /** 20 MOA / rev @ ¼ MOA. */
+      elevationClicksPerRev: 80,
+      windageClicksPerRev: 80,
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.06,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
@@ -339,6 +342,8 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       focalPlane: "FFP",
       reticleId: "nightforce-mil-r",
       clickUnit: "MRAD",
+      elevationClicksPerRev: 120,
+      windageClicksPerRev: 120,
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.06,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
@@ -358,6 +363,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       focalPlane: "FFP",
       reticleId: "nightforce-mil-r",
       clickUnit: "MRAD",
+      /** 12 mil / rev @ 0.1 mil (ATACR). */
+      elevationClicksPerRev: 120,
+      windageClicksPerRev: 120,
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
@@ -377,6 +385,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       focalPlane: "FFP",
       reticleId: "nightforce-mil-r",
       clickUnit: "MRAD",
+      /** 12 mil / rev @ 0.1 mil (ATACR). */
+      elevationClicksPerRev: 120,
+      windageClicksPerRev: 120,
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.04,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
@@ -399,9 +410,16 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       zeroStop: -5,
       /** ~35 mrad / multi-rev elevation travel. */
       elevationUpClicks: 350,
+      /** 15 mil / rev @ 0.1 mil. */
+      elevationClicksPerRev: 150,
+      windageClicksPerRev: 150,
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.025,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
+      minZoomMagCal: 0.6,
+      focusZoomEnabled: true,
+      focusZoomMultiplier: 1.2,
+      focusViewportScale: 1.2,
     },
   },
   {

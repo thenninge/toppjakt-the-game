@@ -661,22 +661,51 @@ export function clampScopeZoom(
 }
 
 /**
+ * Effective FOV / mag multiplier at a given engraved zoom.
+ * Lerps {@link ScopeSpec.minZoomMagCal} → {@link ScopeSpec.zoomMagCal}
+ * so min and max can be calibrated independently.
+ */
+export function scopeZoomMagCalAt(
+  zoom: number,
+  scope?: Pick<
+    ScopeSpec,
+    "minZoom" | "maxZoom" | "zoomMagCal" | "minZoomMagCal"
+  >,
+): number {
+  const maxMag =
+    scope?.zoomMagCal != null &&
+    Number.isFinite(scope.zoomMagCal) &&
+    scope.zoomMagCal > 0
+      ? scope.zoomMagCal
+      : SCOPE_ZOOM_MAG_CAL;
+  const minMag =
+    scope?.minZoomMagCal != null &&
+    Number.isFinite(scope.minZoomMagCal) &&
+    scope.minZoomMagCal > 0
+      ? scope.minZoomMagCal
+      : maxMag;
+  const minZ = scope?.minZoom ?? 1;
+  const maxZ = scope?.maxZoom ?? minZ;
+  if (!(maxZ > minZ)) return maxMag;
+  const t = Math.min(1, Math.max(0, (zoom - minZ) / (maxZ - minZ)));
+  return minMag + (maxMag - minMag) * t;
+}
+
+/**
  * CSS scale for the CBA image inside the scope circle.
  * Proportional to optical zoom — min zoom shows more paper; max digs into the diamond.
  * At longer range the target subtends less angle (∝ 100/distance).
  */
 export function scopeImageScale(
   zoom: number,
-  scope?: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal">,
+  scope?: Pick<
+    ScopeSpec,
+    "minZoom" | "maxZoom" | "zoomMagCal" | "minZoomMagCal"
+  >,
   distanceM: number = RANGE_DISTANCE_M,
 ): number {
   const rangeFactor = RANGE_DISTANCE_M / Math.max(1, distanceM);
-  const mag =
-    scope?.zoomMagCal != null &&
-    Number.isFinite(scope.zoomMagCal) &&
-    scope.zoomMagCal > 0
-      ? scope.zoomMagCal
-      : SCOPE_ZOOM_MAG_CAL;
+  const mag = scopeZoomMagCalAt(zoom, scope);
   return Math.max(
     0.004,
     SCOPE_IMAGE_SCALE_PER_ZOOM * zoom * rangeFactor * mag,

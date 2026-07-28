@@ -53,8 +53,9 @@ import {
 } from "@/lib/range/barrelHeat";
 import { BarrelHeatBar } from "@/components/range/BarrelHeatBar";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
+import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
-import { ScopeTurrets } from "@/components/range/ScopeTurrets";
+import { ScopeTurrets, turretNudgeMoved } from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
@@ -69,7 +70,14 @@ import {
   type InventoryEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError, scopeFovDiameterScale } from "@/lib/optics/spec";
+import {
+  applyScopeClickError,
+  scopeElevationClicksPerRev,
+  scopeFocusViewportBoost,
+  scopeFocusZoomBoost,
+  scopeFovDiameterScale,
+  scopeWindageClicksPerRev,
+} from "@/lib/optics/spec";
 import { densityRatioFromTempC, exactBallisticHold } from "@/lib/ballistics/solver";
 import { isSilentSuppressedShot } from "@/lib/ammo/spec";
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
@@ -253,6 +261,7 @@ export function FieldImpactCompetitionView({
     phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
+  const [focusHeld, setFocusHeld] = useState(false);
   const [triggerUi, setTriggerUi] = useState<{
     pending: boolean;
     targetPct: number;
@@ -802,6 +811,7 @@ export function FieldImpactCompetitionView({
   function beginFocus(nowMs: number) {
     if (focusRef.current.held) return;
     focusRef.current = { held: true, startedAtMs: nowMs };
+    setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -813,6 +823,7 @@ export function FieldImpactCompetitionView({
   function endFocus(abortReason: string) {
     if (!focusRef.current.held) return;
     focusRef.current = { held: false, startedAtMs: 0 };
+    setFocusHeld(false);
     if (triggerRef.current.held) abortTrigger(abortReason);
     triggerMarkRef.current = null;
     resetTriggerProgress();
@@ -1124,6 +1135,12 @@ export function FieldImpactCompetitionView({
   }, [phase, ready]);
 
   /** Same truth as hunt / admin: bird FOV scale + zoom-only FFP reticle. */
+  const focusZoomBoost = scope
+    ? scopeFocusZoomBoost(scope.scope, focusHeld)
+    : 1;
+  const focusViewportBoost = scope
+    ? scopeFocusViewportBoost(scope.scope, focusHeld)
+    : 1;
   const targetScale = scope && shotGeom
     ? birdScopeImageScale(
         zoom,
@@ -1469,12 +1486,21 @@ export function FieldImpactCompetitionView({
           </div>
 
           <div
-            className={
-              scope
-                ? scopeFovDiameterScale(scope.scope) > 1
-                  ? "scope-optic is-fov-premium"
-                  : "scope-optic"
-                : "scope-optic"
+            className={[
+              "scope-optic",
+              scope && scopeFovDiameterScale(scope.scope) > 1
+                ? "is-fov-premium"
+                : "",
+              focusViewportBoost > 1 ? "is-focus-immersive" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={
+              focusViewportBoost > 1
+                ? ({
+                    ["--focus-viewport-scale" as string]: focusViewportBoost,
+                  } as CSSProperties)
+                : undefined
             }
           >
             <div
@@ -1495,6 +1521,7 @@ export function FieldImpactCompetitionView({
               onPointerLeave={onAimPointerLeave}
               onLostPointerCapture={onAimPointerUp}
             >
+              <ScopeFocusZoom scale={focusZoomBoost}>
               <div ref={scopeWorldRef} className="scope-world">
                 <div ref={mirageSceneRef} className="scope-world-scene">
                   {shotGeom ? (
@@ -1575,6 +1602,7 @@ export function FieldImpactCompetitionView({
                 zoom={zoom}
                 imgScale={reticleScale}
               />
+              </ScopeFocusZoom>
               {impactFlash ? (
                 <div className="field-impact-flash" aria-live="assertive">
                   IMPACT! - TREFF!
@@ -1654,14 +1682,17 @@ export function FieldImpactCompetitionView({
           sessionZeroXMm={sessionZeroXMm}
           sessionZeroYMm={sessionZeroYMm}
           clickUnit={clickUnit}
+          elevationClicksPerRev={scopeElevationClicksPerRev(scope?.scope)}
+          windageClicksPerRev={scopeWindageClicksPerRev(scope?.scope)}
           onNudge={(axis, deltaMm) => {
             if (axis === "x") {
-              setSessionZeroXMm((v) => clampTurretMm(v + deltaMm));
-            } else {
-              setSessionZeroYMm((v) =>
-                clampElevationTurretMm(v + deltaMm, scope?.scope),
+              return turretNudgeMoved(setSessionZeroXMm, (v) =>
+                clampTurretMm(v + deltaMm),
               );
             }
+            return turretNudgeMoved(setSessionZeroYMm, (v) =>
+              clampElevationTurretMm(v + deltaMm, scope?.scope),
+            );
           }}
         />
       </div>

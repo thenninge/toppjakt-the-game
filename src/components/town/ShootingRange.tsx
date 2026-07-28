@@ -92,7 +92,15 @@ import {
 } from "@/lib/optics/clicks";
 import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
-import { scopeFovDiameterScale } from "@/lib/optics/spec";
+import {
+  applyScopeClickError,
+  rollScopeClickScale,
+  scopeElevationClicksPerRev,
+  scopeFocusViewportBoost,
+  scopeFocusZoomBoost,
+  scopeFovDiameterScale,
+  scopeWindageClicksPerRev,
+} from "@/lib/optics/spec";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   DEFAULT_ZERO_DISTANCE_M,
@@ -104,10 +112,12 @@ import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
+import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
 import {
   ScopeElevationDial,
   ScopeTurrets,
   ScopeWindageDial,
+  turretNudgeMoved,
 } from "@/components/range/ScopeTurrets";
 import { MaybeScopeTube } from "@/components/range/ScopeTubeLayout";
 import { ParallaxTurret } from "@/components/range/ParallaxTurret";
@@ -145,7 +155,6 @@ import {
   type DopeCardEntry,
   type ZeroingProfile,
 } from "@/lib/player";
-import { applyScopeClickError, rollScopeClickScale } from "@/lib/optics/spec";
 import {
   densityRatioFromTempC,
   exactBallisticHold,
@@ -499,6 +508,7 @@ export function ShootingRange({
     phase: "idle" | "settling" | "focused" | "fatigued";
     remainingMs: number;
   }>({ phase: "idle", remainingMs: 0 });
+  const [focusHeld, setFocusHeld] = useState(false);
   const [triggerUi, setTriggerUi] = useState<{
     pending: boolean;
     /** 0–1 mark on bar while focused. */
@@ -1000,6 +1010,7 @@ export function ShootingRange({
       held: true,
       startedAtMs: nowMs,
     };
+    setFocusHeld(true);
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -1025,6 +1036,7 @@ export function ShootingRange({
     }
     if (!focusRef.current.held) return;
     focusRef.current = { held: false, startedAtMs: 0 };
+    setFocusHeld(false);
     if (triggerRef.current.held) {
       abortTrigger(abortReason);
     }
@@ -1495,6 +1507,12 @@ export function ShootingRange({
   const fovDiameterScale = scope
     ? scopeFovDiameterScale(scope.scope)
     : 1;
+  const focusZoomBoost = scope
+    ? scopeFocusZoomBoost(scope.scope, focusHeld)
+    : 1;
+  const focusViewportBoost = scope
+    ? scopeFocusViewportBoost(scope.scope, focusHeld)
+    : 1;
   bullseyeOffRef.current = bullseyeOff;
   imgNaturalWRef.current = target.nativeWidth;
   targetPxPerMmRef.current = target.pxPerMm;
@@ -1660,13 +1678,14 @@ export function ShootingRange({
     });
   }
 
-  function nudgeZero(axis: "x" | "y", deltaMm: number) {
+  function nudgeZero(axis: "x" | "y", deltaMm: number): boolean {
     // 10× only scales the paper/reticle — never the turret click size.
     if (axis === "x") {
-      setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
-      return;
+      return turretNudgeMoved(setSessionZeroXMm, (prev) =>
+        clampTurretMm(prev + deltaMm),
+      );
     }
-    setSessionZeroYMm((prev) =>
+    return turretNudgeMoved(setSessionZeroYMm, (prev) =>
       clampElevationTurretMm(prev + deltaMm, scope?.scope),
     );
   }
@@ -2160,6 +2179,8 @@ export function ShootingRange({
     releaseTrigger(performance.now());
   }
 
+  const worldRollDeg = -liveCantDeg();
+
   return (
     <div className="shooting-range">
       <LocationNav
@@ -2593,6 +2614,8 @@ export function ShootingRange({
           sessionZeroYMm={sessionZeroYMm}
           onNudge={nudgeZero}
           clickUnit={scope.scope.clickUnit}
+          elevationClicksPerRev={scopeElevationClicksPerRev(scope.scope)}
+          windageClicksPerRev={scopeWindageClicksPerRev(scope.scope)}
           hideShooterDials={tubeMode}
           enviroPanel={
             <HuntShotConditions
@@ -2755,11 +2778,12 @@ export function ShootingRange({
               <ScopeElevationDial
                 sessionZeroMm={sessionZeroYMm}
                 onNudge={(d) =>
-                  setSessionZeroYMm((y) =>
+                  turretNudgeMoved(setSessionZeroYMm, (y) =>
                     clampElevationTurretMm(y + d, scope.scope),
                   )
                 }
                 clickUnit={scope.scope.clickUnit}
+                clicksPerRev={scopeElevationClicksPerRev(scope.scope)}
               />
             }
             parallax={
@@ -2778,9 +2802,12 @@ export function ShootingRange({
               <ScopeWindageDial
                 sessionZeroMm={sessionZeroXMm}
                 onNudge={(d) =>
-                  setSessionZeroXMm((x) => clampTurretMm(x + d))
+                  turretNudgeMoved(setSessionZeroXMm, (x) =>
+                    clampTurretMm(x + d),
+                  )
                 }
                 clickUnit={scope.scope.clickUnit}
+                clicksPerRev={scopeWindageClicksPerRev(scope.scope)}
               />
             }
             focusRail={
@@ -2895,10 +2922,20 @@ export function ShootingRange({
                 ) : null}
 
                 <div
-                  className={
-                    fovDiameterScale > 1
-                      ? "scope-optic is-fov-premium"
-                      : "scope-optic"
+                  className={[
+                    "scope-optic",
+                    fovDiameterScale > 1 ? "is-fov-premium" : "",
+                    focusViewportBoost > 1 ? "is-focus-immersive" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  style={
+                    focusViewportBoost > 1
+                      ? ({
+                          ["--focus-viewport-scale" as string]:
+                            focusViewportBoost,
+                        } as CSSProperties)
+                      : undefined
                   }
                 >
               <div
@@ -2923,8 +2960,25 @@ export function ShootingRange({
                 onPointerLeave={onAimPointerLeave}
                 onLostPointerCapture={onAimPointerUp}
               >
-                <div ref={scopeWorldRef} className="scope-world"
-                style={blurPx > 0.05 ? { filter: `blur(${blurPx.toFixed(2)}px)` } : undefined}>
+                <ScopeFocusZoom scale={focusZoomBoost}>
+                <div
+                  ref={scopeWorldRef}
+                  className="scope-world"
+                  style={
+                    blurPx > 0.05 || Math.abs(worldRollDeg) > 0.02
+                      ? {
+                          filter:
+                            blurPx > 0.05
+                              ? `blur(${blurPx.toFixed(2)}px)`
+                              : undefined,
+                          transform:
+                            Math.abs(worldRollDeg) > 0.02
+                              ? `rotate(${worldRollDeg.toFixed(3)}deg)`
+                              : undefined,
+                        }
+                      : undefined
+                  }
+                >
                   <div ref={mirageSceneRef} className="scope-world-scene">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -3019,6 +3073,7 @@ export function ShootingRange({
                     illumination={tubeMode ? reticleIllum : 0}
                   />
                 </div>
+                </ScopeFocusZoom>
                 <div className="scope-vignette" aria-hidden />
               </div>
               <ScopeZoomRing
