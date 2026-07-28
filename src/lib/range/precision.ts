@@ -667,9 +667,18 @@ export function clampScopeZoom(
  */
 export function scopeImageScale(
   zoom: number,
-  _scope?: Pick<ScopeSpec, "minZoom" | "maxZoom">,
+  scope?: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal">,
   distanceM: number = RANGE_DISTANCE_M,
 ): number {
   const rangeFactor = RANGE_DISTANCE_M / Math.max(1, distanceM);
-  return Math.max(0.004, SCOPE_IMAGE_SCALE_PER_ZOOM * zoom * rangeFactor);
+  const mag =
+    scope?.zoomMagCal != null &&
+    Number.isFinite(scope.zoomMagCal) &&
+    scope.zoomMagCal > 0
+      ? scope.zoomMagCal
+      : SCOPE_ZOOM_MAG_CAL;
+  return Math.max(
+    0.004,
+    SCOPE_IMAGE_SCALE_PER_ZOOM * zoom * rangeFactor * mag,
+  );
 }

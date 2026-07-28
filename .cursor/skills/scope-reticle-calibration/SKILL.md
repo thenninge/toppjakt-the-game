@@ -74,22 +74,25 @@ Floating dot / crosshair must sit on scope centre.
 
 ### 3. FOV at engraved max zoom
 
-1. Count mils (or MOA) **edge-to-edge** on glass at max zoom.
-2. Wanted diameter for that scope (ZCO: 14 mrad @ 27×).
-3. Zoom factor = `observed / wanted` → multiply image scale (narrower FOV =
-   larger scale). Prefer a **named constant** (like `SCOPE_FOV_DIAMETER_ZOOM_IN`)
-   or a per-scope FOV factor if brands differ — do not silently retune ZCO.
+1. Admin → Scopes → **Calibrate max zoom** (forces engraved max; orange mil
+   rings to glass edge). Wanted half-FOV for ZCO: ±7.2 mrad @ 27×.
+2. Adjust `zoomMagCal` until rings / reticle mil-count match the wanted FOV
+   (narrower FOV → larger `zoomMagCal`). Save with **Lagre FOV til repo**
+   (`catalog.ts`).
+3. Prefer per-scope `zoomMagCal` over retuning global
+   `SCOPE_FOV_CAL_HALF_MRAD` / `SCOPE_IMAGE_SCALE_PER_ZOOM`.
 
-### 4. Hold-over (dial vs hash)
+### 4. Hold-over / hashmarks (dial vs hash)
 
-1. Dial a known elev (e.g. 45 klikk = 4.5 mil).
-2. POI must land on the matching reticle hash (4.5 mil / 45-klikksmerke).
-3. If dial D lands on hash H (in klikk-equivalent):
-   - Reticle too **large** (H < D): was fixed historically with shrink — prefer
-     fixing `centerTo1MilPx` / angular wiring first.
-   - Reticle too **small** (H > D): increase subtension (larger hashes) or fix
-     `centerTo1MilPx`.
-4. **Do not** reintroduce a global `RETICLE_SUBTENSION_CAL ≠ 1` unless every
+1. Admin → Scopes → **Calibrate reticle hashmarks** (cyan mil rings on
+   reticle). Tune `centerTo1MilPx` until rings sit on the hashes; include in
+   **Lagre til repo** (`reticles.ts`).
+2. Dial a known elev (e.g. 45 klikk = 4.5 mil).
+3. POI must land on the matching reticle hash (4.5 mil / 45-klikksmerke).
+4. If dial D lands on hash H (in klikk-equivalent):
+   - Reticle too **large** (H < D): prefer fixing `centerTo1MilPx` first.
+   - Reticle too **small** (H > D): increase `centerTo1MilPx`.
+5. **Do not** reintroduce a global `RETICLE_SUBTENSION_CAL ≠ 1` unless every
    scope needs the same fudge; prefer per-reticle `centerTo1MilPx`.
 
 ### 5. Sign off
@@ -109,8 +112,11 @@ Note calibrated values in the `ReticleDef` comment block (same style as ZCO).
 
 ## Files
 
-- `src/lib/range/reticles.ts` — defs, optical centre, rotation
+- `src/lib/range/reticles.ts` — defs, optical centre, rotation, `centerTo1MilPx`
 - `src/lib/range/precision.ts` — FOV scale, true-angular paper, `RETICLE_SUBTENSION_CAL`
 - `src/components/range/ScopeReticle.tsx` — render + rotate about optical centre
-- `src/lib/optics/spec.ts` / `src/lib/shop/catalog.ts` — premium FOV flag
+- `src/lib/optics/spec.ts` / `src/lib/shop/catalog.ts` — premium FOV + `zoomMagCal`
+- `src/components/town/AdminScopeTestPanel.tsx` — live cal UI (rot / centre /
+  max zoom / hashmarks)
+- `src/app/api/admin/reticle-cal` · `scope-fov-cal` — bake to repo (dev)
 - Call sites: `ShootingRange`, `HuntShootView`, Field Impact, MoaComp

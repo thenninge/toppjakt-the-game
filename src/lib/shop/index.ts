@@ -90,6 +90,7 @@ export {
   isChamberCoolerMisc,
   isFireStarterMisc,
   isSitPadMisc,
+  isBubbleLevelMisc,
   isSuppressorCoverMisc,
   miscKitMirageMult,
   miscKitWeaponCalmGrams,

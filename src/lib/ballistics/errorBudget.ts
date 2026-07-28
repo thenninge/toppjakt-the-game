@@ -69,6 +69,12 @@ export type BallisticErrorBudget = {
   trueCrosswindMps?: number;
   believedCrosswindMps?: number;
 
+  /**
+   * Rifle cant (deg, +CW from rear). World drop/windage project onto scope
+   * axes via `cantedDropWindageMm` / `composeCantedImpactMm`.
+   */
+  cantDeg?: number;
+
   scope?: ScopeSpec | null;
   lrf?: LrfSpec | null;
   weatherMeter?: BallisticsSpec | null;

@@ -20,6 +20,11 @@ import {
   mmAt100ToAngular,
 } from "@/lib/optics/clicks";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
+import {
+  cantCompensatedDialMm,
+  cantedDropWindageMm,
+  clampCantDeg,
+} from "@/lib/range/cant";
 
 /**
  * Sea-level density ratio from temperature (ICAO-ish).
@@ -66,17 +71,26 @@ export function birdMarkerOnAwareMap(
 
 export type BallisticHoldSolution = {
   distanceM: number;
-  /** Drop below LOS (mm, +down). */
+  /** World-frame drop below LOS (mm, +down). */
   dropMm: number;
-  /** Total lateral POI (mm, +right): spin + wind. */
+  /** World-frame lateral POI (mm, +right): spin + wind. */
   windageMm: number;
   spinDriftMm: number;
   windDriftMm: number;
   timeOfFlightS: number;
   /**
+   * Drop / windage on scope axes under {@link cantDeg}.
+   * Equal to world values when the rifle is level.
+   */
+  scopeDropMm: number;
+  scopeWindageMm: number;
+  /** Rifle cant used for scope components / optional dial compensate (deg). */
+  cantDeg: number;
+  /**
    * Turret dial from perfect zero, mm-at-100 m.
    * +x = right dial, +y = down dial (same as session zero storage).
    * To cancel drop/wind, dial the opposite of POI.
+   * Devices assume a level rifle unless `cantCompensate` was set.
    */
   dialXMmAt100: number;
   dialYMmAt100: number;
@@ -88,6 +102,9 @@ export type BallisticHoldSolution = {
 /**
  * Exact hold for `distanceM` assuming a perfect 100 m zero.
  * Dial values cancel drop + spin + crosswind so POA on vitals = POI.
+ *
+ * Pass `cantDeg` to get scope-frame drop/windage (reticle axes). Dials stay
+ * level-rifle unless `cantCompensate: true` (player bubble-level gameplay).
  */
 export function exactBallisticHold(
   ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> & { caliber?: string },
@@ -97,6 +114,16 @@ export function exactBallisticHold(
     powderTempC?: number;
     /** Override catalog dV/dT (e.g. Kestrel-calibrated). */
     dvDtMpsPerC?: number | null;
+    /**
+     * Rifle cant (deg, +CW from rear). Fills scopeDropMm / scopeWindageMm.
+     * Does not change device dials unless `cantCompensate` is true.
+     */
+    cantDeg?: number;
+    /**
+     * When true with `cantDeg`, dials cancel world drop/wind on a canted
+     * rifle (cheat / debug — real meters do not know cant).
+     */
+    cantCompensate?: boolean;
   },
 ): BallisticHoldSolution {
   const powderTempC = opts?.powderTempC ?? POWDER_TEMP_REFERENCE_C;
@@ -110,10 +137,20 @@ export function exactBallisticHold(
   );
   const windageMm = traj.spinDriftMm + wDrift;
   const dropMm = traj.dropBelowLosMm;
+  const cantDeg = clampCantDeg(opts?.cantDeg ?? 0);
+  const scope = cantedDropWindageMm(windageMm, dropMm, cantDeg);
   const scale = 100 / Math.max(1, distanceM);
-  // Cancel POI: dial opposite direction.
-  const dialXMmAt100 = -windageMm * scale;
-  const dialYMmAt100 = -dropMm * scale;
+  let dialXMmAt100: number;
+  let dialYMmAt100: number;
+  if (opts?.cantCompensate && Math.abs(cantDeg) >= 0.05) {
+    const dial = cantCompensatedDialMm(windageMm, dropMm, cantDeg);
+    dialXMmAt100 = dial.xMm * scale;
+    dialYMmAt100 = dial.yMm * scale;
+  } else {
+    // Cancel POI: dial opposite direction (level-rifle device solution).
+    dialXMmAt100 = -windageMm * scale;
+    dialYMmAt100 = -dropMm * scale;
+  }
   return {
     distanceM,
     dropMm,
@@ -121,6 +158,9 @@ export function exactBallisticHold(
     spinDriftMm: traj.spinDriftMm,
     windDriftMm: wDrift,
     timeOfFlightS: traj.timeOfFlightS,
+    scopeDropMm: scope.dropMm,
+    scopeWindageMm: scope.windageMm,
+    cantDeg,
     dialXMmAt100,
     dialYMmAt100,
     windageClicks: dialXMmAt100 / ZERO_CLICK_MM,

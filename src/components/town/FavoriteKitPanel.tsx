@@ -26,7 +26,7 @@ import {
   shotCamLabel,
   resolveShotCamKind,
 } from "@/lib/hunt/shoot";
-import { isSuppressorCoverMisc } from "@/lib/misc/spec";
+import { isBubbleLevelMisc, isSuppressorCoverMisc } from "@/lib/misc/spec";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 
 type FavoriteKitPanelProps = {
@@ -97,6 +97,7 @@ function slotLabel(item: ShopItem | undefined): string {
     return kind ? shotCamLabel(kind) : "Triggercam";
   }
   if (isMiscItem(item) && isSuppressorCoverMisc(item.misc)) return "Wrap";
+  if (isMiscItem(item) && isBubbleLevelMisc(item.misc)) return "Bubble level";
   if (isCamoItem(item)) {
     return CAMO_LABELS[camoSlot(item.camo)] ?? "Camo";
   }

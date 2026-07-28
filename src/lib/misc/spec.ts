@@ -90,6 +90,16 @@ export type MiscSpec = {
    * Sit pad — 1.2× body recovery on short rest and tyribål.
    */
   isSitPad?: boolean;
+  /**
+   * Scope rail bubble level — shows rifle cant in scope view.
+   * Weapon-mounted (gun-kit); visual via {@link bubbleLevelVisual}.
+   */
+  isBubbleLevel?: boolean;
+  /**
+   * Skin for the bubble-level HUD (`ulf` = Ulf tube vial).
+   * Future SKUs reuse cant wiring with a different visual id.
+   */
+  bubbleLevelVisual?: "ulf";
 };
 
 /** Placeholder net contribution to felt load (can be negative = net help). */
@@ -130,6 +140,10 @@ export function isFireStarterMisc(misc: MiscSpec): boolean {
 
 export function isSitPadMisc(misc: MiscSpec): boolean {
   return !!misc.isSitPad;
+}
+
+export function isBubbleLevelMisc(misc: MiscSpec): boolean {
+  return !!misc.isBubbleLevel;
 }
 
 /** Lyddemper-cover / wrap — mirage only with a can mounted. */

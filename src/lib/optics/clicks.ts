@@ -6,7 +6,11 @@
  */
 
 import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
-import type { ScopeClickUnit } from "@/lib/optics/spec";
+import {
+  scopeElevationFaceLimits,
+  type ScopeClickUnit,
+  type ScopeSpec,
+} from "@/lib/optics/spec";
 
 /** 0.1 mil ≈ 10 mm @ 100 m. */
 export const MRAD_CLICK_MM_AT_100 = 10;
@@ -52,6 +56,39 @@ export function scopeClicksToMmAt100(
   unit: ScopeClickUnit = "MRAD",
 ): number {
   return Math.round(clicks) * clickSizeMmAt100(unit);
+}
+
+/**
+ * Absolute elevation dial clamp (mm-at-100 m) from face-click limits.
+ * Face is UP-positive (`elevFace = −elevClicks`).
+ * - Upper: `elevationUpClicks` (e.g. 350)
+ * - Lower: `zeroStop` (e.g. −5 / −50) — mechanical absolute, not face-wrap
+ */
+export function clampElevationMmAt100(
+  mm: number,
+  scope:
+    | Pick<ScopeSpec, "clickUnit" | "zeroStop" | "elevationUpClicks">
+    | null
+    | undefined,
+): number {
+  const unit = scope?.clickUnit ?? "MRAD";
+  const { min: faceMin, max: faceMax } = scopeElevationFaceLimits(scope);
+  /* face = −clicks → mm ∈ [−faceMax, −faceMin] × clickSize */
+  const minMm = -scopeClicksToMmAt100(faceMax, unit);
+  const maxMm = -scopeClicksToMmAt100(faceMin, unit);
+  if (!Number.isFinite(mm)) return 0;
+  return Math.max(minMm, Math.min(maxMm, mm));
+}
+
+/** @deprecated Prefer {@link clampElevationMmAt100}. */
+export function applyElevationZeroStop(
+  mm: number,
+  scope:
+    | Pick<ScopeSpec, "clickUnit" | "zeroStop" | "elevationUpClicks">
+    | null
+    | undefined,
+): number {
+  return clampElevationMmAt100(mm, scope);
 }
 
 /**

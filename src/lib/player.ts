@@ -6,13 +6,15 @@ import {
   HOME_LOAD_AMMO_BY_CALIBER,
   type CustomsMods,
 } from "@/lib/customs/spec";
-import { applyScopeClickError } from "@/lib/optics/spec";
-import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
+  clampElevationMmAt100,
   clickUnitLabel,
   milClicksToScopeClicks,
   mmAt100ToAngular,
 } from "@/lib/optics/clicks";
+import type { ScopeClickUnit, ScopeSpec } from "@/lib/optics/spec";
+import { applyScopeClickError } from "@/lib/optics/spec";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import { isPackableFoodKind } from "@/lib/food/spec";
 import { spentBrassItemIdForAmmo, isSpentBrassItemId, spentBrassKeyForCaliber } from "@/lib/reloading/brass";
 import {
@@ -282,6 +284,11 @@ export type PlayerStats = {
    */
   useRealDataInSimulation: boolean;
   /**
+   * Scope / turret realism: medium = classic HUD dials; high = tube-mounted
+   * realistic turrets (per-scope chrome via turretStyleForScope).
+   */
+  realism: GameRealism;
+  /**
    * Open hunt Aware skuddpar — synced so unfinished recoveries survive
    * across devices for the same terrain/jaktkort day.
    */
@@ -517,7 +524,8 @@ export const ZERO_CLICK_MM = 10;
  * Not a turret limit — scopes can dial far more.
  */
 export const MAX_ZERO_BASE_OFFSET_MM = 50;
-/** Max dial / saved turret correction (±100 clicks ≈ ±10 mil). */
+/** Max dial / saved *windage* (and generic) correction (±100 clicks ≈ ±10 mil).
+ * Elevation uses {@link clampElevationTurretMm} / `elevationUpClicks` instead. */
 export const MAX_TURRET_OFFSET_MM = 1000;
 
 /** @deprecated Use MAX_ZERO_BASE_OFFSET_MM — kept as alias for clarity in old comments. */
@@ -803,6 +811,7 @@ export function createInitialStats(): PlayerStats {
     kestrelProfiles: {},
     realLoadProfiles: [],
     useRealDataInSimulation: false,
+    realism: "medium",
     awareHunt: null,
     jegerprovePassed: false,
     lang: "nb",
@@ -1159,6 +1168,20 @@ export function clampTurretMm(mm: number): number {
     -MAX_TURRET_OFFSET_MM,
     Math.min(MAX_TURRET_OFFSET_MM, mm),
   );
+}
+
+/**
+ * Elevation dial clamp — absolute UP travel + optional mechanical zero-stop.
+ * Does **not** use symmetric {@link clampTurretMm} (that capped ZCO at 100↑).
+ */
+export function clampElevationTurretMm(
+  mm: number,
+  scope:
+    | Pick<ScopeSpec, "clickUnit" | "zeroStop" | "elevationUpClicks">
+    | null
+    | undefined,
+): number {
+  return clampElevationMmAt100(mm, scope);
 }
 
 /** @deprecated Prefer clampZeroBaseMm or clampTurretMm. */

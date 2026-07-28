@@ -27,7 +27,7 @@ import {
  */
 export function opticReticleImgScale(
   zoom: number,
-  scope?: Pick<ScopeSpec, "minZoom" | "maxZoom">,
+  scope?: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal">,
   easy10x = false,
 ): number {
   const base = scopeImageScale(zoom, scope, RANGE_DISTANCE_M);
@@ -36,7 +36,7 @@ export function opticReticleImgScale(
 
 export function zeroingTargetAndReticleScale(opts: {
   zoom: number;
-  scope: Pick<ScopeSpec, "minZoom" | "maxZoom">;
+  scope: Pick<ScopeSpec, "minZoom" | "maxZoom" | "zoomMagCal">;
   distanceM: number;
   target: { visualScale: number; pxPerMm: number };
   paperUnit: ScopeClickUnit;

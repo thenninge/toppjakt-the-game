@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+} from "react";
 import {
   FOCUS_HOLD_MS,
   TRIGGER_BAR_MS,
@@ -58,8 +65,27 @@ import {
 import type { RangeShotAudioOptions } from "@/lib/range/audio";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
-import { ScopeTurrets, type ScopeHudTab } from "@/components/range/ScopeTurrets";
+import {
+  ScopeElevationDial,
+  ScopeTurrets,
+  ScopeWindageDial,
+  type ScopeHudTab,
+} from "@/components/range/ScopeTurrets";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
+import { MaybeScopeTube } from "@/components/range/ScopeTubeLayout";
+import { ParallaxTurret } from "@/components/range/ParallaxTurret";
+import { IlluminationTurret } from "@/components/range/IlluminationTurret";
+import { focusBlurPx } from "@/lib/range/parallaxFocus";
+import { BubbleLevel } from "@/components/range/BubbleLevel";
+import { resolveBubbleLevelFromKit } from "@/lib/range/bubbleLevel";
+import {
+  composeCantedImpactMm,
+  CANT_KEY_DEG_PER_SEC,
+  initialCantDeg,
+  isCantGameplayActive,
+  nudgeCantDeg,
+} from "@/lib/range/cant";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
@@ -70,6 +96,7 @@ import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
+  clampElevationTurretMm,
   clampTurretMm,
   dopeClicksToMmAt100,
   effectiveZeroOffsetMm,
@@ -130,7 +157,6 @@ import {
   tickEncounterNerve,
 } from "@/lib/game/nervousness";
 import { BirdNerveBar } from "@/components/hunt/BirdNerveBar";
-import type { CSSProperties } from "react";
 
 type HuntShootViewProps = {
   /** True ballistic distance (bird). */
@@ -262,6 +288,10 @@ type HuntShootViewProps = {
   initialSessionZeroMm?: { x: number; y: number } | null;
   /** Persist dial changes for the rest of this hunt. */
   onSessionZeroChange?: (xMm: number, yMm: number) => void;
+  /**
+   * medium = classic HUD dials; high = tube-mounted realistic turrets.
+   */
+  realism?: GameRealism;
 };
 
 type AimKeys = {
@@ -269,6 +299,10 @@ type AimKeys = {
   down: number | null;
   left: number | null;
   right: number | null;
+  /** Q — counterclockwise (bubble → right). */
+  ccw: number | null;
+  /** E — clockwise (bubble → left). */
+  cw: number | null;
 };
 
 const AIM_SPEED_MM_PER_SEC = 44;
@@ -371,6 +405,7 @@ export function HuntShootView({
   onBackToAware,
   initialSessionZeroMm = null,
   onSessionZeroChange,
+  realism = "medium",
 }: HuntShootViewProps) {
   const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
   const mmToPx = (mm: number) => birdMmToNativePx(mm, shotGeom);
@@ -419,9 +454,18 @@ export function HuntShootView({
   );
   const [sessionZeroYMm, setSessionZeroYMm] = useState(() =>
     initialSessionZeroMm
-      ? clampTurretMm(Math.round(initialSessionZeroMm.y))
+      ? clampElevationTurretMm(
+          Math.round(initialSessionZeroMm.y),
+          scope?.scope,
+        )
       : 0,
   );
+  const [parallaxFocusM, setParallaxFocusM] = useState(trueDistanceM);
+  const [reticleIllum, setReticleIllum] = useState(0);
+  const tubeMode = realism === "high";
+  const blurPx = tubeMode
+    ? focusBlurPx(trueDistanceM, parallaxFocusM)
+    : 0;
   const [status, setStatus] = useState(
     restoreTurrets
       ? "Tårn som sist · F = fokus+merke · slipp Space på merket."
@@ -490,6 +534,27 @@ export function HuntShootView({
   landscapeSrcRef.current = landscapeSrc;
   const [recoilActive, setRecoilActive] = useState(false);
   const [fired, setFired] = useState(false);
+  const bubbleLevel = useMemo(
+    () => resolveBubbleLevelFromKit(kitItems),
+    [kitItems],
+  );
+  const cantActive = isCantGameplayActive(realism, !!bubbleLevel);
+  const cantActiveRef = useRef(cantActive);
+  cantActiveRef.current = cantActive;
+  const [cantDeg, setCantDeg] = useState(() =>
+    initialCantDeg(realism, !!resolveBubbleLevelFromKit(kitItems)),
+  );
+  const cantDegRef = useRef(cantDeg);
+  cantDegRef.current = cantDeg;
+  const liveCantDeg = () =>
+    cantActiveRef.current ? cantDegRef.current : 0;
+
+  useEffect(() => {
+    if (cantActive) return;
+    if (cantDegRef.current === 0) return;
+    cantDegRef.current = 0;
+    setCantDeg(0);
+  }, [cantActive]);
   const [lastImpact, setLastImpact] = useState<{
     xMm: number;
     yMm: number;
@@ -543,6 +608,8 @@ export function HuntShootView({
     down: null,
     left: null,
     right: null,
+    ccw: null,
+    cw: null,
   });
   const aimRef = useRef({ x: 0, y: 0 });
   const hasPannedRef = useRef(false);
@@ -858,16 +925,15 @@ export function HuntShootView({
         skipMirage: usingReal,
       },
     );
-    let shotXMm = shot.xMm;
-    let shotYMm = shot.yMm;
+    let dropMm = shot.dropBelowLosMm;
     if (usingReal && realLoad) {
       const tableCm = interpolateRealDropCm(realLoad, distanceRef.current);
       if (tableCm != null) {
-        shotYMm = shot.yMm - shot.dropBelowLosMm + tableCm * 10;
+        dropMm = tableCm * 10;
       }
     }
     // Spin is already in `shot`; add local wind drift separately.
-    const windMm = exactBallisticHold(
+    const hold = exactBallisticHold(
       simAmmo,
       distanceRef.current,
       crosswindRef.current,
@@ -875,8 +941,12 @@ export function HuntShootView({
         densityRatio: densityRef.current,
         powderTempC: powderTempRef.current,
         dvDtMpsPerC: simDvDt,
+        cantDeg: liveCantDeg(),
       },
-    ).windDriftMm;
+    );
+    const windageMm = shot.spinDriftMm + hold.windDriftMm;
+    const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
+    const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
     const clickErr = scope.scope.clickErrorPercent ?? 0;
     const realizedZero = zeroProfile
       ? effectiveZeroOffsetMm(
@@ -896,15 +966,23 @@ export function HuntShootView({
             distanceRef.current,
           ),
         };
+    const canted = composeCantedImpactMm({
+      poaXMm: poa.xMm,
+      poaYMm: poa.yMm,
+      zeroXMm: realizedZero.xMm,
+      zeroYMm: realizedZero.yMm,
+      scatterXMm,
+      scatterYMm,
+      dropMm,
+      windageMm,
+      cantDeg: liveCantDeg(),
+    });
     const impact = {
       xMm:
-        shotXMm +
-        realizedZero.xMm +
-        angularMmAtDistance(mountHuntDriftMm.xMm, distanceRef.current) +
-        windMm,
+        canted.xMm +
+        angularMmAtDistance(mountHuntDriftMm.xMm, distanceRef.current),
       yMm:
-        shotYMm +
-        realizedZero.yMm +
+        canted.yMm +
         angularMmAtDistance(mountHuntDriftMm.yMm, distanceRef.current),
       diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
     };
@@ -1277,6 +1355,22 @@ export function HuntShootView({
         if (dir === "right") nudgeAim(step, 0);
         return;
       }
+      if (e.key === "q" || e.key === "Q") {
+        if (!cantActiveRef.current) return;
+        e.preventDefault();
+        if (keysRef.current.ccw != null) return;
+        keysRef.current.ccw = performance.now();
+        setCantDeg((c) => nudgeCantDeg(c, -CANT_KEY_DEG_PER_SEC * 0.08));
+        return;
+      }
+      if (e.key === "e" || e.key === "E") {
+        if (!cantActiveRef.current) return;
+        e.preventDefault();
+        if (keysRef.current.cw != null) return;
+        keysRef.current.cw = performance.now();
+        setCantDeg((c) => nudgeCantDeg(c, CANT_KEY_DEG_PER_SEC * 0.08));
+        return;
+      }
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         beginFocus(performance.now());
@@ -1300,6 +1394,8 @@ export function HuntShootView({
       if (e.key === "ArrowDown") keysRef.current.down = null;
       if (e.key === "ArrowLeft") keysRef.current.left = null;
       if (e.key === "ArrowRight") keysRef.current.right = null;
+      if (e.key === "q" || e.key === "Q") keysRef.current.ccw = null;
+      if (e.key === "e" || e.key === "E") keysRef.current.cw = null;
       if (e.key === "f" || e.key === "F") endFocus();
       if (e.key === " " || e.code === "Space") {
         if (triggerRef.current.held) {
@@ -1395,6 +1491,21 @@ export function HuntShootView({
       x = Math.max(-limitX, Math.min(limitX, x));
       y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
+      const cantCcw = scopeAimHoldMult(k.ccw, now);
+      const cantCw = scopeAimHoldMult(k.cw, now);
+      if (cantActiveRef.current && (cantCcw > 0 || cantCw > 0)) {
+        let next = cantDegRef.current;
+        if (cantCcw > 0) {
+          next = nudgeCantDeg(next, -CANT_KEY_DEG_PER_SEC * dt * cantCcw);
+        }
+        if (cantCw > 0) {
+          next = nudgeCantDeg(next, CANT_KEY_DEG_PER_SEC * dt * cantCw);
+        }
+        if (next !== cantDegRef.current) {
+          cantDegRef.current = next;
+          setCantDeg(next);
+        }
+      }
 
       if (focusShouldAbort(focusRef.current, now)) {
         endFocus();
@@ -1510,7 +1621,9 @@ export function HuntShootView({
       setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
       return;
     }
-    setSessionZeroYMm((prev) => clampTurretMm(prev + deltaMm));
+    setSessionZeroYMm((prev) =>
+      clampElevationTurretMm(prev + deltaMm, scope?.scope),
+    );
   }
 
   if (!ready || !rifle || !scope) {
@@ -1559,6 +1672,7 @@ export function HuntShootView({
             densityRatio,
             powderTempC: temperatureC,
             dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+            cantDeg: liveCantDeg(),
           },
         )
       : null;
@@ -1574,6 +1688,7 @@ export function HuntShootView({
             densityRatio,
             powderTempC: temperatureC,
             dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+            cantDeg: liveCantDeg(),
           },
         )
       : null);
@@ -1684,6 +1799,7 @@ export function HuntShootView({
           onNudge={nudgeZero}
           disabled={fired}
           clickUnit={scope?.scope.clickUnit ?? "MRAD"}
+          hideShooterDials={tubeMode}
           onHudTabChange={setHudTab}
           meterTabLabel={
             hasKestrelInKit ? "Kestrel" : hasWindMeterInKit ? "Vindmåler" : "Kestrel"
@@ -1730,6 +1846,7 @@ export function HuntShootView({
                               densityRatio,
                               powderTempC: temperatureC,
                               dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+                              cantDeg: liveCantDeg(),
                             },
                           )
                         ).dialYMmAt100,
@@ -1746,7 +1863,10 @@ export function HuntShootView({
                   clampTurretMm(dopeClicksToMmAt100(entry.windageClicks)),
                 );
                 setSessionZeroYMm(
-                  clampTurretMm(dopeClicksToMmAt100(entry.elevationClicks)),
+                  clampElevationTurretMm(
+                    dopeClicksToMmAt100(entry.elevationClicks),
+                    scope.scope,
+                  ),
                 );
                 setStatus(
                   `DOPE @ ${entry.distanceM} m dialt · elev ${formatDopeElevationClicks(entry.elevationClicks, unit)}${
@@ -1832,43 +1952,144 @@ export function HuntShootView({
             threshold={ENCOUNTER_NERVE.flushThreshold}
           />
         ) : null}
-        <ScopeOpticFit>
-        <div className="scope-stage-optic-row">
-          <div className="range-side-rail range-side-rail--focus">
-            <span
-              className={
-                focusUi.phase === "focused"
-                  ? "range-side-rail-label is-focused"
-                  : focusUi.phase === "settling" ||
-                      focusUi.phase === "fatigued"
-                    ? "range-side-rail-label is-fatigued"
-                    : "range-side-rail-label"
+        <MaybeScopeTube
+          enabled={tubeMode}
+          scopeId={scope.id}
+          elevation={
+            <ScopeElevationDial
+              sessionZeroMm={sessionZeroYMm}
+              onNudge={(d) =>
+                setSessionZeroYMm((y) =>
+                  clampElevationTurretMm(y + d, scope.scope),
+                )
               }
-            >
-              {focusUi.phase === "focused"
-                ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)}s`
-                : focusUi.phase === "settling"
-                  ? "Settler…"
-                  : focusUi.phase === "fatigued"
-                    ? "Ustabil"
-                    : "Fokus"}
-            </span>
-            <div
-              ref={focusBarRef}
-              className="range-focus-bar"
-              aria-hidden
-            >
-              <div ref={focusFillRef} className="range-focus-fill" />
+              clickUnit={scope.scope.clickUnit ?? "MRAD"}
+              disabled={fired}
+            />
+          }
+          parallax={
+            <div className="scope-tube-para-stack">
+              <IlluminationTurret
+                value={reticleIllum}
+                onChange={setReticleIllum}
+                disabled={fired}
+              />
+              <ParallaxTurret
+                focusM={parallaxFocusM}
+                onChange={setParallaxFocusM}
+                disabled={fired}
+              />
             </div>
-          </div>
+          }
+          windage={
+            <ScopeWindageDial
+              sessionZeroMm={sessionZeroXMm}
+              onNudge={(d) =>
+                setSessionZeroXMm((x) => clampTurretMm(x + d))
+              }
+              clickUnit={scope.scope.clickUnit ?? "MRAD"}
+              disabled={fired}
+            />
+          }
+          focusRail={
+            tubeMode ? (
+              <div className="range-side-rail range-side-rail--focus">
+                <span
+                  className={
+                    focusUi.phase === "focused"
+                      ? "range-side-rail-label is-focused"
+                      : focusUi.phase === "settling" ||
+                          focusUi.phase === "fatigued"
+                        ? "range-side-rail-label is-fatigued"
+                        : "range-side-rail-label"
+                  }
+                >
+                  {focusUi.phase === "focused"
+                    ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)}s`
+                    : focusUi.phase === "settling"
+                      ? "Settler…"
+                      : focusUi.phase === "fatigued"
+                        ? "Ustabil"
+                        : "Fokus"}
+                </span>
+                <div
+                  ref={focusBarRef}
+                  className="range-focus-bar"
+                  aria-hidden
+                >
+                  <div ref={focusFillRef} className="range-focus-fill" />
+                </div>
+              </div>
+            ) : null
+          }
+          triggerRail={
+            tubeMode && !gunPrepOnly ? (
+              <div className="range-side-rail range-side-rail--trigger">
+                <span
+                  className={
+                    triggerUi.pending
+                      ? "range-side-rail-label is-trigger"
+                      : "range-side-rail-label"
+                  }
+                >
+                  Avtrekk
+                </span>
+                <div
+                  className="range-trigger-bar"
+                  style={
+                    {
+                      ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                    } as CSSProperties
+                  }
+                >
+                  <div ref={triggerFillRef} className="range-trigger-fill" />
+                  {triggerUi.targetPct > 0 ? (
+                    <span className="range-trigger-mark" aria-hidden />
+                  ) : null}
+                </div>
+              </div>
+            ) : null
+          }
+        >
+          <ScopeOpticFit>
+            <div className="scope-stage-optic-row">
+              {!tubeMode ? (
+                <div className="range-side-rail range-side-rail--focus">
+                  <span
+                    className={
+                      focusUi.phase === "focused"
+                        ? "range-side-rail-label is-focused"
+                        : focusUi.phase === "settling" ||
+                            focusUi.phase === "fatigued"
+                          ? "range-side-rail-label is-fatigued"
+                          : "range-side-rail-label"
+                    }
+                  >
+                    {focusUi.phase === "focused"
+                      ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)}s`
+                      : focusUi.phase === "settling"
+                        ? "Settler…"
+                        : focusUi.phase === "fatigued"
+                          ? "Ustabil"
+                          : "Fokus"}
+                  </span>
+                  <div
+                    ref={focusBarRef}
+                    className="range-focus-bar"
+                    aria-hidden
+                  >
+                    <div ref={focusFillRef} className="range-focus-fill" />
+                  </div>
+                </div>
+              ) : null}
 
-          <div
-            className={
-              scopeFovDiameterScale(scope.scope) > 1
-                ? "scope-optic is-fov-premium"
-                : "scope-optic"
-            }
-          >
+              <div
+                className={
+                  scopeFovDiameterScale(scope.scope) > 1
+                    ? "scope-optic is-fov-premium"
+                    : "scope-optic"
+                }
+              >
             <div
               className={
                 recoilActive
@@ -1891,7 +2112,15 @@ export function HuntShootView({
               onPointerLeave={onAimPointerLeave}
               onLostPointerCapture={onAimPointerUp}
             >
-              <div ref={scopeWorldRef} className="scope-world">
+              <div
+                ref={scopeWorldRef}
+                className="scope-world"
+                style={
+                  blurPx > 0.05
+                    ? { filter: `blur(${blurPx.toFixed(2)}px)` }
+                    : undefined
+                }
+              >
                 {landscapeSrc ? (
                   <div
                     className="hunt-scope-scene"
@@ -1987,6 +2216,7 @@ export function HuntShootView({
                 scope={scope.scope}
                 zoom={zoom}
                 imgScale={reticleScale}
+                illumination={tubeMode ? reticleIllum : 0}
               />
             </div>
             <ScopeZoomRing
@@ -1995,36 +2225,45 @@ export function HuntShootView({
               onChange={(z) => setZoom(z)}
               disabled={fired}
             />
+            {cantActive && bubbleLevel ? (
+              <BubbleLevel
+                visualId={bubbleLevel.visualId}
+                cantDeg={cantDeg}
+                onCantChange={setCantDeg}
+                disabled={fired}
+              />
+            ) : null}
           </div>
 
-          {!gunPrepOnly ? (
-            <div className="range-side-rail range-side-rail--trigger">
-              <span
-                className={
-                  triggerUi.pending
-                    ? "range-side-rail-label is-trigger"
-                    : "range-side-rail-label"
-                }
-              >
-                Avtrekk
-              </span>
-              <div
-                className="range-trigger-bar"
-                style={
-                  {
-                    ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-                  } as CSSProperties
-                }
-              >
-                <div ref={triggerFillRef} className="range-trigger-fill" />
-                {triggerUi.targetPct > 0 ? (
-                  <span className="range-trigger-mark" aria-hidden />
-                ) : null}
-              </div>
+              {!tubeMode && !gunPrepOnly ? (
+                <div className="range-side-rail range-side-rail--trigger">
+                  <span
+                    className={
+                      triggerUi.pending
+                        ? "range-side-rail-label is-trigger"
+                        : "range-side-rail-label"
+                    }
+                  >
+                    Avtrekk
+                  </span>
+                  <div
+                    className="range-trigger-bar"
+                    style={
+                      {
+                        ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                      } as CSSProperties
+                    }
+                  >
+                    <div ref={triggerFillRef} className="range-trigger-fill" />
+                    {triggerUi.targetPct > 0 ? (
+                      <span className="range-trigger-mark" aria-hidden />
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-        </ScopeOpticFit>
+          </ScopeOpticFit>
+        </MaybeScopeTube>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button

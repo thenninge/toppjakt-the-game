@@ -93,6 +93,7 @@ import {
 import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 import { scopeFovDiameterScale } from "@/lib/optics/spec";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   DEFAULT_ZERO_DISTANCE_M,
 } from "@/lib/ballistics/trajectory";
@@ -103,7 +104,24 @@ import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
-import { ScopeTurrets } from "@/components/range/ScopeTurrets";
+import {
+  ScopeElevationDial,
+  ScopeTurrets,
+  ScopeWindageDial,
+} from "@/components/range/ScopeTurrets";
+import { MaybeScopeTube } from "@/components/range/ScopeTubeLayout";
+import { ParallaxTurret } from "@/components/range/ParallaxTurret";
+import { IlluminationTurret } from "@/components/range/IlluminationTurret";
+import { focusBlurPx } from "@/lib/range/parallaxFocus";
+import { BubbleLevel } from "@/components/range/BubbleLevel";
+import { resolveBubbleLevelFromKit } from "@/lib/range/bubbleLevel";
+import {
+  composeCantedImpactMm,
+  CANT_KEY_DEG_PER_SEC,
+  initialCantDeg,
+  isCantGameplayActive,
+  nudgeCantDeg,
+} from "@/lib/range/cant";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
@@ -112,6 +130,7 @@ import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
+  clampElevationTurretMm,
   clampTurretMm,
   clicksForDropMm,
   effectiveZeroOffsetMm,
@@ -225,6 +244,8 @@ type ShootingRangeProps = {
   onUpsertKestrelProfile?: (profile: KestrelGunProfile) => void;
   realLoadProfiles?: RealLoadProfile[];
   useRealDataInSimulation?: boolean;
+  /** medium = classic HUD dials; high = tube-mounted realistic turrets. */
+  realism?: GameRealism;
   /** Laderommet — load-test lane. */
   loadBenchRecipe?: LoadBenchRecipe | null;
   homeLoadedLots?: HomeLoadedLot[];
@@ -242,6 +263,8 @@ type AimKeys = {
   down: number | null;
   left: number | null;
   right: number | null;
+  ccw: number | null;
+  cw: number | null;
 };
 
 const AIM_SPEED_MM_PER_SEC = 22;
@@ -290,6 +313,7 @@ export function ShootingRange({
   onUpsertKestrelProfile,
   realLoadProfiles = [],
   useRealDataInSimulation = false,
+  realism = "medium",
   loadBenchRecipe = null,
   homeLoadedLots = [],
   armedLoadPlan = null,
@@ -459,6 +483,10 @@ export function ShootingRange({
   const [zoom, setZoom] = useState(DEFAULT_SCOPE_ZOOM);
   const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
   const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
+  const [parallaxFocusM, setParallaxFocusM] = useState(100);
+  const [reticleIllum, setReticleIllum] = useState(0);
+  const tubeMode = realism === "high";
+  const blurPx = tubeMode ? focusBlurPx(distanceM, parallaxFocusM) : 0;
   const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
   const [shots, setShots] = useState<ShotImpact[]>([]);
   const [measurement, setMeasurement] = useState<GroupMeasurement | null>(
@@ -496,6 +524,27 @@ export function ShootingRange({
   /** Tracking test: stable realized click scale per axis (± clickErrorPercent). */
   const trackingClickScaleRef = useRef({ x: 1, y: 1 });
   const [recoilActive, setRecoilActive] = useState(false);
+  const bubbleLevel = useMemo(
+    () => resolveBubbleLevelFromKit(kitItems),
+    [kitItems],
+  );
+  const cantActive = isCantGameplayActive(realism, !!bubbleLevel);
+  const cantActiveRef = useRef(cantActive);
+  cantActiveRef.current = cantActive;
+  const [cantDeg, setCantDeg] = useState(() =>
+    initialCantDeg(realism, !!resolveBubbleLevelFromKit(kitItems)),
+  );
+  const cantDegRef = useRef(cantDeg);
+  cantDegRef.current = cantDeg;
+  const liveCantDeg = () =>
+    cantActiveRef.current ? cantDegRef.current : 0;
+
+  useEffect(() => {
+    if (cantActive) return;
+    if (cantDegRef.current === 0) return;
+    cantDegRef.current = 0;
+    setCantDeg(0);
+  }, [cantActive]);
   const recoilClearRef = useRef<number | null>(null);
   /** Tracking test: freeze reticle (ignore F release until unlock). */
   const [trackingLocked, setTrackingLocked] = useState(false);
@@ -512,6 +561,8 @@ export function ShootingRange({
     down: null,
     left: null,
     right: null,
+    ccw: null,
+    cw: null,
   });
   const aimRef = useRef(aimMm);
   const aimDragRef = useRef<{
@@ -819,12 +870,11 @@ export function ShootingRange({
         },
       );
       // Drop card @ 0 °C wins over live physics when filled.
-      let impactXMm = shot.xMm;
-      let impactYMm = shot.yMm;
+      let dropMm = shot.dropBelowLosMm;
       if (usingReal && realLoad) {
         const tableCm = interpolateRealDropCm(realLoad, distanceRef.current);
         if (tableCm != null) {
-          impactYMm = shot.yMm - shot.dropBelowLosMm + tableCm * 10;
+          dropMm = tableCm * 10;
         }
       }
       const clickErr = scope.scope.clickErrorPercent ?? 0;
@@ -846,9 +896,23 @@ export function ShootingRange({
               distanceRef.current,
             ),
           };
+      const windageMm = shot.spinDriftMm;
+      const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
+      const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
+      const impactBase = composeCantedImpactMm({
+        poaXMm: poa.xMm,
+        poaYMm: poa.yMm,
+        zeroXMm: realizedZero.xMm,
+        zeroYMm: realizedZero.yMm,
+        scatterXMm,
+        scatterYMm,
+        dropMm,
+        windageMm,
+        cantDeg: liveCantDeg(),
+      });
       const impact: ShotImpact = {
-        xMm: impactXMm + realizedZero.xMm,
-        yMm: impactYMm + realizedZero.yMm,
+        xMm: impactBase.xMm,
+        yMm: impactBase.yMm,
         diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
         v0Mps: shot.v0,
       };
@@ -1143,6 +1207,22 @@ export function ShootingRange({
         if (dir === "right") nudgeAim(step, 0);
         return;
       }
+      if (e.key === "q" || e.key === "Q") {
+        if (!cantActiveRef.current) return;
+        e.preventDefault();
+        if (keysRef.current.ccw != null) return;
+        keysRef.current.ccw = performance.now();
+        setCantDeg((c) => nudgeCantDeg(c, -CANT_KEY_DEG_PER_SEC * 0.08));
+        return;
+      }
+      if (e.key === "e" || e.key === "E") {
+        if (!cantActiveRef.current) return;
+        e.preventDefault();
+        if (keysRef.current.cw != null) return;
+        keysRef.current.cw = performance.now();
+        setCantDeg((c) => nudgeCantDeg(c, CANT_KEY_DEG_PER_SEC * 0.08));
+        return;
+      }
       if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         if (!scope) return;
@@ -1169,6 +1249,8 @@ export function ShootingRange({
       if (e.key === "ArrowDown") keysRef.current.down = null;
       if (e.key === "ArrowLeft") keysRef.current.left = null;
       if (e.key === "ArrowRight") keysRef.current.right = null;
+      if (e.key === "q" || e.key === "Q") keysRef.current.ccw = null;
+      if (e.key === "e" || e.key === "E") keysRef.current.cw = null;
       if (e.key === "f" || e.key === "F") {
         fHeldRef.current = false;
         endFocus("Fokus sluppet — avtrekk avbrutt.");
@@ -1269,6 +1351,22 @@ export function ShootingRange({
         y = Math.max(-aimLimit, Math.min(aimLimit, y));
       }
       aimRef.current = { x, y };
+
+      const cantCcw = scopeAimHoldMult(k.ccw, now);
+      const cantCw = scopeAimHoldMult(k.cw, now);
+      if (cantActiveRef.current && (cantCcw > 0 || cantCw > 0)) {
+        let next = cantDegRef.current;
+        if (cantCcw > 0) {
+          next = nudgeCantDeg(next, -CANT_KEY_DEG_PER_SEC * dt * cantCcw);
+        }
+        if (cantCw > 0) {
+          next = nudgeCantDeg(next, CANT_KEY_DEG_PER_SEC * dt * cantCw);
+        }
+        if (next !== cantDegRef.current) {
+          cantDegRef.current = next;
+          setCantDeg(next);
+        }
+      }
 
       if (focusShouldAbort(focusRef.current, now)) {
         endFocus("Fokus brutt etter 7 s — slipp F og start på nytt.");
@@ -1521,6 +1619,7 @@ export function ShootingRange({
     setShots([]);
     setMeasurement(null);
     realSeriesEnvelopeMoaRef.current = null;
+    setCantDeg(initialCantDeg(realism, cantActiveRef.current));
     abortTrigger("");
     setStatus("Ny serie — hold Fokus, piltaster, hold Avtrekk.");
     wobblePhase.current = { a: Math.random() * 10, b: Math.random() * 10 };
@@ -1567,7 +1666,9 @@ export function ShootingRange({
       setSessionZeroXMm((prev) => clampTurretMm(prev + deltaMm));
       return;
     }
-    setSessionZeroYMm((prev) => clampTurretMm(prev + deltaMm));
+    setSessionZeroYMm((prev) =>
+      clampElevationTurretMm(prev + deltaMm, scope?.scope),
+    );
   }
 
   function saveCurrentZero() {
@@ -2492,6 +2593,7 @@ export function ShootingRange({
           sessionZeroYMm={sessionZeroYMm}
           onNudge={nudgeZero}
           clickUnit={scope.scope.clickUnit}
+          hideShooterDials={tubeMode}
           enviroPanel={
             <HuntShotConditions
               rangeM={distanceM}
@@ -2535,6 +2637,7 @@ export function ShootingRange({
                             densityRatio,
                             powderTempC: weather.live.temperatureC,
                             dvDtMpsPerC: kestrelAmmoSolve.dvDtMpsPerC,
+                            cantDeg: liveCantDeg(),
                           },
                         ).dialYMmAt100,
                         scope.scope.clickUnit,
@@ -2606,7 +2709,7 @@ export function ShootingRange({
                   !comboKey ||
                   (sessionZeroXMm === 0 && sessionZeroYMm === 0) ||
                   Math.abs(sessionZeroXMm) > MAX_TURRET_OFFSET_MM ||
-                  Math.abs(sessionZeroYMm) > MAX_TURRET_OFFSET_MM
+                  Math.abs(sessionZeroYMm) > ZEROING_AIM_LIMIT_MM_AT_100M
                 }
                 onClick={saveCurrentZero}
               >
@@ -2645,51 +2748,159 @@ export function ShootingRange({
             className="range-barrel-heat"
             heat01={barrelHeat01}
           />
-          <ScopeOpticFit>
-          <div className="scope-stage-optic-row">
-            <div className="range-side-rail range-side-rail--focus">
-              <span
-                className={
-                  focusUi.phase === "focused"
-                    ? "range-side-rail-label is-focused"
-                    : focusUi.phase === "settling" ||
-                        focusUi.phase === "fatigued"
-                      ? "range-side-rail-label is-fatigued"
-                      : "range-side-rail-label"
+          <MaybeScopeTube
+            enabled={tubeMode}
+            scopeId={scope.id}
+            elevation={
+              <ScopeElevationDial
+                sessionZeroMm={sessionZeroYMm}
+                onNudge={(d) =>
+                  setSessionZeroYMm((y) =>
+                    clampElevationTurretMm(y + d, scope.scope),
+                  )
                 }
-              >
-                {focusLabel}
-              </span>
-              <div
-                ref={focusBarRef}
-                className="range-focus-bar"
-                aria-hidden
-              >
-                <div ref={focusFillRef} className="range-focus-fill" />
+                clickUnit={scope.scope.clickUnit}
+              />
+            }
+            parallax={
+              <div className="scope-tube-para-stack">
+                <IlluminationTurret
+                  value={reticleIllum}
+                  onChange={setReticleIllum}
+                />
+                <ParallaxTurret
+                  focusM={parallaxFocusM}
+                  onChange={setParallaxFocusM}
+                />
               </div>
-              {lane === "tracking-test" ? (
-                <button
-                  type="button"
-                  className={
-                    trackingLocked
-                      ? "intro-button range-tracking-lock is-active"
-                      : "intro-button sheriff-secondary range-tracking-lock"
-                  }
-                  aria-pressed={trackingLocked}
-                  onClick={() => setTrackingLock(!trackingLocked)}
-                >
-                  {trackingLocked ? "Unlock" : "Lock"}
-                </button>
-              ) : null}
-            </div>
+            }
+            windage={
+              <ScopeWindageDial
+                sessionZeroMm={sessionZeroXMm}
+                onNudge={(d) =>
+                  setSessionZeroXMm((x) => clampTurretMm(x + d))
+                }
+                clickUnit={scope.scope.clickUnit}
+              />
+            }
+            focusRail={
+              tubeMode ? (
+                <div className="range-side-rail range-side-rail--focus">
+                  <span
+                    className={
+                      focusUi.phase === "focused"
+                        ? "range-side-rail-label is-focused"
+                        : focusUi.phase === "settling" ||
+                            focusUi.phase === "fatigued"
+                          ? "range-side-rail-label is-fatigued"
+                          : "range-side-rail-label"
+                    }
+                  >
+                    {focusLabel}
+                  </span>
+                  <div
+                    ref={focusBarRef}
+                    className="range-focus-bar"
+                    aria-hidden
+                  >
+                    <div ref={focusFillRef} className="range-focus-fill" />
+                  </div>
+                  {lane === "tracking-test" ? (
+                    <button
+                      type="button"
+                      className={
+                        trackingLocked
+                          ? "intro-button range-tracking-lock is-active"
+                          : "intro-button sheriff-secondary range-tracking-lock"
+                      }
+                      aria-pressed={trackingLocked}
+                      onClick={() => setTrackingLock(!trackingLocked)}
+                    >
+                      {trackingLocked ? "Unlock" : "Lock"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null
+            }
+            triggerRail={
+              tubeMode ? (
+                <div className="range-side-rail range-side-rail--trigger">
+                  <span
+                    className={
+                      triggerUi.pending
+                        ? "range-side-rail-label is-trigger"
+                        : "range-side-rail-label"
+                    }
+                  >
+                    {lane === "tracking-test"
+                      ? "—"
+                      : triggerUi.pending
+                        ? "Avtrekk…"
+                        : "Avtrekk"}
+                  </span>
+                  <div
+                    className="range-trigger-bar"
+                    aria-hidden
+                    style={{
+                      ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                    }}
+                  >
+                    <div ref={triggerFillRef} className="range-trigger-fill" />
+                    {triggerUi.targetPct > 0 ? (
+                      <span className="range-trigger-mark" />
+                    ) : null}
+                  </div>
+                </div>
+              ) : null
+            }
+          >
+            <ScopeOpticFit>
+              <div className="scope-stage-optic-row">
+                {!tubeMode ? (
+                  <div className="range-side-rail range-side-rail--focus">
+                    <span
+                      className={
+                        focusUi.phase === "focused"
+                          ? "range-side-rail-label is-focused"
+                          : focusUi.phase === "settling" ||
+                              focusUi.phase === "fatigued"
+                            ? "range-side-rail-label is-fatigued"
+                            : "range-side-rail-label"
+                      }
+                    >
+                      {focusLabel}
+                    </span>
+                    <div
+                      ref={focusBarRef}
+                      className="range-focus-bar"
+                      aria-hidden
+                    >
+                      <div ref={focusFillRef} className="range-focus-fill" />
+                    </div>
+                    {lane === "tracking-test" ? (
+                      <button
+                        type="button"
+                        className={
+                          trackingLocked
+                            ? "intro-button range-tracking-lock is-active"
+                            : "intro-button sheriff-secondary range-tracking-lock"
+                        }
+                        aria-pressed={trackingLocked}
+                        onClick={() => setTrackingLock(!trackingLocked)}
+                      >
+                        {trackingLocked ? "Unlock" : "Lock"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
 
-            <div
-              className={
-                fovDiameterScale > 1
-                  ? "scope-optic is-fov-premium"
-                  : "scope-optic"
-              }
-            >
+                <div
+                  className={
+                    fovDiameterScale > 1
+                      ? "scope-optic is-fov-premium"
+                      : "scope-optic"
+                  }
+                >
               <div
                 className={
                   recoilActive
@@ -2712,7 +2923,8 @@ export function ShootingRange({
                 onPointerLeave={onAimPointerLeave}
                 onLostPointerCapture={onAimPointerUp}
               >
-                <div ref={scopeWorldRef} className="scope-world">
+                <div ref={scopeWorldRef} className="scope-world"
+                style={blurPx > 0.05 ? { filter: `blur(${blurPx.toFixed(2)}px)` } : undefined}>
                   <div ref={mirageSceneRef} className="scope-world-scene">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -2804,6 +3016,7 @@ export function ShootingRange({
                     scope={scope.scope}
                     zoom={zoom}
                     imgScale={reticleImgScale}
+                    illumination={tubeMode ? reticleIllum : 0}
                   />
                 </div>
                 <div className="scope-vignette" aria-hidden />
@@ -2813,6 +3026,14 @@ export function ShootingRange({
                 zoom={zoom}
                 onChange={(z) => setZoom(z)}
               />
+              {cantActive && bubbleLevel ? (
+                <BubbleLevel
+                  visualId={bubbleLevel.visualId}
+                  cantDeg={cantDeg}
+                  onCantChange={setCantDeg}
+                  disabled={!!measurement}
+                />
+              ) : null}
             </div>
 
             {lane !== "tracking-test" ? (
@@ -2843,35 +3064,38 @@ export function ShootingRange({
               </div>
             ) : null}
 
-            <div className="range-side-rail range-side-rail--trigger">
-              <span
-                className={
-                  triggerUi.pending
-                    ? "range-side-rail-label is-trigger"
-                    : "range-side-rail-label"
-                }
-              >
-                {lane === "tracking-test"
-                  ? "—"
-                  : triggerUi.pending
-                    ? "Avtrekk…"
-                    : "Avtrekk"}
-              </span>
-              <div
-                className="range-trigger-bar"
-                aria-hidden
-                style={{
-                  ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-                }}
-              >
-                <div ref={triggerFillRef} className="range-trigger-fill" />
-                {triggerUi.targetPct > 0 ? (
-                  <span className="range-trigger-mark" />
+                {!tubeMode ? (
+                  <div className="range-side-rail range-side-rail--trigger">
+                    <span
+                      className={
+                        triggerUi.pending
+                          ? "range-side-rail-label is-trigger"
+                          : "range-side-rail-label"
+                      }
+                    >
+                      {lane === "tracking-test"
+                        ? "—"
+                        : triggerUi.pending
+                          ? "Avtrekk…"
+                          : "Avtrekk"}
+                    </span>
+                    <div
+                      className="range-trigger-bar"
+                      aria-hidden
+                      style={{
+                        ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
+                      }}
+                    >
+                      <div ref={triggerFillRef} className="range-trigger-fill" />
+                      {triggerUi.targetPct > 0 ? (
+                        <span className="range-trigger-mark" />
+                      ) : null}
+                    </div>
+                  </div>
                 ) : null}
               </div>
-            </div>
-          </div>
-          </ScopeOpticFit>
+            </ScopeOpticFit>
+          </MaybeScopeTube>
 
           <div className="range-touch-controls" aria-label="Mobilkontroller">
             <button

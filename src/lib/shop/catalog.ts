@@ -396,6 +396,9 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       focalPlane: "FFP",
       reticleId: "zco-527-mpct",
       clickUnit: "MRAD",
+      zeroStop: -5,
+      /** ~35 mrad / multi-rev elevation travel. */
+      elevationUpClicks: 350,
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.025,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
@@ -3947,6 +3950,22 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       mirageRequiresSuppressor: true,
       weaponCalmGrams: 100,
       weaponCalmRequiresSuppressor: true,
+    },
+  },
+  {
+    id: "misc-ulf-bubblelevel",
+    category: "misc",
+    brand: "Ulf",
+    name: "Bubblelevel",
+    priceNok: 890,
+    note:
+      "Skinne-vater montert på våpenet — viser om rifla tipper (cant). " +
+      "Gun-kit: bobla synes nede til venstre i scope-view på jakt og bane " +
+      "(realism high). Dra eller tipp til bobla ligger mellom strekene før skudd.",
+    misc: {
+      enduranceGrams: 0,
+      isBubbleLevel: true,
+      bubbleLevelVisual: "ulf",
     },
   },
 

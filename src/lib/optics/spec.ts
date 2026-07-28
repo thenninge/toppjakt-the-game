@@ -17,6 +17,9 @@ export const SCOPE_FOV_DIAMETER_STANDARD = 1;
  */
 export const SCOPE_FOV_DIAMETER_PREMIUM = 1.15;
 
+/** Default max elevation UP clicks when a scope omits `elevationUpClicks`. */
+export const DEFAULT_ELEVATION_UP_CLICKS = 200;
+
 export type ScopeSpec = {
   /**
    * Main tube outer diameter (mm). Mounts must match exactly —
@@ -31,6 +34,20 @@ export type ScopeSpec = {
   reticleId?: string;
   clickUnit: ScopeClickUnit;
   /**
+   * Elevation lower face-click limit (zero-stop). UP-positive face scale.
+   * Optional — omit = no zero-stop (down travel matches upper magnitude).
+   * Absolute mechanical stop only — NOT per-revolution face wrap.
+   *
+   * Signed clicks below / at zero, e.g. `-5`, `-50`, or `0` (hard zero).
+   * Legacy positive values (`5`) are treated as `−5`.
+   */
+  zeroStop?: number;
+  /**
+   * Elevation upper face-click limit from mechanical zero (multi-rev OK).
+   * Omit → {@link DEFAULT_ELEVATION_UP_CLICKS}. ZCO 5-27 ≈ 350 (35 mrad).
+   */
+  elevationUpClicks?: number;
+  /**
    * Symmetric turret click-size error (± percent of nominal).
    * 0 = exact 0.1 mil / ¼ MOA; 10 = each dialed click may realize ±10%.
    * Applied to player dials (saved + session), not factory cold-bore base.
@@ -43,12 +60,69 @@ export type ScopeSpec = {
    */
   zeroRetentionInaccuracy: number;
   /**
+   * Extra image-scale multiplier at all zooms (FOV fine-tune).
+   * 1 = default shared FOV; >1 = narrower FOV (more magnification feel).
+   * Omit → {@link SCOPE_ZOOM_MAG_CAL} / 1.
+   */
+  zoomMagCal?: number;
+  /**
    * Scope-circle diameter multiplier vs medium glass (Element = 1).
    * Premium (ZCO/Kahles/NF/SB/Razor) = {@link SCOPE_FOV_DIAMETER_PREMIUM}.
    * At in-game 27×, premium circle shows ±7.2 mrad centre→edge (real ZCO).
    */
   fovDiameterScale?: number;
 };
+
+/**
+ * Elevation face-click window (UP-positive face, absolute mechanical).
+ * - `max` = upper bound (`elevationUpClicks`)
+ * - `min` = zero-stop lower bound (`zeroStop`, e.g. −5 / −50), or `−max` if omitted
+ */
+export function scopeElevationFaceLimits(
+  scope:
+    | Pick<ScopeSpec, "zeroStop" | "elevationUpClicks">
+    | null
+    | undefined,
+): { min: number; max: number } {
+  const max = scopeElevationUpClicks(scope);
+  const raw = scope?.zeroStop;
+  let min: number;
+  if (raw == null || !Number.isFinite(raw)) {
+    min = -max;
+  } else {
+    const n = Math.round(raw);
+    /* Signed lower bound; legacy positive N → −N. */
+    min = n > 0 ? -n : n;
+  }
+  if (min > max) min = max;
+  return { min, max };
+}
+
+/**
+ * @deprecated Prefer {@link scopeElevationFaceLimits}.max
+ * Max elevation UP clicks (absolute from mechanical zero).
+ */
+export function scopeElevationUpClicks(
+  scope: Pick<ScopeSpec, "elevationUpClicks"> | null | undefined,
+): number {
+  const n = scope?.elevationUpClicks;
+  if (n == null || !Number.isFinite(n) || n < 0) {
+    return DEFAULT_ELEVATION_UP_CLICKS;
+  }
+  return Math.round(n);
+}
+
+/**
+ * @deprecated Prefer {@link scopeElevationFaceLimits}.min
+ * Zero-stop as positive “clicks down past zero”, or null if none.
+ */
+export function scopeZeroStopDownClicks(
+  scope: Pick<ScopeSpec, "zeroStop" | "elevationUpClicks"> | null | undefined,
+): number | null {
+  if (scope?.zeroStop == null || !Number.isFinite(scope.zeroStop)) return null;
+  const { min } = scopeElevationFaceLimits(scope);
+  return Math.max(0, -min);
+}
 
 export function scopeFovDiameterScale(
   scope: Pick<ScopeSpec, "fovDiameterScale"> | null | undefined,

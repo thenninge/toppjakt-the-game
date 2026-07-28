@@ -132,7 +132,7 @@ import {
 import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isThermalItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 import { skiKitSlot } from "@/lib/ski/spec";
-import { isHeadlampMisc, isFireStarterMisc, isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
+import { isHeadlampMisc, isFireStarterMisc, isCamcorderMisc, isCamcorderTripodMisc, isBubbleLevelMisc } from "@/lib/misc/spec";
 import { shotCamKitSlot } from "@/lib/hunt/shoot";
 import { isBallisticsItem } from "@/lib/shop";
 import { isWindMeterBallistics } from "@/lib/ballistics/spec";
@@ -1151,6 +1151,7 @@ export function IntroScreen() {
           if (isHeadlampMisc(item.misc)) return "headlamp";
           if (isCamcorderMisc(item.misc)) return "camcorder";
           if (isCamcorderTripodMisc(item.misc)) return "camcorderTripod";
+          if (isBubbleLevelMisc(item.misc)) return "bubbleLevel";
           return shotCamKitSlot(id);
         },
         (id) => {
@@ -1307,6 +1308,7 @@ export function IntroScreen() {
           if (isHeadlampMisc(item.misc)) return "headlamp";
           if (isCamcorderMisc(item.misc)) return "camcorder";
           if (isCamcorderTripodMisc(item.misc)) return "camcorderTripod";
+          if (isBubbleLevelMisc(item.misc)) return "bubbleLevel";
           return shotCamKitSlot(id);
         },
         (id) => {
@@ -1372,6 +1374,11 @@ export function IntroScreen() {
               onLangChange={(lang) =>
                 setStats((prev) =>
                   prev.lang === lang ? prev : { ...prev, lang },
+                )
+              }
+              onRealismChange={(realism) =>
+                setStats((prev) =>
+                  prev.realism === realism ? prev : { ...prev, realism },
                 )
               }
               authEmail={signedIn ? session?.user?.email ?? "Google" : null}
@@ -1794,6 +1801,7 @@ export function IntroScreen() {
             kestrelProfiles={stats.kestrelProfiles}
             realLoadProfiles={stats.realLoadProfiles}
             useRealDataInSimulation={stats.useRealDataInSimulation}
+            realism={stats.realism ?? "medium"}
             customsMods={stats.customsMods}
             weather={weather}
             onAffinitiesChange={(next) =>
@@ -1903,6 +1911,7 @@ export function IntroScreen() {
             onUpsertKestrelProfile={upsertKestrelProfile}
             realLoadProfiles={stats.realLoadProfiles}
             useRealDataInSimulation={stats.useRealDataInSimulation}
+            realism={stats.realism ?? "medium"}
             loadBenchRecipe={stats.loadBenchRecipe}
             homeLoadedLots={stats.homeLoadedLots}
             armedLoadPlan={stats.armedLoadPlan}

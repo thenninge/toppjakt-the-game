@@ -215,6 +215,7 @@ import {
   realLoadForRifle,
   type RealLoadProfile,
 } from "@/lib/ballistics/realLoad";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import { crosswindMs, fullValueWindageMs, type DayWeather } from "@/lib/weather/spec";
 import {
   ENCOUNTER_NERVE,
@@ -280,6 +281,8 @@ type HuntMapViewProps = {
   kestrelProfiles?: Record<string, KestrelGunProfile>;
   realLoadProfiles?: RealLoadProfile[];
   useRealDataInSimulation?: boolean;
+  /** medium = classic HUD dials; high = tube-mounted realistic turrets. */
+  realism?: GameRealism;
   customsMods?: CustomsMods;
   weather: DayWeather;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -568,6 +571,7 @@ export function HuntMapView({
   kestrelProfiles = {},
   realLoadProfiles = [],
   useRealDataInSimulation = false,
+  realism = "medium",
   customsMods = EMPTY_CUSTOMS_MODS,
   weather,
   onAffinitiesChange,
@@ -4342,6 +4346,7 @@ export function HuntMapView({
         kestrelProfiles={kestrelProfiles}
         realLoadProfiles={realLoadProfiles}
         useRealDataInSimulation={useRealDataInSimulation}
+        realism={realism}
         customsMoaDelta={customsMoaDelta}
         customsCalmMult={customsCalmMult}
         recoilDamping={computeRecoilDamping({

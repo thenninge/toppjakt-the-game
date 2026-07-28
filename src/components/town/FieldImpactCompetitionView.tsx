@@ -61,6 +61,7 @@ import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { useRangeAudio } from "@/components/range/useRangeAudio";
 import {
   angularMmAtDistance,
+  clampElevationTurretMm,
   clampTurretMm,
   getInventoryQty,
   getRifleRoundCount,
@@ -1657,7 +1658,9 @@ export function FieldImpactCompetitionView({
             if (axis === "x") {
               setSessionZeroXMm((v) => clampTurretMm(v + deltaMm));
             } else {
-              setSessionZeroYMm((v) => clampTurretMm(v + deltaMm));
+              setSessionZeroYMm((v) =>
+                clampElevationTurretMm(v + deltaMm, scope?.scope),
+              );
             }
           }}
         />

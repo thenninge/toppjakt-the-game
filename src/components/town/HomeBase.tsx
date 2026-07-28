@@ -58,7 +58,7 @@ import {
 } from "@/lib/customs/spec";
 import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import { BARREL_MAKERS } from "@/lib/customs/customBarrel";
-import { isSuppressorCoverMisc } from "@/lib/misc/spec";
+import { isBubbleLevelMisc, isSuppressorCoverMisc } from "@/lib/misc/spec";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
@@ -102,6 +102,7 @@ type RigSlotDef =
   | { kind: "shop"; key: ShopCategory; label: string }
   | { kind: "pipe"; label: string }
   | { kind: "wrap"; label: string }
+  | { kind: "bubble"; label: string }
   | { kind: "shotcam"; label: string };
 
 const WEAPON_RIG_SLOTS: RigSlotDef[] = [
@@ -111,6 +112,7 @@ const WEAPON_RIG_SLOTS: RigSlotDef[] = [
   { kind: "shop", key: "scope", label: "Kikkert" },
   { kind: "shop", key: "mount", label: "Montasje" },
   { kind: "wrap", label: "Wrap" },
+  { kind: "bubble", label: "Bubble level" },
   { kind: "shop", key: "stock", label: "Stokk" },
   { kind: "shotcam", label: "Triggercam" },
 ];
@@ -397,6 +399,10 @@ export function HomeBase({
       kitItems.find(
         (i) => isMiscItem(i) && isSuppressorCoverMisc(i.misc),
       ) ?? null;
+    const bubble =
+      kitItems.find(
+        (i) => isMiscItem(i) && isBubbleLevelMisc(i.misc),
+      ) ?? null;
     const shotCam =
       kitItems.find((i) => isShotCamItemId(i.id)) ?? null;
     const shotKind = resolveShotCamKind(kit);
@@ -473,6 +479,20 @@ export function HomeBase({
           weightGrams: wrap ? carryG : null,
           note: null as string | null,
           removable: !!wrap,
+        };
+      }
+      if (slot.kind === "bubble") {
+        const carryG = bubble
+          ? itemCarryWeightGrams(bubble, customsMods, kitItems)
+          : 0;
+        return {
+          key: "bubble",
+          label: slot.label,
+          item: bubble,
+          value: bubble ? itemLabel(bubble) : "— ikke valgt",
+          weightGrams: bubble ? carryG : null,
+          note: null as string | null,
+          removable: !!bubble,
         };
       }
       // shotcam
@@ -771,7 +791,7 @@ export function HomeBase({
         <section className="current-rig" aria-label="Current rig">
           <p className="shop-row-note current-rig-inline-note">
             Bare det som sitter på våpenet: våpen, pipe, lyddemper, kikkert,
-            montasje, wrap, stokk og triggercam. Vekt etter CB-tuning der det
+            montasje, wrap, bubble level, stokk og triggercam. Vekt etter CB-tuning der det
             gjelder. Pipe byttes hos CB Customs.
           </p>
           <ul className="current-rig-list">
@@ -1205,6 +1225,9 @@ export function HomeBase({
                                   ? " · én vindmåler i kit"
                                   : isShotCamItemId(item.id)
                                   ? " · én shotcam i kit"
+                                  : isMiscItem(item) &&
+                                      isBubbleLevelMisc(item.misc)
+                                    ? " · én bubble level i kit"
                                   : isCamcorderItemId(item.id)
                                     ? " · én camcorder i kit"
                                     : isCamcorderTripodItemId(item.id)

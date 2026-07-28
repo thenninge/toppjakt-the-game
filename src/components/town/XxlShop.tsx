@@ -582,6 +582,9 @@ export function XxlShop({
                     {misc.isSitPad
                       ? " · ×1.2 body på pause / tyribål"
                       : ""}
+                    {misc.isBubbleLevel
+                      ? " · bubble level · gun-kit (cant i scope)"
+                      : ""}
                     {misc.isRangeFan
                       ? " · bordvifte (blåser bort mirage på banen)"
                       : ""}

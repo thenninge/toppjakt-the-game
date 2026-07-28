@@ -834,6 +834,744 @@ body {
   margin: 0 auto;
 }
 
+/** Tube layout: elevation above, parallax left, windage right of glass. */
+.scope-tube-layout,
+.admin-scope-tube-layout {
+  /* Vertical screen size of side turrets; elevation uses the same as horizontal span. */
+  --scope-tube-turret-span: 11.5rem;
+  --admin-tube-turret-span: var(--scope-tube-turret-span);
+  display: grid;
+  grid-template-columns: auto auto auto;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    ". elev ."
+    "para optic wind";
+  align-items: center;
+  justify-items: center;
+  gap: 0;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* Realism High: short focus / avtrekk bars in the row above para / wind. */
+.scope-tube-layout[data-has-rails="true"] {
+  grid-template-areas:
+    "focus elev trigger"
+    "para optic wind";
+}
+
+.scope-tube-elev,
+.admin-scope-tube-elev {
+  grid-area: elev;
+  /* Flush to scope ring — padding matches index housing height (UP legend). */
+  margin-bottom: 0.12rem;
+  padding-bottom: 2.15rem;
+  box-sizing: content-box;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+  /* Sit on the glass; center the drum on the optic column. */
+  align-self: end;
+  justify-self: center;
+  width: max-content;
+}
+
+.scope-tube-layout .scope-tube-elev .scope-turret,
+.scope-tube-layout .scope-tube-elev .scope-turret-body,
+.scope-tube-layout .scope-tube-elev .scope-turret-shooter,
+.admin-scope-tube-layout .admin-scope-tube-elev .scope-turret,
+.admin-scope-tube-layout .admin-scope-tube-elev .scope-turret-body,
+.admin-scope-tube-layout .admin-scope-tube-elev .scope-turret-shooter {
+  overflow: visible;
+}
+
+.scope-tube-para,
+.admin-scope-tube-para {
+  grid-area: para;
+  align-self: center;
+  /* Flush to scope ring — same index-housing allowance as windage. */
+  margin-right: 0.12rem;
+  padding-right: var(--scope-tube-index-housing, 0.9rem);
+  box-sizing: content-box;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+.scope-tube-layout .scope-tube-para .scope-turret,
+.scope-tube-layout .scope-tube-para .scope-turret-body,
+.scope-tube-layout .scope-tube-para .scope-turret-shooter,
+.admin-scope-tube-layout .admin-scope-tube-para .scope-turret,
+.admin-scope-tube-layout .admin-scope-tube-para .scope-turret-body,
+.admin-scope-tube-layout .admin-scope-tube-para .scope-turret-shooter {
+  overflow: visible;
+}
+
+.scope-tube-optic,
+.admin-scope-tube-optic {
+  grid-area: optic;
+  /* Above elev/para/wind so zoom knob & ticks paint over turret housings. */
+  position: relative;
+  z-index: 4;
+}
+
+.scope-tube-wind,
+.admin-scope-tube-wind {
+  grid-area: wind;
+  align-self: center;
+  /* Flush to scope ring — only leave room for the index housing strip. */
+  margin-left: 0.12rem;
+  padding-left: var(--scope-tube-index-housing, 0.9rem);
+  box-sizing: content-box;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+.scope-tube-layout .scope-tube-wind .scope-turret,
+.scope-tube-layout .scope-tube-wind .scope-turret-body,
+.scope-tube-layout .scope-tube-wind .scope-turret-shooter,
+.admin-scope-tube-layout .admin-scope-tube-wind .scope-turret,
+.admin-scope-tube-layout .admin-scope-tube-wind .scope-turret-body,
+.admin-scope-tube-layout .admin-scope-tube-wind .scope-turret-shooter {
+  overflow: visible;
+}
+
+/**
+ * Realism High: focus / avtrekk bars sit above para / wind turrets,
+ * shortened ~60% (remain ~40% of side-turret span).
+ */
+.scope-tube-rail {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  height: calc(var(--admin-tube-turret-span) * 0.4);
+  max-height: calc(var(--admin-tube-turret-span) * 0.4);
+  box-sizing: border-box;
+  align-self: end;
+  margin-bottom: 0.28rem;
+  z-index: 2;
+}
+
+.scope-tube-rail--focus {
+  grid-area: focus;
+  justify-self: end;
+  /* Match para flush offset so the short bar lines up over the turret. */
+  margin-right: 0.12rem;
+  padding-right: var(--scope-tube-index-housing, 0.9rem);
+}
+
+.scope-tube-rail--trigger {
+  grid-area: trigger;
+  justify-self: start;
+  margin-left: 0.12rem;
+  padding-left: var(--scope-tube-index-housing, 0.9rem);
+}
+
+.scope-tube-rail .range-side-rail {
+  height: 100%;
+  padding-block: 0;
+  align-self: stretch;
+}
+
+.scope-tube-layout .scope-stage-optic-row {
+  position: relative;
+  gap: 0;
+  /* Size the optic grid column to the glass ring only — side chrome
+     (10× chip, etc.) must not shift elev/wind alignment. */
+  width: max-content;
+}
+
+.scope-tube-layout .scope-stage-optic-row .range-side-rail {
+  display: none;
+}
+
+/* Float 10× beside the glass without widening the optic column. */
+.scope-tube-layout .range-scope-10x-slot {
+  position: absolute;
+  left: 100%;
+  top: auto;
+  bottom: 0;
+  margin-left: 0.35rem;
+  height: auto;
+  align-self: auto;
+  padding-block: 0 0.55rem;
+  z-index: 5;
+}
+
+.scope-tube-para,
+.admin-scope-tube-para {
+  justify-self: end;
+}
+
+.scope-tube-wind,
+.admin-scope-tube-wind {
+  justify-self: start;
+}
+
+.scope-tube-layout .scope-turret,
+.admin-scope-tube-layout .scope-turret {
+  flex: 0 0 auto;
+  max-width: none;
+  gap: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.scope-tube-layout .scope-turret.scope-turret-view--shooter,
+.admin-scope-tube-layout .scope-turret.scope-turret-view--shooter {
+  max-width: none;
+  flex-basis: auto;
+}
+
+.scope-tube-layout .scope-turret-head,
+.scope-tube-layout .scope-turret-readout-line,
+.scope-tube-layout .scope-turret-step,
+.admin-scope-tube-layout .scope-turret-head,
+.admin-scope-tube-layout .scope-turret-readout-line,
+.admin-scope-tube-layout .scope-turret-step {
+  display: none;
+}
+
+.scope-tube-layout .scope-turret-body,
+.admin-scope-tube-layout .scope-turret-body {
+  /* Match hunt / range shooter dial body height. */
+  min-height: 7.2rem;
+  gap: 0;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-body,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-body {
+  min-height: var(--admin-tube-turret-span);
+  height: var(--admin-tube-turret-span);
+  align-items: stretch;
+  width: auto;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical {
+  min-height: var(--admin-tube-turret-span);
+  height: var(--admin-tube-turret-span);
+  max-width: none;
+  width: auto;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-main,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-main {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: auto;
+}
+
+/**
+ * ZCO-style: black tube-housing strip behind the index arrow.
+ * Tip sits flush on hashes; whole turret is shifted so strip clears glass ring.
+ */
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-base,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-base {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-100%);
+  z-index: 5;
+  width: var(--scope-tube-index-housing, 0.9rem);
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #000;
+  border-right: none;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(90deg, #030303 0%, #141414 55%, #0a0a0a 100%);
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 10px 14px rgba(0, 0, 0, 0.45),
+    inset 0 -10px 14px rgba(0, 0, 0, 0.45);
+  align-self: stretch;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-index,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-index {
+  margin-right: -0.22rem;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-cylinder,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-cylinder {
+  height: 100%;
+  width: 3.6rem;
+  flex: 0 0 3.6rem;
+  align-self: stretch;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-knurl,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-knurl {
+  width: 0.55rem;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-tick,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-tick {
+  padding-left: 0.12rem;
+  gap: 0.18rem;
+}
+
+.scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-num,
+.admin-scope-tube-layout .scope-turret--windage .scope-turret-shooter--vertical .scope-turret-shooter-num {
+  font-size: var(--scope-tube-wind-num-size, 1.24rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.scope-tube-layout .scope-turret-view--shooter.scope-turret--elevation .scope-turret-body,
+.admin-scope-tube-layout .scope-turret-view--shooter.scope-turret--elevation .scope-turret-body {
+  /* Beat `.scope-turret-view--shooter.scope-turret--elevation` min-height 8.6rem. */
+  min-height: 0;
+  height: auto;
+  width: var(--admin-tube-turret-span);
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal {
+  width: var(--admin-tube-turret-span);
+  max-width: var(--admin-tube-turret-span);
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-main,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-main {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-cylinder,
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-knurl,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-cylinder,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-knurl {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+/* Elevation matches windage density + dual-row ZCO face. */
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-tick,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-tick {
+  width: 6px;
+  flex: 0 0 6px;
+  padding-bottom: 0;
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-cylinder,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-cylinder {
+  height: 4.1rem;
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-num,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-num {
+  font-size: var(--scope-tube-elev-num-size, 1.24rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-rev2,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-rev2 {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(242, 242, 242, 0.82);
+}
+
+/**
+ * Mirror of windage index housing: strip below the drum (toward glass),
+ * tip pulled flush onto hashes.
+ */
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-base,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-base {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  transform: translateY(100%);
+  z-index: 5;
+  width: 100%;
+  height: auto;
+  padding: 0.15rem 0.35rem 0.28rem;
+  margin: 0;
+  border: 1px solid #000;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(180deg, #141414 0%, #050505 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 10px 0 14px rgba(0, 0, 0, 0.45),
+    inset -10px 0 14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  box-sizing: border-box;
+  max-width: none;
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-index,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-index {
+  /* Mirror of windage margin-right: −0.22rem — tip into hashes. */
+  margin-top: -0.22rem;
+}
+
+.scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-legend,
+.admin-scope-tube-layout .scope-turret--elevation .scope-turret-shooter--horizontal .scope-turret-shooter-legend {
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+}
+
+.scope-tube-layout .scope-turret-click-row,
+.admin-scope-tube-layout .scope-turret-click-row {
+  display: none;
+}
+
+.scope-tube-layout .scope-stage,
+.admin-scope-tube-layout .scope-stage {
+  margin: 0;
+}
+
+.scope-tube-optic .scope-optic,
+.admin-scope-tube-optic .scope-optic {
+  padding: 0;
+  overflow: visible;
+}
+
+/**
+ * Optic pad is 0 in tube layout, so zoom ring must not keep the old 1.15rem
+ * inset (that pulled knob/ticks inside the glass). inset 0 aligns centers
+ * with the viewport rim — mid bronze bezel (border + outer ring).
+ */
+.scope-tube-optic .scope-zoom-ring,
+.admin-scope-tube-optic .scope-zoom-ring {
+  inset: 0;
+}
+
+/** No boxed “current click” readout on tube dials. */
+.scope-tube-layout .scope-turret-shooter-tick.is-current .scope-turret-shooter-num,
+.admin-scope-tube-layout .scope-turret-shooter-tick.is-current .scope-turret-shooter-num {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #f2f2f2;
+  box-shadow: none;
+}
+
+.scope-tube-layout .scope-turret-shooter-tick.is-current:not(.is-major) .scope-turret-shooter-num,
+.admin-scope-tube-layout .scope-turret-shooter-tick.is-current:not(.is-major) .scope-turret-shooter-num {
+  font-size: inherit;
+}
+
+/** Compact parallax focus drum (admin tube) — scrolls under fixed index. */
+.scope-turret--parallax.scope-turret--compact {
+  padding: 0;
+}
+
+.parallax-drum .scope-turret-shooter-cylinder.parallax-drum-cylinder {
+  width: 3.6rem;
+  height: auto;
+  min-height: var(--admin-tube-turret-span, 11.5rem);
+  align-self: stretch;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.scope-tube-layout .parallax-drum.scope-turret-shooter--vertical,
+.admin-scope-tube-layout .parallax-drum.scope-turret-shooter--vertical{
+  min-height: var(--admin-tube-turret-span);
+  height: var(--admin-tube-turret-span);
+  max-width: none;
+  width: auto;
+}
+
+.scope-tube-layout .parallax-drum .scope-turret-shooter-main,
+.scope-tube-layout .parallax-drum-main,
+.admin-scope-tube-layout .parallax-drum .scope-turret-shooter-main,
+.admin-scope-tube-layout .parallax-drum-main {
+  position: relative;
+  height: 100%;
+  align-self: stretch;
+  width: auto;
+}
+
+.scope-tube-layout .parallax-drum .scope-turret-shooter-knurl,
+.admin-scope-tube-layout .parallax-drum .scope-turret-shooter-knurl{
+  width: 0.55rem;
+}
+
+/**
+ * Exact mirror of windage index housing (same specificity so we beat
+ * `.scope-turret-shooter--vertical .scope-turret-shooter-base` width 2.35rem).
+ * Tip on glass side of drum, flush on hashes via margin-left −0.22rem.
+ */
+.scope-tube-layout .scope-turret--parallax
+  .scope-turret-shooter--vertical
+  .scope-turret-shooter-base,
+.admin-scope-tube-layout .scope-turret--parallax
+  .scope-turret-shooter--vertical
+  .scope-turret-shooter-base{
+  position: absolute;
+  right: 0;
+  left: auto;
+  top: 0;
+  bottom: 0;
+  transform: translateX(100%);
+  z-index: 5;
+  width: var(--scope-tube-index-housing, 0.9rem);
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #000;
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(270deg, #030303 0%, #141414 55%, #0a0a0a 100%);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 10px 14px rgba(0, 0, 0, 0.45),
+    inset 0 -10px 14px rgba(0, 0, 0, 0.45);
+  align-self: stretch;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.scope-tube-layout .scope-turret--parallax
+  .scope-turret-shooter--vertical
+  .scope-turret-shooter-index,
+.admin-scope-tube-layout .scope-turret--parallax
+  .scope-turret-shooter--vertical
+  .scope-turret-shooter-index{
+  /* Point left (mirror of windage’s border-left triangle). */
+  border-left: none !important;
+  border-right: 0.55rem solid #fff !important;
+  border-top: 0.38rem solid transparent !important;
+  border-bottom: 0.38rem solid transparent !important;
+  /* Mirror of windage margin-right: −0.22rem — tip into hashes. */
+  margin-left: -0.22rem;
+  margin-right: 0;
+}
+
+.parallax-drum-band {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.parallax-drum-mark {
+  position: absolute;
+  left: 0.12rem;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.18rem;
+  margin-top: 0;
+  will-change: transform;
+}
+
+.parallax-drum-hash {
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 1.5px;
+  background: rgba(240, 240, 240, 0.55);
+  order: 2;
+}
+
+.parallax-drum-num {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: var(--scope-tube-para-num-size, 0.72rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f2f2f2;
+  line-height: 1;
+  text-shadow: 0 1px 0 #000;
+  order: 1;
+}
+
+/**
+ * Outer illumination tower — left of parallax knurl (smaller, all-knurl face).
+ * Stepless drag; sun icon marks the control.
+ */
+.scope-tube-para-stack,
+.admin-scope-tube-para .scope-tube-para-stack {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.18rem;
+}
+
+.scope-turret--illum.scope-turret--compact {
+  padding: 0;
+}
+
+.illum-drum {
+  min-height: calc(var(--admin-tube-turret-span, 11.5rem) * 0.58);
+  height: calc(var(--admin-tube-turret-span, 11.5rem) * 0.58);
+  width: auto;
+  max-width: none;
+}
+
+.illum-drum-main {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  height: 100%;
+  width: auto;
+}
+
+.illum-drum-face {
+  position: relative;
+  width: 1.55rem;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #0a0806;
+  border-radius: 3px 0 0 3px;
+  cursor: ns-resize;
+  touch-action: none;
+  box-shadow:
+    inset 4px 0 8px rgba(0, 0, 0, 0.45),
+    inset -3px 0 6px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.illum-drum-knurl {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      -58deg,
+      #0e0c0a 0 2px,
+      #2a221a 2px 4px,
+      #080706 4px 6px,
+      #1c1612 6px 8px,
+      #3a3028 8px 10px
+    );
+  /* Stepless “rotation” feedback. */
+  background-position: 0 calc(var(--illum-t, 0) * -48px);
+  opacity: 0.95;
+}
+
+.illum-drum-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.illum-drum-shade--a {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.55) 0%,
+    transparent 38%,
+    transparent 62%,
+    rgba(0, 0, 0, 0.5) 100%
+  );
+}
+
+.illum-drum-shade--b {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    transparent 28%,
+    transparent 72%,
+    rgba(0, 0, 0, 0.55) 100%
+  );
+}
+
+.illum-drum-sun {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f4f4f4;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.85));
+  line-height: 0;
+}
+
+.illum-drum-sun--half {
+  color: #ececec;
+  opacity: 0.92;
+}
+
+.illum-drum-sun--max {
+  color: #fff;
+  filter:
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.55))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
+}
+
+.illum-drum-band {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.illum-drum-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
+}
+
+.illum-drum-num {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f2f2f2;
+  line-height: 1;
+  text-shadow: 0 1px 0 #000;
+}
+
+.illum-index-base {
+  position: relative;
+  flex: 0 0 auto;
+  width: 0.55rem;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: linear-gradient(270deg, #030303 0%, #141414 55%, #0a0a0a 100%);
+  border: 1px solid #000;
+  border-left: none;
+  border-radius: 0 2px 2px 0;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+.illum-index {
+  width: 0;
+  height: 0;
+  border-top: 0.28rem solid transparent;
+  border-bottom: 0.28rem solid transparent;
+  border-right: 0.38rem solid #fff;
+  margin-left: -0.08rem;
+}
+
+.scope-turret--illum.is-disabled .illum-drum-face {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /** White glass behind every skive and bird in Admin → Scopes. */
 .admin-scope-test .scope-viewport {
   background: #fff;
@@ -879,6 +1617,143 @@ body {
 .admin-scope-sprite-scale-ends {
   font-size: 0.68rem;
   color: var(--canyon-dust);
+}
+
+.admin-scope-rot-field {
+  flex: 1 1 16rem;
+  min-width: 14rem;
+}
+
+.admin-scope-rot-slider {
+  width: 100%;
+  accent-color: var(--accent-gold);
+  cursor: pointer;
+}
+
+.admin-scope-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(107, 82, 56, 0.55);
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.admin-scope-cal-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--canyon-dust);
+}
+
+.admin-scope-cal-hint code {
+  font-size: 0.68rem;
+  color: var(--accent-gold);
+}
+
+.admin-scope-cal-clicks {
+  align-self: center;
+  font-size: 0.78rem;
+  color: var(--canyon-dust);
+  white-space: nowrap;
+}
+
+/** Fixed glass-centre cross for optical-centre / rotation alignment. */
+.admin-scope-help-cross {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.admin-scope-help-cross-h,
+.admin-scope-help-cross-v {
+  position: absolute;
+  background: #3dff6a;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  opacity: 0.92;
+}
+
+.admin-scope-help-cross-h {
+  left: 4%;
+  right: 4%;
+  top: 50%;
+  height: 1px;
+  margin-top: -0.5px;
+}
+
+.admin-scope-help-cross-v {
+  top: 4%;
+  bottom: 4%;
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+}
+
+.admin-scope-help-cross-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: #3dff6a;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.65),
+    0 0 6px rgba(61, 255, 106, 0.55);
+}
+
+/** Mil rings for FOV / hashmark calibration (Admin → Scopes). */
+.admin-scope-mil-rings {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.admin-scope-mil-rings-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  box-sizing: border-box;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+}
+
+.admin-scope-mil-rings.is-fov .admin-scope-mil-rings-ring {
+  border: 1px solid rgba(255, 176, 32, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.admin-scope-mil-rings.is-hash .admin-scope-mil-rings-ring {
+  border: 1px dashed rgba(64, 200, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.admin-scope-mil-rings-ring::after {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  content: attr(data-mil);
+  text-shadow:
+    0 0 2px #000,
+    0 1px 2px #000;
+}
+
+.admin-scope-mil-rings.is-fov .admin-scope-mil-rings-ring::after {
+  color: #ffb020;
+}
+
+.admin-scope-mil-rings.is-hash .admin-scope-mil-rings-ring::after {
+  color: #40c8ff;
 }
 
 .admin-hit-zones {
@@ -6446,8 +7321,8 @@ body {
 
 .scope-turret-shooter--vertical .scope-turret-shooter-tick {
   width: 100%;
-  height: 14px;
-  flex: 0 0 14px;
+  height: 6px;
+  flex: 0 0 6px;
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
@@ -6468,25 +7343,43 @@ body {
 }
 
 .scope-turret-shooter-rev2 {
-  position: absolute;
-  top: 0.2rem;
+  position: relative;
+  top: auto;
   font-family: var(--font-ui, system-ui), sans-serif;
   font-size: 0.55rem;
   font-weight: 600;
-  color: rgba(242, 242, 242, 0.7);
+  color: rgba(242, 242, 242, 0.72);
+  line-height: 1;
+  order: -1;
+}
+
+.scope-turret-shooter--horizontal .scope-turret-shooter-tick {
+  justify-content: flex-end;
+  gap: 0.08rem;
+  padding-bottom: 0.15rem;
+}
+
+.scope-turret-shooter--horizontal .scope-turret-shooter-rev2 {
+  position: relative;
+  top: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(242, 242, 242, 0.78);
 }
 
 .scope-turret-shooter--vertical .scope-turret-shooter-rev2 {
+  position: absolute;
   top: 50%;
   right: 0.15rem;
   left: auto;
   transform: translateY(-50%);
+  order: 0;
 }
 
 .scope-turret-shooter-hash {
   width: 1.5px;
-  height: 0.55rem;
-  background: rgba(240, 240, 240, 0.75);
+  height: 0.4rem;
+  background: rgba(240, 240, 240, 0.55);
 }
 
 .scope-turret-shooter-tick.is-major .scope-turret-shooter-hash {
@@ -6497,23 +7390,24 @@ body {
 
 .scope-turret-shooter-tick.is-semi .scope-turret-shooter-hash {
   width: 1.75px;
-  height: 0.66rem;
-  background: rgba(250, 250, 250, 0.92);
+  height: 0.68rem;
+  background: rgba(250, 250, 250, 0.95);
 }
 
 .scope-turret-shooter--vertical .scope-turret-shooter-hash {
-  width: 0.55rem;
+  width: 0.38rem;
   height: 1.5px;
   order: -1;
 }
 
 .scope-turret-shooter--vertical .scope-turret-shooter-tick.is-major .scope-turret-shooter-hash {
-  width: 0.78rem;
+  width: 0.85rem;
   height: 2px;
 }
 
+/* Every 5 clicks (0.5 mil) — clearly longer than minors, like ZCO. */
 .scope-turret-shooter--vertical .scope-turret-shooter-tick.is-semi .scope-turret-shooter-hash {
-  width: 0.66rem;
+  width: 0.72rem;
   height: 1.75px;
 }
 
@@ -6576,6 +7470,18 @@ body {
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #f0f0f0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.scope-turret-shooter-legend-arrow {
+  width: 0;
+  height: 0;
+  border-top: 0.28rem solid transparent;
+  border-bottom: 0.28rem solid transparent;
+  border-left: 0.42rem solid #fff;
+  filter: drop-shadow(0 1px 0 #000);
 }
 
 .scope-turret-shooter--vertical .scope-turret-shooter-legend {
@@ -6763,6 +7669,126 @@ body {
   inset: 1.15rem;
   pointer-events: none;
   z-index: 6;
+}
+
+/* --- Rail bubble level (cant) — docked bottom-left of .scope-optic --- */
+.bubble-level-dock {
+  position: absolute;
+  left: 0.15rem;
+  bottom: 0.05rem;
+  z-index: 8;
+  pointer-events: auto;
+}
+
+.bubble-level {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.12rem;
+  user-select: none;
+  touch-action: none;
+}
+
+.bubble-level.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.bubble-level-tip {
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bubble-level-tip:focus-visible {
+  outline: 1px solid var(--accent-gold, #c9a227);
+  outline-offset: 1px;
+}
+
+.bubble-level--ulf .bubble-level-ulf-rail {
+  position: relative;
+  width: 5.6rem;
+  height: 1.15rem;
+  border-radius: 0.28rem;
+  background:
+    linear-gradient(180deg, #3a3a3c 0%, #121214 45%, #2a2a2c 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 1px 2px rgba(0, 0, 0, 0.75),
+    0 2px 6px rgba(0, 0, 0, 0.45);
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.35rem;
+  box-sizing: border-box;
+}
+
+.bubble-level--ulf .bubble-level-ulf-vial {
+  position: relative;
+  width: 100%;
+  height: 0.72rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(120, 210, 255, 0.55), transparent 55%),
+    linear-gradient(180deg, #1a6fff 0%, #0a3db8 55%, #062a7a 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(10, 20, 40, 0.55);
+}
+
+.bubble-level--ulf .bubble-level-ulf-mark {
+  position: absolute;
+  top: 0.08rem;
+  bottom: 0.08rem;
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.bubble-level--ulf .bubble-level-ulf-mark--left {
+  left: calc(50% - 0.42rem);
+}
+
+.bubble-level--ulf .bubble-level-ulf-mark--right {
+  left: calc(50% + 0.42rem);
+}
+
+.bubble-level--ulf .bubble-level-ulf-bubble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.78rem;
+  height: 0.52rem;
+  margin-top: -0.26rem;
+  margin-left: -0.39rem;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95), transparent 45%),
+    radial-gradient(circle at 50% 55%, rgba(200, 230, 255, 0.35), rgba(40, 80, 140, 0.15) 70%);
+  box-shadow:
+    inset 0 0 2px rgba(255, 255, 255, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.25);
+  z-index: 1;
+  pointer-events: none;
+  transition: transform 40ms linear;
+}
+
+.bubble-level--ulf.is-level .bubble-level-ulf-rail {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 1px 2px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(80, 180, 120, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
 .scope-zoom-ring.is-disabled {
@@ -7101,6 +8127,11 @@ body {
   user-select: none;
   pointer-events: none;
   image-rendering: auto;
+}
+
+.scope-reticle-img--illum {
+  /* Red overlay sits on black etching; opacity driven by illumination. */
+  mix-blend-mode: normal;
 }
 
 .scope-reticle-h,

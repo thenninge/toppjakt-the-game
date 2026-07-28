@@ -566,7 +566,7 @@ export const INVENTORY_GROUPS: readonly {
 ] as const;
 
 /**
- * Gun-kit = rifle/optik/ammo/tofoter.
+ * Gun-kit = rifle/optik/ammo/tofoter + våpenmontert bubble level.
  * Kit-kit = LRF/bino, thermal, Kestrel, chestrig, headlamp, camcorder, …
  * Hjemmelading = presse, dies, hylser (nye + brukte), krutt, kuler, …
  * Camo/clothes + Food = egne lister.
@@ -587,8 +587,14 @@ export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
       return "camo";
     case "food":
       return "food";
+    case "misc":
+      // Weapon-mounted accessories live with the gun, not sekk/kit-kit.
+      if (item.misc.isBubbleLevel) {
+        return "gun_kit";
+      }
+      return "kit_kit";
     default:
-      // lrf, thermal, ballistics, backpack, chestrig, skis, outdoors, misc
+      // lrf, thermal, ballistics, backpack, chestrig, skis, outdoors, other misc
       return "kit_kit";
   }
 }

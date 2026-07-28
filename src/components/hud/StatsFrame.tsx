@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { PlayerStats } from "@/lib/player";
+import type { GameRealism } from "@/lib/optics/turretStyle";
+import { GAME_REALISM_LEVELS } from "@/lib/optics/turretStyle";
 import {
   readMusicVolume,
   readSfxVolume,
@@ -29,6 +31,9 @@ const MENU_COPY: Record<
     music: string;
     sfx: string;
     edit: string;
+    realism: string;
+    realismMedium: string;
+    realismHigh: string;
     rename: string;
     deleteHunter: string;
     back: string;
@@ -42,6 +47,9 @@ const MENU_COPY: Record<
     music: "Musikk",
     sfx: "Lydeffekter",
     edit: "Edit",
+    realism: "Realism",
+    realismMedium: "Medium",
+    realismHigh: "High",
     rename: "Endre navn",
     deleteHunter: "Slett jeger",
     back: "← Tilbake",
@@ -54,6 +62,9 @@ const MENU_COPY: Record<
     music: "Music",
     sfx: "Sound effects",
     edit: "Edit",
+    realism: "Realism",
+    realismMedium: "Medium",
+    realismHigh: "High",
     rename: "Change name",
     deleteHunter: "Delete hunter",
     back: "← Back",
@@ -66,6 +77,9 @@ const MENU_COPY: Record<
     music: "音楽",
     sfx: "効果音",
     edit: "編集",
+    realism: "リアリズム",
+    realismMedium: "Medium",
+    realismHigh: "High",
     rename: "名前を変更",
     deleteHunter: "ハンターを削除",
     back: "← 戻る",
@@ -79,6 +93,7 @@ type StatsFrameProps = {
   onRename?: (nextName: string) => string | null;
   onDeleteUser?: () => void;
   onLangChange?: (lang: GameLang) => void;
+  onRealismChange?: (realism: GameRealism) => void;
   /** Google / CBAware account status. */
   authEmail?: string | null;
   onGoogleLogin?: () => void;
@@ -102,6 +117,7 @@ export function StatsFrame({
   onRename,
   onDeleteUser,
   onLangChange,
+  onRealismChange,
   authEmail,
   onGoogleLogin,
   onGoogleLogout,
@@ -325,6 +341,35 @@ export function StatsFrame({
                           onClick={() => onLangChange(code)}
                         >
                           {GAME_LANG_LABEL[code]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {onRealismChange ? (
+                  <div
+                    className="stats-menu-lang"
+                    role="group"
+                    aria-label={copy.realism}
+                  >
+                    <p className="stats-menu-heading">{copy.realism}</p>
+                    <div className="stats-menu-lang-row">
+                      {GAME_REALISM_LEVELS.map((level) => (
+                        <button
+                          key={level}
+                          type="button"
+                          className={
+                            (stats.realism ?? "medium") === level
+                              ? "stats-menu-item is-active"
+                              : "stats-menu-item"
+                          }
+                          role="menuitemradio"
+                          aria-checked={(stats.realism ?? "medium") === level}
+                          onClick={() => onRealismChange(level)}
+                        >
+                          {level === "medium"
+                            ? copy.realismMedium
+                            : copy.realismHigh}
                         </button>
                       ))}
                     </div>

@@ -80,7 +80,7 @@ export const RETICLES: Record<string, ReticleDef> = {
    * ZCO 5-27 MPCT3-style mil tree ({@code zco527b.png}).
    * CALIBRATED reference reticle — see `.cursor/skills/scope-reticle-calibration`.
    * Full Christmas-tree hold grid; ~55.5 px/mil.
-   * Optical centre: −10.32 klikk X / +5.35 klikk Y (1 klikk = 0.1 mil) + 0.02° CW.
+    * Optical centre: −2.47 klikk X / +0.85 klikk Y (1 klikk = 0.1 mil) + 0.27° CW.
    * FOV: ±7.2 mrad @ 27× (shared {@code SCOPE_FOV_CAL_HALF_MRAD}). Hold-over: CAL=1.
    */
   "zco-527-mpct": {
@@ -94,7 +94,8 @@ export const RETICLES: Record<string, ReticleDef> = {
     opticalCenterX: 909.724,
     /** 865 + 5.35×0.1×55.5 — shift reticle 5.35 clicks up on glass. */
     opticalCenterY: 894.6925,
-    imageRotationDeg: 0.02,
+    /** CSS positive = clockwise. */
+    imageRotationDeg: 0.27,
   },
   /**
    * Kahles SKMR-style mil tree (kahles.png, 1200²).

@@ -214,6 +214,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "misc-atec-mirage-band": 50,
   "misc-caldwell-kevlar-suppressor-cover": 100,
   "misc-temu-neoprene-suppressor-cover": 50,
+  "misc-ulf-bubblelevel": 45,
 
   // Chestrigs
   "chest-cds-binocular-harness": 380,

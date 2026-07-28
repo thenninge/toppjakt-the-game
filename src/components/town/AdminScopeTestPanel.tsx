@@ -10,6 +10,12 @@ import {
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
+import { ParallaxTurret } from "@/components/range/ParallaxTurret";
+import { IlluminationTurret } from "@/components/range/IlluminationTurret";
+import {
+  ScopeElevationDial,
+  ScopeWindageDial,
+} from "@/components/range/ScopeTurrets";
 import {
   allBirdSpriteIds,
   getBirdSprite,
@@ -33,9 +39,35 @@ import {
   birdShotGeom,
   birdVitalOffsetFromImageCenterPx,
 } from "@/lib/hunt/shoot";
+import { angularMmAtDistance, clampElevationTurretMm } from "@/lib/player";
 import { scopeFovDiameterScale } from "@/lib/optics/spec";
-import { clampScopeZoom, RANGE_EASY_ZERO_SCALE } from "@/lib/range/precision";
-import { getReticleDef } from "@/lib/range/reticles";
+import {
+  focusBlurHint,
+  focusBlurPx,
+  formatParallaxFocusM,
+} from "@/lib/range/parallaxFocus";
+import { BubbleLevel } from "@/components/range/BubbleLevel";
+import {
+  CANT_KEY_DEG_PER_SEC,
+  nudgeCantDeg,
+  rollEntryCantDeg,
+} from "@/lib/range/cant";
+import {
+  turretStyleCssVars,
+  turretStyleForScope,
+} from "@/lib/optics/turretStyle";
+import {
+  SCOPE_FOV_CAL_HALF_MRAD,
+  SCOPE_FOV_CAL_ZOOM,
+  SCOPE_VIEWPORT_REF_PX,
+  clampScopeZoom,
+  RANGE_EASY_ZERO_SCALE,
+} from "@/lib/range/precision";
+import {
+  getReticleDef,
+  reticleDisplaySizePx,
+  reticleOpticalCenter,
+} from "@/lib/range/reticles";
 import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
@@ -62,6 +94,8 @@ type AimKeys = {
   down: number | null;
   left: number | null;
   right: number | null;
+  ccw: number | null;
+  cw: number | null;
 };
 
 type AdminScopeTestPanelProps = {
@@ -112,7 +146,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   const [subjectKind, setSubjectKind] = useState<SubjectKind>("range");
   const [rangeTargetId, setRangeTargetId] =
-    useState<RangeTargetId>("cba-100");
+    useState<RangeTargetId>("tracking-test");
   const [birdId, setBirdId] = useState<BirdSpriteId>(
     () => birdIds[0] ?? "tiur-1",
   );
@@ -120,9 +154,31 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const [easy10x, setEasy10x] = useState(false);
   const [zoom, setZoom] = useState(() => scope?.maxZoom ?? 27);
   const [aimMm, setAimMm] = useState({ x: 0, y: 0 });
+  const [sessionZeroXMm, setSessionZeroXMm] = useState(0);
+  const [sessionZeroYMm, setSessionZeroYMm] = useState(0);
+  const [parallaxFocusM, setParallaxFocusM] = useState(100);
+  const [reticleIllum, setReticleIllum] = useState(0);
+  const [reticleRotDeg, setReticleRotDeg] = useState(0);
+  const [opticalCenterX, setOpticalCenterX] = useState(0);
+  const [opticalCenterY, setOpticalCenterY] = useState(0);
+  const [centerTo1MilPx, setCenterTo1MilPx] = useState(55.5);
+  const [zoomMagCal, setZoomMagCal] = useState(1);
+  const [calMaxZoom, setCalMaxZoom] = useState(false);
+  const [calHashmarks, setCalHashmarks] = useState(false);
+  /** After «Lagre til repo», treat these as clean until scope change / HMR. */
+  const [repoCalOverride, setRepoCalOverride] = useState<{
+    rot: number;
+    x: number;
+    y: number;
+    hashPx: number;
+  } | null>(null);
+  const [repoFovOverride, setRepoFovOverride] = useState<number | null>(null);
+  const [cantDeg, setCantDeg] = useState(() => rollEntryCantDeg());
   const [aimDragging, setAimDragging] = useState(false);
   const [spriteScaleEpoch, setSpriteScaleEpoch] = useState(0);
   const [bakingScales, setBakingScales] = useState(false);
+  const [bakingReticleCal, setBakingReticleCal] = useState(false);
+  const [helpCross, setHelpCross] = useState(false);
   const [bakeStatus, setBakeStatus] = useState<string | null>(null);
   const [spriteScalePercent, setSpriteScalePercentUi] = useState(() =>
     getBirdSpriteScalePercent(birdId),
@@ -161,7 +217,12 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     down: null,
     left: null,
     right: null,
+    ccw: null,
+    cw: null,
   });
+
+  const cantDegRef = useRef(cantDeg);
+  cantDegRef.current = cantDeg;
 
   useEffect(() => {
     aimRef.current = aimMm;
@@ -181,9 +242,38 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setZoom(scope.maxZoom);
   }, [scopeId, scope]);
 
+  /** Load catalog reticle calibration when switching scope / reticle. */
+  useEffect(() => {
+    const def = scope?.reticleId ? getReticleDef(scope.reticleId) : null;
+    setReticleRotDeg(def?.imageRotationDeg ?? 0);
+    setCenterTo1MilPx(def?.centerTo1MilPx ?? 55.5);
+    setZoomMagCal(
+      scope?.zoomMagCal != null && scope.zoomMagCal > 0
+        ? scope.zoomMagCal
+        : 1,
+    );
+    if (def) {
+      const c = reticleOpticalCenter(def);
+      setOpticalCenterX(c.x);
+      setOpticalCenterY(c.y);
+    } else {
+      setOpticalCenterX(0);
+      setOpticalCenterY(0);
+    }
+    setRepoCalOverride(null);
+    setRepoFovOverride(null);
+  }, [scopeId, scope?.reticleId, scope?.zoomMagCal]);
+
   useEffect(() => {
     setAimMm({ x: 0, y: 0 });
-    keysRef.current = { up: null, down: null, left: null, right: null };
+    keysRef.current = {
+      up: null,
+      down: null,
+      left: null,
+      right: null,
+      ccw: null,
+      cw: null,
+    };
   }, [subjectKind, rangeTargetId, birdId, distanceM, scopeId]);
 
   /** Arrow keys — same tap + hold ramp as shooting range. */
@@ -220,15 +310,30 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               : e.key === "ArrowRight"
                 ? "right"
                 : null;
-      if (!dir) return;
-      e.preventDefault();
-      if (keysRef.current[dir] != null) return;
-      keysRef.current[dir] = performance.now();
-      const step = SCOPE_AIM_TAP_MM * (distanceRef.current / 100);
-      if (dir === "up") nudgeAim(0, -step);
-      if (dir === "down") nudgeAim(0, step);
-      if (dir === "left") nudgeAim(-step, 0);
-      if (dir === "right") nudgeAim(step, 0);
+      if (dir) {
+        e.preventDefault();
+        if (keysRef.current[dir] != null) return;
+        keysRef.current[dir] = performance.now();
+        const step = SCOPE_AIM_TAP_MM * (distanceRef.current / 100);
+        if (dir === "up") nudgeAim(0, -step);
+        if (dir === "down") nudgeAim(0, step);
+        if (dir === "left") nudgeAim(-step, 0);
+        if (dir === "right") nudgeAim(step, 0);
+        return;
+      }
+      if (e.key === "q" || e.key === "Q") {
+        e.preventDefault();
+        if (keysRef.current.ccw != null) return;
+        keysRef.current.ccw = performance.now();
+        setCantDeg((c) => nudgeCantDeg(c, -CANT_KEY_DEG_PER_SEC * 0.08));
+        return;
+      }
+      if (e.key === "e" || e.key === "E") {
+        e.preventDefault();
+        if (keysRef.current.cw != null) return;
+        keysRef.current.cw = performance.now();
+        setCantDeg((c) => nudgeCantDeg(c, CANT_KEY_DEG_PER_SEC * 0.08));
+      }
     }
 
     function onKeyUp(e: KeyboardEvent) {
@@ -236,6 +341,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       if (e.key === "ArrowDown") keysRef.current.down = null;
       if (e.key === "ArrowLeft") keysRef.current.left = null;
       if (e.key === "ArrowRight") keysRef.current.right = null;
+      if (e.key === "q" || e.key === "Q") keysRef.current.ccw = null;
+      if (e.key === "e" || e.key === "E") keysRef.current.cw = null;
     }
 
     let raf = 0;
@@ -258,6 +365,21 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         if (mu > 0) y -= speed * mu;
         if (md > 0) y += speed * md;
         applyAim(x, y);
+      }
+      const cantCcw = scopeAimHoldMult(k.ccw, now);
+      const cantCw = scopeAimHoldMult(k.cw, now);
+      if (cantCcw > 0 || cantCw > 0) {
+        let next = cantDegRef.current;
+        if (cantCcw > 0) {
+          next = nudgeCantDeg(next, -CANT_KEY_DEG_PER_SEC * dt * cantCcw);
+        }
+        if (cantCw > 0) {
+          next = nudgeCantDeg(next, CANT_KEY_DEG_PER_SEC * dt * cantCw);
+        }
+        if (next !== cantDegRef.current) {
+          cantDegRef.current = next;
+          setCantDeg(next);
+        }
       }
       raf = requestAnimationFrame(tick);
     }
@@ -288,9 +410,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   let reticleImgScale = 0;
 
   if (scope && subjectKind === "range") {
+    const liveScope = { ...scope, zoomMagCal };
     const scales = zeroingTargetAndReticleScale({
       zoom,
-      scope,
+      scope: liveScope,
       distanceM,
       target: rangeTarget,
       paperUnit,
@@ -308,9 +431,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     imgH = rangeTarget.nativeHeight;
     imgAlt = rangeTarget.label;
   } else if (scope && subjectKind === "bird") {
+    const liveScope = { ...scope, zoomMagCal };
     targetScale = birdScopeImageScale(
       zoom,
-      scope,
+      liveScope,
       distanceM,
       birdGeom.nativeW,
       birdId,
@@ -324,17 +448,188 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     imgH = birdGeom.nativeH;
     imgAlt = birdId;
     // Same optic zoom as skive — reticle must not track bird size/distance.
-    reticleImgScale = opticReticleImgScale(zoom, scope, false);
+    reticleImgScale = opticReticleImgScale(zoom, liveScope, false);
   }
 
   targetScaleRef.current = targetScale;
   pxPerMmRef.current = pxPerMm;
 
-  const panPxX = (offsetX + aimMm.x * pxPerMm) * targetScale;
-  const panPxY = (offsetY + aimMm.y * pxPerMm) * targetScale;
+  const zeroXMm = angularMmAtDistance(sessionZeroXMm, distanceM);
+  const zeroYMm = angularMmAtDistance(sessionZeroYMm, distanceM);
+  const panPxX = (offsetX + (aimMm.x + zeroXMm) * pxPerMm) * targetScale;
+  const panPxY = (offsetY + (aimMm.y + zeroYMm) * pxPerMm) * targetScale;
+
+  const blurPx = focusBlurPx(distanceM, parallaxFocusM);
+  const blurHint = focusBlurHint(blurPx);
 
   const fovDiameterScale = scope ? scopeFovDiameterScale(scope) : 1;
   const reticleDef = scope?.reticleId ? getReticleDef(scope.reticleId) : null;
+  const clickUnit = scope?.clickUnit === "MOA" ? "MOA" : "MRAD";
+  const catalogRotDeg =
+    repoCalOverride?.rot ?? reticleDef?.imageRotationDeg ?? 0;
+  const catalogCenter = repoCalOverride
+    ? { x: repoCalOverride.x, y: repoCalOverride.y }
+    : reticleDef
+      ? reticleOpticalCenter(reticleDef)
+      : { x: 0, y: 0 };
+  const catalogHashPx =
+    repoCalOverride?.hashPx ?? reticleDef?.centerTo1MilPx ?? 55.5;
+  const catalogZoomMag =
+    repoFovOverride ??
+    (scope?.zoomMagCal != null && scope.zoomMagCal > 0
+      ? scope.zoomMagCal
+      : 1);
+  /** Native px per 0.1 mil click (MRAD scopes). */
+  const pxPerClick = centerTo1MilPx * 0.1;
+  const midX = reticleDef ? reticleDef.nativeWidth / 2 : 0;
+  const midY = reticleDef ? reticleDef.nativeHeight / 2 : 0;
+  /** Positive = reticle shifted right / up on glass vs image midpoint. */
+  const shiftRightClicks =
+    reticleDef && pxPerClick > 0
+      ? (midX - opticalCenterX) / pxPerClick
+      : 0;
+  const shiftUpClicks =
+    reticleDef && pxPerClick > 0
+      ? (opticalCenterY - midY) / pxPerClick
+      : 0;
+  const calDirty =
+    !!reticleDef &&
+    (reticleRotDeg !== catalogRotDeg ||
+      Math.abs(opticalCenterX - catalogCenter.x) > 1e-6 ||
+      Math.abs(opticalCenterY - catalogCenter.y) > 1e-6 ||
+      Math.abs(centerTo1MilPx - catalogHashPx) > 1e-6);
+  const fovDirty = Math.abs(zoomMagCal - catalogZoomMag) > 1e-6;
+
+  const hashRingPxPerMil =
+    scope && reticleDef && reticleImgScale > 0
+      ? reticleDisplaySizePx(scope, zoom, reticleImgScale, {
+          ...reticleDef,
+          centerTo1MilPx,
+        }).scale * centerTo1MilPx
+      : 0;
+  const glassRadiusPx =
+    (SCOPE_VIEWPORT_REF_PX / 2) * fovDiameterScale;
+  /** Centre→edge mils at current zoom (shared FOV lock @ 27× ±7.2). */
+  const fovHalfMrad =
+    (SCOPE_FOV_CAL_HALF_MRAD * SCOPE_FOV_CAL_ZOOM) /
+    (Math.max(0.01, zoom) * Math.max(0.01, zoomMagCal));
+  const fovRingPxPerMrad = glassRadiusPx / Math.max(0.01, fovHalfMrad);
+
+  function round2(n: number) {
+    return Math.round(n * 100) / 100;
+  }
+
+  function round4(n: number) {
+    return Math.round(n * 10000) / 10000;
+  }
+
+  function resetReticleCalToRepo() {
+    setReticleRotDeg(catalogRotDeg);
+    setOpticalCenterX(catalogCenter.x);
+    setOpticalCenterY(catalogCenter.y);
+    setCenterTo1MilPx(catalogHashPx);
+  }
+
+  async function bakeReticleCalToRepo() {
+    if (!reticleDef) return;
+    setBakingReticleCal(true);
+    setBakeStatus("Skriver retikkel-kalibrering…");
+    try {
+      const res = await fetch("/api/admin/reticle-cal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reticleId: reticleDef.id,
+          imageRotationDeg: reticleRotDeg,
+          opticalCenterX,
+          opticalCenterY,
+          centerTo1MilPx,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        path?: string;
+        imageRotationDeg?: number;
+        opticalCenterX?: number;
+        opticalCenterY?: number;
+        centerTo1MilPx?: number;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      if (typeof data.imageRotationDeg === "number") {
+        setReticleRotDeg(data.imageRotationDeg);
+      }
+      if (typeof data.opticalCenterX === "number") {
+        setOpticalCenterX(data.opticalCenterX);
+      }
+      if (typeof data.opticalCenterY === "number") {
+        setOpticalCenterY(data.opticalCenterY);
+      }
+      if (typeof data.centerTo1MilPx === "number") {
+        setCenterTo1MilPx(data.centerTo1MilPx);
+      }
+      setRepoCalOverride({
+        rot: data.imageRotationDeg ?? reticleRotDeg,
+        x: data.opticalCenterX ?? opticalCenterX,
+        y: data.opticalCenterY ?? opticalCenterY,
+        hashPx: data.centerTo1MilPx ?? centerTo1MilPx,
+      });
+      setBakeStatus(
+        `OK → ${data.path ?? "reticles.ts"} (${reticleDef.id}). Commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
+  async function bakeFovCalToRepo() {
+    if (!scopeId) return;
+    setBakingReticleCal(true);
+    setBakeStatus("Skriver FOV / max-zoom…");
+    try {
+      const res = await fetch("/api/admin/scope-fov-cal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeId, zoomMagCal }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        path?: string;
+        zoomMagCal?: number;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      if (typeof data.zoomMagCal === "number") {
+        setZoomMagCal(data.zoomMagCal);
+        setRepoFovOverride(data.zoomMagCal);
+      }
+      setBakeStatus(
+        `OK → ${data.path ?? "catalog.ts"} zoomMagCal=${data.zoomMagCal}. Commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
+  function nudgeOpticalByClicks(dxClicks: number, dyClicks: number) {
+    /* Right on glass → lower opticalCenterX; up on glass → higher opticalCenterY. */
+    setOpticalCenterX((x) => round4(x - dxClicks * pxPerClick));
+    setOpticalCenterY((y) => round4(y + dyClicks * pxPerClick));
+  }
 
   function aimLimitsMm(): { limitX: number; limitY: number } {
     const distFactor = distanceM / 100;
@@ -407,6 +702,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setEasy10x(false);
     if (scope) setZoom(scope.maxZoom);
     setAimMm({ x: 0, y: 0 });
+    setParallaxFocusM(100);
   }
 
   async function bakeActiveSpeciesScales() {
@@ -627,9 +923,357 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
           </div>
         ) : null}
 
+        {scope && reticleDef ? (
+          <div className="admin-scope-cal">
+            <p className="admin-scope-cal-hint">
+              Live kalibrering. «Lagre til repo» skriver rotasjon / optisk
+              senter / <code>centerTo1MilPx</code> til{" "}
+              <code>reticles.ts</code>. «Lagre FOV» skriver{" "}
+              <code>zoomMagCal</code> til <code>catalog.ts</code> (kun
+              dev). Calibrate max zoom: mil-ringer til glasskant @ max.
+              Hashmarks: mil-ringer på retikkel-hasher.
+              {calDirty || fovDirty ? " · lokale endringer" : ""}
+            </p>
+
+            <div className="admin-spot-row admin-scope-rot-row">
+              <label className="admin-spot-field admin-scope-rot-field">
+                <span>Rotasjon {round2(reticleRotDeg)}° CW</span>
+                <input
+                  type="range"
+                  className="admin-scope-rot-slider"
+                  min={-2}
+                  max={2}
+                  step={0.01}
+                  value={Math.min(2, Math.max(-2, reticleRotDeg))}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setReticleRotDeg(round2(n));
+                  }}
+                  aria-label="Retikkel rotasjon grader clockwise"
+                />
+              </label>
+              <label className="admin-spot-field admin-spot-scale">
+                <span>°</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  step={0.01}
+                  value={reticleRotDeg}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setReticleRotDeg(round2(n));
+                  }}
+                  aria-label="Retikkel rotasjon tall"
+                />
+              </label>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="−0.05° (CCW)"
+                onClick={() => setReticleRotDeg((v) => round2(v - 0.05))}
+              >
+                −0.05°
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="+0.05° (CW)"
+                onClick={() => setReticleRotDeg((v) => round2(v + 0.05))}
+              >
+                +0.05°
+              </button>
+            </div>
+
+            <div className="admin-spot-row">
+              <label className="admin-spot-field admin-spot-scale">
+                <span>Center X px</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  step={0.01}
+                  value={round4(opticalCenterX)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setOpticalCenterX(round4(n));
+                  }}
+                  aria-label="Optical center X native pixels"
+                  title="opticalCenterX i reticles.ts — lavere X = retikkel til høyre på glass"
+                />
+              </label>
+              <label className="admin-spot-field admin-spot-scale">
+                <span>Center Y px</span>
+                <input
+                  type="number"
+                  className="admin-spot-scale-num"
+                  step={0.01}
+                  value={round4(opticalCenterY)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n)) return;
+                    setOpticalCenterY(round4(n));
+                  }}
+                  aria-label="Optical center Y native pixels"
+                  title="opticalCenterY i reticles.ts — høyere Y = retikkel opp på glass"
+                />
+              </label>
+              <span className="admin-scope-cal-clicks">
+                ≈ {shiftRightClicks >= 0 ? "+" : ""}
+                {shiftRightClicks.toFixed(2)} klikk H /{" "}
+                {shiftUpClicks >= 0 ? "+" : ""}
+                {shiftUpClicks.toFixed(2)} klikk Opp
+              </span>
+            </div>
+
+            <div className="admin-spot-row">
+              <button
+                type="button"
+                className={
+                  helpCross
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={helpCross}
+                title="Grønt kors midt i glasset — align retikkel-senter"
+                onClick={() => setHelpCross((v) => !v)}
+              >
+                Hjelpelinjer {helpCross ? "på" : "av"}
+              </button>
+              <button
+                type="button"
+                className={
+                  calMaxZoom
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={calMaxZoom}
+                title="FOV ved max zoom — mil-ringer til glasskant + zoomMagCal"
+                onClick={() => {
+                  setCalMaxZoom((v) => {
+                    const next = !v;
+                    if (next && scope) setZoom(scope.maxZoom);
+                    return next;
+                  });
+                }}
+              >
+                Calibrate max zoom {calMaxZoom ? "på" : "av"}
+              </button>
+              <button
+                type="button"
+                className={
+                  calHashmarks
+                    ? "intro-button admin-spot-btn is-selected"
+                    : "intro-button admin-spot-btn"
+                }
+                aria-pressed={calHashmarks}
+                title="Hash spacing — centerTo1MilPx + mil-ringer på retikkel"
+                onClick={() => setCalHashmarks((v) => !v)}
+              >
+                Calibrate reticle hashmarks {calHashmarks ? "på" : "av"}
+              </button>
+            </div>
+
+            {calMaxZoom ? (
+              <div className="admin-spot-row">
+                <label className="admin-spot-field admin-scope-rot-field">
+                  <span>
+                    zoomMagCal {zoomMagCal.toFixed(3)} · FOV ±
+                    {fovHalfMrad.toFixed(2)} mrad @ max
+                  </span>
+                  <input
+                    type="range"
+                    className="admin-scope-rot-slider"
+                    min={0.7}
+                    max={1.4}
+                    step={0.005}
+                    value={Math.min(1.4, Math.max(0.7, zoomMagCal))}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (!Number.isFinite(n)) return;
+                      setZoomMagCal(Math.round(n * 1000) / 1000);
+                    }}
+                    aria-label="FOV zoom mag cal"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() =>
+                    setZoomMagCal((v) => Math.round((v - 0.01) * 1000) / 1000)
+                  }
+                >
+                  −0.01
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() =>
+                    setZoomMagCal((v) => Math.round((v + 0.01) * 1000) / 1000)
+                  }
+                >
+                  +0.01
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  disabled={!fovDirty}
+                  onClick={() => setZoomMagCal(catalogZoomMag)}
+                >
+                  Nullstill FOV
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  disabled={!fovDirty || bakingReticleCal}
+                  onClick={() => void bakeFovCalToRepo()}
+                >
+                  {bakingReticleCal ? "Skriver…" : "Lagre FOV til repo"}
+                </button>
+              </div>
+            ) : null}
+
+            {calHashmarks ? (
+              <div className="admin-spot-row">
+                <label className="admin-spot-field admin-scope-rot-field">
+                  <span>centerTo1MilPx {centerTo1MilPx.toFixed(3)}</span>
+                  <input
+                    type="range"
+                    className="admin-scope-rot-slider"
+                    min={10}
+                    max={120}
+                    step={0.1}
+                    value={Math.min(120, Math.max(10, centerTo1MilPx))}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (!Number.isFinite(n)) return;
+                      setCenterTo1MilPx(Math.round(n * 1000) / 1000);
+                    }}
+                    aria-label="Reticle center to 1 mil px"
+                  />
+                </label>
+                <label className="admin-spot-field admin-spot-scale">
+                  <span>px</span>
+                  <input
+                    type="number"
+                    className="admin-spot-scale-num"
+                    step={0.1}
+                    value={centerTo1MilPx}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (!Number.isFinite(n) || n <= 0) return;
+                      setCenterTo1MilPx(Math.round(n * 1000) / 1000);
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() =>
+                    setCenterTo1MilPx(
+                      (v) => Math.round((v - 0.5) * 1000) / 1000,
+                    )
+                  }
+                >
+                  −0.5
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  onClick={() =>
+                    setCenterTo1MilPx(
+                      (v) => Math.round((v + 0.5) * 1000) / 1000,
+                    )
+                  }
+                >
+                  +0.5
+                </button>
+                <button
+                  type="button"
+                  className="intro-button admin-spot-btn"
+                  disabled={Math.abs(centerTo1MilPx - catalogHashPx) < 1e-6}
+                  onClick={() => setCenterTo1MilPx(catalogHashPx)}
+                >
+                  Nullstill hash
+                </button>
+              </div>
+            ) : null}
+
+            <div className="admin-spot-row">
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="1 klikk venstre på glass"
+                onClick={() => nudgeOpticalByClicks(-1, 0)}
+              >
+                ← 1
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="1 klikk høyre på glass"
+                onClick={() => nudgeOpticalByClicks(1, 0)}
+              >
+                1 →
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="1 klikk opp på glass"
+                onClick={() => nudgeOpticalByClicks(0, 1)}
+              >
+                ↑ 1
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="1 klikk ned på glass"
+                onClick={() => nudgeOpticalByClicks(0, -1)}
+              >
+                ↓ 1
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="0.1 klikk høyre"
+                onClick={() => nudgeOpticalByClicks(0.1, 0)}
+              >
+                0.1 →
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                title="0.1 klikk opp"
+                onClick={() => nudgeOpticalByClicks(0, 0.1)}
+              >
+                0.1 ↑
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                disabled={!calDirty}
+                title={`Hent rotasjon + center fra reticles.ts (repo: ${catalogRotDeg.toFixed(2)}° · ${catalogCenter.x.toFixed(2)}, ${catalogCenter.y.toFixed(2)})`}
+                onClick={resetReticleCalToRepo}
+              >
+                Nullstill til repo
+              </button>
+              <button
+                type="button"
+                className="intro-button admin-spot-btn"
+                disabled={!calDirty || bakingReticleCal || !reticleDef}
+                title="Skriv imageRotationDeg + opticalCenterX/Y til reticles.ts"
+                onClick={() => void bakeReticleCalToRepo()}
+              >
+                {bakingReticleCal ? "Skriver…" : "Lagre til repo"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <p className="admin-spot-meta">
           {scope
-            ? `${zoom.toFixed(1)}× · ${paperUnit} · ${reticleDef?.label ?? scope.reticleId ?? "generic"}${fovDiameterScale > 1 ? " · premium FOV" : ""}${easy10x ? ` · 10×(×${RANGE_EASY_ZERO_SCALE})` : ""} · ${distanceM} m · piltaster / drag`
+            ? `${zoom.toFixed(1)}× · ${paperUnit} · ${reticleDef?.label ?? scope.reticleId ?? "generic"}${fovDiameterScale > 1 ? " · premium FOV" : ""}${easy10x ? ` · 10×(×${RANGE_EASY_ZERO_SCALE})` : ""} · ${distanceM} m · fokus ${formatParallaxFocusM(parallaxFocusM)} · ${blurHint} · cant ${cantDeg.toFixed(1)}° · rot ${round2(reticleRotDeg)}° · cx ${round2(opticalCenterX)} cy ${round2(opticalCenterY)} · piltaster / drag`
             : "Ingen scope i katalog"}
           {subjectKind === "bird"
             ? ` · hunt-skala (scale ${spriteScalePercent}%) — samme som spotting/jakt`
@@ -640,80 +1284,191 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
       {scope ? (
         <div className="shooting-range admin-scope-test-range">
-          <div className="scope-stage">
-            <ScopeOpticFit>
-            <div className="scope-stage-optic-row">
-              <div
-                className={
-                  fovDiameterScale > 1
-                    ? "scope-optic is-fov-premium"
-                    : "scope-optic"
+          <div
+            className="admin-scope-tube-layout scope-tube-layout"
+            style={turretStyleCssVars(turretStyleForScope(scopeId))}
+            data-turret-style={turretStyleForScope(scopeId).id}
+          >
+            <div className="admin-scope-tube-elev scope-tube-elev">
+              <ScopeElevationDial
+                sessionZeroMm={sessionZeroYMm}
+                onNudge={(d) =>
+                  setSessionZeroYMm((y) =>
+                    clampElevationTurretMm(y + d, scope),
+                  )
                 }
-              >
-                <div
-                  className={
-                    aimDragging
-                      ? "scope-viewport is-aim-dragging"
-                      : "scope-viewport"
-                  }
-                  onPointerDown={onAimPointerDown}
-                  onPointerMove={onAimPointerMove}
-                  onPointerUp={(e) =>
-                    endAimDrag(e.currentTarget, e.pointerId)
-                  }
-                  onPointerCancel={(e) =>
-                    endAimDrag(e.currentTarget, e.pointerId)
-                  }
-                  onPointerLeave={(e) =>
-                    endAimDrag(
-                      e.currentTarget,
-                      aimDragRef.current?.pointerId,
-                    )
-                  }
-                  onLostPointerCapture={(e) =>
-                    endAimDrag(e.currentTarget, e.pointerId)
-                  }
-                >
-                  <div
-                    className="scope-world"
-                    style={{
-                      transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
-                    }}
-                  >
-                    <div className="scope-world-scene">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        className={
-                          subjectKind === "bird"
-                            ? "scope-target hunt-tiur-target"
-                            : "scope-target"
-                        }
-                        src={imgSrc}
-                        alt={imgAlt}
-                        draggable={false}
-                        width={imgW}
-                        height={imgH}
-                        style={{ width: imgW }}
-                      />
-                    </div>
-                  </div>
-                  <div className="scope-reticle-offset">
-                    <ScopeReticle
-                      scope={scope}
-                      zoom={zoom}
-                      imgScale={reticleImgScale}
-                    />
-                  </div>
-                  <div className="scope-vignette" aria-hidden />
-                </div>
-                <ScopeZoomRing
-                  scope={scope}
-                  zoom={zoom}
-                  onChange={(z) => setZoom(clampScopeZoom(z, scope))}
+                clickUnit={clickUnit}
+              />
+            </div>
+            <div className="admin-scope-tube-para scope-tube-para">
+              <div className="scope-tube-para-stack">
+                <IlluminationTurret
+                  value={reticleIllum}
+                  onChange={setReticleIllum}
+                />
+                <ParallaxTurret
+                  focusM={parallaxFocusM}
+                  onChange={setParallaxFocusM}
                 />
               </div>
             </div>
-            </ScopeOpticFit>
+            <div className="admin-scope-tube-optic scope-tube-optic">
+              <div className="scope-stage">
+                <ScopeOpticFit>
+                  <div className="scope-stage-optic-row">
+                    <div
+                      className={
+                        fovDiameterScale > 1
+                          ? "scope-optic is-fov-premium"
+                          : "scope-optic"
+                      }
+                    >
+                      <div
+                        className={
+                          aimDragging
+                            ? "scope-viewport is-aim-dragging"
+                            : "scope-viewport"
+                        }
+                        onPointerDown={onAimPointerDown}
+                        onPointerMove={onAimPointerMove}
+                        onPointerUp={(e) =>
+                          endAimDrag(e.currentTarget, e.pointerId)
+                        }
+                        onPointerCancel={(e) =>
+                          endAimDrag(e.currentTarget, e.pointerId)
+                        }
+                        onPointerLeave={(e) =>
+                          endAimDrag(
+                            e.currentTarget,
+                            aimDragRef.current?.pointerId,
+                          )
+                        }
+                        onLostPointerCapture={(e) =>
+                          endAimDrag(e.currentTarget, e.pointerId)
+                        }
+                      >
+                        <div
+                          className="scope-world"
+                          style={{
+                            transform: `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${targetScale})`,
+                            filter:
+                              blurPx > 0.05
+                                ? `blur(${blurPx.toFixed(2)}px)`
+                                : undefined,
+                          }}
+                        >
+                          <div className="scope-world-scene">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              className={
+                                subjectKind === "bird"
+                                  ? "scope-target hunt-tiur-target"
+                                  : "scope-target"
+                              }
+                              src={imgSrc}
+                              alt={imgAlt}
+                              draggable={false}
+                              width={imgW}
+                              height={imgH}
+                              style={{ width: imgW }}
+                            />
+                          </div>
+                        </div>
+                        <div className="scope-reticle-offset">
+                          <ScopeReticle
+                            scope={scope}
+                            zoom={zoom}
+                            imgScale={reticleImgScale}
+                            illumination={reticleIllum}
+                            rotationDeg={reticleRotDeg}
+                            opticalCenterPx={{
+                              x: opticalCenterX,
+                              y: opticalCenterY,
+                            }}
+                            centerTo1MilPx={centerTo1MilPx}
+                          />
+                        </div>
+                        <div className="scope-vignette" aria-hidden />
+                        {calMaxZoom && fovRingPxPerMrad > 0 ? (
+                          <div
+                            className="admin-scope-mil-rings is-fov"
+                            aria-hidden
+                          >
+                            {Array.from(
+                              {
+                                length: Math.max(
+                                  1,
+                                  Math.floor(fovHalfMrad + 1e-6),
+                                ),
+                              },
+                              (_, i) => i + 1,
+                            ).map((m) => {
+                              const d = 2 * m * fovRingPxPerMrad;
+                              return (
+                                <span
+                                  key={`fov-${m}`}
+                                  className="admin-scope-mil-rings-ring"
+                                  data-mil={m}
+                                  style={{ width: d, height: d }}
+                                />
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {calHashmarks && hashRingPxPerMil > 0 ? (
+                          <div
+                            className="admin-scope-mil-rings is-hash"
+                            aria-hidden
+                          >
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map(
+                              (m) => {
+                                const d = 2 * m * hashRingPxPerMil;
+                                if (d > glassRadiusPx * 2.05) return null;
+                                return (
+                                  <span
+                                    key={`hash-${m}`}
+                                    className="admin-scope-mil-rings-ring"
+                                    data-mil={m}
+                                    style={{ width: d, height: d }}
+                                  />
+                                );
+                              },
+                            )}
+                          </div>
+                        ) : null}
+                        {helpCross ? (
+                          <div
+                            className="admin-scope-help-cross"
+                            aria-hidden
+                          >
+                            <span className="admin-scope-help-cross-h" />
+                            <span className="admin-scope-help-cross-v" />
+                            <span className="admin-scope-help-cross-dot" />
+                          </div>
+                        ) : null}
+                      </div>
+                      <ScopeZoomRing
+                        scope={scope}
+                        zoom={zoom}
+                        onChange={(z) => setZoom(clampScopeZoom(z, scope))}
+                      />
+                      <BubbleLevel
+                        visualId="ulf"
+                        cantDeg={cantDeg}
+                        onCantChange={setCantDeg}
+                      />
+                    </div>
+                  </div>
+                </ScopeOpticFit>
+              </div>
+            </div>
+            <div className="admin-scope-tube-wind scope-tube-wind">
+              <ScopeWindageDial
+                sessionZeroMm={sessionZeroXMm}
+                onNudge={(d) => setSessionZeroXMm((x) => x + d)}
+                clickUnit={clickUnit}
+              />
+            </div>
           </div>
         </div>
       ) : null}
