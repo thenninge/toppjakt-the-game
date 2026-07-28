@@ -39,6 +39,7 @@ export function getMusicTrack(scene: MusicScene): string | null {
 export type MusicContextInput = {
   phase:
     | "loading"
+    | "chapter"
     | "name"
     | "welcome"
     | "town"
@@ -53,7 +54,7 @@ export function musicSceneFromGame({
   phase,
   location,
 }: MusicContextInput): MusicScene | null {
-  if (phase === "loading" || phase === "name") return null;
+  if (phase === "loading" || phase === "chapter" || phase === "name") return null;
   if (phase === "welcome") return "intro";
   if (phase === "town") return "town";
   if (phase === "sheriff-applied") return "sheriff";

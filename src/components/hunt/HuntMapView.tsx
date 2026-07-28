@@ -2648,29 +2648,54 @@ export function HuntMapView({
       : { x: 50, y: 50 };
   }
 
-  function abortAware(opts?: AwareLeaveOpts) {
+  /**
+   * Leave ettersøk / Track to spotting without giving up the bird.
+   * Only {@link abandonEttersok} («Gi opp søket») marks the bird lost.
+   */
+  function leaveEttersokToSpotting(opts?: AwareLeaveOpts) {
     rememberAwareStand(opts?.hunter);
-    if (awareSession?.ettersokPairId) {
-      const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
-      if (pair?.found === true) {
-        harvestFoundPair(pair);
-        setAwareSession(null);
-        setPanel("arrived");
-        setLog(
-          awareSession.recoveryOnly
-            ? "Fugl hentet — i sekken."
-            : "Ettersøk lyktes — fuglen er i sekken.",
-        );
-        return;
-      }
-      // Avbryt = lukk Track midlertidig. Kun «Avslutt ettersøk» gir opp fuglen.
+    const session = awareSession;
+    if (!session?.ettersokPairId) {
+      backToSpotFromAware(opts);
+      return;
+    }
+    const pair = shotPairs.find((p) => p.id === session.ettersokPairId);
+    if (pair?.found === true) {
+      harvestFoundPair(pair);
       setAwareSession(null);
       setPanel("arrived");
       setLog(
-        awareSession.recoveryOnly
-          ? "Tilbake til kart — husk å hente fuglen ved treet (Hent/søk)."
-          : "Tilbake til kart — søket er ikke avsluttet. Speid videre, eller åpne Hent/søk når du er klar.",
+        session.recoveryOnly
+          ? "Fugl hentet — i sekken."
+          : "Ettersøk lyktes — fuglen er i sekken.",
       );
+      return;
+    }
+    setAwareSession(null);
+    if (canHuntAtTime(clockMinutes)) {
+      beginSpot({
+        reuseImageSrc: session.imageSrc,
+        initialMode: "binos",
+      });
+      setLog(
+        session.recoveryOnly
+          ? "Til spotting — husk å hente fuglen ved treet (Hent/søk)."
+          : "Til spotting — søket er ikke avsluttet. Speid videre, eller åpne Hent/søk når du er klar.",
+      );
+      return;
+    }
+    setPanel("arrived");
+    setLog(
+      session.recoveryOnly
+        ? "Tilbake til kart — husk å hente fuglen ved treet (Hent/søk)."
+        : "Tilbake til kart — søket er ikke avsluttet. Åpne Hent/søk når du er klar.",
+    );
+  }
+
+  function abortAware(opts?: AwareLeaveOpts) {
+    rememberAwareStand(opts?.hunter);
+    if (awareSession?.ettersokPairId) {
+      leaveEttersokToSpotting(opts);
       return;
     }
     setAwareSession(null);
@@ -2684,7 +2709,7 @@ export function HuntMapView({
   function backToSpotFromAware(opts?: AwareLeaveOpts) {
     rememberAwareStand(opts?.hunter);
     if (awareSession?.ettersokPairId) {
-      abortAware(opts);
+      leaveEttersokToSpotting(opts);
       return;
     }
     const session = awareSession;
@@ -2877,7 +2902,7 @@ export function HuntMapView({
 
   /**
    * Give up wounded ettersøk without a find — bird lost, mental stamina −30%.
-   * Only via «Gi opp søket» for the active Track bird (not Avbryt / Tilbake).
+   * Only via «Gi opp søket» for the active Track bird (not Til spotting).
    * Shows a dedicated pause view (like flukt) so the consequence is not buried in the log.
    */
   function abandonEttersok(pairId: string) {
@@ -4898,9 +4923,7 @@ export function HuntMapView({
         abortLabel={
           awareSession.postShotSkuddpar
             ? "Tilbake"
-            : awareSession.ettersokPairId
-              ? "To spotting"
-              : "Til spotting"
+            : "Til spotting"
         }
         onAbort={
           awareSession.postShotSkuddpar
@@ -4914,7 +4937,7 @@ export function HuntMapView({
                 );
               }
             : awareSession.ettersokPairId
-              ? abortAware
+              ? leaveEttersokToSpotting
               : backToSpotFromAware
         }
         postShotSkuddparMode={!!awareSession.postShotSkuddpar}

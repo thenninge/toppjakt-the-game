@@ -159,16 +159,20 @@ import {
   putCloudSave,
   deleteCloudSave,
 } from "@/lib/cloudSave";
+import { AmigaChapterIntro } from "@/components/intro/AmigaChapterIntro";
 import { clearShotPairsStorage } from "@/lib/aware/shotPairStorage";
 
 type Phase =
   | "loading"
+  | "chapter"
   | "name"
   | "welcome"
   | "town"
   | "location"
   | "sheriff-applied"
   | "hunt";
+
+type AfterChapterPhase = Exclude<Phase, "loading" | "chapter">;
 
 const LOADING_MS = 1000;
 
@@ -206,10 +210,16 @@ export function IntroScreen() {
   } | null>(null);
   const statsRef = useRef(stats);
   const bootstrappedRef = useRef(false);
+  /** Where to go after the Amiga chapter title card. */
+  const afterChapterRef = useRef<AfterChapterPhase>("name");
   /** Last hunt HUD distance — used to delta-accumulate into lifetimeDistanceM. */
   const lastHuntDistanceMRef = useRef(0);
 
-  const showStats = phase !== "loading" && phase !== "name" && !!stats.name;
+  const showStats =
+    phase !== "loading" &&
+    phase !== "chapter" &&
+    phase !== "name" &&
+    !!stats.name;
   const musicScene = musicSceneFromGame({ phase, location });
   const onHuntHudChange = useCallback((hud: HuntHudStatus) => {
     const next = Math.max(0, hud.distanceTravelledM ?? 0);
@@ -301,7 +311,8 @@ export function IntroScreen() {
             setCloudSyncing(false);
             setSaveConflict({ local, cloud });
             setAuthNote("Innlogget — velg lokal eller sky-save.");
-            setPhase("name");
+            afterChapterRef.current = "name";
+            setPhase("chapter");
             return;
           }
 
@@ -336,16 +347,18 @@ export function IntroScreen() {
         setName(next.name);
         if (!next.jegerprovePassed) {
           setLocation("jegerprove");
-          setPhase("location");
+          afterChapterRef.current = "location";
         } else {
-          setPhase("town");
+          afterChapterRef.current = "town";
         }
+        setPhase("chapter");
         return;
       }
 
       // Always let the hunter pick their own name — never lock to Google display name.
       setName("");
-      setPhase("name");
+      afterChapterRef.current = "name";
+      setPhase("chapter");
     }
 
     void bootstrap();
@@ -1422,7 +1435,12 @@ export function IntroScreen() {
 
       {showWeather ? <WeatherFrame weather={weather} /> : null}
 
-      <main className="intro-panel">
+      <main
+        className={
+          phase === "chapter" ? "intro-panel intro-panel-amiga" : "intro-panel"
+        }
+      >
+        {phase !== "chapter" ? (
         <header
           className={
             phase === "hunt" ? "intro-header intro-header-hunt" : "intro-header"
@@ -1467,6 +1485,7 @@ export function IntroScreen() {
             <span className="intro-header-side" aria-hidden />
           ) : null}
         </header>
+        ) : null}
 
         {phase === "loading" && (
           <p className="intro-prompt intro-loading" role="status">
@@ -1474,6 +1493,12 @@ export function IntroScreen() {
             {cloudSyncing ? " · synker sky…" : ""}
           </p>
         )}
+
+        {phase === "chapter" ? (
+          <AmigaChapterIntro
+            onContinue={() => setPhase(afterChapterRef.current)}
+          />
+        ) : null}
 
         {phase === "name" && (
           <form className="intro-form" onSubmit={onSubmit}>
@@ -2007,7 +2032,7 @@ export function IntroScreen() {
         )}
       </main>
 
-      {(phase === "loading" || phase === "name") && (
+      {(phase === "loading" || phase === "chapter" || phase === "name") && (
         <p className="intro-footer">
           Drop your landscape art in /public/intro-bg.png
         </p>

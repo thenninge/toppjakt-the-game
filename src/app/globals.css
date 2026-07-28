@@ -401,6 +401,202 @@ body {
   animation: intro-blink 1.1s steps(1, end) infinite;
 }
 
+/* --- Amiga chapter title card (after loading splash) --- */
+.intro-panel-amiga {
+  width: min(72rem, 100%);
+  padding: 1.7rem;
+  background: #0055aa;
+  border: 4px solid #ffffff;
+  box-shadow:
+    inset 0 0 0 2px #000000,
+    0 0 0 2px #aaaaaa,
+    0 14px 36px rgba(0, 0, 0, 0.65);
+  animation: intro-panel-in 500ms ease-out both;
+}
+
+.amiga-chapter {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding: 0.3rem 0 0.7rem;
+}
+
+.amiga-chapter-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.amiga-chapter-window {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: #aaaaaa;
+  border: 2px solid #ffffff;
+  box-shadow:
+    inset -2px -2px 0 #555555,
+    inset 2px 2px 0 #eeeeee;
+  image-rendering: pixelated;
+}
+
+.amiga-chapter-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.4rem 0.7rem;
+  background: linear-gradient(90deg, #0055aa 0%, #0077cc 55%, #0055aa 100%);
+  border-bottom: 2px solid #000000;
+  color: #ffffff;
+  font-family: var(--font-display), "Courier New", monospace;
+  font-size: 1.55rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.amiga-chapter-gadget {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  height: 1.4rem;
+  background: #aaaaaa;
+  border: 1px solid #ffffff;
+  box-shadow:
+    inset -1px -1px 0 #555555,
+    inset 1px 1px 0 #eeeeee;
+}
+
+.amiga-chapter-gadget-depth {
+  margin-left: auto;
+}
+
+.amiga-chapter-titlebar-text {
+  flex: 1 1 auto;
+  text-align: center;
+  text-shadow: 1px 1px 0 #003366;
+}
+
+.amiga-chapter-body {
+  display: grid;
+  grid-template-columns: minmax(15rem, 42%) 1fr;
+  gap: 1.5rem;
+  padding: 1.3rem;
+  background: #0055aa;
+}
+
+.amiga-chapter-portrait-wrap {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #000000;
+  border: 3px solid #ffffff;
+  box-shadow:
+    inset 0 0 0 2px #000000,
+    3px 3px 0 #003366;
+}
+
+.amiga-chapter-portrait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.amiga-chapter-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.18) 2px,
+    rgba(0, 0, 0, 0.18) 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+.amiga-chapter-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.9rem;
+  min-width: 0;
+  color: #ffffff;
+  font-family: var(--font-display), "Courier New", monospace;
+  text-shadow: 2px 2px 0 #002244;
+}
+
+.amiga-chapter-game {
+  margin: 0;
+  font-size: clamp(2.1rem, 6.8vw, 2.9rem);
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: #ffcc55;
+  text-shadow:
+    2px 2px 0 #000000,
+    -1px 0 0 #aa4400;
+}
+
+.amiga-chapter-line {
+  margin: 0;
+  font-size: clamp(1.55rem, 4.8vw, 1.9rem);
+  line-height: 1.3;
+  color: #ffffff;
+}
+
+.amiga-chapter-copyright {
+  margin: 0.7rem 0 0;
+  font-size: 1.45rem;
+  letter-spacing: 0.03em;
+  color: #ccddee;
+}
+
+.amiga-chapter-click {
+  margin: 1.1rem 0 0;
+  font-size: 1.45rem;
+  color: #88ff88;
+  animation: intro-blink 1.05s steps(1, end) infinite;
+}
+
+@media (max-width: 520px) {
+  .amiga-chapter-body {
+    grid-template-columns: 1fr;
+  }
+
+  .amiga-chapter-portrait-wrap {
+    width: min(100%, 18rem);
+    margin-inline: auto;
+  }
+
+  .amiga-chapter-copy {
+    text-align: center;
+    align-items: center;
+  }
+
+  .amiga-chapter-titlebar {
+    font-size: 1.1rem;
+  }
+
+  .amiga-chapter-game {
+    font-size: clamp(1.55rem, 7vw, 2.1rem);
+  }
+
+  .amiga-chapter-line {
+    font-size: clamp(1.05rem, 4.5vw, 1.35rem);
+  }
+
+  .amiga-chapter-copyright,
+  .amiga-chapter-click {
+    font-size: 1.05rem;
+  }
+}
+
 @keyframes intro-blink {
   50% {
     opacity: 0.72;

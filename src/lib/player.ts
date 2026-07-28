@@ -319,7 +319,7 @@ export const CHEAT_STARTING_BALANCE = 500_000;
  * First-name tokens that unlock elevated starting cash + VIP kit
  * (case-insensitive word match). e.g. "Jørn Nilsson" → {@link VIP_STARTING_BALANCE}.
  */
-export const VIP_NAME_TOKENS = ["jørn", "ivar", "tomas"] as const;
+export const VIP_NAME_TOKENS = ["jørn", "ivar", "tomas", "einar"] as const;
 export const VIP_STARTING_BALANCE = 100_000;
 /**
  * Substrings in the chosen hunter name that grant elevated starting cash only
@@ -369,17 +369,24 @@ export const STARTER_HUNT_QTY: Partial<Record<string, number>> = {
   "food-dronning-kokesjokolade": 1,
 };
 
-export type KitProfileId = "tomas" | "ivar" | "jorn" | "neppe";
+export type KitProfileId = "tomas" | "ivar" | "jorn" | "einar" | "neppe";
 
 export type KitProfile = {
   id: KitProfileId;
   /** Weapon platform item ids (rifle, scope, ammo, can, bipod, stock…). */
   weaponIds: readonly string[];
   /**
+   * Hunt support ids (bag, camo, food…). When set, replaces
+   * {@link STARTER_HUNT_SUPPORT_IDS}.
+   */
+  supportIds?: readonly string[];
+  /**
    * LRF binos in the hunt support loadout.
    * Defaults to {@link DEFAULT_VIP_LRF_ID} (Sig KILO3000).
    */
   lrfId?: string;
+  /** Override inventory qty for specific item ids (e.g. 100 rounds of ammo). */
+  itemQty?: Partial<Record<string, number>>;
   /** Ammo ids that get a perfect 100 m zero with rifle+scope. */
   zeroAmmoIds: readonly string[];
   license: {
@@ -390,6 +397,8 @@ export type KitProfile = {
   };
   /** Pre-applied CB Customs work (Tomas: søylebedding + flute + slank stokk). */
   customsMods?: CustomsMods;
+  /** Starting realism level when this kit is granted (e.g. Einar → high). */
+  realism?: GameRealism;
 };
 
 /** Tomas — Sauer 200 STR + ZCO 527 + Svemko Hunter + softgun + CB Customs (inkl. trigger tuning). */
@@ -474,6 +483,46 @@ export const KIT_PROFILE_JORN: KitProfile = {
   },
 };
 
+/**
+ * Einar — Sauer 200 + ZCO 527 (ingen Triggercam-zoom-lås) + Recknagel 36 +
+ * Svemko Hunter + Spartan Javelin + Lynx + Sig KILO3000 + support-kit.
+ */
+export const KIT_PROFILE_EINAR: KitProfile = {
+  id: "einar",
+  weaponIds: [
+    "rifle-sauer-200str",
+    "scope-zco-527-mct",
+    "mount-recknagel-eratac-36",
+    "ammo-lapua-65x55-scenar",
+    "sup-svemko-hunter-1",
+    "bipod-spartan-javelin",
+    "misc-ulf-bubblelevel",
+    "thermal-hikmicro-lynx-le10",
+    "misc-garmin-xero-c1-pro",
+  ],
+  supportIds: [
+    "misc-kestrel-5700-elite",
+    "misc-vorn-deer-42",
+    "misc-triggercam",
+    "misc-thermos-jula",
+    "outdoors-opptenningsbrikker",
+    "food-boller-5pk",
+    "camo-boots-crispi-titan-evo",
+  ],
+  lrfId: "lrf-sig-kilo3000-bdx-10x42",
+  itemQty: {
+    "ammo-lapua-65x55-scenar": 100,
+  },
+  zeroAmmoIds: ["ammo-lapua-65x55-scenar"],
+  license: {
+    id: "license-vip-einar-sauer-200str",
+    brand: "Sauer",
+    type: "200 STR",
+    caliber: "6,5×55",
+  },
+  realism: "high",
+};
+
 /** Neppe (cheat) — competition Sauer + NF + Genesis + ACC Elite. */
 export const KIT_PROFILE_NEPPE: KitProfile = {
   id: "neppe",
@@ -503,6 +552,7 @@ export const KIT_PROFILES: Record<KitProfileId, KitProfile> = {
   tomas: KIT_PROFILE_TOMAS,
   ivar: KIT_PROFILE_IVAR,
   jorn: KIT_PROFILE_JORN,
+  einar: KIT_PROFILE_EINAR,
   neppe: KIT_PROFILE_NEPPE,
 };
 
@@ -514,7 +564,10 @@ export function huntLoadoutIdsForProfile(
   profile: KitProfile,
 ): string[] {
   const lrfId = profile.lrfId ?? DEFAULT_VIP_LRF_ID;
-  return [...profile.weaponIds, ...STARTER_HUNT_SUPPORT_IDS, lrfId];
+  const support = profile.supportIds ?? STARTER_HUNT_SUPPORT_IDS;
+  const ids = [...profile.weaponIds, ...support];
+  if (!ids.includes(lrfId)) ids.push(lrfId);
+  return ids;
 }
 
 /** @deprecated Prefer {@link huntLoadoutIdsForProfile}(KIT_PROFILE_NEPPE). */
@@ -561,7 +614,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas — e.g. "Jørn Nilsson").
+ * (Jørn / Ivar / Tomas / Einar — e.g. "Jørn Nilsson").
  */
 export function isVipPlayerName(name: string): boolean {
   return vipKitProfileIdForName(name) != null;
@@ -578,6 +631,7 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
   if (words.includes("tomas")) return "tomas";
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
+  if (words.includes("einar")) return "einar";
   return null;
 }
 
@@ -656,9 +710,9 @@ export function grantKitProfile(
   for (const id of loadout) {
     if (!next.inventory.some((e) => e.itemId === id)) {
       const item = getShopItem(id);
-      let qty = STARTER_HUNT_QTY[id] ?? 1;
+      let qty = profile.itemQty?.[id] ?? STARTER_HUNT_QTY[id] ?? 1;
       if (item && isAmmoItem(item)) {
-        qty = ammoRoundsPerPurchase(item);
+        qty = profile.itemQty?.[id] ?? ammoRoundsPerPurchase(item);
       }
       next = {
         ...next,
@@ -681,6 +735,10 @@ export function grantKitProfile(
 
   if (profile.customsMods) {
     next = { ...next, customsMods: { ...profile.customsMods } };
+  }
+
+  if (profile.realism) {
+    next = { ...next, realism: profile.realism };
   }
 
   const perfect: ZeroingProfile = {
@@ -712,7 +770,7 @@ export function grantStarterGear(stats: PlayerStats): PlayerStats {
   return grantKitProfile(stats, KIT_PROFILE_NEPPE);
 }
 
-/** VIP first-name loadout (Tomas / Ivar / Jørn). */
+/** VIP first-name loadout (Tomas / Ivar / Jørn / Einar). */
 export function grantVipStarterGear(
   stats: PlayerStats,
   name: string,

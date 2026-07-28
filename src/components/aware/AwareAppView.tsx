@@ -2059,22 +2059,20 @@ export function AwareAppView({
             </div>
           ) : null}
           <div className="aware-map-actions-row">
-          {mode !== "track" ? (
-            <button
-              type="button"
-              className="intro-button sheriff-secondary"
-              onClick={() =>
-                onAbort({
-                  hunter: { ...hunter },
-                  gunDeployed,
-                  rest,
-                  kestrelEnviroReady,
-                })
-              }
-            >
-              {abortLabel}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() =>
+              onAbort({
+                hunter: { ...hunter },
+                gunDeployed,
+                rest,
+                kestrelEnviroReady,
+              })
+            }
+          >
+            {abortLabel}
+          </button>
           {mode === "track" &&
           trackActivePair?.resultKind === "ettersok" &&
           trackActivePair.found !== true ? (
