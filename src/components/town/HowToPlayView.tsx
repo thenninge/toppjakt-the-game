@@ -85,7 +85,7 @@ const SECTIONS: GuideSection[] = [
       "Ettersøk: følg fluktretningen fra der fuglen satt. Spor nær sann landing + riktig retning → høy funnsjanse. Feil vei / for langt unna → ofte «ikke funnet» — legg nytt spor.",
       "Treff: instant/vital i treet → «Hent ved treet». Instant kill under 200 m: hent ved treet uten cam/lagret skuddpar. Såret fugl krever sporarbeid. Ren bom = ingen Track.",
       "Track viser bare treff med høsting (cam/EL Range/lagret skuddpar etter skudd, eller nærhold-instant). Planlagt skuddpar uten skudd er bare kartmarkering.",
-      "«To spotting» forlater kart under Track uten å avbryte jakten. «Avslutt ettersøk» gir opp fuglen (MIND-hit).",
+      "«Til spotting» / gå til annen rute uten funn: −30 % mind (fuglen kan ligge til senere). «Gi opp søket» mister fuglen (+ samme MIND-hit).",
       "Gun / sekk|tofot / Kestrel kan følge med til spotting; camcorder, chrono og Triggercam resettes ved Til spotting.",
     ],
   },

@@ -174,7 +174,7 @@ export function KestrelFasitView({
   clickUnit = "MRAD",
 }: KestrelFasitViewProps) {
   const defaultMode: KestrelDisplayMode =
-    clickUnit === "MOA" ? "MOA" : "MIL";
+    clickUnit === "MOA" ? "CLICK_MOA" : "CLICK_MIL";
   const [displayMode, setDisplayMode] =
     useState<KestrelDisplayMode>(defaultMode);
   const [rangeM, setRangeM] = useState(() =>
@@ -186,7 +186,7 @@ export function KestrelFasitView({
   }, [baseDistanceM]);
 
   useEffect(() => {
-    setDisplayMode(clickUnit === "MOA" ? "MOA" : "MIL");
+    setDisplayMode(clickUnit === "MOA" ? "CLICK_MOA" : "CLICK_MIL");
   }, [clickUnit]);
 
   const hold = solveHold(rangeM);

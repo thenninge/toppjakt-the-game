@@ -572,6 +572,11 @@ const ETTERSOK_ABANDON_MENTAL_KEEP = 0.7;
 /** Finding a shot bird restores 33 percentage points of mind (= −0.33 fatigue). */
 const FIND_BIRD_MIND_GAIN = 0.33;
 
+/** −30 % mind for leaving a cell (or søk) without a find — same as Gi opp. */
+function applyEttersokMentalSetback(mental: number): number {
+  return clampFatigue(1 - staminaLeft(mental) * ETTERSOK_ABANDON_MENTAL_KEEP);
+}
+
 function birdNameNb(species: string | undefined): string {
   if (species === "orrhane") return "orrhane";
   if (species === "ugle") return "ugle";
@@ -767,6 +772,11 @@ export function HuntMapView({
   const endexShownRef = useRef(false);
   /** Open hent/søk pairs forfeited once when clock passes 17:00. */
   const skuddlysForfeitRef = useRef(false);
+  /**
+   * Cell key already charged −30 % mind for leaving unfound birds this
+   * departure (Til spotting → walk should not double-hit).
+   */
+  const leaveUnfoundMindCellRef = useRef<string | null>(null);
   /** Missed midnight at the car — lose catch, overnight. */
   const [lostCatchReveal, setLostCatchReveal] = useState(false);
   const midnightHandledRef = useRef(false);
@@ -1280,6 +1290,7 @@ export function HuntMapView({
     setEndexReveal(false);
     endexShownRef.current = false;
     skuddlysForfeitRef.current = false;
+    leaveUnfoundMindCellRef.current = null;
     setLostCatchReveal(false);
     midnightHandledRef.current = false;
     setBirds(
@@ -1852,6 +1863,9 @@ export function HuntMapView({
       );
     });
     const arrivedAt = { ...walkSession.to };
+    const leftFrom = { ...walkSession.from };
+    const leaveUnfoundNote = mindHitLeavingUnfoundCell(leftFrom);
+    leaveUnfoundMindCellRef.current = null;
     setPos(arrivedAt);
     lastSpotLrfRef.current = null;
     const nowMins = Math.floor(clockSecondsRef.current / 60);
@@ -1925,6 +1939,7 @@ export function HuntMapView({
     const walkLog =
       `Gikk til ${cellLabel(walkSession.to)} på ${walkSession.minutes} min (${usedPace.label}, ${walkSession.path.length} ruter).` +
       carStashNote +
+      leaveUnfoundNote +
       (mountBump > 0
         ? ` Gun auto-mount — ${mountBump === 1 ? "uspottet fugl" : `${mountBump} uspottede`} +${Math.round(MOUNT_GUN_UNSPOTTED_NERVE * 100)}% nerve.`
         : "") +
@@ -1950,7 +1965,10 @@ export function HuntMapView({
         );
       }
       setFlushQueue(flush.events);
-      setLog(flushMessage(flush.events[0]!));
+      setLog(
+        flushMessage(flush.events[0]!) +
+          (leaveUnfoundNote ? leaveUnfoundNote : ""),
+      );
       return;
     }
 
@@ -2692,8 +2710,38 @@ export function HuntMapView({
   }
 
   /**
+   * Unfinished hent/søk birds still in this cell (saved for later Track).
+   */
+  function unfinishedPairsInCell(cell: HuntGridCell): ShotPair[] {
+    return shotPairs.filter(
+      (p) =>
+        p.cell.row === cell.row &&
+        p.cell.col === cell.col &&
+        p.found == null &&
+        !!p.harvestDraft &&
+        (p.resultKind === "instant_kill" ||
+          p.resultKind === "vital_kill" ||
+          p.resultKind === "ettersok"),
+    );
+  }
+
+  /**
+   * Leaving a kartrute / søk without finding open birds: same −30 % mind as
+   * Gi opp, but pairs stay for later. Dedupes Til spotting → walk same leave.
+   */
+  function mindHitLeavingUnfoundCell(from: HuntGridCell): string {
+    if (unfinishedPairsInCell(from).length === 0) return "";
+    const key = `${from.row},${from.col}`;
+    if (leaveUnfoundMindCellRef.current === key) return "";
+    leaveUnfoundMindCellRef.current = key;
+    setMentalFatigue((m) => applyEttersokMentalSetback(m));
+    return " Du går fra en kartrute uten funn av fugl og mister 30 % mind.";
+  }
+
+  /**
    * Leave ettersøk / Track to spotting without giving up the bird.
    * Only {@link abandonEttersok} («Gi opp søket») marks the bird lost.
+   * Leaving without a find still costs −30 % mind (same as Gi opp); bird stays.
    */
   function leaveEttersokToSpotting(opts?: AwareLeaveOpts) {
     rememberAwareStand(opts?.hunter);
@@ -2714,6 +2762,10 @@ export function HuntMapView({
       );
       return;
     }
+    const mindNote =
+      pair != null && pair.found == null
+        ? mindHitLeavingUnfoundCell(pair.cell)
+        : "";
     setAwareSession(null);
     if (canHuntAtTime(clockMinutes)) {
       beginSpot({
@@ -2721,17 +2773,19 @@ export function HuntMapView({
         initialMode: "binos",
       });
       setLog(
-        session.recoveryOnly
+        (session.recoveryOnly
           ? "Til spotting — husk å hente fuglen ved treet (Hent/søk)."
-          : "Til spotting — søket er ikke avsluttet. Speid videre, eller åpne Hent/søk når du er klar.",
+          : "Til spotting — søket er ikke avsluttet. Speid videre, eller åpne Hent/søk når du er klar.") +
+          mindNote,
       );
       return;
     }
     setPanel("arrived");
     setLog(
-      session.recoveryOnly
+      (session.recoveryOnly
         ? "Tilbake til kart — husk å hente fuglen ved treet (Hent/søk)."
-        : "Tilbake til kart — søket er ikke avsluttet. Åpne Hent/søk når du er klar.",
+        : "Tilbake til kart — søket er ikke avsluttet. Åpne Hent/søk når du er klar.") +
+        mindNote,
     );
   }
 
@@ -2963,7 +3017,7 @@ export function HuntMapView({
         prev.map((p) => (p.id === pairId ? { ...p, found: false } : p)),
       );
       setMentalFatigue((m) =>
-        clampFatigue(1 - staminaLeft(m) * ETTERSOK_ABANDON_MENTAL_KEEP),
+        applyEttersokMentalSetback(m),
       );
       const bird = birdNameNb(pair.harvestDraft?.species);
       setAbandonReveal({
@@ -2996,10 +3050,15 @@ export function HuntMapView({
         return;
       }
       if (awareSession.recoveryOnly) {
+        const mindNote =
+          pair != null && pair.found == null
+            ? mindHitLeavingUnfoundCell(pair.cell)
+            : "";
         setLog(
-          pair?.found === false
+          (pair?.found === false
             ? "Du fant ikke treet. Skuddparet er lagret — åpne Hent/søk senere."
-            : "Skuddpar lagret. Husk å hente fuglen ved treet (Hent/søk).",
+            : "Skuddpar lagret. Husk å hente fuglen ved treet (Hent/søk).") +
+            mindNote,
         );
         setAwareSession(null);
         setPanel("arrived");
@@ -3591,9 +3650,14 @@ export function HuntMapView({
     // Track / Hent-søk → rifle back in the pack.
     mountFieldGun({ silent: true });
     if (pair.cell.row !== pos.row || pair.cell.col !== pos.col) {
+      const leaveNote = mindHitLeavingUnfoundCell(pos);
       setPos({ ...pair.cell });
-      setLog(`Du går til ${pair.cellLabel} for å hente/søke etter fuglen.`);
+      setLog(
+        `Du går til ${pair.cellLabel} for å hente/søke etter fuglen.` +
+          leaveNote,
+      );
     }
+    leaveUnfoundMindCellRef.current = null;
     setAwareSession({
       imageSrc: sprite.toppSrc,
       bird: {
