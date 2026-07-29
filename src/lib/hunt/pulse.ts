@@ -1,5 +1,5 @@
 /**
- * Hunt heart rate (BPM) → vertical gun shake.
+ * Hunt heart rate (BPM) → vertical gun shake (systolic kick on top of calm wobble).
  *
  * Pulse is a real 50–180 BPM channel driven by BODY fatigue, recent walking
  * exertion, Aware sneak, spotting spikes, mind-food calm, and stimulants.
@@ -10,8 +10,23 @@ export const HEART_RATE_FLOOR_BPM = 50;
 export const HEART_RATE_REST_BPM = 60;
 export const HEART_RATE_MAX_BPM = 180;
 
+/**
+ * Shake bands (intensity 0→1):
+ *   <80     invisible
+ *   80–100  slight
+ *   100–120 moderate
+ *   120–140 noticeable
+ *   140–180 full
+ */
+export const PULSE_SHAKE_VISIBLE_BPM = 80;
+
 /** BODY fatigue 0→1 contributes up to this many BPM above rest. */
 export const PULSE_FROM_BODY_BPM = 45;
+/**
+ * While resting / sitting, BODY only partially floors the pulse target so
+ * acute load can settle below the shake band even when the BODY bar is low.
+ */
+export const PULSE_BODY_WHILE_RESTING_MULT = 0.45;
 /** Recent walk exertion 0→1 contributes up to this many BPM. */
 export const PULSE_FROM_EXERTION_BPM = 55;
 /** Aware sneak 0→1 contributes up to this many BPM. */
@@ -27,23 +42,35 @@ export const PULSE_SPOT_TIUR_BPM = 30;
  */
 export const PULSE_PER_FULL_MIND_BPM = 50;
 
-/** Vertical heartbeat amp at 100 m when BPM is at max (mm of POA). */
+/** Vertical heartbeat kick amp at 100 m when intensity is full (mm of POA). */
 export const PULSE_SHAKE_AMP_MM_AT_100M = 22;
-/** Bipod / backpack rest dampens pulse vertical shake (not eliminate). */
-export const PULSE_SHAKE_REST_MULT = 0.45;
-/** Hold breath (F) strongly dampens pulse vertical shake. */
-export const PULSE_SHAKE_FOCUS_MULT = 0.35;
+/** Bipod / backpack rest dampens pulse kick (not eliminate). */
+export const PULSE_SHAKE_REST_MULT = 0.5;
+/**
+ * Extra damp when CB bagrider is stacked on sekk/bipod.
+ * Combined with rest: 0.5 × 0.35 = 0.175 — bagrider cuts more than bipod alone.
+ */
+export const PULSE_SHAKE_BAGRIDER_MULT = 0.35;
 
-/** How fast HR eases toward target (fraction per game-minute). */
-export const PULSE_EASE_PER_GAME_MIN = 0.35;
+/** How fast HR rises toward a higher target (fraction per game-minute). */
+export const PULSE_EASE_RISE_PER_GAME_MIN = 0.55;
+/** How fast HR falls toward a lower target while idle. */
+export const PULSE_EASE_FALL_PER_GAME_MIN = 0.28;
+/** Extra fall ease while resting / tyribål sit. */
+export const PULSE_EASE_FALL_RESTING_MULT = 2.4;
 /** Extra ease while spotting with eyes/binos (calm down over time). */
 export const PULSE_SPOTTING_EASE_MULT = 2.2;
 /** Exertion decay per game-minute while idle / resting. */
-export const EXERTION_DECAY_PER_GAME_MIN = 0.12;
+export const EXERTION_DECAY_PER_GAME_MIN = 0.16;
 /** Aware sneak intensity decay per game-minute while still. */
-export const AWARE_SNEAK_DECAY_PER_GAME_MIN = 0.18;
+export const AWARE_SNEAK_DECAY_PER_GAME_MIN = 0.22;
 /** Aware sneak rise while moving (per real second of sneak). */
 export const AWARE_SNEAK_RISE_PER_SEC = 0.22;
+
+/** @deprecated Prefer rise/fall rates. Kept for any old call sites. */
+export const PULSE_EASE_PER_GAME_MIN = PULSE_EASE_FALL_PER_GAME_MIN;
+/** @deprecated Focus uses the same calm curve as weapon shake. */
+export const PULSE_SHAKE_FOCUS_MULT = 0.35;
 
 export type PulseStim = {
   boostBpm: number;
@@ -71,6 +98,10 @@ export function clampHeartRateBpm(n: number): number {
 export function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.min(1, Math.max(0, n));
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * clamp01(t);
 }
 
 export function initialPulseState(
@@ -103,14 +134,17 @@ export function targetHeartRateBpm(input: {
   exertion01: number;
   awareSneak01: number;
   stimBoostBpm: number;
+  /** Sitting / eat rest — BODY floors pulse less hard. */
+  resting?: boolean;
 }): number {
   const body = clamp01(input.physicalFatigue);
   const exertion = clamp01(input.exertion01);
   const sneak = clamp01(input.awareSneak01);
   const stim = Math.max(0, input.stimBoostBpm);
+  const bodyMult = input.resting ? PULSE_BODY_WHILE_RESTING_MULT : 1;
   const raw =
     HEART_RATE_REST_BPM +
-    body * PULSE_FROM_BODY_BPM +
+    body * PULSE_FROM_BODY_BPM * bodyMult +
     exertion * PULSE_FROM_EXERTION_BPM +
     sneak * PULSE_FROM_AWARE_SNEAK_BPM +
     stim;
@@ -118,15 +152,21 @@ export function targetHeartRateBpm(input: {
 }
 
 /**
- * Ease current BPM toward target. `gameMinutes` is elapsed hunt time.
+ * Ease current BPM toward target. Rise is snappy; fall is slower unless
+ * `fallingMult` is raised (rest / spotting).
  */
 export function easeHeartRateBpm(
   currentBpm: number,
   targetBpm: number,
   gameMinutes: number,
+  opts?: { fallingMult?: number },
 ): number {
   if (gameMinutes <= 0) return clampHeartRateBpm(currentBpm);
-  const t = 1 - Math.exp(-PULSE_EASE_PER_GAME_MIN * gameMinutes);
+  const rising = targetBpm > currentBpm;
+  const rate = rising
+    ? PULSE_EASE_RISE_PER_GAME_MIN
+    : PULSE_EASE_FALL_PER_GAME_MIN * Math.max(0.1, opts?.fallingMult ?? 1);
+  const t = 1 - Math.exp(-rate * gameMinutes);
   return clampHeartRateBpm(currentBpm + (targetBpm - currentBpm) * t);
 }
 
@@ -185,7 +225,9 @@ export function tickPulseState(
       : state.stim;
   const decayMult =
     (opts.resting ? 2.2 : 1) * (opts.spotting ? 1.6 : 1);
-  const easeMult = opts.spotting ? PULSE_SPOTTING_EASE_MULT : 1;
+  const fallEaseMult =
+    (opts.resting ? PULSE_EASE_FALL_RESTING_MULT : 1) *
+    (opts.spotting ? PULSE_SPOTTING_EASE_MULT : 1);
   const exertion01 = decayExertion01(state.exertion01, mins * decayMult);
   const awareSneak01 = decayAwareSneak01(state.awareSneak01, mins * decayMult);
   const target = targetHeartRateBpm({
@@ -193,13 +235,12 @@ export function tickPulseState(
     exertion01,
     awareSneak01,
     stimBoostBpm: stimBoost,
+    resting: opts.resting,
   });
   return {
-    heartRateBpm: easeHeartRateBpm(
-      state.heartRateBpm,
-      target,
-      mins * easeMult,
-    ),
+    heartRateBpm: easeHeartRateBpm(state.heartRateBpm, target, mins, {
+      fallingMult: fallEaseMult,
+    }),
     exertion01,
     awareSneak01,
     stim,
@@ -290,23 +331,86 @@ export function applyPulseStim(
 }
 
 /**
- * Vertical heartbeat amplitude in mm at POA (0 at ≤ rest, strong near max).
- * Isotropic calm wobble is separate — this is Y-only.
+ * Banded shake intensity 0–1 from BPM.
+ * Below {@link PULSE_SHAKE_VISIBLE_BPM} → 0 (no visible kick).
+ */
+export function pulseShakeIntensity01(heartRateBpm: number): number {
+  const bpm = clampHeartRateBpm(heartRateBpm);
+  if (bpm < PULSE_SHAKE_VISIBLE_BPM) return 0;
+  if (bpm < 100) return lerp(0, 0.22, (bpm - 80) / 20);
+  if (bpm < 120) return lerp(0.22, 0.48, (bpm - 100) / 20);
+  if (bpm < 140) return lerp(0.48, 0.75, (bpm - 120) / 20);
+  return lerp(0.75, 1, (bpm - 140) / 40);
+}
+
+/**
+ * Systolic kick shape for one beat cycle (phase 0–1).
+ * Sharp rise, soft diastolic settle — not a pure sine.
+ */
+export function pulseKickShape01(phase01: number): number {
+  const p = ((phase01 % 1) + 1) % 1;
+  // Systole: 0 → peak in first ~14 % of the beat.
+  if (p < 0.14) {
+    const u = p / 0.14;
+    return u * u;
+  }
+  // Early diastole: exponential fall toward a small residual.
+  if (p < 0.42) {
+    const u = (p - 0.14) / 0.28;
+    return Math.exp(-4.2 * u) * (1 - 0.12 * u);
+  }
+  // Quiet remainder of the cycle.
+  if (p < 0.55) {
+    const u = (p - 0.42) / 0.13;
+    return 0.06 * (1 - u);
+  }
+  return 0;
+}
+
+/**
+ * Vertical heartbeat kick in mm at POA (0 below 80 BPM).
+ * Added on top of isotropic calm wobble — Y only.
  */
 export function pulseVerticalAmpMm(
   heartRateBpm: number,
   distanceM: number,
-  opts?: { rest?: boolean; focused?: boolean },
+  opts?: {
+    rest?: boolean;
+    bagrider?: boolean;
+    /**
+     * Same focus calm multiplier as weapon shake (`focusCalmMultiplier`).
+     * Amp is divided by this (sweet ≈ ÷3). Default 1 = no focus.
+     */
+    focusCalmMult?: number;
+  },
 ): number {
-  const bpm = clampHeartRateBpm(heartRateBpm);
-  const span = HEART_RATE_MAX_BPM - HEART_RATE_REST_BPM;
-  const t = Math.max(0, (bpm - HEART_RATE_REST_BPM) / span);
-  const shaped = t * t;
+  const intensity = pulseShakeIntensity01(heartRateBpm);
+  if (intensity <= 0) return 0;
   let amp =
-    PULSE_SHAKE_AMP_MM_AT_100M * shaped * (Math.max(40, distanceM) / 100);
+    PULSE_SHAKE_AMP_MM_AT_100M *
+    intensity *
+    (Math.max(40, distanceM) / 100);
   if (opts?.rest) amp *= PULSE_SHAKE_REST_MULT;
-  if (opts?.focused) amp *= PULSE_SHAKE_FOCUS_MULT;
+  if (opts?.bagrider && opts?.rest) amp *= PULSE_SHAKE_BAGRIDER_MULT;
+  const focusMult = opts?.focusCalmMult;
+  if (focusMult != null && Number.isFinite(focusMult) && focusMult > 0) {
+    amp /= focusMult;
+  }
   return amp;
+}
+
+/**
+ * Signed vertical kick offset (−ish…1) for the current time.
+ * Multiply by {@link pulseVerticalAmpMm} and add to wobble Y.
+ */
+export function pulseKickOffset(
+  heartRateBpm: number,
+  tSec: number,
+): number {
+  const hz = pulseHz(heartRateBpm);
+  if (!(hz > 0)) return 0;
+  const phase = tSec * hz;
+  return pulseKickShape01(phase);
 }
 
 export function pulseHz(heartRateBpm: number): number {

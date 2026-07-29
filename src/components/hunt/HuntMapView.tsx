@@ -3360,16 +3360,26 @@ export function HuntMapView({
       returnTriggercamActive: !!stance.triggercamActive,
       returnNerve: stance.birdNerve ?? session.returnNerve,
     };
+    const landscape = isSpotLandscapeSrc(session.imageSrc)
+      ? session.imageSrc
+      : spotLandscapeForCell(pos);
+    const layoutKey = `${pos.row},${pos.col}`;
+    const scanBirdPlacements =
+      spotLayoutByCell[layoutKey]?.placements.filter(
+        (p) => p.birdId !== "aware-review",
+      ) ?? [];
+    const sceneWidthPct = medianPlacementWidthPct(scanBirdPlacements, 2);
     setFieldGunDeployed(true);
     setAwareSession(null);
     setShootSession({
-      imageSrc: session.imageSrc,
+      imageSrc: landscape,
       bird: {
         ...session.bird,
         birdId: "aware-review",
         distanceM: trueDistanceM,
         x: 50,
         y: 50,
+        widthPct: sceneWidthPct > 0 ? sceneWidthPct : 2,
       },
       trueDistanceM,
       measuredDistanceM: trueDistanceM,
@@ -3389,6 +3399,8 @@ export function HuntMapView({
         !!stance.bagriderActive &&
         (stance.rest === "backpack" || stance.rest === "bipod"),
       gunPrepOnly: true,
+      /** Show cell birds on the landscape; F-mark stays off while resuming Track. */
+      scanBirdPlacements,
       rangeSource: session.rangeSource,
       birdNerve: 0,
     });
@@ -3861,6 +3873,37 @@ export function HuntMapView({
       : `Hent/søk · ${where} (${bird}) — gå dit`;
   }
 
+  /** True when `src` is a spotting landscape (not a bird cutout sprite). */
+  function isSpotLandscapeSrc(src: string): boolean {
+    if (!src) return false;
+    if (src.includes("/images/birds/")) return false;
+    return (
+      src.startsWith("/images/spot/") ||
+      isCloudSpotImage(src) ||
+      spotImagesWithPerches().includes(src)
+    );
+  }
+
+  /**
+   * Spotting scene for this cell — never a bird topp sprite.
+   * Prefers sticky cell layout, then prepareSpot, then a fresh spot draw.
+   */
+  function spotLandscapeForCell(cell: HuntGridCell): string {
+    const layoutKey = `${cell.row},${cell.col}`;
+    const layout = spotLayoutByCell[layoutKey];
+    if (layout?.imageSrc && isSpotLandscapeSrc(layout.imageSrc)) {
+      return layout.imageSrc;
+    }
+    const prepared = prepareSpotAtPos({
+      cell,
+      reuseImageSrc: layout?.imageSrc ?? null,
+    });
+    if (prepared?.imageSrc && isSpotLandscapeSrc(prepared.imageSrc)) {
+      return prepared.imageSrc;
+    }
+    return pickSpotImage();
+  }
+
   /** Re-open Aware Track for a saved skuddmarkør — only when standing in that cell. */
   function openAwareForPair(pair: ShotPair) {
     const where = cellLabel(pair.cell);
@@ -3876,12 +3919,19 @@ export function HuntMapView({
     const species = pair.harvestDraft?.species ?? sprite.species;
     const recoveryOnly =
       pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill";
+    const landscape = spotLandscapeForCell(pair.cell);
+    const layout =
+      spotLayoutByCell[`${pair.cell.row},${pair.cell.col}`];
+    const sceneWidthPct = medianPlacementWidthPct(
+      layout?.placements ?? [],
+      2,
+    );
     setPendingPostShot(null);
     setEngageResume(null);
     setBirdEncounter(null);
     leaveUnfoundMindCellRef.current = null;
     setAwareSession({
-      imageSrc: sprite.toppSrc,
+      imageSrc: landscape,
       bird: {
         birdId: pair.harvestDraft?.birdId ?? pair.id,
         species,
@@ -3890,7 +3940,7 @@ export function HuntMapView({
         distanceM: pair.distanceM,
         x: 50,
         y: 50,
-        widthPct: 8,
+        widthPct: sceneWidthPct > 0 ? sceneWidthPct : 2,
         flip: !!pair.hitFasit?.birdFlip,
       },
       trueDistanceM: pair.distanceM,
@@ -5265,7 +5315,9 @@ export function HuntMapView({
         scanBirdPlacements={shootSession.scanBirdPlacements}
         scopeMarkedBirdId={scopeMarkedAware?.bird.birdId ?? null}
         onMarkBirdFromScope={
-          shootSession.gunPrepOnly && !scopeMarkedAware
+          shootSession.gunPrepOnly &&
+          !scopeMarkedAware &&
+          !scopeReviewResumeRef.current
             ? onMarkBirdFromGunScope
             : undefined
         }

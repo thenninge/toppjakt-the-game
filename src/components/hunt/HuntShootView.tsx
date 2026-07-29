@@ -17,6 +17,7 @@ import {
   effectiveCalmWithFocus,
   ensureAmmoAffinity,
   fatigueDispersionFactor,
+  focusCalmMultiplier,
   focusPhase,
   focusRemainingMs,
   focusShouldAbort,
@@ -41,7 +42,7 @@ import {
 import { resolveBulletWeightGrains, isSilentSuppressedShot } from "@/lib/ammo/spec";
 import {
   formatPulseBpm,
-  pulseHz,
+  pulseKickOffset,
   pulseVerticalAmpMm,
 } from "@/lib/hunt/pulse";
 import { opticReticleImgScale } from "@/lib/range/scopeViewScale";
@@ -766,6 +767,7 @@ export function HuntShootView({
   });
   const heartRateBpmRef = useRef(heartRateBpm);
   const shootRestRef = useRef(shootRest);
+  const shootBagriderRef = useRef(shootBagriderActive);
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   /** One shot max per F-hold / focus period. */
   const focusShotSpentRef = useRef(false);
@@ -978,6 +980,9 @@ export function HuntShootView({
   useEffect(() => {
     shootRestRef.current = shootRest;
   }, [shootRest]);
+  useEffect(() => {
+    shootBagriderRef.current = shootBagriderActive;
+  }, [shootBagriderActive]);
   useEffect(() => {
     distanceRef.current = trueDistanceM;
   }, [trueDistanceM]);
@@ -1859,17 +1864,28 @@ export function HuntShootView({
       const t = now / 1000;
       const ph = wobblePhase.current;
       const fPhase = focusPhase(focusRef.current, now);
+      const focusHeld = focusRef.current.held;
+      const focusElapsed = focusHeld
+        ? now - focusRef.current.startedAtMs
+        : 0;
+      const restOn =
+        shootRestRef.current === "bipod" ||
+        shootRestRef.current === "backpack";
+      const bagriderOn =
+        restOn && !!shootBagriderRef.current;
       const pulseAmp = pulseVerticalAmpMm(
         heartRateBpmRef.current,
         distanceRef.current,
         {
-          rest:
-            shootRestRef.current === "bipod" ||
-            shootRestRef.current === "backpack",
-          focused: fPhase === "focused",
+          rest: restOn,
+          bagrider: bagriderOn,
+          focusCalmMult: focusHeld
+            ? focusCalmMultiplier(focusElapsed)
+            : 1,
         },
       );
-      const hz = pulseHz(heartRateBpmRef.current);
+      const pulseY =
+        pulseKickOffset(heartRateBpmRef.current, t) * pulseAmp;
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +
@@ -1879,7 +1895,7 @@ export function HuntShootView({
           Math.cos(t * 1.7 + ph.b) * amp * 0.55 +
           Math.cos(t * 4.6 + ph.a) * amp * 0.35 +
           Math.sin(t * 9.5 + 1) * amp * 0.15 +
-          Math.sin(t * Math.PI * 2 * hz) * pulseAmp,
+          pulseY,
       };
 
       paintScopeWorld();
