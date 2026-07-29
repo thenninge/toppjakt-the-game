@@ -434,7 +434,7 @@ export function estimateEttersokFind(
     ? isKill
       ? n === 0
         ? "Du finner treet og plukker fuglen."
-        : "Skuddparet leder deg til riktig tre."
+        : "Skuddmarkøren leder deg til riktig tre."
       : cover.minDistM < 50
         ? "Søkesporene traff området der fuglen landet."
         : cue?.hasCamcorder || cue?.hasTriggercam || cue?.fromScopeRecoil
@@ -463,24 +463,24 @@ export function impactFromShot(opts: {
   };
 }
 
-/** Manual «Lagre skuddpar» defaults — player must dial in real values. */
+/** Manual «Lagre skuddmarkør» defaults — player must dial in real values. */
 export const SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG = 0;
 export const SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M = 250;
 
 /**
- * Instant kill inside this range: «Hent ved treet» without cam / saved skuddpar.
+ * Instant kill inside this range: «Hent ved treet» without cam / saved skuddmarkør.
  * Longer tree kills still need camcorder, triggercam, EL Range, or a registered pair.
  */
 export const CLOSE_RANGE_TREE_HENT_MAX_M = 200;
 
-/** Auto skuddpar distance noise when gear filmed the shot. */
+/** Auto skuddmarkør distance noise when gear filmed the shot. */
 export const TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M = 30;
 export const CAMCORDER_SHOT_PAIR_UNCERTAINTY_M = 10;
 /** Camcorder + Triggercam together — half camcorder distance noise. */
 export const CAMCORDER_TRIGGERCAM_SHOT_PAIR_UNCERTAINTY_M =
   CAMCORDER_SHOT_PAIR_UNCERTAINTY_M / 2;
 
-/** Swarovski EL Range — exact auto skuddpar (kit LRF, no deploy). */
+/** Swarovski EL Range — exact auto skuddmarkør (kit LRF, no deploy). */
 export const SWAROVSKI_EL_RANGE_ID = "lrf-swarovski-el-range-10x42";
 
 export type VisibleShotPairEstimate = {
@@ -491,7 +491,7 @@ export type VisibleShotPairEstimate = {
   source: "camcorder" | "triggercam" | "el_range";
 };
 
-/** Triggercam / camcorder / EL Range can autofill skuddpar. */
+/** Triggercam / camcorder / EL Range can autofill skuddmarkør. */
 export function canAutoSaveShotPair(opts: {
   hasTriggercam: boolean;
   hasCamcorder: boolean;
@@ -501,10 +501,10 @@ export function canAutoSaveShotPair(opts: {
 }
 
 /**
- * Auto skuddpar after a real shot.
+ * Auto skuddmarkør after a real shot.
  * EL Range (in kit): exact bearing + distance.
  * Camcorder ±10 m, triggercam ±30 m, both ±5 m along the true shot bearing.
- * Returns null without gear — player must save skuddpar manually.
+ * Returns null without gear — player must save skuddmarkør manually.
  *
  * Ettersøk flee cues still require Triggercam/camcorder separately.
  */
@@ -515,10 +515,10 @@ export function estimateVisibleShotPair(opts: {
   hasTriggercam: boolean;
   /** Camcorder must have been deployed before the shot. */
   hasCamcorder: boolean;
-  /** Swarovski EL Range in kit — exact skuddpar. */
+  /** Swarovski EL Range in kit — exact skuddmarkør. */
   hasElRange?: boolean;
   metersPerPct?: number;
-  /** Cap for dialed skuddpar distance (terrain Aware max). */
+  /** Cap for dialed skuddmarkør distance (terrain Aware max). */
   maxDistanceM?: number;
   random?: () => number;
 }): VisibleShotPairEstimate | null {

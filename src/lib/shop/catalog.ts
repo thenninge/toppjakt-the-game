@@ -242,7 +242,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Swarovski",
     name: "EL Range 10x42",
     priceNok: 42990,
-    note: "Premium LRF-kikkert 10×42. EL Range-app: værmelding for temp/trykk/fukt — du setter vind + crosswind angle. Lagrer skuddpar eksakt (ettersøk krever Triggercam/camcorder).",
+    note: "Premium LRF-kikkert 10×42. EL Range-app: værmelding for temp/trykk/fukt — du setter vind + crosswind angle. Lagrer skuddmarkør eksakt (ettersøk krever Triggercam/camcorder).",
     lrf: {
       hasOnboardBallistics: true,
       ballisticSystem: "Tracking Assistant / ballistic",
@@ -3769,7 +3769,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Suunto",
     name: "A-10 Speilkompass",
     priceNok: 0,
-    note: "Standard i kit (gratis) — retning i spotting. Billig og nødvendig for søk/skuddpar uten kamera.",
+    note: "Standard i kit (gratis) — retning i spotting. Billig og nødvendig for søk/skuddmarkør uten kamera.",
     misc: { enduranceGrams: 0 },
   },
   {
@@ -3834,7 +3834,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     name: "Scopemate",
     priceNok: 5990,
     note:
-      "Billigere Triggercam-alternativ: samme AAR-replay og skuddpar-hjelp. På jakt: Start Scopemate (+7 % nervøsitet) før skudd. Kun én av Triggercam/Scopemate i kit.",
+      "Billigere Triggercam-alternativ: samme AAR-replay og skuddmarkør-hjelp. På jakt: Start Scopemate (+7 % nervøsitet) før skudd. Kun én av Triggercam/Scopemate i kit.",
     misc: { enduranceGrams: 0 },
   },
   {

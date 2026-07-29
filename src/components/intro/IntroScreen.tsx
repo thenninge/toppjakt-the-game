@@ -1270,7 +1270,7 @@ export function IntroScreen() {
     const id = terrainId ?? stats.selectedHuntingTerrainId;
     const kort = getJaktkortForTerrain(stats.jaktkort, id);
     if (!id || !kort || kort.daysRemaining <= 0) return;
-    // Fresh jaktdag: wipe leftover skuddpar / forfeited recoveries.
+    // Fresh jaktdag: wipe leftover skuddmarkør / forfeited recoveries.
     clearShotPairsStorage();
     setStats((prev) =>
       applyAutoSupplyFood({
@@ -2100,7 +2100,7 @@ export function IntroScreen() {
           title="Slett jeger"
           message={
             `Slette ${stats.name || "jegeren"} for godt?\n` +
-            "Alt lagret (penger, kit, jakt, skuddpar, km, fugl) slettes lokalt" +
+            "Alt lagret (penger, kit, jakt, skuddmarkør, km, fugl) slettes lokalt" +
             (signedIn ? " og i skyen" : "") +
             ". Du kan logge inn på nytt med et nytt navn."
           }

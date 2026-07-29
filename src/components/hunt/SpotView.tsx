@@ -91,7 +91,7 @@ type SpotViewProps = {
   birdPlacements?: BirdVisualPlacement[];
   /**
    * Compass degrees the landscape faces (0 = N). Standard gear —
-   * always shown so the player can orient søk / skuddpar.
+   * always shown so the player can orient søk / skuddmarkør.
    */
   viewBearingDeg: number;
   /** Optical magnification of equipped binos (e.g. 10). */
@@ -164,7 +164,7 @@ type SpotViewProps = {
   onResumeEngage?: () => void;
   /** Show Engage as active even without a fresh LRF lock. */
   engageResumeActive?: boolean;
-  /** Open Aware overview (skuddpar / stand) without leaving hunt. */
+  /** Open Aware overview (skuddmarkør / stand) without leaving hunt. */
   onOpenAware?: () => void;
   /**
    * Optional: called when LRF locks a bird (before Engage).
@@ -1454,7 +1454,7 @@ export function SpotView({
                   type="button"
                   className="intro-button"
                   onClick={() => onOpenAware()}
-                  title="Aware — skuddpar og siste stand"
+                  title="Aware — skuddmarkør og siste stand"
                 >
                   Aware
                 </button>
@@ -1600,7 +1600,7 @@ export function SpotView({
                 onClick={() => {
                   onOpenAware();
                 }}
-                title="Aware — skuddpar og siste stand"
+                title="Aware — skuddmarkør og siste stand"
               >
                 Aware
               </button>

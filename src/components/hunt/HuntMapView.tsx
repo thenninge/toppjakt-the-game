@@ -340,7 +340,7 @@ type HuntMapViewProps = {
   owlLastOfferedMilestone?: number | null;
   /** Persist that an owl observation slot was consumed (26 / 36 / …). */
   onOwlOffered?: (milestone: number) => void;
-  /** Persist open-hunt skuddpar to PlayerStats (cleared on Dra på jakt / end). */
+  /** Persist open-hunt skuddmarkør to PlayerStats (cleared on Dra på jakt / end). */
   onAwareHuntChange?: (next: AwareHuntState | null) => void;
   /** Headshot (yellow zone) — rename player to Pink Mist. */
   onHeadshotNickname?: () => void;
@@ -484,7 +484,7 @@ type AwareSession = {
    */
   gunPrepOnly?: boolean;
   /**
-   * Post-shot: register skuddpar while bird aim marker is still visible
+   * Post-shot: register skuddmarkør while bird aim marker is still visible
    * (60 s window). Shoot tab only — no Klar til skudd.
    */
   postShotSkuddpar?: boolean;
@@ -532,7 +532,7 @@ type CampOvernightSession = {
 
 /** After kill / ettersøk: choose spotting vs Track before Aware opens. */
 type PendingPostShot = {
-  /** Null when bird was lost (no skuddpar). */
+  /** Null when bird was lost (no skuddmarkør). */
   aware: AwareSession | null;
   stayedCount: number;
   flushedCount: number;
@@ -540,7 +540,7 @@ type PendingPostShot = {
 };
 
 /**
- * After a contact shot without cam/pre-saved skuddpar: bird aim stays on
+ * After a contact shot without cam/pre-saved skuddmarkør: bird aim stays on
  * Aware for 60 real seconds so the player can register stand→tree via Shoot.
  */
 type PostShotGhost = {
@@ -572,7 +572,7 @@ type PostShotGhost = {
   recoveryOnly: boolean;
 };
 
-/** Real-time window to register skuddpar after a shot. */
+/** Real-time window to register skuddmarkør after a shot. */
 const POST_SHOT_SKUDDPAR_WINDOW_MS = 60_000;
 
 function pct(n: number): string {
@@ -770,7 +770,7 @@ export function HuntMapView({
   /** After video: choose «fortsett spotting» vs Track / ettersøk. */
   const [pendingPostShot, setPendingPostShot] =
     useState<PendingPostShot | null>(null);
-  /** 60 s real-time window to register skuddpar after a contact shot. */
+  /** 60 s real-time window to register skuddmarkør after a contact shot. */
   const [postShotGhost, setPostShotGhost] = useState<PostShotGhost | null>(
     null,
   );
@@ -1346,7 +1346,7 @@ export function HuntMapView({
       );
       return;
     }
-    // Don't leave found birds in limbo — bag them before clearing skuddpar.
+    // Don't leave found birds in limbo — bag them before clearing skuddmarkør.
     for (const pair of shotPairs) {
       if (pair.found === true && pair.harvestDraft) {
         onBirdHarvested(createCarcassFromHarvest(pair.harvestDraft));
@@ -3102,8 +3102,8 @@ export function HuntMapView({
             : "";
         setLog(
           (pair?.found === false
-            ? "Du fant ikke treet. Skuddparet er lagret — åpne Hent/søk senere."
-            : "Skuddpar lagret. Husk å hente fuglen ved treet (Hent/søk).") +
+            ? "Du fant ikke treet. Skuddmarkøren er lagret — åpne Hent/søk senere."
+            : "Skuddmarkør lagret. Husk å hente fuglen ved treet (Hent/søk).") +
             mindNote,
         );
         setAwareSession(null);
@@ -3482,7 +3482,7 @@ export function HuntMapView({
   }
 
   /** Fallback when the 60 s register window expires / Fortsett spotting.
-   * Keeps hidden true land for Track — no visible skuddpar that spoils the seat.
+   * Keeps hidden true land for Track — no visible skuddmarkør that spoils the seat.
    */
   function createFallbackPairFromGhost(g: PostShotGhost): ShotPair {
     /**
@@ -3537,7 +3537,7 @@ export function HuntMapView({
     };
   }
 
-  /** 60 s window timed out — hide marker; keep bird for Track (no visible skuddpar). */
+  /** 60 s window timed out — hide marker; keep bird for Track (no visible skuddmarkør). */
   function expirePostShotGhost() {
     const g = postShotGhostRef.current;
     if (!g) return;
@@ -3559,13 +3559,13 @@ export function HuntMapView({
           },
     );
     setLog(
-      "Fuglemarkør borte — skuddpar ble ikke registrert. Fuglen ligger fortsatt til Hent/søk i denne cella; dial skuddpar fra hukommelse i Shoot når du vil.",
+      "Fuglemarkør borte — skuddmarkør ble ikke registrert. Fuglen ligger fortsatt til Hent/søk i denne cella; dial skuddmarkør fra hukommelse i Shoot når du vil.",
     );
     // If still in Aware registering, kick back to map.
     setAwareSession((prev) => (prev?.postShotSkuddpar ? null : prev));
   }
 
-  /** Open Aware with bird aim marker to register skuddpar (Shoot). */
+  /** Open Aware with bird aim marker to register skuddmarkør (Shoot). */
   function openPostShotSkuddparAware() {
     const g = postShotGhost;
     if (!g || Date.now() >= g.expiresAtMs) {
@@ -3575,7 +3575,7 @@ export function HuntMapView({
     setAwareSession(awareSessionFromGhost(g, null));
     setPanel("arrived");
     setLog(
-      `Registrer skuddpar — fugleposisjon synlig i ${Math.ceil((g.expiresAtMs - Date.now()) / 1000)} s. Shoot → stand → tre.`,
+      `Registrer skuddmarkør — fugleposisjon synlig i ${Math.ceil((g.expiresAtMs - Date.now()) / 1000)} s. Shoot → stand → tre.`,
     );
   }
 
@@ -3638,11 +3638,11 @@ export function HuntMapView({
       returnRest: keepGun ? g.rest : "none",
     });
     setLog(
-      `Skuddpar lagret: ${pair.distanceM} m / ${Math.round(pair.bearingDeg)}° — fortsett i Track (Hent/søk).`,
+      `Skuddmarkør lagret: ${pair.distanceM} m / ${Math.round(pair.bearingDeg)}° — fortsett i Track (Hent/søk).`,
     );
   }
 
-  // Post-shot skuddpar window countdown (real time).
+  // Post-shot skuddmarkør window countdown (real time).
   useEffect(() => {
     if (!postShotGhost) {
       setPostShotGhostSecLeft(0);
@@ -3683,7 +3683,7 @@ export function HuntMapView({
     return `Hent/søk · ${pair.cellLabel} (${bird})`;
   }
 
-  /** Re-open Aware Track for a saved skuddpar (after fortsett spotting etc.). */
+  /** Re-open Aware Track for a saved skuddmarkør (after fortsett spotting etc.). */
   function openAwareForPair(pair: ShotPair) {
     const spriteId = pair.hitFasit?.birdSpriteId ?? "tiur-1";
     const sprite = getBirdSprite(spriteId);
@@ -3737,7 +3737,7 @@ export function HuntMapView({
   }
 
   /**
-   * Aware from map or Spot — skuddpar + last hunter stand.
+   * Aware from map or Spot — skuddmarkør + last hunter stand.
    * Prefers unfinished Hent/søk, then sticky Engage, then live contact,
    * else field review (Gun = turret prep only).
    */
@@ -3749,7 +3749,7 @@ export function HuntMapView({
     );
     if (hereUnfinished.length > 0) {
       openAwareForPair(hereUnfinished[0]!);
-      setLog("Aware — skuddpar klar for Hent/søk.");
+      setLog("Aware — skuddmarkør klar for Hent/søk.");
       return;
     }
     if (engageResume) {
@@ -3860,7 +3860,7 @@ export function HuntMapView({
       return;
     }
 
-    // Field review: skuddpar + stand; Gun = turret prep and/or find bird in scope.
+    // Field review: skuddmarkør + stand; Gun = turret prep and/or find bird in scope.
     const prepared = prepareSpotAtPos({
       reuseImageSrc: layout?.imageSrc ?? null,
     });
@@ -3922,11 +3922,11 @@ export function HuntMapView({
       shotPairs.length > 0
         ? scanPlacements.length > 0
           ? lrfSample
-            ? `Aware — LRF-retning ${bearing}° · skuddpar/stand. Deploy → Use gun scope, eller finn fugl (F).`
-            : "Aware — skuddpar og stand. Deploy → Use gun scope, eller finn fugl (F)."
+            ? `Aware — LRF-retning ${bearing}° · skuddmarkør/stand. Deploy → Use gun scope, eller finn fugl (F).`
+            : "Aware — skuddmarkør og stand. Deploy → Use gun scope, eller finn fugl (F)."
           : lrfSample
             ? `Aware — LRF-retning ${bearing}°. Deploy → Use gun scope for tårn.`
-            : "Aware — skuddpar og siste stand. Deploy → Use gun scope for tårn."
+            : "Aware — skuddmarkør og siste stand. Deploy → Use gun scope for tårn."
         : scanPlacements.length > 0
           ? lrfSample
             ? `Aware — LRF-retning ${bearing}°. Deploy → Use gun scope, eller marker fugl med F.`
@@ -4010,7 +4010,7 @@ export function HuntMapView({
     const camcorderOn = !!shootSession.camcorderActive;
     const triggercamOn = !!shootSession.triggercamActive;
     const elRangeOn = binoItem?.id === SWAROVSKI_EL_RANGE_ID;
-    /** True land / fall (hidden). Visible skuddpar from cam or pre-saved pair. */
+    /** True land / fall (hidden). Visible skuddmarkør from cam or pre-saved pair. */
     let impact = birdPos;
     if (result.kind === "miss") {
       impact = impactFromShot({
@@ -4140,7 +4140,7 @@ export function HuntMapView({
           maxDistanceM: map ? awareMapMaxMFor(map) : undefined,
         });
 
-    /** Pre-saved Shoot skuddpar on this cell (no harvest yet) — no-cam fallback. */
+    /** Pre-saved Shoot skuddmarkør on this cell (no harvest yet) — no-cam fallback. */
     const manualPair = shotPairs.find(
       (p) =>
         p.cell.row === pos.row &&
@@ -4188,12 +4188,12 @@ export function HuntMapView({
       setShotPairs((prev) => [pair!, ...prev]);
       pairNote =
         realismAutoSkuddpar(realism)
-          ? " Realism Low: skuddpar lagret automatisk (eksakt)."
+          ? " Realism Low: skuddmarkør lagret automatisk (eksakt)."
           : autoVisible.source === "el_range"
-            ? " EL Range lagret skuddpar (eksakt)."
+            ? " EL Range lagret skuddmarkør (eksakt)."
             : autoVisible.source === "camcorder"
-              ? " Camcorder lagret skuddpar (±10 m)."
-              : " Triggercam lagret skuddpar (±30 m).";
+              ? " Camcorder lagret skuddmarkør (±10 m)."
+              : " Triggercam lagret skuddmarkør (±30 m).";
     } else if (manualPair && result.kind !== "miss") {
       const treeKill =
         result.kind === "instant_kill" || result.kind === "vital_kill";
@@ -4221,12 +4221,12 @@ export function HuntMapView({
       setShotPairs((prev) =>
         prev.map((p) => (p.id === manualPair.id ? pair! : p)),
       );
-      pairNote = " Skuddpar fra Shoot er koblet til skuddet.";
+      pairNote = " Skuddmarkør fra Shoot er koblet til skuddet.";
     } else if (
       (result.kind === "instant_kill" || result.kind === "vital_kill") &&
       result.trueDistanceM < CLOSE_RANGE_TREE_HENT_MAX_M
     ) {
-      // Close-range tree kill: always allow «Hent ved treet» without cam/skuddpar.
+      // Close-range tree kill: always allow «Hent ved treet» without cam/skuddmarkør.
       const distanceM = Math.max(
         1,
         Math.round(
@@ -4256,12 +4256,12 @@ export function HuntMapView({
         skuddparCommitted: true,
       };
       setShotPairs((prev) => [pair!, ...prev]);
-      pairNote = ` Nærhold (<${CLOSE_RANGE_TREE_HENT_MAX_M} m): hent ved treet uten lagret skuddpar.`;
+      pairNote = ` Nærhold (<${CLOSE_RANGE_TREE_HENT_MAX_M} m): hent ved treet uten lagret skuddmarkør.`;
     } else if (result.kind !== "miss") {
-      // No cam / no pre-save: 60 s window to register skuddpar on Aware.
+      // No cam / no pre-save: 60 s window to register skuddmarkør on Aware.
       pair = null;
       pairNote =
-        " Registrer skuddpar i Aware innen 60 s (fuglemarkør synlig). Etter det forsvinner markøren — fuglen ligger fortsatt til ettersøk, men uten synlig skuddpar.";
+        " Registrer skuddmarkør i Aware innen 60 s (fuglemarkør synlig). Etter det forsvinner markøren — fuglen ligger fortsatt til ettersøk, men uten synlig skuddmarkør.";
     }
 
     const clip = pickShotVideoForResult(result.kind);
@@ -5215,7 +5215,7 @@ export function HuntMapView({
                 setAwareSession(null);
                 setLog(
                   postShotGhost
-                    ? `Tilbake til kart — ${Math.max(0, Math.ceil((postShotGhost.expiresAtMs - Date.now()) / 1000))} s igjen til å registrere skuddpar.`
+                    ? `Tilbake til kart — ${Math.max(0, Math.ceil((postShotGhost.expiresAtMs - Date.now()) / 1000))} s igjen til å registrere skuddmarkør.`
                     : "Tilbake til kart.",
                 );
               }
@@ -5598,10 +5598,10 @@ export function HuntMapView({
                 <div className="hunt-side-actions hunt-side-actions-stack">
                   <p className="shop-row-note">
                     {postShotGhost
-                      ? `Fugleposisjon synlig i Aware i ${postShotGhostSecLeft} s — registrer skuddpar (Shoot) før tiden går ut.`
+                      ? `Fugleposisjon synlig i Aware i ${postShotGhostSecLeft} s — registrer skuddmarkør (Shoot) før tiden går ut.`
                       : pendingPostShot.resultKind === "ettersok"
                         ? "Ettersøk venter. Speid videre om du vil, eller åpne Hent/søk."
-                        : "Skuddpar lagret. Speid videre om noen ble sittende, eller åpne Hent/søk."}
+                        : "Skuddmarkør lagret. Speid videre om noen ble sittende, eller åpne Hent/søk."}
                   </p>
                   {postShotGhost ? (
                     <button
@@ -5609,7 +5609,7 @@ export function HuntMapView({
                       className="intro-button"
                       onClick={openPostShotSkuddparAware}
                     >
-                      Registrer skuddpar ({postShotGhostSecLeft} s)
+                      Registrer skuddmarkør ({postShotGhostSecLeft} s)
                     </button>
                   ) : null}
                   <button
@@ -5673,8 +5673,8 @@ export function HuntMapView({
                     <div className="hunt-side-actions hunt-side-actions-stack">
                       <p className="shop-row-note">
                         {unfinishedShotPairs.length === 1
-                          ? "1 skuddpar venter på Hent/søk:"
-                          : `${unfinishedShotPairs.length} skuddpar venter på Hent/søk:`}
+                          ? "1 skuddmarkør venter på Hent/søk:"
+                          : `${unfinishedShotPairs.length} skuddmarkører venter på Hent/søk:`}
                       </p>
                       {unfinishedShotPairs.map((pair) => (
                         <button

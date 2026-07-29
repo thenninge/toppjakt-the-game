@@ -15,6 +15,7 @@ type CellSpotMap = Readonly<Record<string, string>>;
 /**
  * Sandbekken (`cloud_sandbekken`):
  *   D2 → spot23 · C2 → spot22 · D3 → spot4 · C3 → spot18 · A3 → spot3
+ *   B1 → spotting8b · C4 → spotting6b · A2 → spotting5b
  */
 const SANDBEKKEN_FORCED: CellSpotMap = {
   "3,1": "/images/spot/spot23.png", // D2
@@ -22,6 +23,9 @@ const SANDBEKKEN_FORCED: CellSpotMap = {
   "3,2": "/images/spot/spot4.png", // D3
   "2,2": "/images/spot/spot18.png", // C3
   "0,2": "/images/spot/spot3.png", // A3
+  "1,0": "/images/spot/batchB/spotting8b.png", // B1
+  "2,3": "/images/spot/batchB/spotting6b.png", // C4
+  "0,1": "/images/spot/batchB/spotting5b.png", // A2
 };
 
 const FORCED_SPOT_BY_MAP: Partial<Record<string, CellSpotMap>> = {

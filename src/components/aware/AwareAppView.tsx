@@ -238,7 +238,7 @@ type AwareAppViewProps = {
   camcorderSetupNerve?: number;
   /** Kit includes Garmin Xero chronograph. */
   hasChronograph?: boolean;
-  /** Triggercam or Scopemate in kit — start in Aware for AAR / skuddpar autofill. */
+  /** Triggercam or Scopemate in kit — start in Aware for AAR / skuddmarkør autofill. */
   hasTriggercam?: boolean;
   /** Which shot-cam is active when {@link hasTriggercam} (Triggercam preferred). */
   shotCamKind?: ShotCamKind | null;
@@ -294,13 +294,13 @@ type AwareAppViewProps = {
    * Deploy / rest / Kestrel without re-paying (cam/chrono/triggercam reset).
    */
   onAbort: (opts?: AwareLeaveOpts) => void;
-  /** Called when a skuddpar is confirmed found (tree / ettersøk). */
+  /** Called when a skuddmarkør is confirmed found (tree / ettersøk). */
   onPairFound?: (
     pair: ShotPair,
     opts?: { hunter?: CellPoint },
   ) => void;
   /**
-   * Post-shot: bird already hit — register skuddpar while aim marker is up.
+   * Post-shot: bird already hit — register skuddmarkør while aim marker is up.
    * Starts on Shoot tab; no Klar til skudd / nerve flush.
    */
   postShotSkuddparMode?: boolean;
@@ -310,7 +310,7 @@ type AwareAppViewProps = {
    * No live engage — Gun opens for turret prep (bakgrunn not required).
    */
   gunPrepOnly?: boolean;
-  /** Persist skuddpar after a post-shot Shoot registration. */
+  /** Persist skuddmarkør after a post-shot Shoot registration. */
   onPostShotSkuddparSaved?: (draft: {
     stand: CellPoint;
     target: CellPoint;
@@ -359,7 +359,7 @@ function normalizeBearingDeg(deg: number): number {
 }
 
 /**
- * Skuddpar direction slider: center = N (0°), right = clockwise,
+ * Skuddmarkør direction slider: center = N (0°), right = clockwise,
  * left = counter-clockwise. Maps 0–359 ↔ −180…+180 for the thumb.
  */
 function bearingToSliderOffset(bearingDeg: number): number {
@@ -472,7 +472,7 @@ function DangerOverlay({
 }
 
 /**
- * Phone-shell Aware view: Aware scan, stalk, Shoot (skuddpar), Track.
+ * Phone-shell Aware view: Aware scan, stalk, Shoot (skuddmarkør), Track.
  */
 export function AwareAppView({
   map,
@@ -604,12 +604,12 @@ export function AwareAppView({
       return `Ettersøk: flukt ${pair.fleeObservation.compassLabel}. Legg søkespor på kartet (${ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt + ${MINUTES_PER_100M} min/100 m), deretter utfør ettersøk.`;
     }
     if (pair?.fleeObservation?.text) return pair.fleeObservation.text;
-    return "Hent/søk — lagret skuddpar: stand → stiplet linje → tre. Finn riktig tre eller følg flukt.";
+    return "Hent/søk — lagret skuddmarkør: stand → stiplet linje → tre. Finn riktig tre eller følg flukt.";
   });
   const [activePairId, setActivePairId] = useState<string | null>(
     focusPairId,
   );
-  /** Map zoom for Shoot (skuddpar) + Track only. Cap 3×. */
+  /** Map zoom for Shoot (skuddmarkør) + Track only. Cap 3×. */
   const [mapZoom, setMapZoom] = useState(AWARE_MAP_ZOOM_DEFAULT);
   const [mapPanPx, setMapPanPx] = useState({ x: 0, y: 0 });
   const mapZoomRef = useRef(mapZoom);
@@ -761,7 +761,7 @@ export function AwareAppView({
   );
 
   const shootWizardActive = shootWizard.phase !== "idle";
-  /** Cam gear that "remembers" stand→bird for skuddpar autofill. */
+  /** Cam gear that "remembers" stand→bird for skuddmarkør autofill. */
   const skuddparAutofill = triggercamReady || camcorderReady;
   const activeShotCam: ShotCamKind | null = hasTriggercam
     ? (shotCamKind ?? "triggercam")
@@ -772,7 +772,7 @@ export function AwareAppView({
   const shotCamNervePct = activeShotCam
     ? Math.round(shotCamSetupNerve(activeShotCam) * 100)
     : 5;
-  /** Stand→bird while defining skuddpar (wizard stand is frozen). */
+  /** Stand→bird while defining skuddmarkør (wizard stand is frozen). */
   const wizardBirdDistanceM =
     shootWizardActive && skuddparAutofill
       ? distanceMBetween(shootWizard.stand, birdWorld, metersPerPct)
@@ -782,7 +782,7 @@ export function AwareAppView({
       ? bearingDegFromTo(shootWizard.stand, birdWorld)
       : null;
 
-  // Keyboard: arrow movement while stalking (not during skuddpar wizard)
+  // Keyboard: arrow movement while stalking (not during skuddmarkør wizard)
   useEffect(() => {
     if (!stalking || shootWizardActive) return;
 
@@ -917,7 +917,7 @@ export function AwareAppView({
 
   /**
    * Track actions only for pairs tied to a real shot (harvestDraft).
-   * Planning-only Shoot skuddpar must not appear as «Søk tiur».
+   * Planning-only Shoot skuddmarkør must not appear as «Søk tiur».
    */
   /** Track only pairs for this map cell — return to the shot rute to continue. */
   const actionableTrackPairs = useMemo(
@@ -958,9 +958,9 @@ export function AwareAppView({
     recoveryWalkM != null ? treeRecoveryMinutes(recoveryWalkM) : null;
   /**
    * Don't spoil exact land / bird seat during ettersøk or hent/søk — player
-   * uses skuddpar (stand → aim) + flee cue. Also never show the live bird X on
+   * uses skuddmarkør (stand → aim) + flee cue. Also never show the live bird X on
    * Shoot/Track tabs (pair aim uses a distinct tre-marker). Keep visible during
-   * the 60 s post-shot skuddpar window, and during Aware stalk.
+   * the 60 s post-shot skuddmarkør window, and during Aware stalk.
    */
   const hideTrueLand =
     !postShotSkuddparMode &&
@@ -972,7 +972,7 @@ export function AwareAppView({
    * Gun-prep / review / hidden ettersøk — no bird distances.
    */
   const hasActiveBird = !gunPrepOnly && !hideTrueLand;
-  /** Skuddpar on this cell map (stand → aim + søkeradius). */
+  /** Skuddmarkør on this cell map (stand → aim + søkeradius). */
   const pairsOnCell = shotPairs.filter(
     (p) => p.cell.row === cell.row && p.cell.col === cell.col,
   );
@@ -1127,7 +1127,7 @@ export function AwareAppView({
         bearingDeg,
       });
       setStatus(
-        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
+        `Skuddmarkør (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
       );
       return;
     }
@@ -1153,8 +1153,8 @@ export function AwareAppView({
       });
       setStatus(
         blank
-          ? "Skuddpar fra hukommelse: stand = der du står. Markøren er borte — sett avstand og retning selv, deretter lagre."
-          : `Juster skuddpar (hukommelse): stand = der du står. Forrige ${editPair.distanceM} m / ${Math.round(editPair.bearingDeg)}° — lagre oppdaterer siktepunktet (sann fall beholdes).`,
+          ? "Skuddmarkør fra hukommelse: stand = der du står. Markøren er borte — sett avstand og retning selv, deretter lagre."
+          : `Juster skuddmarkør (hukommelse): stand = der du står. Forrige ${editPair.distanceM} m / ${Math.round(editPair.bearingDeg)}° — lagre oppdaterer siktepunktet (sann fall beholdes).`,
       );
       return;
     }
@@ -1167,15 +1167,15 @@ export function AwareAppView({
     });
     setStatus(
       postShotSkuddparMode
-        ? `Skuddpar: stand låst. Fugleprikk synlig ${postShotSkuddparSecLeft} s — still avstand (start ${SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M} m) og retning (start N / 0°), deretter lagre.`
-        : "Skuddpar: stand låst. Sett avstand (sirkel), deretter skuddretning — ingen autofyll uten cam.",
+        ? `Skuddmarkør: stand låst. Fugleprikk synlig ${postShotSkuddparSecLeft} s — still avstand (start ${SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M} m) og retning (start N / 0°), deretter lagre.`
+        : "Skuddmarkør: stand låst. Sett avstand (sirkel), deretter skuddretning — ingen autofyll uten cam.",
     );
   }
 
-  /** Cancel only the skuddpar wizard — does not abort ettersøk / Aware. */
+  /** Cancel only the skuddmarkør wizard — does not abort ettersøk / Aware. */
   function cancelShootWizard() {
     setShootWizard({ phase: "idle" });
-    setStatus("Skuddpar-registrering avbrutt.");
+    setStatus("Skuddmarkør-registrering avbrutt.");
   }
 
   function saveShootPair() {
@@ -1250,8 +1250,8 @@ export function AwareAppView({
       setMode("track");
       setStatus(
         treeKill
-          ? `Skuddpar oppdatert: ${nextDist} m / ${compassLabel(nextBearing)} — treet er fortsatt sann fall (Hent ved treet).`
-          : `Skuddpar oppdatert: ${nextDist} m / ${compassLabel(nextBearing)} — synlig stand → tre. Fortsett Track / søkespor.`,
+          ? `Skuddmarkør oppdatert: ${nextDist} m / ${compassLabel(nextBearing)} — treet er fortsatt sann fall (Hent ved treet).`
+          : `Skuddmarkør oppdatert: ${nextDist} m / ${compassLabel(nextBearing)} — synlig stand → tre. Fortsett Track / søkespor.`,
       );
       return;
     }
@@ -1274,7 +1274,7 @@ export function AwareAppView({
     onShotPairsChange([pair, ...shotPairs]);
     setShootWizard({ phase: "idle" });
     setStatus(
-      `Skuddpar lagret: ${pair.distanceM} m / ${compassLabel(pair.bearingDeg)} — synlig på kartet (stand → tre + 20 m). Kobles til neste treff i denne cella.`,
+      `Skuddmarkør lagret: ${pair.distanceM} m / ${compassLabel(pair.bearingDeg)} — synlig på kartet (stand → tre + 20 m). Kobles til neste treff i denne cella.`,
     );
     // Stay on Shoot — planning pairs are not Track targets until a shot lands.
   }
@@ -1473,7 +1473,7 @@ export function AwareAppView({
 
   useEffect(() => {
     if (actionableTrackPairs.length === 0) {
-      // Planning-only skuddpar must not stay selected as a Track target.
+      // Planning-only skuddmarkør must not stay selected as a Track target.
       if (
         activePairId &&
         !shotPairs.some((p) => p.id === activePairId && !!p.harvestDraft)
@@ -1493,7 +1493,7 @@ export function AwareAppView({
     const verb =
       pair.resultKind === "ettersok" ? "Søk" : "Hent";
     if (pair.skuddparCommitted === false) {
-      return `${verb} ${bird} · dial skuddpar`;
+      return `${verb} ${bird} · dial skuddmarkør`;
     }
     const point =
       pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill"
@@ -1753,7 +1753,7 @@ export function AwareAppView({
     setStatus(
       next >= ENCOUNTER_NERVE.flushThreshold
         ? `${shotCamName} startet — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-        : `${shotCamName} startet (+${pct}% nervøsitet) — filmer skuddet (AAR) og hjelper skuddpar-autofill.`,
+        : `${shotCamName} startet (+${pct}% nervøsitet) — filmer skuddet (AAR) og hjelper skuddmarkør-autofill.`,
     );
     if (next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
@@ -1805,7 +1805,7 @@ export function AwareAppView({
 
         {postShotSkuddparMode ? (
           <p className="shop-row-note" style={{ margin: "0.35rem 0.75rem 0" }}>
-            Skuddpar-vindu: {postShotSkuddparSecLeft} s — fugleprikk synlig;
+            Skuddmarkør-vindu: {postShotSkuddparSecLeft} s — fugleprikk synlig;
             still inn avstand ({SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M} m) og
             retning (N / 0°) selv
           </p>
@@ -2102,7 +2102,7 @@ export function AwareAppView({
                   className="intro-button"
                   onClick={startShootPair}
                 >
-                  Registrer nytt skuddpar
+                  Registrer ny skuddmarkør
                 </button>
               ) : null}
 
@@ -2193,7 +2193,7 @@ export function AwareAppView({
                       className="intro-button"
                       onClick={saveShootPair}
                     >
-                      Lagre skuddpar
+                      Lagre skuddmarkør
                     </button>
                   </div>
                 </>
@@ -2414,7 +2414,7 @@ export function AwareAppView({
             </dl>
           ) : hideTrueLand ? (
             <p className="shop-row-note">
-              Eksakt landingspunkt er skjult — bruk skuddpar og fluktretning.
+              Eksakt landingspunkt er skjult — bruk skuddmarkør og fluktretning.
             </p>
           ) : (
             <p className="shop-row-note">
@@ -2608,7 +2608,7 @@ export function AwareAppView({
                   : ""}
                 {hasTriggercam
                   ? triggercamReady
-                    ? ` ${shotCamName} filmer — AAR + skuddpar-autofill.`
+                    ? ` ${shotCamName} filmer — AAR + skuddmarkør-autofill.`
                     : ` ${shotCamName} i kit: Start ${shotCamName} (+${shotCamNervePct}% nervøsitet) før skudd.`
                   : ""}
                 {hasCamcorder
@@ -2681,8 +2681,8 @@ export function AwareAppView({
                         (focusPairId &&
                           shotPairs.find((p) => p.id === focusPairId)
                             ?.skuddparCommitted === false)
-                      ? "Ingen synlig skuddpar ennå — dial stand → tre fra hukommelse. Sann fall er lagret skjult."
-                      : "Juster skuddpar fra hukommelse (hele jaktdagen). Stand = der du står; sann fall beholdes."
+                      ? "Ingen synlig skuddmarkør ennå — dial stand → tre fra hukommelse. Sann fall er lagret skjult."
+                      : "Juster skuddmarkør fra hukommelse (hele jaktdagen). Stand = der du står; sann fall beholdes."
                     : skuddparAutofill
                       ? "Cam i bruk: avstand/retning prefylles — juster ved behov under kartet."
                       : "Sett avstand (sirkel) og retning under kartet — uten cam ingen autofyll."}
@@ -2690,7 +2690,7 @@ export function AwareAppView({
 
               {shotPairs.length > 0 ? (
                 <p className="shop-row-note">
-                  {shotPairs.length} skuddpar lagret · synlig på kartet (stand →
+                  {shotPairs.length} skuddmarkører lagret · synlig på kartet (stand →
                   tre + 20 m)
                 </p>
               ) : null}
@@ -2702,9 +2702,9 @@ export function AwareAppView({
               {actionableTrackPairs.length === 0 ? (
                 <p className="shop-row-note">
                   Ingen åpne hent/søk. Track krever et treff med camcorder,
-                  triggercam, EL Range, lagret skuddpar etter skudd — eller
+                  triggercam, EL Range, lagret skuddmarkør etter skudd — eller
                   instant kill under {CLOSE_RANGE_TREE_HENT_MAX_M} m (hent ved
-                  treet). Planlagte skuddpar uten skudd vises bare på kartet.
+                  treet). Planlagte skuddmarkører uten skudd vises bare på kartet.
                 </p>
               ) : (
                 <>
@@ -2797,7 +2797,7 @@ export function AwareAppView({
                       <p className="shop-row-note">
                         Drept fugl i treet.
                         {trackActivePair.skuddparCommitted === false
-                          ? " Ingen synlig skuddpar — dial i Shoot fra hukommelse, eller hent ved treet på magefølelse."
+                          ? " Ingen synlig skuddmarkør — dial i Shoot fra hukommelse, eller hent ved treet på magefølelse."
                           : ` Tid fra der du står nå — ${recoveryMinutes} min (${TREE_RECOVERY_MINUTES_PER_100M} min/100 m · ${recoveryWalkM} m).`}
                       </p>
                       <button
@@ -2817,7 +2817,7 @@ export function AwareAppView({
                         <li>
                           {trackActivePair.skuddparCommitted === false ? (
                             <>
-                              Dial <strong>skuddpar</strong> i Shoot fra
+                              Dial <strong>skuddmarkør</strong> i Shoot fra
                               hukommelse (markøren er borte), deretter legg{" "}
                               <strong>søkespor</strong> (
                               {ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt +{" "}
@@ -2826,7 +2826,7 @@ export function AwareAppView({
                           ) : (
                             <>
                               Trykk på kartet og legg et{" "}
-                              <strong>søkespor</strong> ut fra lagret skuddpar (
+                              <strong>søkespor</strong> ut fra lagret skuddmarkør (
                               {ETTERSOK_MINUTES_PER_TRACK_POINT} min/punkt +{" "}
                               {MINUTES_PER_100M} min/100 m).
                             </>
