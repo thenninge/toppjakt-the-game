@@ -145,6 +145,8 @@ import {
   consumeJaktkortOnEndHunt,
   consumeJaktkortOnOvernight,
   createJaktkort,
+  getJaktkortForTerrain,
+  upsertJaktkort,
   type JaktkortKind,
 } from "@/lib/hunt/jaktkort";
 import {
@@ -1248,25 +1250,32 @@ export function IntroScreen() {
       if (!terrain) return prev;
       const kort = createJaktkort(terrainId, kind, terrain.pricePerDayNok);
       if (prev.balance < kort.paidNok) return prev;
+      const existing = getJaktkortForTerrain(prev.jaktkort, terrainId);
       const sameActive =
-        prev.jaktkort &&
-        prev.jaktkort.terrainId === terrainId &&
-        prev.jaktkort.kind === kind &&
-        prev.jaktkort.daysRemaining > 0;
+        existing &&
+        existing.kind === kind &&
+        existing.daysRemaining > 0;
       if (sameActive) return prev;
       return {
         ...prev,
         balance: prev.balance - kort.paidNok,
         selectedHuntingTerrainId: terrainId,
-        jaktkort: kort,
+        // Upsert only this terrain — other terrains keep their cards.
+        jaktkort: upsertJaktkort(prev.jaktkort, kort),
       };
     });
   }
 
-  function startHunt() {
-    if (!stats.selectedHuntingTerrainId || !stats.jaktkort) return;
-    if (stats.jaktkort.daysRemaining <= 0) return;
-    setStats((prev) => applyAutoSupplyFood(prev));
+  function startHunt(terrainId?: string) {
+    const id = terrainId ?? stats.selectedHuntingTerrainId;
+    const kort = getJaktkortForTerrain(stats.jaktkort, id);
+    if (!id || !kort || kort.daysRemaining <= 0) return;
+    setStats((prev) =>
+      applyAutoSupplyFood({
+        ...prev,
+        selectedHuntingTerrainId: id,
+      }),
+    );
     setLocation(null);
     clearHuntHud();
     setPhase("hunt");
@@ -1275,11 +1284,13 @@ export function IntroScreen() {
   function endHunt(opts?: { skipJaktkortConsume?: boolean }) {
     if (!opts?.skipJaktkortConsume) {
       setStats((prev) => {
-        const next = consumeJaktkortOnEndHunt(prev.jaktkort);
+        const terrainId = prev.selectedHuntingTerrainId;
+        const nextBook = consumeJaktkortOnEndHunt(prev.jaktkort, terrainId);
+        const stillActive = getJaktkortForTerrain(nextBook, terrainId);
         return {
           ...prev,
-          jaktkort: next,
-          selectedHuntingTerrainId: next?.terrainId ?? null,
+          jaktkort: nextBook,
+          selectedHuntingTerrainId: stillActive ? terrainId : null,
           // Pack → freezer when leaving the field.
           freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
           carcasses: [],
@@ -1288,7 +1299,6 @@ export function IntroScreen() {
     } else {
       setStats((prev) => ({
         ...prev,
-        selectedHuntingTerrainId: prev.jaktkort?.terrainId ?? null,
         freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
         carcasses: [],
       }));
@@ -1301,15 +1311,17 @@ export function IntroScreen() {
   /** Overnatting ute bruker én jaktdag. Returnerer om jakten kan fortsette. */
   function consumeJaktkortOvernight(): boolean {
     const prev = statsRef.current;
-    const next = consumeJaktkortOnOvernight(prev.jaktkort);
+    const terrainId = prev.selectedHuntingTerrainId;
+    const nextBook = consumeJaktkortOnOvernight(prev.jaktkort, terrainId);
+    const stillActive = getJaktkortForTerrain(nextBook, terrainId);
     const updated = {
       ...prev,
-      jaktkort: next,
-      selectedHuntingTerrainId: next?.terrainId ?? null,
+      jaktkort: nextBook,
+      selectedHuntingTerrainId: stillActive ? terrainId : null,
     };
     statsRef.current = updated;
     setStats(updated);
-    return next != null && next.daysRemaining > 0;
+    return stillActive != null && stillActive.daysRemaining > 0;
   }
 
   function consumeHuntFood(itemId: string): boolean {

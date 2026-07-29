@@ -24,7 +24,9 @@ import { normalizeCustomBarrelsMap, normalizeSpareBarrelsMap } from "@/lib/custo
 import { normalizeCustomsMods } from "@/lib/customs/spec";
 import {
   createJaktkort,
-  normalizeJaktkort,
+  getJaktkortForTerrain,
+  normalizeJaktkortBook,
+  upsertJaktkort,
 } from "@/lib/hunt/jaktkort";
 import {
   sanitizeKitCamcorderTripods,
@@ -200,13 +202,18 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
           ? null
           : base.selectedHuntingTerrainId,
     jaktkort: (() => {
-      const parsed = normalizeJaktkort(raw.jaktkort);
-      if (parsed) return parsed;
-      // Migrate old saves: selected terrain without kort → 1-day dagskort.
-      if (typeof raw.selectedHuntingTerrainId === "string") {
-        return createJaktkort(raw.selectedHuntingTerrainId, "day", 0);
+      const book = normalizeJaktkortBook(raw.jaktkort);
+      // Migrate old saves: selected terrain without any kort → 1-day dagskort.
+      if (
+        Object.keys(book).length === 0 &&
+        typeof raw.selectedHuntingTerrainId === "string"
+      ) {
+        return upsertJaktkort(
+          book,
+          createJaktkort(raw.selectedHuntingTerrainId, "day", 0),
+        );
       }
-      return null;
+      return book;
     })(),
     unlockedTerrainIds,
     autoSupplyFood: raw.autoSupplyFood === true,
@@ -244,18 +251,15 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
   });
 }
 
-/** Keep selected terrain in sync with an active jaktkort after normalize. */
+/** Keep selected terrain valid if it still has an active jaktkort. */
 function syncTerrainWithJaktkort(stats: PlayerStats): PlayerStats {
-  if (stats.jaktkort && stats.jaktkort.daysRemaining > 0) {
-    if (stats.selectedHuntingTerrainId === stats.jaktkort.terrainId) {
-      return stats;
-    }
-    return {
-      ...stats,
-      selectedHuntingTerrainId: stats.jaktkort.terrainId,
-    };
+  const selected = stats.selectedHuntingTerrainId;
+  if (selected && getJaktkortForTerrain(stats.jaktkort, selected)) {
+    return stats;
   }
-  if (stats.selectedHuntingTerrainId == null) return stats;
+  // Selected terrain has no active card — clear selection (cards on other
+  // terrains remain; player picks via inatur «Dra på jakt»).
+  if (selected == null) return stats;
   return { ...stats, selectedHuntingTerrainId: null };
 }
 

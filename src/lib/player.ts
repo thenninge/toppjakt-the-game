@@ -1,5 +1,5 @@
 import type { GameCarcass } from "@/lib/hunt/carcass";
-import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
+import type { JaktkortBook } from "@/lib/hunt/jaktkort";
 import type { GameLang } from "@/lib/i18n/lang";
 import {
   EMPTY_CUSTOMS_MODS,
@@ -54,7 +54,11 @@ import { isPowderItem } from "@/lib/reloading/components";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
-import { createJaktkort } from "@/lib/hunt/jaktkort";
+import {
+  createJaktkort,
+  emptyJaktkortBook,
+  upsertJaktkort,
+} from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
@@ -249,8 +253,11 @@ export type PlayerStats = {
   customsMods: CustomsMods;
   /** Booked hunting terrain from inatur.no (null = none chosen yet). */
   selectedHuntingTerrainId: string | null;
-  /** Active inatur jaktkort (dag / uke / sesong). */
-  jaktkort: ActiveJaktkort | null;
+  /**
+   * Active inatur jaktkort per terrain (dag / uke / sesong).
+   * Multiple terrains can hold cards at the same time.
+   */
+  jaktkort: JaktkortBook;
   /** Handshake grounds unlocked at Rulles (terrain ids). */
   unlockedTerrainIds: string[];
   /**
@@ -901,7 +908,7 @@ export function applyAdminSessionPerks(stats: PlayerStats): PlayerStats {
   return {
     ...stats,
     selectedHuntingTerrainId: ADMIN_FINNSKOGEN_TERRAIN_ID,
-    jaktkort: kort,
+    jaktkort: upsertJaktkort(stats.jaktkort, kort),
     inventory,
     kit,
     unlockedTerrainIds,
@@ -939,7 +946,7 @@ export function createInitialStats(): PlayerStats {
     dopeCard: [],
     customsMods: { ...EMPTY_CUSTOMS_MODS },
     selectedHuntingTerrainId: null,
-    jaktkort: null,
+    jaktkort: emptyJaktkortBook(),
     unlockedTerrainIds: [],
     autoSupplyFood: false,
     favoriteKitIds: [],
@@ -1956,7 +1963,8 @@ export function resetRifleBarrel(
   return { ...stats, rifleRoundCounts: next };
 }
 
-/** Clear developed + CB catalog home loads after a pipe swap. */
+/** Clear developed + CB catalog home loads after a pipe swap.
+ * Also clears home-loads setup so the fee must be paid again. */
 export function clearHomeLoadsOnBarrelSwap(stats: PlayerStats): PlayerStats {
   const cbIds = new Set(Object.values(HOME_LOAD_AMMO_BY_CALIBER));
   const inventory = stats.inventory.filter(
@@ -1968,6 +1976,10 @@ export function clearHomeLoadsOnBarrelSwap(stats: PlayerStats): PlayerStats {
   syncHomeLoadedLotCache([]);
   return {
     ...stats,
+    customsMods: {
+      ...stats.customsMods,
+      homeLoadsSetup: false,
+    },
     homeLoadedLots: [],
     loadDevTable: createEmptyLoadDevTable(),
     loadBook: createEmptyLoadBook(),
@@ -2060,9 +2072,11 @@ export function reinstallFactoryBarrel(
 ): PlayerStats {
   if (!rifleId || priceNok < 0 || stats.balance < priceNok) return stats;
   const stashed = stashInstalledCustomBarrel(stats, rifleId);
-  return resetRifleBarrel(
-    { ...stashed, balance: stashed.balance - priceNok },
-    rifleId,
+  return clearHomeLoadsOnBarrelSwap(
+    resetRifleBarrel(
+      { ...stashed, balance: stashed.balance - priceNok },
+      rifleId,
+    ),
   );
 }
 

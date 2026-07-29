@@ -18,7 +18,8 @@ import { formatTubeDiameterMm, type ScopeTubeDiameterMm } from "@/lib/mount/spec
 import { isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
-import type { ActiveJaktkort } from "@/lib/hunt/jaktkort";
+import type { JaktkortBook } from "@/lib/hunt/jaktkort";
+import { getJaktkortForTerrain } from "@/lib/hunt/jaktkort";
 
 export type HuntReadyResult = {
   ok: boolean;
@@ -109,14 +110,17 @@ export function huntReadyCheck(input: {
   kitItems: ShopItem[];
   inventory: InventoryEntry[];
   selectedHuntingTerrainId: string | null;
-  jaktkort: ActiveJaktkort | null;
+  jaktkort: JaktkortBook;
   zeroingProfiles: Record<string, ZeroingProfile>;
   /** Required for new hunters (Norwegian-style exam). */
   jegerprovePassed?: boolean;
 }): HuntReadyResult {
   const blockers: string[] = [];
   const terrain = getHuntingTerrain(input.selectedHuntingTerrainId);
-  const kort = input.jaktkort;
+  const kort = getJaktkortForTerrain(
+    input.jaktkort,
+    input.selectedHuntingTerrainId,
+  );
 
   if (!input.jegerprovePassed) {
     blockers.push("Bestå jegerprøven i byen før du kan jakte");

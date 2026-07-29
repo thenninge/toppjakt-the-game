@@ -122,7 +122,13 @@ import { WalkView } from "@/components/hunt/WalkView";
 import { AtmospherePauseView } from "@/components/hunt/AtmospherePauseView";
 import { ShotVideoView } from "@/components/hunt/ShotVideoView";
 import { AwareAppView, type AwareShootStance, type AwareLeaveOpts } from "@/components/aware/AwareAppView";
-import { BAG_REST_BIPOD_SPEC, type HuntShootRest } from "@/lib/hunt/shootRest";
+import {
+  BAGRIDER_REST_CALM_MULT,
+  bipodSpecForShootRest,
+  restProvidesWeaponCalm,
+  shootRestLabelNb,
+  type HuntShootRest,
+} from "@/lib/hunt/shootRest";
 import {
   computeFeltRecoil,
   computeRecoilDamping,
@@ -2023,6 +2029,11 @@ export function HuntMapView({
       setLog(flushMessage(rest[0]!));
       return;
     }
+    // After post-shot companion flushes — keep shot log / pending Track UI.
+    if (pendingPostShot || postShotGhostRef.current) {
+      setPanel("arrived");
+      return;
+    }
     setLog("Fuglen er borte. Beveg deg mer forsiktig neste gang.");
     if (pendingForcedRestRef.current) {
       pendingForcedRestRef.current = false;
@@ -3217,11 +3228,9 @@ export function HuntMapView({
       birdNerve: nerve,
     });
     const restNote =
-      stance?.rest === "backpack"
-        ? " · sekk-anlegg"
-        : stance?.rest === "bipod"
-          ? " · bipod"
-          : "";
+      stance?.rest && stance.rest !== "none"
+        ? ` · ${shootRestLabelNb(stance.rest)}-anlegg`
+        : "";
     const prepNote = session.gunPrepOnly ? " · Gun (tårn-prep)" : "";
     setLog(
       hold
@@ -3981,14 +3990,13 @@ export function HuntMapView({
     let fleeObservation: ShotPair["fleeObservation"];
     if (result.kind === "ettersok") {
       const rest = shootSession.rest ?? "none";
-      const weaponCalm = computeWeaponCalmFactor({
-        hasBipod: rest === "bipod" || rest === "backpack",
-        bipod:
-          rest === "backpack"
-            ? BAG_REST_BIPOD_SPEC
-            : rest === "bipod"
-              ? kitBipod?.bipod
-              : null,
+      const bipodSpec = bipodSpecForShootRest(rest, {
+        hasBackpack,
+        kitBipod: kitBipod?.bipod,
+      });
+      const weaponCalmBase = computeWeaponCalmFactor({
+        hasBipod: restProvidesWeaponCalm(rest) && !!bipodSpec,
+        bipod: bipodSpec,
         suppressorWeightGrams: suppressorItem?.weightGrams,
         extraCalmGrams: miscKitWeaponCalmGrams(
           kitItems.filter(isMiscItem).map((i) => i.misc),
@@ -3996,6 +4004,10 @@ export function HuntMapView({
         ),
         customsCalmMult,
       });
+      const weaponCalm =
+        rest === "bagrider"
+          ? weaponCalmBase * BAGRIDER_REST_CALM_MULT
+          : weaponCalmBase;
       const recoilDamping = computeRecoilDamping({
         soundReductionDb: suppressorSoundDb,
         customsMods,
@@ -4016,10 +4028,7 @@ export function HuntMapView({
             scopeGrams: scopeItem?.weightGrams,
             mountGrams: mountItem?.weightGrams,
             suppressorGrams: suppressorItem?.weightGrams,
-            bipodGrams:
-              rest === "bipod" || rest === "backpack"
-                ? kitBipod?.weightGrams
-                : 0,
+            bipodGrams: rest === "bipod" ? kitBipod?.weightGrams : 0,
           })
         : null;
       const grains = ammoItem
@@ -4244,6 +4253,10 @@ export function HuntMapView({
     });
     nextBirds = flush.birds;
     setBirds(nextBirds);
+    if (flush.events.length > 0) {
+      // After shot video (if any), show «Fuglen flyr» per companion / miss fly-out.
+      setFlushQueue(flush.events);
+    }
 
     const removedIds = new Set<string>([
       ...(isContact ? [id] : []),
@@ -4376,6 +4389,8 @@ export function HuntMapView({
           title: clip.title,
           subtitle: logMsg,
         });
+      } else if (flush.events.length > 0) {
+        setLog(flushMessage(flush.events[0]!));
       }
       return;
     }
@@ -4384,7 +4399,9 @@ export function HuntMapView({
       `Bom på ${dist} m.${stayNote || " Fuglen letter."}` +
       (flush.stayedIds.length > 0 ? " Du kan spotte videre." : "");
     setMentalFatigue((m) => clampFatigue(m + MISS_MIND_HIT));
-    setLog(missLog);
+    setLog(
+      flush.events.length > 0 ? flushMessage(flush.events[0]!) : missLog,
+    );
     setShootSession(null);
     setPanel("arrived");
     if (flush.stayedIds.length > 0) {
@@ -5114,6 +5131,7 @@ export function HuntMapView({
         shotCamKind={shotCamKind}
         hasBackpack={hasBackpack}
         hasBipod={hasBipod}
+        hasBagrider={!!customsMods.bagrider}
         bipodWeaponCalm={bipodWeaponCalm}
         gunDeployNerve={backpackRifleRaiseNerve(kitItems)}
         onGunDeployed={() => setFieldGunDeployed(true)}

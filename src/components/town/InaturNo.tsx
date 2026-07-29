@@ -6,13 +6,16 @@ import { getHuntMap } from "@/lib/hunt/maps";
 import {
   createJaktkort,
   formatJaktkortStatusNb,
+  getJaktkortForTerrain,
   jaktkortBlurbNb,
   jaktkortLabelNb,
   jaktkortPriceNok,
+  listActiveJaktkort,
   JAKTKORT_KINDS,
-  type ActiveJaktkort,
+  type JaktkortBook,
   type JaktkortKind,
 } from "@/lib/hunt/jaktkort";
+import type { HuntReadyResult } from "@/lib/hunt/readiness";
 import {
   formatBirdRating,
   getHuntingTerrain,
@@ -24,13 +27,17 @@ import {
 type InaturNoProps = {
   balance: number;
   selectedTerrainId: string | null;
-  jaktkort: ActiveJaktkort | null;
+  jaktkort: JaktkortBook;
   unlockedTerrainIds: string[];
   /** VIP name package (ivar / tomas / jørn / einar / konrad / dyre). */
   isVip?: boolean;
   /** Admin PIN session — same VIP Inatur listings. */
   isAdmin?: boolean;
   onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
+  /** Start hunt for a terrain that already has an active jaktkort. */
+  onStartHunt?: (terrainId: string) => void;
+  /** Same readiness as Home «Dra på jakt», evaluated per terrain. */
+  huntReadyFor?: (terrainId: string) => HuntReadyResult;
   onBack: () => void;
 };
 
@@ -57,6 +64,8 @@ export function InaturNo({
   isVip = false,
   isAdmin = false,
   onPurchaseJaktkort,
+  onStartHunt,
+  huntReadyFor,
   onBack,
 }: InaturNoProps) {
   const [message, setMessage] = useState("");
@@ -75,10 +84,7 @@ export function InaturNo({
     terrain: HuntingTerrain;
     kind: JaktkortKind;
   } | null>(null);
-  const selected = useMemo(
-    () => getHuntingTerrain(selectedTerrainId) ?? null,
-    [selectedTerrainId],
-  );
+  const activeKorts = listActiveJaktkort(jaktkort);
 
   useEffect(() => {
     if (!previewTerrain) return;
@@ -91,14 +97,12 @@ export function InaturNo({
 
   function handleBuyPermit(terrain: HuntingTerrain, kind: JaktkortKind) {
     const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
+    const existing = getJaktkortForTerrain(jaktkort, terrain.id);
     const sameActive =
-      jaktkort &&
-      jaktkort.terrainId === terrain.id &&
-      jaktkort.kind === kind &&
-      jaktkort.daysRemaining > 0;
+      existing && existing.kind === kind && existing.daysRemaining > 0;
     if (sameActive) {
       setMessage(
-        `${jaktkortLabelNb(kind)} for ${terrain.name} er allerede aktivt (${jaktkort.daysRemaining} dager igjen).`,
+        `${jaktkortLabelNb(kind)} for ${terrain.name} er allerede aktivt (${existing.daysRemaining} dager igjen).`,
       );
       return;
     }
@@ -140,10 +144,15 @@ export function InaturNo({
     const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
     const amount = price.toLocaleString("nb-NO");
     const canPay = balance >= price;
+    const existingHere = getJaktkortForTerrain(jaktkort, terrain.id);
     const replaces =
-      jaktkort && jaktkort.terrainId
-        ? `Erstatter aktivt kort (${formatJaktkortStatusNb(jaktkort)}).`
-        : null;
+      existingHere && existingHere.kind !== kind
+        ? `Erstatter ${formatJaktkortStatusNb(existingHere)} for dette terrenget. Andre terreng beholder sine kort.`
+        : existingHere && existingHere.kind === kind
+          ? null
+          : activeKorts.length > 0
+            ? "Andre aktive jaktkort beholder du."
+            : null;
     return (
       <div className="inatur-no">
         <LocationNav
@@ -204,13 +213,17 @@ export function InaturNo({
         <p className="shop-row-note">
           Lei jaktterreng digitalt. Dagskort gjelder én tur (avslutt jakt eller
           overnatting ute). Uke- og sesongkort tærer én jaktdag per overnatting.
+          Du kan ha aktive kort i flere terreng samtidig.
         </p>
-        {selected && jaktkort ? (
+        {activeKorts.length > 0 ? (
           <p className="shop-row-note">
-            Aktivt: <strong>{selected.name}</strong> ({selected.region}) ·{" "}
-            {formatJaktkortStatusNb(jaktkort)} · Tiur{" "}
-            {formatBirdRating(selected.tiurRating)} · Orrhane{" "}
-            {formatBirdRating(selected.orrhaneRating)}
+            Aktive kort:{" "}
+            {activeKorts
+              .map((k) => {
+                const t = getHuntingTerrain(k.terrainId);
+                return `${t?.name ?? k.terrainId} (${formatJaktkortStatusNb(k)})`;
+              })
+              .join(" · ")}
           </p>
         ) : (
           <p className="shop-row-note">Ingen jaktkort kjøpt ennå.</p>
@@ -223,6 +236,9 @@ export function InaturNo({
         {listings.map((terrain) => {
           const isSelected = terrain.id === selectedTerrainId;
           const map = getHuntMap(terrain.mapId);
+          const kortHere = getJaktkortForTerrain(jaktkort, terrain.id);
+          const activeKortHere = !!kortHere;
+          const readyHere = huntReadyFor?.(terrain.id);
           return (
             <li
               key={terrain.id}
@@ -268,12 +284,16 @@ export function InaturNo({
                     admin
                   </span>
                 ) : null}
+                {kortHere ? (
+                  <span className="shop-row-note">
+                    Aktivt: {formatJaktkortStatusNb(kortHere)}
+                  </span>
+                ) : null}
                 <div className="inatur-kort-options">
                   {JAKTKORT_KINDS.map((kind) => {
                     const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
                     const canAfford = balance >= price;
-                    const activeHere =
-                      isSelected && jaktkort?.kind === kind;
+                    const activeHere = kortHere?.kind === kind;
                     return (
                       <button
                         key={kind}
@@ -296,6 +316,28 @@ export function InaturNo({
                     );
                   })}
                 </div>
+                {activeKortHere && onStartHunt ? (
+                  <div className="inatur-go-hunt">
+                    <button
+                      type="button"
+                      className="intro-button home-hunt-btn"
+                      disabled={readyHere ? !readyHere.ok : false}
+                      title={
+                        readyHere && !readyHere.ok
+                          ? readyHere.blockers.join(" · ")
+                          : `Start jakt i ${terrain.name}`
+                      }
+                      onClick={() => onStartHunt(terrain.id)}
+                    >
+                      Dra på jakt
+                    </button>
+                    {readyHere && !readyHere.ok ? (
+                      <p className="shop-row-note home-hunt-blockers">
+                        {readyHere.blockers.join(" · ")}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </li>
           );

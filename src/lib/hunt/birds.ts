@@ -410,6 +410,11 @@ export type FlushEvent = {
   spookCount: number;
   /** True if this was the 2nd spook — bird leaves the hunt. */
   gone: boolean;
+  /**
+   * walk/nerve: stalk flush (spook++). shot: sound flush after a round
+   * (no spook increment — companions / miss fly-out).
+   */
+  cause?: "walk" | "nerve" | "shot";
 };
 
 function cellKey(cell: HuntGridCell): string {
@@ -972,32 +977,46 @@ export function resolveFlushesOnPath(
 }
 
 /**
- * Move a bird to another cell without spook-count (post-shot flush).
+ * Move a bird to another cell without spook-count (post-shot / fire flush).
+ * Returns the flush event so UI can show flight direction.
  */
 export function relocateBirdQuietly(
   birds: HuntBird[],
   birdId: string,
   map: HuntMapAsset,
   random: () => number = Math.random,
-): HuntBird[] {
+): { birds: HuntBird[]; event: FlushEvent | null } {
   const idx = birds.findIndex((b) => b.id === birdId);
-  if (idx < 0) return birds;
+  if (idx < 0) return { birds, event: null };
   const bird = birds[idx]!;
-  const to = relocateBirdCell(bird.cell, pickFlushDirection(random), map, random);
+  const from = { ...bird.cell };
+  const direction = pickFlushDirection(random);
+  let to = relocateBirdCell(from, direction, map, random);
   // Prefer a different cell when possible.
-  const alt =
-    cellKey(to) === cellKey(bird.cell)
-      ? relocateBirdCell(bird.cell, pickFlushDirection(random), map, random)
-      : to;
-  return birds.map((b, i) =>
+  if (cellKey(to) === cellKey(from)) {
+    to = relocateBirdCell(from, pickFlushDirection(random), map, random);
+  }
+  const event: FlushEvent = {
+    birdId: bird.id,
+    species: bird.species,
+    direction,
+    from,
+    to,
+    imageSrc: pickFluktImage(random),
+    spookCount: bird.spookCount,
+    gone: false,
+    cause: "shot",
+  };
+  const next = birds.map((b, i) =>
     i === idx
       ? {
           ...b,
-          cell: alt,
+          cell: to,
           distanceM: rollBirdDistance(random),
         }
       : b,
   );
+  return { birds: next, event };
 }
 
 export type PostShotFlushResult = {
@@ -1006,6 +1025,8 @@ export type PostShotFlushResult = {
   stayedIds: string[];
   /** Birds that left for other cells. */
   flushedIds: string[];
+  /** One splash per flushed bird (direction to go after). */
+  events: FlushEvent[];
 };
 
 /**
@@ -1041,6 +1062,7 @@ export function applyPostShotBirdFlush(input: {
   let next = input.birds.map((b) => ({ ...b, cell: { ...b.cell } }));
   const stayedIds: string[] = [];
   const flushedIds: string[] = [];
+  const events: FlushEvent[] = [];
 
   const here = next.filter(
     (b) =>
@@ -1054,11 +1076,13 @@ export function applyPostShotBirdFlush(input: {
       stayedIds.push(bird.id);
       continue;
     }
-    next = relocateBirdQuietly(next, bird.id, input.map, random);
+    const moved = relocateBirdQuietly(next, bird.id, input.map, random);
+    next = moved.birds;
+    if (moved.event) events.push(moved.event);
     flushedIds.push(bird.id);
   }
 
-  return { birds: next, stayedIds, flushedIds };
+  return { birds: next, stayedIds, flushedIds, events };
 }
 
 /**
@@ -1074,7 +1098,7 @@ export function flushAllBirdsFromCell(
   let next = birds.map((b) => ({ ...b, cell: { ...b.cell } }));
   const here = birdsInCell(next, cell);
   for (const bird of here) {
-    next = relocateBirdQuietly(next, bird.id, map, random);
+    next = relocateBirdQuietly(next, bird.id, map, random).birds;
   }
   return { birds: next, flushedCount: here.length };
 }
@@ -1109,6 +1133,13 @@ export function flushMessage(event: FlushEvent): string {
         : "Orrhanen";
   const from = cellLabel(event.from);
   const dir = `${flushDirectionNb(event.direction)} (fra ${from})`;
+  if (event.cause === "shot") {
+    const to = cellLabel(event.to);
+    return (
+      `Du hører vingeslag og ser opp. ${species} letter mot ${dir} ` +
+      `av skuddlyden — mot ${to}.`
+    );
+  }
   if (event.gone) {
     return (
       `${species} letter mot ${dir} — og er borte for godt. ` +

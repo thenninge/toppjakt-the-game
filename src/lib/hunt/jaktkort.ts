@@ -3,6 +3,8 @@
  *   Dag: 1× day price, 1 hunting day
  *   Uke: 4× day price, 7 hunting days
  *   Sesong: 30× day price, 30 hunting days
+ *
+ * Multiple terrains can hold active cards at once (keyed by terrainId).
  */
 
 export type JaktkortKind = "day" | "week" | "season";
@@ -14,6 +16,9 @@ export type ActiveJaktkort = {
   daysRemaining: number;
   paidNok: number;
 };
+
+/** Active cards keyed by terrain id. */
+export type JaktkortBook = Record<string, ActiveJaktkort>;
 
 export const JAKTKORT_WEEK_PRICE_MULT = 4;
 export const JAKTKORT_SEASON_PRICE_MULT = 30;
@@ -67,28 +72,88 @@ export function createJaktkort(
   };
 }
 
+export function emptyJaktkortBook(): JaktkortBook {
+  return {};
+}
+
+export function getJaktkortForTerrain(
+  book: JaktkortBook | null | undefined,
+  terrainId: string | null | undefined,
+): ActiveJaktkort | null {
+  if (!book || !terrainId) return null;
+  const kort = book[terrainId];
+  if (!kort || kort.daysRemaining <= 0) return null;
+  return kort;
+}
+
+export function listActiveJaktkort(
+  book: JaktkortBook | null | undefined,
+): ActiveJaktkort[] {
+  if (!book) return [];
+  return Object.values(book).filter((k) => k.daysRemaining > 0);
+}
+
+/** Insert or replace the card for that terrain only — other terrains stay. */
+export function upsertJaktkort(
+  book: JaktkortBook,
+  kort: ActiveJaktkort,
+): JaktkortBook {
+  if (kort.daysRemaining <= 0) {
+    const next = { ...book };
+    delete next[kort.terrainId];
+    return next;
+  }
+  return { ...book, [kort.terrainId]: kort };
+}
+
+function setTerrainKort(
+  book: JaktkortBook,
+  terrainId: string,
+  kort: ActiveJaktkort | null,
+): JaktkortBook {
+  const next = { ...book };
+  if (!kort || kort.daysRemaining <= 0) {
+    delete next[terrainId];
+  } else {
+    next[terrainId] = kort;
+  }
+  return next;
+}
+
 /**
  * Avslutt jakt: dagskort er brukt opp. Uke/sesong beholder gjenværende dager.
+ * Only the card for {@link terrainId} is touched.
  */
 export function consumeJaktkortOnEndHunt(
-  kort: ActiveJaktkort | null,
-): ActiveJaktkort | null {
-  if (!kort) return null;
-  if (kort.kind === "day") return null;
-  return { ...kort };
+  book: JaktkortBook,
+  terrainId: string | null | undefined,
+): JaktkortBook {
+  if (!terrainId) return book;
+  const kort = book[terrainId];
+  if (!kort) return book;
+  if (kort.kind === "day") {
+    return setTerrainKort(book, terrainId, null);
+  }
+  return book;
 }
 
 /**
  * Overnatting ute: én jaktdag er brukt. Dagskort → tomt; uke/sesong −1 dag.
+ * Only the card for {@link terrainId} is touched.
  */
 export function consumeJaktkortOnOvernight(
-  kort: ActiveJaktkort | null,
-): ActiveJaktkort | null {
-  if (!kort) return null;
-  if (kort.kind === "day") return null;
+  book: JaktkortBook,
+  terrainId: string | null | undefined,
+): JaktkortBook {
+  if (!terrainId) return book;
+  const kort = book[terrainId];
+  if (!kort) return book;
+  if (kort.kind === "day") {
+    return setTerrainKort(book, terrainId, null);
+  }
   const days = Math.max(0, kort.daysRemaining - 1);
-  if (days <= 0) return null;
-  return { ...kort, daysRemaining: days };
+  if (days <= 0) return setTerrainKort(book, terrainId, null);
+  return setTerrainKort(book, terrainId, { ...kort, daysRemaining: days });
 }
 
 export function formatJaktkortStatusNb(kort: ActiveJaktkort): string {
@@ -116,4 +181,36 @@ export function normalizeJaktkort(raw: unknown): ActiveJaktkort | null {
       ? Math.max(0, Math.floor(o.paidNok))
       : 0;
   return { terrainId: o.terrainId, kind, daysRemaining, paidNok };
+}
+
+/**
+ * Accepts legacy single {@link ActiveJaktkort}, a terrain-keyed book, or an array.
+ */
+export function normalizeJaktkortBook(raw: unknown): JaktkortBook {
+  if (raw == null) return emptyJaktkortBook();
+
+  // Legacy: one card object.
+  const single = normalizeJaktkort(raw);
+  if (single) return { [single.terrainId]: single };
+
+  if (Array.isArray(raw)) {
+    const book: JaktkortBook = {};
+    for (const entry of raw) {
+      const kort = normalizeJaktkort(entry);
+      if (kort) book[kort.terrainId] = kort;
+    }
+    return book;
+  }
+
+  if (typeof raw !== "object") return emptyJaktkortBook();
+
+  const book: JaktkortBook = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const kort = normalizeJaktkort(value);
+    if (!kort) continue;
+    // Prefer terrainId on the card; fall back to map key.
+    const id = kort.terrainId || key;
+    book[id] = { ...kort, terrainId: id };
+  }
+  return book;
 }

@@ -518,9 +518,13 @@ export function SpotView({
   };
   const [pan, setPan] = useState(startPan);
   const panRef = useRef(pan);
-  panRef.current = pan;
   /** Dragging: paint via refs/DOM like HuntShootView aim — no setState per move. */
   const [panDragging, setPanDragging] = useState(false);
+  // Never clobber live pan from stale React state while dragging. The look-
+  // timer setState (~200ms) used to reset panRef every tick → visible skips.
+  if (!panDragging) {
+    panRef.current = pan;
+  }
   const binosWorldRef = useRef<HTMLDivElement | null>(null);
   const thermalCanvasRef = useRef<ThermalCanvasHandle | null>(null);
   const keysRef = useRef<PanKeys>({

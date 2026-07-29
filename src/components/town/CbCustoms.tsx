@@ -297,7 +297,9 @@ export function CbCustoms({
     onReplaceBarrel(rifle.id);
     setStatus(
       `Standard pipe på ${rifle.brand} ${rifle.name} — ${formatPermitFee(BARREL_REPLACE_NOK)}. Skuddteller nullstilt` +
-        (installed ? ", custom pipe i lager." : "."),
+        (installed
+          ? ", custom pipe i Pipelager. Home loads-oppsett + ammo må kjøpes på nytt."
+          : ". Home loads-oppsett + ammo må kjøpes på nytt."),
     );
   }
 
@@ -312,14 +314,14 @@ export function CbCustoms({
     }
     onInstallCustomBarrel(rifle.id, barrelConfig, quote.totalNok);
     setStatus(
-      `Custom ${makerMeta.name} ${materialLabelNb(barrelConfig.material)} montert på ${rifle.brand} ${rifle.name} — ${formatPermitFee(quote.totalNok)}. Gulv ${previewMoa.toFixed(2)} MOA. Home loads må bestilles på nytt.`,
+      `Custom ${makerMeta.name} ${materialLabelNb(barrelConfig.material)} montert på ${rifle.brand} ${rifle.name} — ${formatPermitFee(quote.totalNok)}. Gulv ${previewMoa.toFixed(2)} MOA. Home loads-oppsett + ammo må kjøpes på nytt.`,
     );
   }
 
   function reinstallSpare(storageId: string) {
     if (!rifle || !onReinstallSpareBarrel) return;
     onReinstallSpareBarrel(rifle.id, storageId);
-    setStatus("Custom pipe montert fra lager — home loads må bestilles på nytt.");
+    setStatus("Custom pipe montert fra lager — Home loads-oppsett + ammo må kjøpes på nytt.");
   }
 
   return (
@@ -386,7 +388,8 @@ export function CbCustoms({
             <span>{spareBarrels.length} lagret</span>
           </div>
           <p className="shop-row-note">
-            Gamle custom piper beholdes — bytt tilbake uten ny bestilling.
+            Gamle custom piper beholdes her (ikke i Home-inventory) — bytt
+            tilbake uten ny bestilling. Visningen gjelder rifla du har i kit.
           </p>
           <ul className="cb-customs-quote-list">
             {spareBarrels.map((b) => {
@@ -737,8 +740,9 @@ export function CbCustoms({
           ) : null}
 
           <p className="shop-row-note">
-            Inkl. barrel crown og action trueing. Home loads i lager nullstilles
-            — må bestilles på nytt etter pipebytte. Slitasje: CrMo/carbon{" "}
+            Inkl. barrel crown og action trueing. Etter pipebytte nullstilles
+            Home loads i lager, og Home loads-oppsett må kjøpes på nytt før du
+            kan bestille mer ammo. Slitasje: CrMo/carbon{" "}
             {BARREL_WEAR_START_CRMo} skudd, stainless {BARREL_WEAR_START_STAINLESS}{" "}
             skudd før MOA stiger.
           </p>

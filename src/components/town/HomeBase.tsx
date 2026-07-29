@@ -75,11 +75,13 @@ import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import {
   formatJaktkortStatusNb,
-  type ActiveJaktkort,
+  getJaktkortForTerrain,
+  listActiveJaktkort,
+  type JaktkortBook,
   type JaktkortKind,
 } from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
-import { huntReadyCheck } from "@/lib/hunt/readiness";
+import { huntReadyCheck, type HuntReadyResult } from "@/lib/hunt/readiness";
 
 /** Categories where only one equipped item makes sense at a time. */
 const EXCLUSIVE_KIT_CATEGORIES = new Set([
@@ -139,7 +141,7 @@ type HomeBaseProps = {
   rifleCount: number;
   unusedLicenses: number;
   selectedHuntingTerrainId: string | null;
-  jaktkort: ActiveJaktkort | null;
+  jaktkort: JaktkortBook;
   /** Hunter exam cleared — required to leave for a hunt. */
   jegerprovePassed?: boolean;
   unlockedTerrainIds: string[];
@@ -189,7 +191,7 @@ type HomeBaseProps = {
   onSaveRealLoad?: (profile: RealLoadProfile) => void;
   onRemoveRealLoad?: (id: string) => void;
   onSetUseRealData?: (enabled: boolean) => void;
-  onStartHunt: () => void;
+  onStartHunt: (terrainId?: string) => void;
   onLeave: () => void;
 };
 
@@ -526,6 +528,11 @@ export function HomeBase({
     .length;
 
   const selectedTerrain = getHuntingTerrain(selectedHuntingTerrainId) ?? null;
+  const selectedKort = getJaktkortForTerrain(
+    jaktkort,
+    selectedHuntingTerrainId,
+  );
+  const activeKorts = listActiveJaktkort(jaktkort);
 
   const rigSummary = useMemo(() => {
     const parts = [
@@ -572,6 +579,17 @@ export function HomeBase({
       jegerprovePassed,
     ],
   );
+
+  function huntReadyFor(terrainId: string): HuntReadyResult {
+    return huntReadyCheck({
+      kitItems,
+      inventory,
+      selectedHuntingTerrainId: terrainId,
+      jaktkort,
+      zeroingProfiles,
+      jegerprovePassed,
+    });
+  }
 
   /**
    * Rifle/scope/mount affect zero retention. Warn when a change will wipe
@@ -710,6 +728,8 @@ export function HomeBase({
         isVip={isVip}
         isAdmin={isAdmin}
         onPurchaseJaktkort={onPurchaseJaktkort}
+        onStartHunt={onStartHunt}
+        huntReadyFor={huntReadyFor}
         onBack={() => setView("main")}
       />
     );
@@ -730,10 +750,18 @@ export function HomeBase({
             ? ` · ${unusedLicenses} ubrukt lisens (XXL)`
             : " · ingen ubrukt lisens — søk hos Lensmannen for å kjøpe rifle"}
         </p>
-        {selectedTerrain && jaktkort ? (
+        {selectedTerrain && selectedKort ? (
           <p className="shop-row-note">
-            Jaktkort: {selectedTerrain.name} ({selectedTerrain.region}) ·{" "}
-            {formatJaktkortStatusNb(jaktkort)}
+            Valgt jaktkort: {selectedTerrain.name} ({selectedTerrain.region}) ·{" "}
+            {formatJaktkortStatusNb(selectedKort)}
+            {activeKorts.length > 1
+              ? ` · +${activeKorts.length - 1} andre terreng`
+              : ""}
+          </p>
+        ) : activeKorts.length > 0 ? (
+          <p className="shop-row-note">
+            {activeKorts.length} aktive jaktkort — åpne inatur.no for å dra på
+            jakt.
           </p>
         ) : (
           <p className="shop-row-note">
@@ -776,7 +804,7 @@ export function HomeBase({
               ? "Start jakt"
               : huntReady.blockers.join(" · ")
           }
-          onClick={onStartHunt}
+          onClick={() => onStartHunt(selectedHuntingTerrainId ?? undefined)}
         >
           Dra på jakt
         </button>

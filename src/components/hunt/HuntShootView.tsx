@@ -167,9 +167,12 @@ import {
   type BirdVisualPlacement,
 } from "@/lib/hunt/birds";
 import {
-  BAG_REST_BIPOD_SPEC,
+  BAGRIDER_REST_CALM_MULT,
+  bipodSpecForShootRest,
+  restProvidesWeaponCalm,
   type HuntShootRest,
 } from "@/lib/hunt/shootRest";
+import { backpackFromKit } from "@/lib/kit/pack";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import {
   aimMmDeltaFromPointerDrag,
@@ -887,25 +890,24 @@ export function HuntShootView({
           angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM),
       };
 
-  const calmFactor = useMemo(
-    () =>
-      computeWeaponCalmFactor({
-        hasBipod: shootRest === "bipod" || shootRest === "backpack",
-        bipod:
-          shootRest === "backpack"
-            ? BAG_REST_BIPOD_SPEC
-            : shootRest === "bipod"
-              ? bipod?.bipod
-              : null,
-        suppressorWeightGrams: suppressor?.weightGrams,
-        extraCalmGrams: miscKitWeaponCalmGrams(
-          kitItems.filter(isMiscItem).map((i) => i.misc),
-          !!suppressor,
-        ),
-        customsCalmMult,
-      }),
-    [shootRest, bipod, suppressor, kitItems, customsCalmMult],
-  );
+  const calmFactor = useMemo(() => {
+    const hasBackpack = !!backpackFromKit(kitItems);
+    const bipodSpec = bipodSpecForShootRest(shootRest, {
+      hasBackpack,
+      kitBipod: bipod?.bipod,
+    });
+    const base = computeWeaponCalmFactor({
+      hasBipod: restProvidesWeaponCalm(shootRest) && !!bipodSpec,
+      bipod: bipodSpec,
+      suppressorWeightGrams: suppressor?.weightGrams,
+      extraCalmGrams: miscKitWeaponCalmGrams(
+        kitItems.filter(isMiscItem).map((i) => i.misc),
+        !!suppressor,
+      ),
+      customsCalmMult,
+    });
+    return shootRest === "bagrider" ? base * BAGRIDER_REST_CALM_MULT : base;
+  }, [shootRest, bipod, suppressor, kitItems, customsCalmMult]);
 
   useEffect(() => {
     weaponCalmRef.current = calmFactor;
@@ -920,9 +922,7 @@ export function HuntShootView({
             mountGrams: mount?.weightGrams,
             suppressorGrams: suppressor?.weightGrams,
             bipodGrams:
-              shootRest === "bipod" || shootRest === "backpack"
-                ? bipod?.weightGrams
-                : 0,
+              shootRest === "bipod" ? bipod?.weightGrams : 0,
           })
         : null;
     const grains =
@@ -1855,7 +1855,8 @@ export function HuntShootView({
         {
           rest:
             shootRestRef.current === "bipod" ||
-            shootRestRef.current === "backpack",
+            shootRestRef.current === "backpack" ||
+            shootRestRef.current === "bagrider",
           focused: fPhase === "focused",
         },
       );

@@ -69,6 +69,8 @@ import {
 } from "@/lib/hunt/shoot";
 import {
   BAG_REST_NERVE,
+  BAGRIDER_REST_CALM_MULT,
+  BAGRIDER_REST_NERVE,
   bipodDeployNerve,
   shootRestNerve,
   type HuntShootRest,
@@ -242,6 +244,8 @@ type AwareAppViewProps = {
   hasBackpack?: boolean;
   /** Bipod in kit — can deploy for calm (not auto). */
   hasBipod?: boolean;
+  /** CB Customs bagrider installed — rear-bag rest option. */
+  hasBagrider?: boolean;
   /** Kit bipod weaponCalm 1–10 (for nerve label). */
   bipodWeaponCalm?: number;
   /**
@@ -496,6 +500,7 @@ export function AwareAppView({
   shotCamKind = null,
   hasBackpack = false,
   hasBipod = false,
+  hasBagrider = false,
   bipodWeaponCalm = 5,
   gunDeployNerve = 0.1,
   onGunDeployed,
@@ -536,7 +541,13 @@ export function AwareAppView({
   const [rest, setRest] = useState<HuntShootRest>(() => {
     if (initialRest === "bipod" && !hasBipod) return "none";
     if (initialRest === "backpack" && !hasBackpack) return "none";
-    if (!initialGunDeployed && (initialRest === "bipod" || initialRest === "backpack")) {
+    if (initialRest === "bagrider" && !hasBagrider) return "none";
+    if (
+      !initialGunDeployed &&
+      (initialRest === "bipod" ||
+        initialRest === "backpack" ||
+        initialRest === "bagrider")
+    ) {
       return "none";
     }
     return initialRest;
@@ -552,7 +563,8 @@ export function AwareAppView({
     }
     if (initialRest === "bipod" && hasBipod) setRest("bipod");
     else if (initialRest === "backpack" && hasBackpack) setRest("backpack");
-  }, [initialGunDeployed, initialRest, hasBipod, hasBackpack]);
+    else if (initialRest === "bagrider" && hasBagrider) setRest("bagrider");
+  }, [initialGunDeployed, initialRest, hasBipod, hasBackpack, hasBagrider]);
   /**
    * Hent/søk / Track: rifle always goes back in the pack (can't carry it
    * while recovering). Parent also mounts; this clears local Deploy UI when
@@ -1600,8 +1612,10 @@ export function AwareAppView({
     if (flushedRef.current) return;
     if (next === "backpack" && !hasBackpack) return;
     if (next === "bipod" && !hasBipod) return;
+    if (next === "bagrider" && !hasBagrider) return;
+    if (next === "bagrider" && !hasBackpack && !hasBipod) return;
     if (next === rest) {
-      // Toggle off → none (revert nerve).
+      // Toggle off → none (revert nerve from this rest only).
       if (rest === "none") return;
       const revert = shootRestNerve(rest, bipodWeaponCalm);
       const cleared = Math.max(0, nerveRef.current - revert);
@@ -1611,14 +1625,16 @@ export function AwareAppView({
         setRest("none");
       });
       onNerveChangeRef.current?.(cleared);
-      setStatus("Anlegg fjernet — skyter uten sekk/bipod-calm.");
+      setStatus("Anlegg fjernet — skyter uten sekk/bipod/bagrider-calm.");
       return;
     }
-    const prevCost = shootRestNerve(rest, bipodWeaponCalm);
     const nextCost = shootRestNerve(next, bipodWeaponCalm);
+    const switching = rest !== "none";
+    // First pick: pay nextCost. Switch while another rest is active: pay full
+    // nextCost again (fiddling penalty — no refund of the previous rest).
     const nextNerve = Math.min(
       ENCOUNTER_NERVE.nerveCap,
-      Math.max(0, nerveRef.current - prevCost + nextCost),
+      nerveRef.current + nextCost,
     );
     nerveRef.current = nextNerve;
     flushSync(() => {
@@ -1627,17 +1643,24 @@ export function AwareAppView({
     });
     onNerveChangeRef.current?.(nextNerve);
     const pct = Math.round(nextCost * 100);
+    const verb = switching ? "Byttet til" : "Valgt";
     if (next === "backpack") {
       setStatus(
         nextNerve >= ENCOUNTER_NERVE.flushThreshold
-          ? `Sekk som anlegg — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `Sekk som anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.`,
+          ? `${verb} sekk-anlegg — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `${verb} sekk-anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.`,
       );
     } else if (next === "bipod") {
       setStatus(
         nextNerve >= ENCOUNTER_NERVE.flushThreshold
-          ? `Bipod nede — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `Bipod deployet (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.`,
+          ? `${verb} bipod — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `${verb} bipod (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.`,
+      );
+    } else if (next === "bagrider") {
+      setStatus(
+        nextNerve >= ENCOUNTER_NERVE.flushThreshold
+          ? `${verb} bagrider — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `${verb} bagrider (+${pct}% nervøsitet). +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm vs sekk/bipod-base.`,
       );
     }
     if (nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
@@ -2455,7 +2478,9 @@ export function AwareAppView({
                 >
                   {rest === "backpack"
                     ? "Sekk-anlegg aktiv"
-                    : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`}
+                    : rest !== "none"
+                      ? `Bytt til Sekk (+${Math.round(BAG_REST_NERVE * 100)}%)`
+                      : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`}
                 </button>
               ) : null}
               {hasBipod ? (
@@ -2477,14 +2502,42 @@ export function AwareAppView({
                 >
                   {rest === "bipod"
                     ? "Bipod deployet"
-                    : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`}
+                    : rest !== "none"
+                      ? `Bytt til Bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}%)`
+                      : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`}
                 </button>
               ) : null}
-              {hasBackpack || hasBipod ? (
+              {hasBagrider && (hasBackpack || hasBipod) ? (
+                <button
+                  type="button"
+                  className={
+                    rest === "bagrider"
+                      ? "intro-button sheriff-secondary is-active"
+                      : "intro-button sheriff-secondary"
+                  }
+                  aria-pressed={rest === "bagrider"}
+                  disabled={!gunDeployed}
+                  onClick={() => applyRestChoice("bagrider")}
+                  title={
+                    gunDeployed
+                      ? `+${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm vs ${hasBackpack ? "sekk" : "bipod"}-base — +10% bird nerve`
+                      : "Deploy gun først"
+                  }
+                >
+                  {rest === "bagrider"
+                    ? "Bagrider aktiv"
+                    : rest !== "none"
+                      ? `Bytt til Bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}%)`
+                      : `Use bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}% nervøsitet)`}
+                </button>
+              ) : null}
+              {hasBackpack || hasBipod || hasBagrider ? (
                 <p className="shop-row-note">
                   Anlegg krever Deploy gun. Sekk = maks calm (+25% nerve). Bipod
-                  = tofot-calm (nerve 5–15% etter kvalitet). Uten valg: ingen
-                  bipod/sekk-calm i skuddet.
+                  = tofot-calm (nerve 5–15% etter kvalitet). Bagrider = +
+                  {Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm vs
+                  sekk/bipod (+10% nerve). Bytt mellom anlegg = full nerve-kost
+                  på nytt (faffing). Uten valg: ingen bipod/sekk-calm i skuddet.
                 </p>
               ) : null}
               {hasKestrel ? (
