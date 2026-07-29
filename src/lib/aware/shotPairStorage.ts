@@ -119,28 +119,19 @@ export function markAwareHuntSessionActive(): void {
 }
 
 /**
- * Load pairs for this terrain when continuing the same tab hunt (e.g. refresh),
- * or when cloud/local PlayerStats still has an open hunt for this terrain.
- * Fresh hunt on another terrain starts empty.
+ * Load pairs when continuing the same browser-tab hunt (e.g. refresh).
+ * A fresh «Dra på jakt» always starts empty — never restore synced /
+ * forfeited pairs from a previous hunt day.
  */
 export function loadShotPairsForHuntStart(
   terrainId: string,
-  synced?: AwareHuntState | null,
+  _synced?: AwareHuntState | null,
 ): ShotPair[] {
   if (isAwareHuntSessionActive()) {
     return loadShotPairsForTerrain(terrainId);
   }
   clearShotPairsStorage();
   markAwareHuntSessionActive();
-  if (synced && synced.terrainId === terrainId && Array.isArray(synced.pairs)) {
-    const pairs = synced.pairs
-      .map(normalizePair)
-      .filter((p): p is ShotPair => p != null);
-    if (pairs.length > 0) {
-      saveShotPairsForTerrain(terrainId, pairs);
-      return pairs;
-    }
-  }
   return [];
 }
 

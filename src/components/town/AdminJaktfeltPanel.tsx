@@ -129,6 +129,7 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
   const [ringCell, setRingCell] = useState<HuntGridCell | null>(null);
   const [measure, setMeasure] = useState<MeasureState>({ a: null, b: null });
   const [knownSpanM, setKnownSpanM] = useState(1000);
+  const knownSpanInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [baking, setBaking] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -338,12 +339,10 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
         setMeasure({ a: { x, y }, b: null });
         setStatus("Measure: punkt 1 — klikk punkt 2");
       } else {
+        const a = measure.a;
         const b = { x, y };
-        setMeasure({ a: measure.a, b });
-        const m = distanceMBetween(measure.a, b, metersPerPct);
-        setStatus(
-          `Measure: ${Math.round(m)} m (skala ${Math.round(awareMaxM)} m @ ${AWARE_MAP_RADIUS_PCT}%)`,
-        );
+        setMeasure({ a, b });
+        promptRealDistanceAndCalibrate(a, b);
       }
       return;
     }
@@ -356,15 +355,59 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
     }
   }
 
-  function applyScaleFromMeasure() {
+  function applyScaleFromMeasure(realDistanceM?: number) {
     if (!measure.a || !measure.b) {
-      setStatus("Measure to punkter først, deretter sett kjent avstand.");
+      setStatus("Measure to punkter først, deretter skriv inn reell avstand.");
       return;
     }
-    const next = awareMapMaxMFromKnownSpan(measure.a, measure.b, knownSpanM);
+    const span =
+      realDistanceM != null && Number.isFinite(realDistanceM)
+        ? realDistanceM
+        : knownSpanM;
+    if (!(span >= 10)) {
+      setStatus("Reell avstand må være minst 10 m.");
+      return;
+    }
+    const rounded = Math.round(span);
+    setKnownSpanM(rounded);
+    const next = awareMapMaxMFromKnownSpan(measure.a, measure.b, rounded);
     setAwareMaxM(next);
     setStatus(
-      `Aware-skala satt: ${next} m @ ${AWARE_MAP_RADIUS_PCT}% (fra ${knownSpanM} m kjent spann)`,
+      `Skala kalibrert: ${rounded} m reelt spann → awareMapMaxM ${next} m @ ${AWARE_MAP_RADIUS_PCT}%`,
+    );
+  }
+
+  /** After two measure clicks — ask admin for the true ground distance. */
+  function promptRealDistanceAndCalibrate(
+    a: CellPoint,
+    b: CellPoint,
+  ) {
+    const currentM = distanceMBetween(a, b, metersPerPct);
+    const raw = window.prompt(
+      `Measure ferdig.\n\nHvor mange meter er denne strekningen i virkeligheten?\n(Med nåværende skala er den ca. ${Math.round(currentM)} m)`,
+      String(Math.round(knownSpanM)),
+    );
+    if (raw == null) {
+      setStatus(
+        `Measure: ca. ${Math.round(currentM)} m (gammel skala). Skriv inn reell avstand under «Measure → skala» og trykk Enter.`,
+      );
+      window.setTimeout(() => knownSpanInputRef.current?.focus(), 50);
+      return;
+    }
+    const realM = Number(String(raw).replace(",", ".").trim());
+    if (!Number.isFinite(realM) || realM < 10) {
+      setStatus(
+        "Ugyldig meterverdi — skriv inn reell avstand under «Measure → skala».",
+      );
+      window.setTimeout(() => knownSpanInputRef.current?.focus(), 50);
+      return;
+    }
+    setMeasure({ a, b });
+    setKnownSpanM(Math.round(realM));
+    const next = awareMapMaxMFromKnownSpan(a, b, realM);
+    setAwareMaxM(next);
+    setStatus(
+      `Skala kalibrert: ${Math.round(realM)} m reelt spann → awareMapMaxM ${next} m @ ${AWARE_MAP_RADIUS_PCT}%`,
     );
   }
 
@@ -388,9 +431,7 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
 
   async function bakeToRepo() {
     if (isCustomDraft || String(mapId).startsWith("cloud-preview:")) {
-      setStatus(
-        "Nye / cloud-forhåndsviste terreng: bruk «Publiser til sky» eller «Oppdater fra sky». «Lagre til repo» gjelder kun kjernekart.",
-      );
+      await bakeCustomToRepo();
       return;
     }
     setBaking(true);
@@ -421,6 +462,64 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
       );
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Bake feilet");
+    } finally {
+      setBaking(false);
+    }
+  }
+
+  /** New / imported terrain → public/maps/cloud + cloudHuntMapsCatalog.ts */
+  async function bakeCustomToRepo() {
+    if (!pendingUpload && !customImageSrc) {
+      setStatus("Last opp kartbilde (PNG) før du skriver til repo.");
+      return;
+    }
+    setBaking(true);
+    setStatus("Skriver terreng til lokal repo…");
+    try {
+      const raw = await resolveMapBlob();
+      const compressed = await compressImageForCloudTerrain(raw);
+      const buf = await compressed.blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      const imageBase64 = btoa(binary);
+      const slug = slugTitle(draftTitle).replace(/æ/g, "ae").replace(/ø/g, "o").replace(/å/g, "a");
+      const res = await fetch("/api/admin/jaktfelt/write-custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          title: draftTitle,
+          regionHint: draftRegion,
+          cols: draftCols,
+          rows: draftRows,
+          start,
+          awareMapMaxM: awareMaxM,
+          seats,
+          imageBase64,
+          imageExt: compressed.ext,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        id?: string;
+        seats?: number;
+        paths?: string[];
+        hint?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      setStatus(
+        `Skrevet til repo: ${data.id} · ${data.seats ?? seats.length} seter → ${(data.paths ?? []).join(", ")}. ${data.hint ?? ""}`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Repo-skriving feilet");
     } finally {
       setBaking(false);
     }
@@ -1046,21 +1145,29 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
           <section className="jaktfelt-card">
             <h3>Measure → skala</h3>
             <p className="shop-row-note">
-              Klikk Measure, to punkter med kjent avstand, deretter beregn
-              awareMapMaxM.
+              Velg Measure, klikk to punkter med kjent avstand. Etter punkt 2
+              skriver du inn hvor mange meter strekningen er i virkeligheten —
+              da settes awareMapMaxM automatisk.
             </p>
             <label className="shop-filter">
-              Kjent avstand (m)
+              Reell avstand (m)
               <input
+                ref={knownSpanInputRef}
                 type="number"
-                min={50}
+                min={10}
                 max={5000}
-                step={10}
-                value={knownSpanM}
+                step={1}
+                value={Math.round(knownSpanM)}
                 onChange={(e) => {
                   const n = Number(e.target.value);
                   if (!Number.isFinite(n)) return;
-                  setKnownSpanM(Math.max(50, n));
+                  setKnownSpanM(Math.max(10, n));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyScaleFromMeasure();
+                  }
                 }}
               />
             </label>
@@ -1068,13 +1175,16 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
               type="button"
               className="intro-button"
               disabled={!measure.a || !measure.b}
-              onClick={applyScaleFromMeasure}
+              onClick={() => applyScaleFromMeasure()}
             >
               Sett skala fra Measure
             </button>
             {measureM != null ? (
               <p className="shop-row-note">
-                Nåværende spann: {Math.round(measureM)} m
+                Spann med nåværende skala: {Math.round(measureM)} m
+                {measure.a && measure.b
+                  ? ` · map ${Math.hypot(measure.b.x - measure.a.x, measure.b.y - measure.a.y).toFixed(1)} %`
+                  : ""}
               </p>
             ) : null}
           </section>
@@ -1100,11 +1210,19 @@ export function AdminJaktfeltPanel({ onLeave }: AdminJaktfeltPanelProps) {
               <button
                 type="button"
                 className="intro-button sheriff-secondary"
-                disabled={baking || isCustomDraft}
+                disabled={baking}
                 onClick={() => void bakeToRepo()}
-                title="Kun kjernekart i lokal repo"
+                title={
+                  isCustomDraft
+                    ? "Skriv nytt/importert terreng til public/maps/cloud + katalog"
+                    : "Oppdater kjernekart i lokal repo"
+                }
               >
-                {baking ? "Skriver…" : "Lagre til repo"}
+                {baking
+                  ? "Skriver…"
+                  : isCustomDraft
+                    ? "Skriv terreng til repo"
+                    : "Lagre til repo"}
               </button>
               <button
                 type="button"

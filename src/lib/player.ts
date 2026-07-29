@@ -57,6 +57,7 @@ import type { AwareHuntState } from "@/lib/aware/shotPairStorage";
 import {
   createJaktkort,
   emptyJaktkortBook,
+  getJaktkortForTerrain,
   upsertJaktkort,
 } from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
@@ -333,6 +334,7 @@ export const VIP_NAME_TOKENS = [
   "einar",
   "konrad",
   "dyre",
+  "hoftun",
 ] as const;
 export const VIP_STARTING_BALANCE = 100_000;
 /**
@@ -628,28 +630,31 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Einar / Konrad / Dyre — e.g. "Jørn Nilsson").
+ * (Jørn / Ivar / Tomas / Einar / Konrad / Dyre — e.g. "Jørn Nilsson"),
+ * or the name contains «Hoftun» (family VIP).
  */
 export function isVipPlayerName(name: string): boolean {
   return vipKitProfileIdForName(name) != null;
 }
 
+/** True when the hunter name contains «Hoftun» (any casing). */
+export function isHoftunPlayerName(name: string): boolean {
+  return name.trim().toLowerCase().normalize("NFC").includes("hoftun");
+}
+
 /** Map login name → VIP kit profile id (null if not a VIP first name). */
 export function vipKitProfileIdForName(name: string): KitProfileId | null {
-  const words = name
-    .trim()
-    .toLowerCase()
-    .normalize("NFC")
-    .split(/[\s\-_/.,]+/)
-    .filter(Boolean);
+  const normalized = name.trim().toLowerCase().normalize("NFC");
+  const words = normalized.split(/[\s\-_/.,]+/).filter(Boolean);
   if (words.includes("tomas")) return "tomas";
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
-  // Konrad / Dyre share Einar’s Sauer + ZCO loadout + High realism.
+  // Konrad / Dyre / Hoftun share Einar’s Sauer + ZCO loadout + High realism.
   if (
     words.includes("einar") ||
     words.includes("konrad") ||
-    words.includes("dyre")
+    words.includes("dyre") ||
+    normalized.includes("hoftun")
   ) {
     return "einar";
   }
@@ -845,18 +850,46 @@ function syncProfileLrf(stats: PlayerStats, profile: KitProfile): PlayerStats {
  * Grant cheat/VIP loadout when the name matches but the profile rifle is
  * missing — e.g. saves created before VIP kits, or load skipping intro.
  * Idempotent if the kit is already present; still syncs profile LRF.
+ * Hoftun also gets a free Sandbekken sesongkort when missing/expired.
  */
 export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
   const profile = namedStarterProfile(stats.name);
-  if (!profile) return stats;
-  if (!hasNamedStarterKit(stats)) {
-    if (isCheatPlayerName(stats.name)) return grantStarterGear(stats);
-    if (isVipPlayerName(stats.name)) {
-      return grantVipStarterGear(stats, stats.name);
+  let next = stats;
+  if (profile) {
+    if (!hasNamedStarterKit(next)) {
+      if (isCheatPlayerName(next.name)) next = grantStarterGear(next);
+      else if (isVipPlayerName(next.name)) {
+        next = grantVipStarterGear(next, next.name);
+      }
+    } else {
+      next = syncProfileLrf(next, profile);
     }
-    return stats;
   }
-  return syncProfileLrf(stats, profile);
+  return ensureHoftunSandbekkenPass(next);
+}
+
+/** Hoftun VIP: free Sandbekken season card (idempotent while days remain). */
+export const HOFTUN_SANDBEKKEN_TERRAIN_ID = "sandbekken";
+
+export function ensureHoftunSandbekkenPass(stats: PlayerStats): PlayerStats {
+  if (!isHoftunPlayerName(stats.name)) return stats;
+  const existing = getJaktkortForTerrain(
+    stats.jaktkort,
+    HOFTUN_SANDBEKKEN_TERRAIN_ID,
+  );
+  if (existing && existing.daysRemaining > 0) return stats;
+  const terrain = getHuntingTerrain(HOFTUN_SANDBEKKEN_TERRAIN_ID);
+  const kort = createJaktkort(
+    HOFTUN_SANDBEKKEN_TERRAIN_ID,
+    "season",
+    terrain?.pricePerDayNok ?? 1200,
+  );
+  return {
+    ...stats,
+    jaktkort: upsertJaktkort(stats.jaktkort, kort),
+    selectedHuntingTerrainId:
+      stats.selectedHuntingTerrainId ?? HOFTUN_SANDBEKKEN_TERRAIN_ID,
+  };
 }
 
 /** Admin session: Finnskogen sesongkort + CB Real loads top-up. */

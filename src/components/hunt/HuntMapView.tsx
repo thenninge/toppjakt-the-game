@@ -54,6 +54,11 @@ import {
 import { getCellSeatCounts } from "@/lib/hunt/mapPlacements";
 import { spotImagesWithPerches } from "@/lib/hunt/spotPerches";
 import {
+  forcedSpotImageForCell,
+  forcedSpotImagesForMap,
+  removeSpotImageFromDeck,
+} from "@/lib/hunt/forcedSpotScenes";
+import {
   ensureCloudScenesLoaded,
   isCloudSpotImage,
   subscribeCloudScenes,
@@ -335,8 +340,7 @@ type HuntMapViewProps = {
   owlLastOfferedMilestone?: number | null;
   /** Persist that an owl observation slot was consumed (26 / 36 / …). */
   onOwlOffered?: (milestone: number) => void;
-  /** Synced open-hunt skuddpar (cloud + local PlayerStats). */
-  awareHunt?: AwareHuntState | null;
+  /** Persist open-hunt skuddpar to PlayerStats (cleared on Dra på jakt / end). */
   onAwareHuntChange?: (next: AwareHuntState | null) => void;
   /** Headshot (yellow zone) — rename player to Pink Mist. */
   onHeadshotNickname?: () => void;
@@ -629,7 +633,6 @@ export function HuntMapView({
   lifetimeUgle = 0,
   owlLastOfferedMilestone = null,
   onOwlOffered,
-  awareHunt = null,
   onAwareHuntChange,
   onHeadshotNickname,
   isAdmin = false,
@@ -1291,7 +1294,7 @@ export function HuntMapView({
     setBirdMapContacts({});
     setBirdEncounter(null);
     latentSpotNerveRef.current = {};
-    setShotPairs(loadShotPairsForHuntStart(terrainId, awareHunt));
+    setShotPairs(loadShotPairsForHuntStart(terrainId));
     setFindHitAar(null);
     setEatSession(null);
     setThermosCupsLeft(THERMOS_CUPS_PER_FILL);
@@ -1349,6 +1352,7 @@ export function HuntMapView({
         onBirdHarvested(createCarcassFromHarvest(pair.harvestDraft));
       }
     }
+    setShotPairs([]);
     clearShotPairsStorage();
     onAwareHuntChange?.(null);
     onLeave(opts);
@@ -2222,26 +2226,49 @@ export function HuntMapView({
       marked.includes(src) ||
       src.startsWith("/images/spot/") ||
       isCloudSpotImage(src);
+    const forced = map ? forcedSpotImageForCell(map.id, at) : null;
+    const reservedForced = map ? forcedSpotImagesForMap(map.id) : [];
     const preferred =
-      opts?.reuseImageSrc && isUsableSpotSrc(opts.reuseImageSrc)
+      !forced &&
+      opts?.reuseImageSrc &&
+      isUsableSpotSrc(opts.reuseImageSrc)
         ? opts.reuseImageSrc
         : null;
     const cached = spotLayoutByCell[cellKey];
     const cachedOk =
-      cached && isUsableSpotSrc(cached.imageSrc) ? cached : null;
+      cached &&
+      isUsableSpotSrc(cached.imageSrc) &&
+      (!forced || cached.imageSrc === forced)
+        ? cached
+        : null;
     const imageSrc =
+      forced ??
       preferred ??
       cachedOk?.imageSrc ??
       (() => {
         const pool = marked.length > 0 ? marked : [];
+        // Keep reserved forced scenes out of the live deck this cycle.
+        for (const src of reservedForced) {
+          removeSpotImageFromDeck(spotImageDeckRef.current, src);
+        }
         const drawn = drawImageWithoutReplacement(
           spotImageDeckRef.current,
           pool.length > 0 ? pool : ["/images/spot/spot1.png"],
-          { avoidSrc: lastSpotImageDrawnRef.current },
+          {
+            avoidSrc: lastSpotImageDrawnRef.current,
+            // Forced cell images stay reserved until the deck reshuffles.
+            excludeSrcs: reservedForced,
+          },
         );
         lastSpotImageDrawnRef.current = drawn;
         return drawn;
       })();
+    // Forced cell: consume from deck so the scene is not re-dealt randomly
+    // before the spotting pool is exhausted / reshuffled.
+    if (forced) {
+      removeSpotImageFromDeck(spotImageDeckRef.current, forced);
+      lastSpotImageDrawnRef.current = forced;
+    }
 
     const here = birdsInCell(birdList, at);
     const hereIds = new Set(here.map((b) => b.id));

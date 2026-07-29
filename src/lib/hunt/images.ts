@@ -209,6 +209,10 @@ export function shuffleImages(
  * Draw without replacement from a mutable deck.
  * When empty, reshuffles the full pool (optionally avoiding an immediate
  * repeat of `avoidSrc` when the pool has more than one image).
+ *
+ * {@link excludeSrcs} are stripped after each refill — reserved / already
+ * consumed for forced cells this cycle — so they are not dealt randomly
+ * until the next full reshuffle of the remaining pool.
  */
 export function drawImageWithoutReplacement(
   deck: string[],
@@ -217,26 +221,37 @@ export function drawImageWithoutReplacement(
     random?: () => number;
     /** Prefer not drawing this as the first card after a reshuffle. */
     avoidSrc?: string | null;
+    /** Remove these after (re)fill — without-replacement reservations. */
+    excludeSrcs?: readonly string[];
   },
 ): string {
   const random = opts?.random ?? Math.random;
   const catalog = pool.length > 0 ? pool : SPOT_IMAGES;
-  if (deck.length === 0) {
+  const exclude = new Set(opts?.excludeSrcs ?? []);
+
+  function refill() {
     const next = shuffleImages(catalog, random);
     const avoid = opts?.avoidSrc;
-    if (
-      avoid &&
-      next.length > 1 &&
-      next[next.length - 1] === avoid
-    ) {
+    if (avoid && next.length > 1 && next[next.length - 1] === avoid) {
       // Pop order is from the end — swap last with an earlier card.
       const swapAt = Math.floor(random() * (next.length - 1));
       const last = next[next.length - 1]!;
       next[next.length - 1] = next[swapAt]!;
       next[swapAt] = last;
     }
-    deck.push(...next);
+    const filtered =
+      exclude.size > 0 ? next.filter((src) => !exclude.has(src)) : next;
+    // If every image was reserved, keep the full shuffle (better than empty).
+    deck.push(...(filtered.length > 0 ? filtered : next));
   }
+
+  if (deck.length === 0) refill();
+  // Drop a reserved card that somehow sits on top of an older deck.
+  while (deck.length > 0 && exclude.has(deck[deck.length - 1]!)) {
+    deck.pop();
+  }
+  if (deck.length === 0) refill();
+
   return deck.pop() ?? catalog[0] ?? "/images/spot/spot1.png";
 }
 

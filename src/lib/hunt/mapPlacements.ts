@@ -728,25 +728,42 @@ function cellKey(row: number, col: number): string {
   return `${row},${col}`;
 }
 
-const CELL_COUNTS: Partial<Record<HuntMapId, Record<string, CellSeatCounts>>> = (() => {
-  const out: Partial<Record<HuntMapId, Record<string, CellSeatCounts>>> = {};
-  for (const [mapId, seats] of Object.entries(MAP_BIRD_SEATS) as [
-    HuntMapId,
-    readonly MapBirdSeat[],
-  ][]) {
-    const counts: Record<string, CellSeatCounts> = {};
-    for (const s of seats) {
-      const k = cellKey(s.row, s.col);
-      const cur = counts[k] ?? { tiur: 0, orrhane: 0, total: 0 };
-      if (s.species === "tiur") cur.tiur += 1;
-      else cur.orrhane += 1;
-      cur.total += 1;
-      counts[k] = cur;
-    }
-    out[mapId] = counts;
+function buildCellCounts(
+  seats: readonly MapBirdSeat[],
+): Record<string, CellSeatCounts> {
+  const counts: Record<string, CellSeatCounts> = {};
+  for (const s of seats) {
+    const k = cellKey(s.row, s.col);
+    const cur = counts[k] ?? { tiur: 0, orrhane: 0, total: 0 };
+    if (s.species === "tiur") cur.tiur += 1;
+    else cur.orrhane += 1;
+    cur.total += 1;
+    counts[k] = cur;
   }
-  return out;
-})();
+  return counts;
+}
+
+function maxTotalFromCounts(counts: Record<string, CellSeatCounts>): number {
+  let max = 1;
+  for (const c of Object.values(counts)) max = Math.max(max, c.total);
+  return max;
+}
+
+const CELL_COUNTS: Partial<Record<HuntMapId, Record<string, CellSeatCounts>>> =
+  (() => {
+    const out: Partial<Record<HuntMapId, Record<string, CellSeatCounts>>> = {};
+    for (const [mapId, seats] of Object.entries(MAP_BIRD_SEATS) as [
+      HuntMapId,
+      readonly MapBirdSeat[],
+    ][]) {
+      out[mapId] = buildCellCounts(seats);
+    }
+    // Cloud / imported terrains (e.g. Sandbekken) — same study-map density math.
+    for (const [mapId, seats] of Object.entries(CLOUD_MAP_BIRD_SEATS)) {
+      out[mapId] = buildCellCounts(seats);
+    }
+    return out;
+  })();
 
 const MAX_TOTAL_BY_MAP: Partial<Record<HuntMapId, number>> = (() => {
   const out: Partial<Record<HuntMapId, number>> = {};
@@ -754,9 +771,7 @@ const MAX_TOTAL_BY_MAP: Partial<Record<HuntMapId, number>> = (() => {
     HuntMapId,
     Record<string, CellSeatCounts>,
   ][]) {
-    let max = 1;
-    for (const c of Object.values(counts)) max = Math.max(max, c.total);
-    out[mapId] = max;
+    out[mapId] = maxTotalFromCounts(counts);
   }
   return out;
 })();
@@ -765,12 +780,21 @@ export function getMapBirdSeats(mapId: HuntMapId): readonly MapBirdSeat[] {
   return MAP_BIRD_SEATS[mapId] ?? CLOUD_MAP_BIRD_SEATS[mapId] ?? [];
 }
 
+function cellCountsForMap(mapId: HuntMapId): Record<string, CellSeatCounts> {
+  const pre = CELL_COUNTS[mapId];
+  if (pre) return pre;
+  // Runtime fallback if a cloud map was added after module init.
+  const seats = getMapBirdSeats(mapId);
+  if (seats.length === 0) return {};
+  return buildCellCounts(seats);
+}
+
 export function getCellSeatCounts(
   mapId: HuntMapId,
   cell: HuntGridCell,
 ): CellSeatCounts {
   return (
-    CELL_COUNTS[mapId]?.[cellKey(cell.row, cell.col)] ?? {
+    cellCountsForMap(mapId)[cellKey(cell.row, cell.col)] ?? {
       tiur: 0,
       orrhane: 0,
       total: 0,
@@ -797,8 +821,8 @@ export function weightedSpawnCells(
   species: BirdSpecies,
   parking: HuntGridCell,
 ): { cell: HuntGridCell; weight: number }[] {
-  const counts = CELL_COUNTS[mapId];
-  if (!counts) return [];
+  const counts = cellCountsForMap(mapId);
+  if (Object.keys(counts).length === 0) return [];
   const out: { cell: HuntGridCell; weight: number }[] = [];
   for (const [key, c] of Object.entries(counts)) {
     const weight = species === "tiur" ? c.tiur : c.orrhane;
@@ -826,10 +850,15 @@ export function placementBirdChancePct(
   if (seats.length === 0) return null;
   if (isParking) return Math.max(2, Math.round(terrainBirdRating * 2));
   const counts = getCellSeatCounts(mapId, cell);
-  const maxTotal = MAX_TOTAL_BY_MAP[mapId] ?? 1;
-  const density = counts.total / maxTotal; // 0–1
+  const maxTotal =
+    MAX_TOTAL_BY_MAP[mapId] ??
+    maxTotalFromCounts(cellCountsForMap(mapId));
+  const density = counts.total / Math.max(1, maxTotal); // 0–1
   const base = terrainBirdRating * 8; // 8–40
   const densityBoost = Math.round(density * 42); // 0–42
   const emptyPenalty = counts.total === 0 ? -10 : 0;
-  return Math.max(3, Math.min(82, Math.round(base + densityBoost + emptyPenalty)));
+  return Math.max(
+    3,
+    Math.min(82, Math.round(base + densityBoost + emptyPenalty)),
+  );
 }

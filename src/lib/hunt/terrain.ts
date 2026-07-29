@@ -12,6 +12,7 @@ export type HuntingTerrainId =
   | "inatur-granskog"
   | "svenskegrensa"
   | "finnskogen"
+  | "sandbekken"
   | "rulles-stubb-teig"
   | "rulles-kristian-li"
   | "rulles-lovenskiold";
@@ -124,6 +125,18 @@ export const HUNTING_TERRAINS: HuntingTerrain[] = [
     orrhaneRating: 4,
     mapId: "finnskogen",
     access: "vip",
+  },
+  {
+    id: "sandbekken",
+    name: "Sandbekken",
+    region: "Helingdal",
+    blurb:
+      "Sandbekken — furu, bekk og markerte sitteplasser. Dagskort 1200 kr · tiur 4/5 · orre 4/5.",
+    pricePerDayNok: 1200,
+    tiurRating: 4,
+    orrhaneRating: 4,
+    mapId: "cloud_sandbekken",
+    access: "inatur",
   },
   {
     id: "rulles-stubb-teig",

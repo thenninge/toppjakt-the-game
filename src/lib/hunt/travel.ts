@@ -111,8 +111,8 @@ export function getCellEffort(
   mapId: HuntMapId,
   cell: HuntGridCell,
 ): EffortScore {
-  const grid = EFFORT_BY_MAP[mapId];
-  if (!grid) return 3;
+  // Cloud / new maps reuse the shared 7×6 effort grid until per-map data exists.
+  const grid = EFFORT_BY_MAP[mapId] ?? SHARED_HUNT_EFFORT;
   const row = grid[cell.row];
   if (!row) return 3;
   return row[cell.col] ?? 3;

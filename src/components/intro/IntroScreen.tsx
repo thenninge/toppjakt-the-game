@@ -1270,10 +1270,13 @@ export function IntroScreen() {
     const id = terrainId ?? stats.selectedHuntingTerrainId;
     const kort = getJaktkortForTerrain(stats.jaktkort, id);
     if (!id || !kort || kort.daysRemaining <= 0) return;
+    // Fresh jaktdag: wipe leftover skuddpar / forfeited recoveries.
+    clearShotPairsStorage();
     setStats((prev) =>
       applyAutoSupplyFood({
         ...prev,
         selectedHuntingTerrainId: id,
+        awareHunt: null,
       }),
     );
     setLocation(null);
@@ -1282,6 +1285,7 @@ export function IntroScreen() {
   }
 
   function endHunt(opts?: { skipJaktkortConsume?: boolean }) {
+    clearShotPairsStorage();
     if (!opts?.skipJaktkortConsume) {
       setStats((prev) => {
         const terrainId = prev.selectedHuntingTerrainId;
@@ -1291,6 +1295,7 @@ export function IntroScreen() {
           ...prev,
           jaktkort: nextBook,
           selectedHuntingTerrainId: stillActive ? terrainId : null,
+          awareHunt: null,
           // Pack → freezer when leaving the field.
           freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
           carcasses: [],
@@ -1299,6 +1304,7 @@ export function IntroScreen() {
     } else {
       setStats((prev) => ({
         ...prev,
+        awareHunt: null,
         freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
         carcasses: [],
       }));
@@ -1920,7 +1926,6 @@ export function IntroScreen() {
                 owlLastOfferedMilestone: milestone,
               }))
             }
-            awareHunt={stats.awareHunt}
             onAwareHuntChange={(next) =>
               setStats((prev) => {
                 const a = prev.awareHunt;

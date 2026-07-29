@@ -29,7 +29,7 @@ type InaturNoProps = {
   selectedTerrainId: string | null;
   jaktkort: JaktkortBook;
   unlockedTerrainIds: string[];
-  /** VIP name package (ivar / tomas / jørn / einar / konrad / dyre). */
+  /** VIP name package (ivar / tomas / jørn / einar / konrad / dyre / hoftun). */
   isVip?: boolean;
   /** Admin PIN session — same VIP Inatur listings. */
   isAdmin?: boolean;
@@ -280,8 +280,8 @@ export function InaturNo({
                 ) : null}
                 {terrain.access === "vip" ? (
                   <span className="shop-row-note">
-                    VIP-package — Ivar / Tomas / Jørn / Einar / Konrad / Dyre ·
-                    admin
+                    VIP-package — Ivar / Tomas / Jørn / Einar / Konrad / Dyre /
+                    Hoftun · admin
                   </span>
                 ) : null}
                 {kortHere ? (

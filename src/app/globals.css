@@ -10330,6 +10330,19 @@ body {
   white-space: nowrap;
 }
 
+/** Track ettersøk: 4 buttons on 2×2 so labels stay readable on phones. */
+.aware-map-actions-row-track {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.aware-map-actions-row-track .intro-button {
+  flex: none;
+  width: 100%;
+  white-space: normal;
+}
+
 .aware-map-actions-shoot {
   flex-direction: column;
   flex-wrap: nowrap;

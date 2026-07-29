@@ -2234,7 +2234,15 @@ export function AwareAppView({
               </button>
             </div>
           ) : null}
-          <div className="aware-map-actions-row">
+          <div
+            className={
+              mode === "track" &&
+              trackActivePair?.resultKind === "ettersok" &&
+              trackActivePair.found !== true
+                ? "aware-map-actions-row aware-map-actions-row-track"
+                : "aware-map-actions-row"
+            }
+          >
           <button
             type="button"
             className="intro-button sheriff-secondary"
