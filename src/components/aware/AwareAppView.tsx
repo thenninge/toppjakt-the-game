@@ -34,6 +34,8 @@ import {
   CLOSE_RANGE_TREE_HENT_MAX_M,
   estimateEttersokFind,
   impactFromShot,
+  SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
+  SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
 } from "@/lib/aware/ettersok";
 import {
   shotPairAimPoint,
@@ -565,22 +567,6 @@ export function AwareAppView({
     else if (initialRest === "backpack" && hasBackpack) setRest("backpack");
     else if (initialRest === "bagrider" && hasBagrider) setRest("bagrider");
   }, [initialGunDeployed, initialRest, hasBipod, hasBackpack, hasBagrider]);
-  /**
-   * Hent/søk / Track: rifle always goes back in the pack (can't carry it
-   * while recovering). Parent also mounts; this clears local Deploy UI when
-   * Aware stays mounted across skuddpar → Track.
-   */
-  useEffect(() => {
-    if (!focusPairId) return;
-    if (!gunDeployed) return;
-    flushSync(() => {
-      setRest("none");
-      setGunDeployed(false);
-    });
-    onMountGun?.();
-    setStatus("Gun mounted — rifla i sekken mens du henter / søker.");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on Track enter
-  }, [focusPairId]);
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? cellCenterOnAwareMap(cell, map),
   );
@@ -1122,10 +1108,11 @@ export function AwareAppView({
   function startShootPair() {
     const stand = { ...hunter };
     /**
-     * Prefill when cam is on, or during the post-shot window (bird seat is
-     * still visible — blank 0°/200 m dragged tree-kills due north on Track).
+     * Prefill only when cam filmed the shot. Post-shot HIGH window still shows
+     * the bird seat for 60 s, but dials stay blank (250 m / N) so the player
+     * must set range and bearing themselves.
      */
-    if (skuddparAutofill || postShotSkuddparMode) {
+    if (skuddparAutofill) {
       const exactDist = distanceMBetween(stand, birdWorld, metersPerPct);
       const exactBearing = bearingDegFromTo(stand, birdWorld);
       const rangeM = Math.max(
@@ -1140,9 +1127,7 @@ export function AwareAppView({
         bearingDeg,
       });
       setStatus(
-        postShotSkuddparMode
-          ? `Skuddpar: stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° fra synlig fugleprikk — juster om nødvendig, deretter lagre.`
-          : `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
+        `Skuddpar (cam): stand låst. Prefylt ${Math.round(exactDist)} m / ${bearingDeg}° — juster avstand (sirkel), deretter retning og lagre.`,
       );
       return;
     }
@@ -1153,7 +1138,7 @@ export function AwareAppView({
     if (editPair?.harvestDraft && editPair.found == null) {
       const blank = editPair.skuddparCommitted === false;
       const rangeM = blank
-        ? 200
+        ? SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M
         : Math.max(
             50,
             Math.min(mapMaxM, Math.round(editPair.distanceM / 5) * 5),
@@ -1162,7 +1147,9 @@ export function AwareAppView({
         phase: "range",
         stand,
         rangeM,
-        bearingDeg: blank ? 0 : normalizeBearingDeg(editPair.bearingDeg),
+        bearingDeg: blank
+          ? SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG
+          : normalizeBearingDeg(editPair.bearingDeg),
       });
       setStatus(
         blank
@@ -1171,15 +1158,17 @@ export function AwareAppView({
       );
       return;
     }
-    // No cam / no post-shot seat: blank dials — player must knote from memory.
+    // Manual / post-shot seat visible: blank dials — player must knote from the map.
     setShootWizard({
       phase: "range",
       stand,
-      rangeM: 200,
-      bearingDeg: 0,
+      rangeM: SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M,
+      bearingDeg: SHOT_PAIR_MANUAL_DEFAULT_BEARING_DEG,
     });
     setStatus(
-      "Skuddpar: stand låst. Sett avstand (sirkel), deretter skuddretning — ingen autofyll uten cam.",
+      postShotSkuddparMode
+        ? `Skuddpar: stand låst. Fugleprikk synlig ${postShotSkuddparSecLeft} s — still avstand (start ${SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M} m) og retning (start N / 0°), deretter lagre.`
+        : "Skuddpar: stand låst. Sett avstand (sirkel), deretter skuddretning — ingen autofyll uten cam.",
     );
   }
 
@@ -1198,12 +1187,11 @@ export function AwareAppView({
       distanceM: rangeM,
       metersPerPct,
     });
-    // Snap to true bird when cam autofill is on, or during post-shot (seat visible).
+    // Snap to true bird only when cam autofill is on — not during the
+    // post-shot HIGH window (player must dial range/bearing themselves).
     const snapM = distanceMBetween(dialed, birdWorld, metersPerPct);
     const target =
-      (skuddparAutofill || postShotSkuddparMode) && snapM <= 12
-        ? { ...birdWorld }
-        : dialed;
+      skuddparAutofill && snapM <= 12 ? { ...birdWorld } : dialed;
     const distanceM = Math.round(distanceMBetween(stand, target, metersPerPct));
     const bearing = Math.round(bearingDegFromTo(stand, target));
 
@@ -1215,6 +1203,8 @@ export function AwareAppView({
         bearingDeg: bearing,
       });
       setShootWizard({ phase: "idle" });
+      // Stay deployed at the shot stand — remount only on Søk / Hent / leave cell.
+      setMode("track");
       return;
     }
 
@@ -1391,6 +1381,8 @@ export function AwareAppView({
       );
       return;
     }
+    // Leaving the shot stand to search → rifle back in the pack.
+    if (gunDeployed) mountGun();
     const searchMin = ettersokMinutesForSearch(
       trackN,
       trackActivePair.distanceM,
@@ -1446,6 +1438,8 @@ export function AwareAppView({
     ) {
       return;
     }
+    // Leaving the shot stand to recover → rifle back in the pack.
+    if (gunDeployed) mountGun();
     const tree = shotPairTrueBirdPoint(trackActivePair);
     const walkM = Math.round(distanceMBetween(hunter, tree, metersPerPct));
     const recoverMin = treeRecoveryMinutes(walkM);
@@ -1811,7 +1805,9 @@ export function AwareAppView({
 
         {postShotSkuddparMode ? (
           <p className="shop-row-note" style={{ margin: "0.35rem 0.75rem 0" }}>
-            Skuddpar-vindu: {postShotSkuddparSecLeft} s — fugleprikk = siktepunkt
+            Skuddpar-vindu: {postShotSkuddparSecLeft} s — fugleprikk synlig;
+            still inn avstand ({SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M} m) og
+            retning (N / 0°) selv
           </p>
         ) : null}
 
@@ -1984,14 +1980,16 @@ export function AwareAppView({
                   style={{ left: `${birdWorld.x}%`, top: `${birdWorld.y}%` }}
                   title={
                     postShotSkuddparMode
-                      ? `Siktepunkt ${Math.round(liveDistanceM)} m`
+                      ? "Fugleposisjon (synlig kort) — dial avstand/retning selv"
                       : `Fugl ${Math.round(liveDistanceM)} m`
                   }
                 >
                   <span className="aware-bird-x" aria-hidden />
-                  <span className="aware-bird-label">
-                    {Math.round(liveDistanceM)} m
-                  </span>
+                  {postShotSkuddparMode ? null : (
+                    <span className="aware-bird-label">
+                      {Math.round(liveDistanceM)} m
+                    </span>
+                  )}
                 </span>
               ) : null}
               <div
@@ -2669,7 +2667,7 @@ export function AwareAppView({
             <div className="aware-actions">
               <p className="shop-row-note">
                 {postShotSkuddparMode
-                  ? `Etter skudd: marker stand og tre (${postShotSkuddparSecLeft} s igjen).`
+                  ? `Etter skudd: fugleprikk synlig ${postShotSkuddparSecLeft} s — still avstand (start ${SHOT_PAIR_MANUAL_DEFAULT_DISTANCE_M} m) og retning (start N / 0°) selv.`
                   : focusPairId || trackActivePair?.harvestDraft
                     ? trackActivePair?.skuddparCommitted === false ||
                         (focusPairId &&

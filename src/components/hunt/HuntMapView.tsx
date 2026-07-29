@@ -559,6 +559,8 @@ type PostShotGhost = {
   densityRatio: number;
   rangeSource: "lrf" | "estimated";
   camcorderActive: boolean;
+  gunDeployed: boolean;
+  rest: HuntShootRest;
   harvestDraft: BirdHarvestInput;
   hitFasit: ShotHitFasit;
   fleeObservation?: ShotPair["fleeObservation"];
@@ -3443,12 +3445,11 @@ export function HuntMapView({
     const next = pendingPostShot.aware;
     setPendingPostShot(null);
     setPostShotGhost(null);
-    // Track after shot → rifle back in the pack.
-    mountFieldGun({ silent: true });
+    // Still at the shot stand until Søk / Hent / leave cell — keep rifle out.
     setAwareSession({
       ...next,
-      returnGunDeployed: false,
-      returnRest: "none",
+      returnGunDeployed: fieldGunDeployedRef.current,
+      returnRest: next.returnRest ?? "none",
     });
     setPanel("arrived");
   }
@@ -3503,6 +3504,8 @@ export function HuntMapView({
       ettersokPairId: pairId,
       recoveryOnly: g.recoveryOnly,
       returnCamcorderActive: g.camcorderActive,
+      returnGunDeployed: g.gunDeployed,
+      returnRest: g.gunDeployed ? g.rest : "none",
       postShotSkuddpar: !pairId,
     };
   }
@@ -3596,15 +3599,16 @@ export function HuntMapView({
     setPostShotGhost(null);
     setPostShotGhostSecLeft(0);
     setPendingPostShot(null);
-    // Track / Hent → rifle back in the pack.
-    mountFieldGun({ silent: true });
+    // Still at the shot stand — remount only on Søk / Hent ved treet / leave cell.
+    // Keep gun + rest from the shot (ghost) for the next engage.
+    const keepGun = fieldGunDeployedRef.current || g.gunDeployed;
     setAwareSession({
       ...awareSessionFromGhost(g, pair.id),
       postShotSkuddpar: false,
       birdPos: g.impact,
       ettersokPairId: pair.id,
-      returnGunDeployed: false,
-      returnRest: "none",
+      returnGunDeployed: keepGun,
+      returnRest: keepGun ? g.rest : "none",
     });
     setLog(
       `Skuddpar lagret: ${pair.distanceM} m / ${Math.round(pair.bearingDeg)}° — fortsett i Track (Hent/søk).`,
@@ -3662,9 +3666,11 @@ export function HuntMapView({
     setPendingPostShot(null);
     setEngageResume(null);
     setBirdEncounter(null);
-    // Track / Hent-søk → rifle back in the pack.
-    mountFieldGun({ silent: true });
-    if (pair.cell.row !== pos.row || pair.cell.col !== pos.col) {
+    const leavingCell =
+      pair.cell.row !== pos.row || pair.cell.col !== pos.col;
+    // Leaving this cell for another pair → auto-mount. Same cell keeps deploy.
+    if (leavingCell) {
+      mountFieldGun({ silent: true });
       const leaveNote = mindHitLeavingUnfoundCell(pos);
       setPos({ ...pair.cell });
       setLog(
@@ -3697,7 +3703,7 @@ export function HuntMapView({
       rangeSource: "estimated",
       ettersokPairId: pair.id,
       recoveryOnly,
-      returnGunDeployed: false,
+      returnGunDeployed: leavingCell ? false : fieldGunDeployedRef.current,
       returnRest: "none",
     });
     setPanel("arrived");
@@ -4333,6 +4339,8 @@ export function HuntMapView({
           densityRatio: shootSession.densityRatio,
           rangeSource: shootSession.rangeSource,
           camcorderActive: camcorderOn,
+          gunDeployed: !!shootSession.gunDeployed,
+          rest: shootSession.rest ?? "none",
           harvestDraft,
           hitFasit,
           fleeObservation,
@@ -4360,6 +4368,12 @@ export function HuntMapView({
             rangeSource: shootSession.rangeSource,
             ettersokPairId: pair.id,
             recoveryOnly,
+            returnGunDeployed:
+              !!shootSession.gunDeployed || fieldGunDeployedRef.current,
+            returnRest:
+              shootSession.gunDeployed
+                ? (shootSession.rest ?? "none")
+                : "none",
           }
         : null;
       const logMsg =
