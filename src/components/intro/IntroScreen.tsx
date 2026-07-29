@@ -99,6 +99,7 @@ import {
 } from "@/lib/weather/spec";
 import { TownHub, type TownLocationId } from "@/components/town/TownHub";
 import { JegerproveView } from "@/components/town/JegerproveView";
+import { isJegerproveCleared } from "@/lib/jegerprove/exam";
 import { HowToPlayView } from "@/components/town/HowToPlayView";
 import { AdminOffice } from "@/components/town/AdminOffice";
 import {
@@ -251,7 +252,7 @@ export function IntroScreen() {
     savePlayerStats(next);
     setStats(next);
     setName(next.name);
-    if (!next.jegerprovePassed) {
+    if (!isJegerproveCleared(next.jegerprovePassed)) {
       setLocation("jegerprove");
       afterChapterRef.current = "location";
     } else {
@@ -581,14 +582,14 @@ export function IntroScreen() {
   }
 
   function enterLocation(id: TownLocationId) {
-    if (!stats.jegerprovePassed && id !== "jegerprove") return;
+    if (!isJegerproveCleared(stats.jegerprovePassed) && id !== "jegerprove") return;
     if (id === "admin-office" && !adminUnlocked) return;
     setLocation(id);
     setPhase("location");
   }
 
   function backToTown() {
-    if (!stats.jegerprovePassed) {
+    if (!isJegerproveCleared(stats.jegerprovePassed)) {
       setLocation("jegerprove");
       setPhase("location");
       return;
@@ -1421,7 +1422,7 @@ export function IntroScreen() {
         isCheatPlayerName(prev.name) || isVipPlayerName(prev.name)
           ? ensureNamedStarterGear(withBalance)
           : grantUncleRifle(withBalance);
-      needsExam = !next.jegerprovePassed;
+      needsExam = !isJegerproveCleared(next.jegerprovePassed);
       return next;
     });
     if (needsExam) {
@@ -1659,7 +1660,7 @@ export function IntroScreen() {
           </div>
         )}
 
-        {phase === "town" && stats.jegerprovePassed && (
+        {phase === "town" && isJegerproveCleared(stats.jegerprovePassed) && (
           <TownHub
             playerName={stats.name}
             nickname={stats.nickname}
@@ -1668,7 +1669,7 @@ export function IntroScreen() {
           />
         )}
 
-        {phase === "town" && !stats.jegerprovePassed ? (
+        {phase === "town" && !isJegerproveCleared(stats.jegerprovePassed) ? (
           <JegerproveView
             playerName={stats.name}
             nickname={stats.nickname}
@@ -1697,7 +1698,7 @@ export function IntroScreen() {
             playerName={stats.name}
             nickname={stats.nickname}
             alreadyPassed={stats.jegerprovePassed}
-            locked={!stats.jegerprovePassed}
+            locked={!isJegerproveCleared(stats.jegerprovePassed)}
             lang={stats.lang}
             onLangChange={(lang) =>
               setStats((prev) => (prev.lang === lang ? prev : { ...prev, lang }))
@@ -1829,7 +1830,7 @@ export function IntroScreen() {
             unusedLicenses={unusedLicenseCount(stats)}
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             jaktkort={stats.jaktkort}
-            jegerprovePassed={stats.jegerprovePassed}
+            jegerprovePassed={isJegerproveCleared(stats.jegerprovePassed)}
             unlockedTerrainIds={stats.unlockedTerrainIds}
             isVip={isVipPlayerName(stats.name)}
             isAdmin={adminUnlocked}

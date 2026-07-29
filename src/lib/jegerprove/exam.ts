@@ -21,6 +21,17 @@ export {
   getJegerproveLocale,
 } from "@/lib/jegerprove/locales";
 
+/**
+ * When false, the exam UI stays available but is not required to enter town
+ * or start a hunt. Flip to true to restore the gate.
+ */
+export const JEGERPROVE_REQUIRED = false;
+
+/** True when the player may proceed past the exam gate. */
+export function isJegerproveCleared(passed: boolean): boolean {
+  return !JEGERPROVE_REQUIRED || passed;
+}
+
 export type JegerproveChoice = {
   key: "A" | "B" | "C";
   label: string;

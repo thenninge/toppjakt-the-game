@@ -20,6 +20,7 @@ import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
 import type { JaktkortBook } from "@/lib/hunt/jaktkort";
 import { getJaktkortForTerrain } from "@/lib/hunt/jaktkort";
+import { isJegerproveCleared } from "@/lib/jegerprove/exam";
 
 export type HuntReadyResult = {
   ok: boolean;
@@ -122,7 +123,7 @@ export function huntReadyCheck(input: {
     input.selectedHuntingTerrainId,
   );
 
-  if (!input.jegerprovePassed) {
+  if (!isJegerproveCleared(input.jegerprovePassed ?? false)) {
     blockers.push("Bestå jegerprøven i byen før du kan jakte");
   }
 
