@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import {
   DEFAULT_BINOS_MAGNIFICATION,
   SPOT_TIME_FACTOR_BINOS,
@@ -549,6 +549,16 @@ export function SpotView({
     thermalCanvasRef.current?.setPanLive(next);
   }
 
+  /**
+   * Re-assert live pan after React commits — clock/HUD setState during drag
+   * used to rewrite worldStyle from stale `pan` and make the image glippe.
+   */
+  useLayoutEffect(() => {
+    if (!panDragging) return;
+    paintPanLive(panRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-paint when drag flag flips / re-renders while dragging
+  });
+
   /** Pan stop when the circular aperture hits the landscape edge. */
   function clampPanXY(x: number, y: number): { x: number; y: number } {
     const z = zoomRef.current;
@@ -1021,6 +1031,7 @@ export function SpotView({
     if (mode !== "binos" && mode !== "thermal") return;
     // Ignore non-primary mouse (right-click) and multi-touch extras.
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (e.pointerType === "touch" && !e.isPrimary) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
@@ -1061,11 +1072,11 @@ export function SpotView({
     endPanDrag(e.currentTarget, e.pointerId);
   }
 
-  function onPointerLeave(e: PointerEvent<HTMLDivElement>) {
-    // Mouse leave ends drag (stuck :active). Touch keeps capture until up/cancel.
-    if (e.pointerType !== "mouse") return;
-    endPanDrag(e.currentTarget, dragRef.current?.pointerId);
-  }
+  /**
+   * Do not end drag on pointerleave — with setPointerCapture, leave still fires
+   * when the cursor exits the frame and was ending the drag mid-pan (trackpad
+   * "glipper"). pointerup / cancel / buttons===0 / lostcapture end the drag.
+   */
 
   /** Habrok: WH/BH/Outline + dagoptikk gate far birds by zoom. Fusion shows all birds. */
   const habrokZoomGate =
@@ -1344,20 +1355,23 @@ export function SpotView({
 
   /**
    * Live look direction: landscape under optic centre (not the pan param).
+   * While dragging, use panRef so HUD/clock re-renders do not snap the view.
    */
+  const lookPanX = panDragging ? panRef.current.x : pan.x;
   const lookXPct = isOpticMode
-    ? landscapeAtLensCenter(pan.x, zoom)
+    ? landscapeAtLensCenter(lookPanX, zoom)
     : 50;
   const lookBearingDeg = bearingFromSpotFrame(viewBearingDeg, lookXPct);
   const lookBearing = ((Math.round(lookBearingDeg) % 360) + 360) % 360;
   const lookCompass = compassLabelFromDeg(lookBearing);
 
   /** Same % coordinate system for eyes / binos / thermal. */
+  const paintPan = panDragging ? panRef.current : pan;
   const worldStyle = {
     width: `${zoom * 100}%`,
     height: `${zoom * 100}%`,
-    left: `${(1 - zoom) * pan.x}%`,
-    top: `${(1 - zoom) * pan.y}%`,
+    left: `${(1 - zoom) * paintPan.x}%`,
+    top: `${(1 - zoom) * paintPan.y}%`,
   } as const;
 
   /** Eyes = zoom 1, pan irrelevant; still same world box as optics. */
@@ -1643,7 +1657,6 @@ export function SpotView({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={onPointerLeave}
         onLostPointerCapture={onPointerUp}
         onClick={onFrameClick}
       >

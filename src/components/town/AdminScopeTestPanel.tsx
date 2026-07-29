@@ -97,9 +97,18 @@ import {
   reticleDisplaySizePx,
   reticleIlluminationKey,
   reticleOpticalCenter,
+  type ReticleDef,
   type ReticleIllumination,
   type ReticleIlluminationRegion,
 } from "@/lib/range/reticles";
+import {
+  downloadBlob,
+  parseScopePack,
+  sanitizeScopeId,
+  type ScopePack,
+} from "@/lib/optics/scopePack";
+import { useSession } from "next-auth/react";
+import type { ScopeTubeDiameterMm } from "@/lib/mount/spec";
 import {
   aimMmDeltaFromPointerDrag,
   clampAimMm,
@@ -397,6 +406,23 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const [bakingReticleCal, setBakingReticleCal] = useState(false);
   const [helpCross, setHelpCross] = useState(false);
   const [bakeStatus, setBakeStatus] = useState<string | null>(null);
+  const { status: authStatus } = useSession();
+  const [canPublishCloud, setCanPublishCloud] = useState(false);
+  const [cloudPacks, setCloudPacks] = useState<
+    Array<{ id: string; title: string; scope_id: string; updated_at: string }>
+  >([]);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [showNewScope, setShowNewScope] = useState(false);
+  const [newScopeId, setNewScopeId] = useState("scope-");
+  const [newBrand, setNewBrand] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPrice, setNewPrice] = useState(19990);
+  const [newTube, setNewTube] = useState<ScopeTubeDiameterMm>(34);
+  const [newMinZoom, setNewMinZoom] = useState(5);
+  const [newMaxZoom, setNewMaxZoom] = useState(25);
+  const [newClickUnit, setNewClickUnit] = useState<ScopeClickUnit>("MRAD");
+  const [newNote, setNewNote] = useState("");
+  const importJsonInputRef = useRef<HTMLInputElement | null>(null);
   const [spriteScalePercent, setSpriteScalePercentUi] = useState(() =>
     getBirdSpriteScalePercent(birdId),
   );
@@ -406,6 +432,36 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       setSpriteScaleEpoch((n) => n + 1);
     });
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") {
+      setCanPublishCloud(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/cloud-scopes");
+        const data = (await res.json()) as {
+          canPublish?: boolean;
+          packs?: Array<{
+            id: string;
+            title: string;
+            scope_id: string;
+            updated_at: string;
+          }>;
+        };
+        if (cancelled) return;
+        setCanPublishCloud(!!data.canPublish);
+        setCloudPacks(data.packs ?? []);
+      } catch {
+        if (!cancelled) setCanPublishCloud(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus]);
 
   /** Keep slider + preview in sync when switching birds or after bake/HMR. */
   useEffect(() => {
@@ -1547,6 +1603,367 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     }
   }
 
+  async function resolveReticleImageForPack(): Promise<{
+    base64: string;
+    filename: string;
+    bytes: number;
+  } | null> {
+    const src = (reticleSrcOverride ?? reticleDef?.src ?? "").split("?")[0];
+    if (!src) return null;
+    try {
+      const res = await fetch(src);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const buf = await blob.arrayBuffer();
+      const bytes = buf.byteLength;
+      let binary = "";
+      const bytesArr = new Uint8Array(buf);
+      for (let i = 0; i < bytesArr.length; i += 1) {
+        binary += String.fromCharCode(bytesArr[i]!);
+      }
+      const base64 = btoa(binary);
+      const leaf = src.split("/").pop() ?? "reticle.png";
+      const filename = leaf.toLowerCase().endsWith(".png")
+        ? leaf
+        : `${leaf}.png`;
+      return { base64, filename, bytes };
+    } catch {
+      return null;
+    }
+  }
+
+  async function buildCurrentScopePack(): Promise<ScopePack | null> {
+    if (!scopeItem || !liveScope) {
+      setBakeStatus("Velg en kikkert først.");
+      return null;
+    }
+    const reticleId =
+      uploadedReticleId ?? liveScope.reticleId ?? reticleDef?.id ?? undefined;
+    const img = await resolveReticleImageForPack();
+    const reticle: ReticleDef | null =
+      reticleId && (reticleDef || reticleNativeOverride || img)
+        ? {
+            id: reticleId,
+            label: reticleDef?.label ?? reticleId,
+            src:
+              (reticleSrcOverride ?? reticleDef?.src ?? "").split("?")[0] ||
+              `/range/reticles/${reticleId}.png`,
+            nativeWidth:
+              reticleNativeOverride?.width ??
+              reticleDef?.nativeWidth ??
+              1024,
+            nativeHeight:
+              reticleNativeOverride?.height ??
+              reticleDef?.nativeHeight ??
+              1024,
+            centerTo1MilPx,
+            opticalCenterX,
+            opticalCenterY,
+            imageRotationDeg: reticleRotDeg,
+            ...(liveIllumination ? { illumination: liveIllumination } : null),
+          }
+        : null;
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      title: `${scopeItem.brand} ${scopeItem.name}`,
+      shopItem: {
+        id: scopeItem.id,
+        category: "scope",
+        brand: scopeItem.brand,
+        name: scopeItem.name,
+        priceNok: scopeItem.priceNok,
+        note: scopeItem.note,
+        weightGrams: scopeItem.weightGrams,
+        scope: {
+          ...liveScope,
+          ...(reticleId ? { reticleId } : null),
+        },
+      },
+      reticle,
+      image: img
+        ? {
+            filename: img.filename,
+            mime: "image/png",
+            base64: img.base64,
+            bytes: img.bytes,
+          }
+        : null,
+    };
+  }
+
+  async function exportScopePackJson() {
+    const pack = await buildCurrentScopePack();
+    if (!pack) return;
+    const base = pack.shopItem.id.replace(/^scope-/, "") || "scope";
+    downloadBlob(
+      `${base}.scope.json`,
+      new Blob([JSON.stringify(pack, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    setBakeStatus(
+      `Eksportert ${base}.scope.json` +
+        (pack.image ? ` (inkl. PNG ${Math.round(pack.image.bytes / 1024)} KB)` : ""),
+    );
+  }
+
+  async function importScopePackJson(file: File) {
+    setBakeStatus("Importerer scope JSON…");
+    try {
+      const text = await file.text();
+      const raw = JSON.parse(text) as unknown;
+      const pack = parseScopePack(raw);
+      if ("error" in pack) {
+        setBakeStatus(pack.error);
+        return;
+      }
+      const res = await fetch("/api/admin/scope-pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pack),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        scopeId?: string;
+        created?: boolean;
+        hint?: string;
+      };
+      if (!res.ok || !data.ok || !data.scopeId) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      setScopeId(data.scopeId);
+      setBakeStatus(
+        `${data.created ? "Ny" : "Oppdatert"} kikkert ${data.scopeId}. ${data.hint ?? "Commit + push."}`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Import feilet.",
+      );
+    }
+  }
+
+  async function publishScopePackToCloud() {
+    if (!canPublishCloud) {
+      setBakeStatus(
+        authStatus !== "authenticated"
+          ? "Logg inn med Google for cloud."
+          : "Ingen cloud-admin-tilgang (ADMIN_GOOGLE_IDS).",
+      );
+      return;
+    }
+    setCloudBusy(true);
+    setBakeStatus("Publiserer scope-pack til sky…");
+    try {
+      const pack = await buildCurrentScopePack();
+      if (!pack) return;
+      const res = await fetch("/api/admin/cloud-scopes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pack),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        scopeId?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      const list = await fetch("/api/admin/cloud-scopes");
+      const listData = (await list.json()) as {
+        packs?: typeof cloudPacks;
+      };
+      setCloudPacks(listData.packs ?? []);
+      setBakeStatus(`Publisert til sky · ${data.scopeId ?? pack.shopItem.id}.`);
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Cloud-publish feilet.",
+      );
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function importScopePackFromCloud(packId: string) {
+    setCloudBusy(true);
+    setBakeStatus("Henter cloud-pack…");
+    try {
+      const res = await fetch("/api/admin/cloud-scopes");
+      const data = (await res.json()) as {
+        packs?: Array<{
+          id: string;
+          pack: unknown;
+          image_url?: string | null;
+          image_path?: string | null;
+        }>;
+        error?: string;
+      };
+      const row = data.packs?.find((p) => p.id === packId);
+      if (!row) {
+        setBakeStatus("Fant ikke cloud-pack.");
+        return;
+      }
+      const parsed = parseScopePack(row.pack);
+      if ("error" in parsed) {
+        setBakeStatus(parsed.error);
+        return;
+      }
+      // If PNG lives only in storage, fetch into pack before bake.
+      if (
+        row.image_url &&
+        (!parsed.image?.base64 || parsed.image.base64.length < 32)
+      ) {
+        const imgRes = await fetch(row.image_url);
+        if (imgRes.ok) {
+          const buf = await imgRes.arrayBuffer();
+          const bytesArr = new Uint8Array(buf);
+          let binary = "";
+          for (let i = 0; i < bytesArr.length; i += 1) {
+            binary += String.fromCharCode(bytesArr[i]!);
+          }
+          parsed.image = {
+            filename:
+              parsed.image?.filename ??
+              `${parsed.shopItem.id.replace(/^scope-/, "")}.png`,
+            mime: "image/png",
+            base64: btoa(binary),
+            bytes: bytesArr.length,
+          };
+        }
+      }
+      const bake = await fetch("/api/admin/scope-pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      const bakeData = (await bake.json()) as {
+        ok?: boolean;
+        error?: string;
+        scopeId?: string;
+        created?: boolean;
+        hint?: string;
+      };
+      if (!bake.ok || !bakeData.ok || !bakeData.scopeId) {
+        setBakeStatus(bakeData.error ?? `Feil ${bake.status}`);
+        return;
+      }
+      setScopeId(bakeData.scopeId);
+      setBakeStatus(
+        `Importert fra sky → ${bakeData.scopeId}. ${bakeData.hint ?? ""}`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Cloud-import feilet.",
+      );
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function syncCloudScopesToRepo() {
+    if (!canPublishCloud) {
+      setBakeStatus("Krever Google + ADMIN_GOOGLE_IDS (kun lokal dev).");
+      return;
+    }
+    setCloudBusy(true);
+    setBakeStatus("Sync cloud scopes → repo…");
+    try {
+      const res = await fetch("/api/admin/cloud-scopes/sync-to-repo", {
+        method: "POST",
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        added?: number;
+        updated?: number;
+        failed?: number;
+        hint?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      setBakeStatus(
+        `Repo: +${data.added ?? 0} nye, ${data.updated ?? 0} oppdatert` +
+          (data.failed ? `, ${data.failed} feilet` : "") +
+          `. ${data.hint ?? ""}`,
+      );
+    } catch (err) {
+      setBakeStatus(err instanceof Error ? err.message : "Sync feilet.");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function createNewScopeInRepo() {
+    const id = sanitizeScopeId(newScopeId);
+    if (!id || !newBrand.trim() || !newName.trim()) {
+      setBakeStatus("Fyll inn id (scope-…), brand og navn.");
+      return;
+    }
+    setBakingReticleCal(true);
+    setBakeStatus("Oppretter ny kikkert i catalog…");
+    try {
+      const pack: ScopePack = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        title: `${newBrand.trim()} ${newName.trim()}`,
+        shopItem: {
+          id,
+          category: "scope",
+          brand: newBrand.trim(),
+          name: newName.trim(),
+          priceNok: Math.max(0, Math.round(newPrice)),
+          note: newNote.trim() || undefined,
+          scope: {
+            tubeDiameterMm: newTube,
+            minZoom: newMinZoom,
+            maxZoom: newMaxZoom,
+            clickUnit: newClickUnit,
+            clickErrorPercent: 0,
+            zeroRetentionInaccuracy: 0.1,
+            focalPlane: "FFP",
+          },
+        },
+        reticle: null,
+        image: null,
+      };
+      const res = await fetch("/api/admin/scope-pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pack),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        scopeId?: string;
+        hint?: string;
+      };
+      if (!res.ok || !data.ok || !data.scopeId) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      setScopeId(data.scopeId);
+      setShowNewScope(false);
+      setLiveMinZoom(newMinZoom);
+      setLiveMaxZoom(newMaxZoom);
+      setLiveClickUnit(newClickUnit);
+      setBakeStatus(
+        `Ny kikkert ${data.scopeId}. Last opp retikkelbilde, calibrate, commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å opprette.",
+      );
+    } finally {
+      setBakingReticleCal(false);
+    }
+  }
+
   function nudgeOpticalByClicks(dxClicks: number, dyClicks: number) {
     /* Right on glass → lower opticalCenterX; up on glass → higher opticalCenterY. */
     setOpticalCenterX((x) => round4(x - dxClicks * pxPerClick));
@@ -1789,6 +2206,205 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
               ) : null}
             </div>
           </>
+        ) : null}
+
+        <div className="admin-spot-row admin-scope-pack-row">
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            onClick={() => setShowNewScope((v) => !v)}
+          >
+            {showNewScope ? "Skjul ny kikkert" : "Ny kikkert…"}
+          </button>
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            disabled={!scopeItem || cloudBusy}
+            onClick={() => void exportScopePackJson()}
+            title="Eksporter live scope + retikkel + PNG til .scope.json"
+          >
+            Eksport JSON
+          </button>
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            disabled={cloudBusy}
+            onClick={() => importJsonInputRef.current?.click()}
+            title="Importer .scope.json og bak inn i repo (dev)"
+          >
+            Import JSON
+          </button>
+          <input
+            ref={importJsonInputRef}
+            type="file"
+            accept="application/json,.json,.scope.json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void importScopePackJson(file);
+            }}
+          />
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            disabled={!scopeItem || cloudBusy || !canPublishCloud}
+            onClick={() => void publishScopePackToCloud()}
+            title={
+              canPublishCloud
+                ? "Publiser pack til Supabase"
+                : "Krever Google + ADMIN_GOOGLE_IDS"
+            }
+          >
+            {cloudBusy ? "…" : "Eksport cloud"}
+          </button>
+          <button
+            type="button"
+            className="intro-button admin-spot-btn"
+            disabled={cloudBusy || !canPublishCloud}
+            onClick={() => void syncCloudScopesToRepo()}
+            title="Hent alle cloud-packs inn i lokal catalog (dev)"
+          >
+            Sync cloud → repo
+          </button>
+          {cloudPacks.length > 0 ? (
+            <label className="admin-spot-field">
+              <span>Cloud-packs</span>
+              <select
+                defaultValue=""
+                disabled={cloudBusy}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  e.target.value = "";
+                  if (id) void importScopePackFromCloud(id);
+                }}
+              >
+                <option value="">Import fra sky…</option>
+                {cloudPacks.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title || p.scope_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        {showNewScope ? (
+          <div className="admin-spot-row admin-scope-new-scope">
+            <label className="admin-spot-field">
+              <span>Id</span>
+              <input
+                type="text"
+                value={newScopeId}
+                onChange={(e) => setNewScopeId(e.target.value)}
+                placeholder="scope-merke-modell"
+              />
+            </label>
+            <label className="admin-spot-field">
+              <span>Brand</span>
+              <input
+                type="text"
+                value={newBrand}
+                onChange={(e) => setNewBrand(e.target.value)}
+              />
+            </label>
+            <label className="admin-spot-field">
+              <span>Navn</span>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+            </label>
+            <label className="admin-spot-field admin-spot-scale">
+              <span>Pris</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={0}
+                step={100}
+                value={newPrice}
+                onChange={(e) => setNewPrice(Number(e.target.value) || 0)}
+              />
+            </label>
+            <label className="admin-spot-field">
+              <span>Rør</span>
+              <select
+                value={newTube}
+                onChange={(e) =>
+                  setNewTube(Number(e.target.value) as ScopeTubeDiameterMm)
+                }
+              >
+                <option value={25.4}>25.4 (1″)</option>
+                <option value={30}>30</option>
+                <option value={34}>34</option>
+                <option value={35}>35</option>
+                <option value={36}>36</option>
+              </select>
+            </label>
+            <label className="admin-spot-field admin-spot-scale">
+              <span>Zoom</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={1}
+                max={80}
+                step={0.1}
+                value={newMinZoom}
+                onChange={(e) => setNewMinZoom(Number(e.target.value) || 1)}
+              />
+              <span>–</span>
+              <input
+                type="number"
+                className="admin-spot-scale-num"
+                min={1}
+                max={80}
+                step={0.1}
+                value={newMaxZoom}
+                onChange={(e) => setNewMaxZoom(Number(e.target.value) || 1)}
+              />
+            </label>
+            <button
+              type="button"
+              className={
+                newClickUnit === "MRAD"
+                  ? "intro-button admin-spot-btn is-selected"
+                  : "intro-button admin-spot-btn"
+              }
+              onClick={() => setNewClickUnit("MRAD")}
+            >
+              MIL
+            </button>
+            <button
+              type="button"
+              className={
+                newClickUnit === "MOA"
+                  ? "intro-button admin-spot-btn is-selected"
+                  : "intro-button admin-spot-btn"
+              }
+              onClick={() => setNewClickUnit("MOA")}
+            >
+              MOA
+            </button>
+            <label className="admin-spot-field admin-spot-field-wide">
+              <span>Note</span>
+              <input
+                type="text"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="FFP · retikkel · rør…"
+              />
+            </label>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
+              disabled={bakingReticleCal}
+              onClick={() => void createNewScopeInRepo()}
+            >
+              Opprett i catalog
+            </button>
+          </div>
         ) : null}
 
         <div className="admin-spot-row">
