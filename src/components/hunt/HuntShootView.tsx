@@ -172,7 +172,6 @@ import {
   restProvidesWeaponCalm,
   type HuntShootRest,
 } from "@/lib/hunt/shootRest";
-import { backpackFromKit } from "@/lib/kit/pack";
 import { formatHuntClock } from "@/lib/hunt/travel";
 import {
   aimMmDeltaFromPointerDrag,
@@ -255,6 +254,8 @@ type HuntShootViewProps = {
    * synthetic calm=20. Default `"none"` = no bipod/bag rest calm.
    */
   shootRest?: HuntShootRest;
+  /** CB bagrider stacked on sekk/bipod (never alone). */
+  shootBagriderActive?: boolean;
   /**
    * Turret dial / prep only — no live bird shot (from map Aware overview).
    */
@@ -453,6 +454,7 @@ export function HuntShootView({
   triggercamActive = false,
   isAdmin = false,
   shootRest = "none",
+  shootBagriderActive = false,
   gunPrepOnly = false,
   scanBirdPlacements = [],
   scopeMarkedBirdId = null,
@@ -891,9 +893,7 @@ export function HuntShootView({
       };
 
   const calmFactor = useMemo(() => {
-    const hasBackpack = !!backpackFromKit(kitItems);
     const bipodSpec = bipodSpecForShootRest(shootRest, {
-      hasBackpack,
       kitBipod: bipod?.bipod,
     });
     const base = computeWeaponCalmFactor({
@@ -906,8 +906,18 @@ export function HuntShootView({
       ),
       customsCalmMult,
     });
-    return shootRest === "bagrider" ? base * BAGRIDER_REST_CALM_MULT : base;
-  }, [shootRest, bipod, suppressor, kitItems, customsCalmMult]);
+    const bagriderOn =
+      shootBagriderActive &&
+      (shootRest === "backpack" || shootRest === "bipod");
+    return bagriderOn ? base * BAGRIDER_REST_CALM_MULT : base;
+  }, [
+    shootRest,
+    shootBagriderActive,
+    bipod,
+    suppressor,
+    kitItems,
+    customsCalmMult,
+  ]);
 
   useEffect(() => {
     weaponCalmRef.current = calmFactor;
@@ -1855,8 +1865,7 @@ export function HuntShootView({
         {
           rest:
             shootRestRef.current === "bipod" ||
-            shootRestRef.current === "backpack" ||
-            shootRestRef.current === "bagrider",
+            shootRestRef.current === "backpack",
           focused: fPhase === "focused",
         },
       );

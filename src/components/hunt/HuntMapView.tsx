@@ -430,6 +430,8 @@ type ShootSession = {
   gunDeployed?: boolean;
   /** Pack rest / deployed bipod for this shot. */
   rest?: HuntShootRest;
+  /** CB bagrider stacked on sekk/bipod. */
+  bagriderActive?: boolean;
   /**
    * Opened for turret dial / prep only — no live bird shot.
    * Fire disabled; Back to Aware keeps turrets.
@@ -479,6 +481,8 @@ type AwareSession = {
   returnGunDeployed?: boolean;
   /** Rest choice already made — sticky across Til spotting with Deploy. */
   returnRest?: HuntShootRest;
+  /** Bagrider stacked on returnRest — sticky with Deploy. */
+  returnBagriderActive?: boolean;
   /**
    * Map/spot Aware without a live engage — Gun opens turret prep only.
    */
@@ -565,6 +569,7 @@ type PostShotGhost = {
   camcorderActive: boolean;
   gunDeployed: boolean;
   rest: HuntShootRest;
+  bagriderActive?: boolean;
   harvestDraft: BirdHarvestInput;
   hitFasit: ShotHitFasit;
   fleeObservation?: ShotPair["fleeObservation"];
@@ -679,6 +684,8 @@ export function HuntMapView({
    * re-open the same encounter without a new LRF (re-range after moving).
    */
   const [engageResume, setEngageResume] = useState<AwareSession | null>(null);
+  /** Restore Track/Aware after gun-scope review (turrets / shot lookback). */
+  const scopeReviewResumeRef = useRef<AwareSession | null>(null);
   /**
    * Rifle is out of the pack this cell — survives Til spotting / Back to Aware
    * so Deploy gun nerve is only paid once until Mount (or auto-mount).
@@ -2861,6 +2868,8 @@ export function HuntMapView({
       opts?.gunDeployed ?? fieldGunDeployedRef.current;
     const stickyRest =
       stickyGun && opts?.rest && opts.rest !== "none" ? opts.rest : "none";
+    const stickyBagrider =
+      stickyGun && stickyRest !== "none" && !!opts?.bagriderActive;
     const stickyKestrel = !!opts?.kestrelEnviroReady;
     if (stickyGun) setFieldGunDeployed(true);
     /**
@@ -2870,6 +2879,7 @@ export function HuntMapView({
     const stickyGear = {
       returnGunDeployed: stickyGun,
       returnRest: stickyRest as HuntShootRest,
+      returnBagriderActive: stickyBagrider,
       returnKestrelEnviroActive: stickyKestrel,
       returnCamcorderActive: false,
       returnChronoActive: false,
@@ -3081,9 +3091,24 @@ export function HuntMapView({
 
   function proceedFromAware(stance?: AwareShootStance) {
     if (!awareSession) return;
+
+    if (stance?.scopeReview && stance.gunDeployed) {
+      openScopeReviewFromAware(stance);
+      return;
+    }
+
     // Found birds must bag even after skuddlys — ettersøk often runs past 17:00.
     if (awareSession.ettersokPairId) {
       const pair = shotPairs.find((p) => p.id === awareSession.ettersokPairId);
+      if (
+        pair &&
+        (pair.cell.row !== pos.row || pair.cell.col !== pos.col)
+      ) {
+        setLog(
+          `Gå til ${cellLabel(pair.cell)} for å fortsette hent/søk. Du er i ${cellLabel(pos)}.`,
+        );
+        return;
+      }
       if (pair?.found === true) {
         harvestFoundPair(pair);
         setLog(
@@ -3251,6 +3276,7 @@ export function HuntMapView({
       triggercamActive: !!stance?.triggercamActive,
       gunDeployed: !!stance?.gunDeployed,
       rest: stance?.rest ?? "none",
+      bagriderActive: !!stance?.bagriderActive && (stance?.rest === "backpack" || stance?.rest === "bipod"),
       gunPrepOnly: !!session.gunPrepOnly,
       scanBirdPlacements,
       rangeSource: session.rangeSource,
@@ -3258,7 +3284,7 @@ export function HuntMapView({
     });
     const restNote =
       stance?.rest && stance.rest !== "none"
-        ? ` · ${shootRestLabelNb(stance.rest)}-anlegg`
+        ? ` · ${shootRestLabelNb(stance.rest, !!stance.bagriderActive)}-anlegg`
         : "";
     const prepNote = session.gunPrepOnly ? " · Gun (tårn-prep)" : "";
     setLog(
@@ -3269,6 +3295,105 @@ export function HuntMapView({
               ? ` (LRF ${measuredDistanceM} m)`
               : ""
           } — sjekk vind og skru turrets${stance?.camcorderActive ? " · camcorder filmer" : ""}${stance?.chronoActive ? " · chrono klar" : ""}${stance?.kestrelEnviroActive ? " · enviro målt" : ""}${stance?.triggercamActive ? " · triggercam" : ""}${restNote}${prepNote}`,
+    );
+  }
+
+  /**
+   * Gun still deployed after engagement — open scope for distance / turret
+   * review without ending Track or allowing a new Fire.
+   */
+  function openScopeReviewFromAware(stance: AwareShootStance) {
+    if (!awareSession || !map) return;
+    const session = awareSession;
+    const hunterStand =
+      stance.hunter ??
+      session.hunterPos ??
+      cellCenterOnAwareMap(pos, map);
+    const bearingDeg = ((Math.round(stance.bearingDeg) % 360) + 360) % 360;
+    const birdPt = ensureCellPointOnAwareMap(
+      stance.bird ??
+        session.birdPos ??
+        birdMarkerOnAwareMap(stance.distanceM, bearingDeg, {
+          origin: hunterStand,
+          maxM: awareMapMaxMFor(map),
+        }),
+    );
+    const trueDistanceM = Math.max(40, Math.round(stance.distanceM));
+    const cw = crosswindMs(
+      weather.live.windSpeedMs,
+      weather.live.windFromDeg,
+      bearingDeg,
+    );
+    const density = densityRatioFromTempC(weather.live.temperatureC);
+    let hold = session.ballisticHold;
+    if (hasExactBallistics && primaryAmmo) {
+      const solve = kestrelSolveAmmo(
+        primaryAmmo.ammo,
+        primaryAmmo.id,
+        kestrelProfiles,
+        realSolveArg,
+      );
+      hold = exactBallisticHold(solve.ammo, trueDistanceM, cw, {
+        densityRatio: density,
+        powderTempC: weather.live.temperatureC,
+        dvDtMpsPerC: solve.dvDtMpsPerC,
+      });
+    }
+    scopeReviewResumeRef.current = {
+      ...session,
+      hunterPos: hunterStand,
+      birdPos: birdPt,
+      birdBearingDeg: bearingDeg,
+      trueDistanceM,
+      measuredDistanceM: trueDistanceM,
+      ballisticHold: hold,
+      crosswindMs: cw,
+      densityRatio: density,
+      returnGunDeployed: true,
+      returnRest: stance.rest ?? "none",
+      returnBagriderActive:
+        !!stance.bagriderActive &&
+        (stance.rest === "backpack" || stance.rest === "bipod"),
+      returnCamcorderActive: !!stance.camcorderActive,
+      returnChronoActive: !!stance.chronoActive,
+      returnKestrelEnviroActive: !!stance.kestrelEnviroActive,
+      returnTriggercamActive: !!stance.triggercamActive,
+      returnNerve: stance.birdNerve ?? session.returnNerve,
+    };
+    setFieldGunDeployed(true);
+    setAwareSession(null);
+    setShootSession({
+      imageSrc: session.imageSrc,
+      bird: {
+        ...session.bird,
+        birdId: "aware-review",
+        distanceM: trueDistanceM,
+        x: 50,
+        y: 50,
+      },
+      trueDistanceM,
+      measuredDistanceM: trueDistanceM,
+      ballisticHold: hold,
+      crosswindMs: cw,
+      densityRatio: density,
+      bearingDeg,
+      hunterPos: hunterStand,
+      birdPos: birdPt,
+      camcorderActive: !!stance.camcorderActive,
+      chronoActive: !!stance.chronoActive,
+      kestrelEnviroActive: !!stance.kestrelEnviroActive,
+      triggercamActive: !!stance.triggercamActive,
+      gunDeployed: true,
+      rest: stance.rest ?? "none",
+      bagriderActive:
+        !!stance.bagriderActive &&
+        (stance.rest === "backpack" || stance.rest === "bipod"),
+      gunPrepOnly: true,
+      rangeSource: session.rangeSource,
+      birdNerve: 0,
+    });
+    setLog(
+      `Gun scope — ${trueDistanceM} m / ${Math.round(bearingDeg)}° · skru tårn. Tilbake til Aware beholder Track.`,
     );
   }
 
@@ -3297,6 +3422,19 @@ export function HuntMapView({
   }
 
   function abortShoot() {
+    const resume = scopeReviewResumeRef.current;
+    if (resume) {
+      scopeReviewResumeRef.current = null;
+      setShootSession(null);
+      setScopeMarkedAware(null);
+      setFieldGunDeployed(true);
+      setAwareSession({
+        ...resume,
+        returnGunDeployed: true,
+      });
+      setLog("Tilbake til Aware — Track fortsatt åpen.");
+      return;
+    }
     setShootSession(null);
     setEngageResume(null);
     setScopeMarkedAware(null);
@@ -3381,6 +3519,28 @@ export function HuntMapView({
     );
     setShootSession(null);
 
+    const scopeResume = scopeReviewResumeRef.current;
+    if (scopeResume) {
+      scopeReviewResumeRef.current = null;
+      setScopeMarkedAware(null);
+      setFieldGunDeployed(true);
+      setAwareSession({
+        ...scopeResume,
+        returnGunDeployed: true,
+        returnRest: s.rest ?? scopeResume.returnRest ?? "none",
+        returnBagriderActive:
+          !!s.bagriderActive &&
+          (s.rest === "backpack" || s.rest === "bipod"),
+        returnCamcorderActive: !!s.camcorderActive,
+        returnChronoActive: !!s.chronoActive,
+        returnKestrelEnviroActive: !!s.kestrelEnviroActive,
+        returnTriggercamActive: !!s.triggercamActive,
+        returnNerve: scopeResume.returnNerve ?? nextNerve,
+      });
+      setLog("Tilbake til Aware — Track fortsatt åpen. Gun er deployed.");
+      return;
+    }
+
     // Gun-scope mark: open the locked bird with Deploy gun still active.
     if (s.gunPrepOnly && scopeMarkedAware) {
       const marked = scopeMarkedAware;
@@ -3399,6 +3559,9 @@ export function HuntMapView({
         returnKestrelEnviroActive: !!s.kestrelEnviroActive,
         returnTriggercamActive: !!s.triggercamActive,
         returnRest: s.rest ?? "none",
+        returnBagriderActive:
+          !!s.bagriderActive &&
+          (s.rest === "backpack" || s.rest === "bipod"),
         gunPrepOnly: false,
       });
       setLog(
@@ -3455,6 +3618,9 @@ export function HuntMapView({
       returnTriggercamActive: !!s.triggercamActive,
       returnGunDeployed: !!s.gunDeployed || !!s.rest || fieldGunDeployed,
       returnRest: s.rest ?? "none",
+      returnBagriderActive:
+        !!s.bagriderActive &&
+        (s.rest === "backpack" || s.rest === "bipod"),
       gunPrepOnly: !!s.gunPrepOnly,
     });
     if (s.gunDeployed || s.rest || fieldGunDeployed) {
@@ -3533,6 +3699,10 @@ export function HuntMapView({
       returnCamcorderActive: g.camcorderActive,
       returnGunDeployed: g.gunDeployed,
       returnRest: g.gunDeployed ? g.rest : "none",
+      returnBagriderActive:
+        g.gunDeployed &&
+        !!g.bagriderActive &&
+        (g.rest === "backpack" || g.rest === "bipod"),
       postShotSkuddpar: !pairId,
     };
   }
@@ -3636,6 +3806,10 @@ export function HuntMapView({
       ettersokPairId: pair.id,
       returnGunDeployed: keepGun,
       returnRest: keepGun ? g.rest : "none",
+      returnBagriderActive:
+        keepGun &&
+        !!g.bagriderActive &&
+        (g.rest === "backpack" || g.rest === "bipod"),
     });
     setLog(
       `Skuddmarkør lagret: ${pair.distanceM} m / ${Math.round(pair.bearingDeg)}° — fortsett i Track (Hent/søk).`,
@@ -3680,11 +3854,23 @@ export function HuntMapView({
 
   function trackLabelForPair(pair: ShotPair): string {
     const bird = birdNameNb(pair.harvestDraft?.species);
-    return `Hent/søk · ${pair.cellLabel} (${bird})`;
+    const where = cellLabel(pair.cell);
+    const here = pair.cell.row === pos.row && pair.cell.col === pos.col;
+    return here
+      ? `Hent/søk · ${where} (${bird})`
+      : `Hent/søk · ${where} (${bird}) — gå dit`;
   }
 
-  /** Re-open Aware Track for a saved skuddmarkør (after fortsett spotting etc.). */
+  /** Re-open Aware Track for a saved skuddmarkør — only when standing in that cell. */
   function openAwareForPair(pair: ShotPair) {
+    const where = cellLabel(pair.cell);
+    const bird = birdNameNb(pair.harvestDraft?.species);
+    if (pair.cell.row !== pos.row || pair.cell.col !== pos.col) {
+      setLog(
+        `Gå til ${where} for å hente/søke etter ${bird}. Du er i ${cellLabel(pos)}.`,
+      );
+      return;
+    }
     const spriteId = pair.hitFasit?.birdSpriteId ?? "tiur-1";
     const sprite = getBirdSprite(spriteId);
     const species = pair.harvestDraft?.species ?? sprite.species;
@@ -3693,18 +3879,6 @@ export function HuntMapView({
     setPendingPostShot(null);
     setEngageResume(null);
     setBirdEncounter(null);
-    const leavingCell =
-      pair.cell.row !== pos.row || pair.cell.col !== pos.col;
-    // Leaving this cell for another pair → auto-mount. Same cell keeps deploy.
-    if (leavingCell) {
-      mountFieldGun({ silent: true });
-      const leaveNote = mindHitLeavingUnfoundCell(pos);
-      setPos({ ...pair.cell });
-      setLog(
-        `Du går til ${pair.cellLabel} for å hente/søke etter fuglen.` +
-          leaveNote,
-      );
-    }
     leaveUnfoundMindCellRef.current = null;
     setAwareSession({
       imageSrc: sprite.toppSrc,
@@ -3730,7 +3904,7 @@ export function HuntMapView({
       rangeSource: "estimated",
       ettersokPairId: pair.id,
       recoveryOnly,
-      returnGunDeployed: leavingCell ? false : fieldGunDeployedRef.current,
+      returnGunDeployed: fieldGunDeployedRef.current,
       returnRest: "none",
     });
     setPanel("arrived");
@@ -4023,8 +4197,10 @@ export function HuntMapView({
     let fleeObservation: ShotPair["fleeObservation"];
     if (result.kind === "ettersok") {
       const rest = shootSession.rest ?? "none";
+      const bagriderActive =
+        !!shootSession.bagriderActive &&
+        (rest === "backpack" || rest === "bipod");
       const bipodSpec = bipodSpecForShootRest(rest, {
-        hasBackpack,
         kitBipod: kitBipod?.bipod,
       });
       const weaponCalmBase = computeWeaponCalmFactor({
@@ -4037,10 +4213,9 @@ export function HuntMapView({
         ),
         customsCalmMult,
       });
-      const weaponCalm =
-        rest === "bagrider"
-          ? weaponCalmBase * BAGRIDER_REST_CALM_MULT
-          : weaponCalmBase;
+      const weaponCalm = bagriderActive
+        ? weaponCalmBase * BAGRIDER_REST_CALM_MULT
+        : weaponCalmBase;
       const recoilDamping = computeRecoilDamping({
         soundReductionDb: suppressorSoundDb,
         customsMods,
@@ -4368,6 +4543,7 @@ export function HuntMapView({
           camcorderActive: camcorderOn,
           gunDeployed: !!shootSession.gunDeployed,
           rest: shootSession.rest ?? "none",
+          bagriderActive: !!shootSession.bagriderActive,
           harvestDraft,
           hitFasit,
           fleeObservation,
@@ -4401,6 +4577,11 @@ export function HuntMapView({
               shootSession.gunDeployed
                 ? (shootSession.rest ?? "none")
                 : "none",
+            returnBagriderActive:
+              !!shootSession.gunDeployed &&
+              !!shootSession.bagriderActive &&
+              (shootSession.rest === "backpack" ||
+                shootSession.rest === "bipod"),
           }
         : null;
       const logMsg =
@@ -5079,6 +5260,7 @@ export function HuntMapView({
         triggercamActive={!!shootSession.triggercamActive}
         isAdmin={isAdmin}
         shootRest={shootSession.rest ?? "none"}
+        shootBagriderActive={!!shootSession.bagriderActive}
         gunPrepOnly={!!shootSession.gunPrepOnly}
         scanBirdPlacements={shootSession.scanBirdPlacements}
         scopeMarkedBirdId={scopeMarkedAware?.bird.birdId ?? null}
@@ -5160,6 +5342,7 @@ export function HuntMapView({
           fieldGunDeployed || !!awareSession.returnGunDeployed
         }
         initialRest={awareSession.returnRest ?? "none"}
+        initialBagriderActive={!!awareSession.returnBagriderActive}
         gunPrepOnly={!!awareSession.gunPrepOnly}
         hasLrf={hasBinos}
         ammo={primaryAmmo?.ammo ?? null}

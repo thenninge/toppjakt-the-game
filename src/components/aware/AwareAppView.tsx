@@ -75,6 +75,7 @@ import {
   BAGRIDER_REST_NERVE,
   bipodDeployNerve,
   shootRestNerve,
+  shootRestTotalNerve,
   type HuntShootRest,
 } from "@/lib/hunt/shootRest";
 import {
@@ -182,6 +183,13 @@ export type AwareShootStance = {
   birdNerve?: number;
   /** Pack rest or deployed bipod — gates hunt weapon calm. */
   rest?: HuntShootRest;
+  /** CB bagrider rear bag active on top of sekk/bipod. */
+  bagriderActive?: boolean;
+  /**
+   * Open gun scope for turret / shot review without ending Track or firing.
+   * Requires gunDeployed; returns to the same Aware/Track session.
+   */
+  scopeReview?: boolean;
 };
 
 /**
@@ -192,6 +200,7 @@ export type AwareLeaveOpts = {
   hunter?: CellPoint;
   gunDeployed?: boolean;
   rest?: HuntShootRest;
+  bagriderActive?: boolean;
   kestrelEnviroReady?: boolean;
 };
 
@@ -227,6 +236,8 @@ type AwareAppViewProps = {
   initialGunDeployed?: boolean;
   /** Rest choice restored when returning from shoot. */
   initialRest?: HuntShootRest;
+  /** Bagrider addon restored when returning from shoot. */
+  initialBagriderActive?: boolean;
   /** Has LRF — Shoot-tab still useful, but less critical. */
   hasLrf?: boolean;
   ammo?: Pick<AmmoSpec, "v0" | "bc" | "bcModel"> | null;
@@ -491,6 +502,7 @@ export function AwareAppView({
   initialTriggercamReady = false,
   initialGunDeployed = false,
   initialRest = "none",
+  initialBagriderActive = false,
   hasLrf = false,
   ammo = null,
   hasKestrel = false,
@@ -543,16 +555,21 @@ export function AwareAppView({
   const [rest, setRest] = useState<HuntShootRest>(() => {
     if (initialRest === "bipod" && !hasBipod) return "none";
     if (initialRest === "backpack" && !hasBackpack) return "none";
-    if (initialRest === "bagrider" && !hasBagrider) return "none";
     if (
       !initialGunDeployed &&
-      (initialRest === "bipod" ||
-        initialRest === "backpack" ||
-        initialRest === "bagrider")
+      (initialRest === "bipod" || initialRest === "backpack")
     ) {
       return "none";
     }
-    return initialRest;
+    if (initialRest === "bipod" || initialRest === "backpack") {
+      return initialRest;
+    }
+    return "none";
+  });
+  const [bagriderOn, setBagriderOn] = useState(() => {
+    if (!hasBagrider || !initialGunDeployed) return false;
+    if (initialRest !== "backpack" && initialRest !== "bipod") return false;
+    return !!initialBagriderActive;
   });
   /** Sticky Deploy across Til spotting / remount — prop wins when already out. */
   useEffect(() => {
@@ -561,12 +578,25 @@ export function AwareAppView({
   useEffect(() => {
     if (!initialGunDeployed) {
       setRest("none");
+      setBagriderOn(false);
       return;
     }
     if (initialRest === "bipod" && hasBipod) setRest("bipod");
     else if (initialRest === "backpack" && hasBackpack) setRest("backpack");
-    else if (initialRest === "bagrider" && hasBagrider) setRest("bagrider");
-  }, [initialGunDeployed, initialRest, hasBipod, hasBackpack, hasBagrider]);
+    else setRest("none");
+    setBagriderOn(
+      !!initialBagriderActive &&
+        hasBagrider &&
+        (initialRest === "bipod" || initialRest === "backpack"),
+    );
+  }, [
+    initialGunDeployed,
+    initialRest,
+    initialBagriderActive,
+    hasBipod,
+    hasBackpack,
+    hasBagrider,
+  ]);
   const [hunter, setHunter] = useState<CellPoint>(
     () => initialHunter ?? cellCenterOnAwareMap(cell, map),
   );
@@ -916,23 +946,29 @@ export function AwareAppView({
   const activePair = shotPairs.find((p) => p.id === activePairId) ?? null;
 
   /**
-   * Track actions only for pairs tied to a real shot (harvestDraft).
-   * Planning-only Shoot skuddmarkør must not appear as «Søk tiur».
+   * All unfinished recoveries (any cell) — shown in Track as a checklist.
+   * Actions (Hent / Søk) only for {@link actionableTrackPairs} in this cell.
    */
-  /** Track only pairs for this map cell — return to the shot rute to continue. */
-  const actionableTrackPairs = useMemo(
+  const pendingTrackPairs = useMemo(
     () =>
       shotPairs.filter(
         (p) =>
           p.found == null &&
           !!p.harvestDraft &&
-          p.cell.row === cell.row &&
-          p.cell.col === cell.col &&
           (p.resultKind === "instant_kill" ||
             p.resultKind === "vital_kill" ||
             p.resultKind === "ettersok"),
       ),
-    [shotPairs, cell.row, cell.col],
+    [shotPairs],
+  );
+
+  /** Track actions only for pairs in the cell you stand in. */
+  const actionableTrackPairs = useMemo(
+    () =>
+      pendingTrackPairs.filter(
+        (p) => p.cell.row === cell.row && p.cell.col === cell.col,
+      ),
+    [pendingTrackPairs, cell.row, cell.col],
   );
 
   const trackActivePair =
@@ -1492,15 +1528,20 @@ export function AwareAppView({
     const bird = pairBirdShortNb(pair);
     const verb =
       pair.resultKind === "ettersok" ? "Søk" : "Hent";
+    const where = cellLabel(pair.cell);
     if (pair.skuddparCommitted === false) {
-      return `${verb} ${bird} · dial skuddmarkør`;
+      return `${verb} ${bird} · ${where} · dial skuddmarkør`;
     }
     const point =
       pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill"
         ? shotPairTrueBirdPoint(pair)
         : shotPairAimPoint(pair);
     const walkM = Math.round(distanceMBetween(hunter, point, metersPerPct));
-    return `${verb} ${bird} ${walkM}m`;
+    const here =
+      pair.cell.row === cell.row && pair.cell.col === cell.col;
+    return here
+      ? `${verb} ${bird} · ${where} · ${walkM} m`
+      : `${verb} ${bird} · ${where} (gå dit)`;
   }
 
   function proceed() {
@@ -1536,14 +1577,56 @@ export function AwareAppView({
       gunDeployed: true,
       birdNerve: nerveRef.current,
       rest,
+      bagriderActive: bagriderOn,
+    });
+  }
+
+  /** Scope / turret review while Deployed — keeps Track / Aware open on return. */
+  function openGunScopeReview() {
+    if (!gunDeployed) {
+      setStatus("Deploy gun først — deretter Use gun scope.");
+      return;
+    }
+    const pair = trackActivePair;
+    const bearingDeg = pair
+      ? normalizeBearingDeg(pair.bearingDeg)
+      : hasActiveBird
+        ? liveBearing
+        : measuredBearing;
+    const distanceM = Math.max(
+      40,
+      Math.round(
+        pair
+          ? pair.distanceM
+          : hasActiveBird
+            ? liveDistanceM
+            : birdDistanceM,
+      ),
+    );
+    onProceedToShoot({
+      bearingDeg,
+      distanceM,
+      hunter: pair ? { ...pair.stand } : { ...hunter },
+      bird: pair ? shotPairAimPoint(pair) : { ...birdWorld },
+      camcorderActive: hasCamcorder && camcorderReady,
+      chronoActive: hasChronograph && chronoReady,
+      kestrelEnviroActive: hasKestrel && kestrelEnviroReady,
+      triggercamActive: hasTriggercam && triggercamReady,
+      gunDeployed: true,
+      birdNerve: nerveRef.current,
+      rest,
+      bagriderActive: bagriderOn,
+      scopeReview: true,
     });
   }
 
   function deployGun() {
     if (gunDeployed || flushedRef.current) return;
-    // Nerve only once per «gun out» cycle — Til spotting keeps gun deployed
-    // (no re-click). Mount refunds Deploy QR so Redeploy is a single charge.
-    const cost = gunPrepOnly ? 0 : Math.max(0, gunDeployNerve);
+    // Track / post-shot review: no backpack QR and no flush — rifle already «out»
+    // for the engagement, or redeploy just to dial turrets.
+    const trackReview = !!focusPairId;
+    const cost =
+      gunPrepOnly || trackReview ? 0 : Math.max(0, gunDeployNerve);
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
       nerveRef.current + cost,
@@ -1557,13 +1640,13 @@ export function AwareAppView({
     onGunDeployed?.();
     const pct = Math.round(cost * 100);
     setStatus(
-      gunPrepOnly
-        ? "Gun deployed — klar for tårn / prep."
+      gunPrepOnly || trackReview
+        ? "Gun deployed — klar for tårn / scope."
         : next >= ENCOUNTER_NERVE.flushThreshold
           ? `Gun deployed — men fuglen er svært urolig (+${pct}% nervøsitet)!`
           : `Gun deployed (+${pct}% nervøsitet). Sekk-anlegg / bipod / tårn er tilgjengelig.`,
     );
-    if (!gunPrepOnly && next >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!gunPrepOnly && !trackReview && next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(next);
     }
@@ -1576,9 +1659,10 @@ export function AwareAppView({
      * Deploy stacked the same backpack QR cost twice (deploy + deploy).
      * Til spotting with gun still out never hits this path.
      */
-    const restRefund =
-      rest !== "none" ? shootRestNerve(rest, bipodWeaponCalm) : 0;
-    const deployRefund = gunPrepOnly ? 0 : Math.max(0, gunDeployNerve);
+    const trackReview = !!focusPairId;
+    const restRefund = shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
+    const deployRefund =
+      gunPrepOnly || trackReview ? 0 : Math.max(0, gunDeployNerve);
     const cleared = Math.max(
       0,
       nerveRef.current - restRefund - deployRefund,
@@ -1587,12 +1671,13 @@ export function AwareAppView({
     flushSync(() => {
       setNerve(cleared);
       setRest("none");
+      setBagriderOn(false);
       setGunDeployed(false);
     });
     onNerveChangeRef.current?.(cleared);
     onMountGun?.();
     setStatus(
-      gunPrepOnly
+      gunPrepOnly || trackReview
         ? "Gun mounted — rifla i sekken."
         : "Gun mounted — rifla i sekken. Uspottede fugler i feltet blir mer nervøse.",
     );
@@ -1606,17 +1691,16 @@ export function AwareAppView({
     if (flushedRef.current) return;
     if (next === "backpack" && !hasBackpack) return;
     if (next === "bipod" && !hasBipod) return;
-    if (next === "bagrider" && !hasBagrider) return;
-    if (next === "bagrider" && !hasBackpack && !hasBipod) return;
     if (next === rest) {
-      // Toggle off → none (revert nerve from this rest only).
+      // Toggle off → none (revert nerve from front rest + bagrider).
       if (rest === "none") return;
-      const revert = shootRestNerve(rest, bipodWeaponCalm);
+      const revert = shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
       const cleared = Math.max(0, nerveRef.current - revert);
       nerveRef.current = cleared;
       flushSync(() => {
         setNerve(cleared);
         setRest("none");
+        setBagriderOn(false);
       });
       onNerveChangeRef.current?.(cleared);
       setStatus("Anlegg fjernet — skyter uten sekk/bipod/bagrider-calm.");
@@ -1624,8 +1708,8 @@ export function AwareAppView({
     }
     const nextCost = shootRestNerve(next, bipodWeaponCalm);
     const switching = rest !== "none";
-    // First pick: pay nextCost. Switch while another rest is active: pay full
-    // nextCost again (fiddling penalty — no refund of the previous rest).
+    // First pick: pay nextCost. Switch sekk↔bipod: pay full nextCost again
+    // (faffing). Bagrider stays on and is not re-charged.
     const nextNerve = Math.min(
       ENCOUNTER_NERVE.nerveCap,
       nerveRef.current + nextCost,
@@ -1642,21 +1726,65 @@ export function AwareAppView({
       setStatus(
         nextNerve >= ENCOUNTER_NERVE.flushThreshold
           ? `${verb} sekk-anlegg — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `${verb} sekk-anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.`,
+          : `${verb} sekk-anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.${
+              bagriderOn ? " Bagrider fortsatt aktiv." : ""
+            }`,
       );
     } else if (next === "bipod") {
       setStatus(
         nextNerve >= ENCOUNTER_NERVE.flushThreshold
           ? `${verb} bipod — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `${verb} bipod (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.`,
-      );
-    } else if (next === "bagrider") {
-      setStatus(
-        nextNerve >= ENCOUNTER_NERVE.flushThreshold
-          ? `${verb} bagrider — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `${verb} bagrider (+${pct}% nervøsitet). +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm vs sekk/bipod-base.`,
+          : `${verb} bipod (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.${
+              bagriderOn ? " Bagrider fortsatt aktiv." : ""
+            }`,
       );
     }
+    if (nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
+      flushedRef.current = true;
+      onBirdFlushedRef.current(nextNerve);
+    }
+  }
+
+  /** Bagrider stacks on sekk/bipod — never replaces them. */
+  function toggleBagrider() {
+    if (!gunDeployed) {
+      setStatus("Deploy gun først — anlegg krever at rifla er fremme.");
+      return;
+    }
+    if (flushedRef.current) return;
+    if (!hasBagrider) return;
+    if (rest !== "backpack" && rest !== "bipod") {
+      setStatus("Aktiver sekk eller bipod først — bagrider brukes sammen med anlegg.");
+      return;
+    }
+    if (bagriderOn) {
+      const cleared = Math.max(0, nerveRef.current - BAGRIDER_REST_NERVE);
+      nerveRef.current = cleared;
+      flushSync(() => {
+        setNerve(cleared);
+        setBagriderOn(false);
+      });
+      onNerveChangeRef.current?.(cleared);
+      setStatus("Bagrider av — bare sekk/bipod-calm.");
+      return;
+    }
+    const nextNerve = Math.min(
+      ENCOUNTER_NERVE.nerveCap,
+      nerveRef.current + BAGRIDER_REST_NERVE,
+    );
+    nerveRef.current = nextNerve;
+    flushSync(() => {
+      setNerve(nextNerve);
+      setBagriderOn(true);
+    });
+    onNerveChangeRef.current?.(nextNerve);
+    const pct = Math.round(BAGRIDER_REST_NERVE * 100);
+    const base = rest === "backpack" ? "sekk" : "bipod";
+    setStatus(
+      nextNerve >= ENCOUNTER_NERVE.flushThreshold
+        ? `Bagrider på ${base} — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+        : `Bagrider aktiv med ${base} (+${pct}% nervøsitet). +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm.`,
+    );
     if (nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(nextNerve);
@@ -2251,6 +2379,7 @@ export function AwareAppView({
                 hunter: { ...hunter },
                 gunDeployed,
                 rest,
+                bagriderActive: bagriderOn,
                 kestrelEnviroReady,
               })
             }
@@ -2296,19 +2425,79 @@ export function AwareAppView({
                   Gi opp søket
                 </button>
               ) : null}
+              {!gunDeployed ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  onClick={deployGun}
+                  title="Ta rifla frem for å se scope / skru tårn"
+                >
+                  Deploy gun
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="intro-button"
+                  onClick={openGunScopeReview}
+                  title="Se scope — skuddavstand, tårn. Track beholdes."
+                >
+                  Use gun scope
+                </button>
+              )}
             </>
           ) : trackActivePair?.found === true ||
             (focusPairId &&
               (trackActivePair ?? activePair)?.found === true) ? (
-            <button
-              type="button"
-              className="intro-button"
-              onClick={proceed}
-              title="Ferdig — fugl funnet"
-            >
-              Ferdig
-            </button>
-          ) : postShotSkuddparMode ? null : focusPairId ? null : (
+            <>
+              <button
+                type="button"
+                className="intro-button"
+                onClick={proceed}
+                title="Ferdig — fugl funnet"
+              >
+                Ferdig
+              </button>
+              {!gunDeployed ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  onClick={deployGun}
+                  title="Ta rifla frem for å se scope / skru tårn"
+                >
+                  Deploy gun
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  onClick={openGunScopeReview}
+                  title="Se scope — skuddavstand, tårn. Track beholdes."
+                >
+                  Use gun scope
+                </button>
+              )}
+            </>
+          ) : postShotSkuddparMode ? null : focusPairId ? (
+            !gunDeployed ? (
+              <button
+                type="button"
+                className="intro-button sheriff-secondary"
+                onClick={deployGun}
+                title="Ta rifla frem for å se scope / skru tårn"
+              >
+                Deploy gun
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="intro-button"
+                onClick={openGunScopeReview}
+                title="Se scope — skuddavstand, tårn. Track beholdes."
+              >
+                Use gun scope
+              </button>
+            )
+          ) : (
             <button
               type="button"
               className="intro-button"
@@ -2483,8 +2672,10 @@ export function AwareAppView({
                   }
                 >
                   {rest === "backpack"
-                    ? "Sekk-anlegg aktiv"
-                    : rest !== "none"
+                    ? bagriderOn
+                      ? "Sekk-anlegg + bagrider"
+                      : "Sekk-anlegg aktiv"
+                    : rest === "bipod"
                       ? `Bytt til Sekk (+${Math.round(BAG_REST_NERVE * 100)}%)`
                       : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`}
                 </button>
@@ -2507,8 +2698,10 @@ export function AwareAppView({
                   }
                 >
                   {rest === "bipod"
-                    ? "Bipod deployet"
-                    : rest !== "none"
+                    ? bagriderOn
+                      ? "Bipod + bagrider"
+                      : "Bipod deployet"
+                    : rest === "backpack"
                       ? `Bytt til Bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}%)`
                       : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`}
                 </button>
@@ -2517,33 +2710,36 @@ export function AwareAppView({
                 <button
                   type="button"
                   className={
-                    rest === "bagrider"
+                    bagriderOn
                       ? "intro-button sheriff-secondary is-active"
                       : "intro-button sheriff-secondary"
                   }
-                  aria-pressed={rest === "bagrider"}
-                  disabled={!gunDeployed}
-                  onClick={() => applyRestChoice("bagrider")}
+                  aria-pressed={bagriderOn}
+                  disabled={
+                    !gunDeployed || (rest !== "backpack" && rest !== "bipod")
+                  }
+                  onClick={toggleBagrider}
                   title={
-                    gunDeployed
-                      ? `+${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm vs ${hasBackpack ? "sekk" : "bipod"}-base — +10% bird nerve`
-                      : "Deploy gun først"
+                    !gunDeployed
+                      ? "Deploy gun først"
+                      : rest !== "backpack" && rest !== "bipod"
+                        ? "Aktiver sekk eller bipod først — bagrider brukes sammen med anlegg"
+                        : `+${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm oppå ${rest === "backpack" ? "sekk" : "bipod"} — +10% bird nerve`
                   }
                 >
-                  {rest === "bagrider"
+                  {bagriderOn
                     ? "Bagrider aktiv"
-                    : rest !== "none"
-                      ? `Bytt til Bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}%)`
-                      : `Use bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}% nervøsitet)`}
+                    : `Use bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}% nervøsitet)`}
                 </button>
               ) : null}
               {hasBackpack || hasBipod || hasBagrider ? (
                 <p className="shop-row-note">
                   Anlegg krever Deploy gun. Sekk = maks calm (+25% nerve). Bipod
                   = tofot-calm (nerve 5–15% etter kvalitet). Bagrider = +
-                  {Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm vs
-                  sekk/bipod (+10% nerve). Bytt mellom anlegg = full nerve-kost
-                  på nytt (faffing). Uten valg: ingen bipod/sekk-calm i skuddet.
+                  {Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm{" "}
+                  <em>sammen med</em> sekk eller bipod (+10% nerve) — ikke et
+                  eget bytte. Bytt sekk↔bipod = full nerve-kost på nytt
+                  (faffing). Uten valg: ingen bipod/sekk-calm i skuddet.
                 </p>
               ) : null}
               {hasKestrel ? (
@@ -2699,7 +2895,7 @@ export function AwareAppView({
 
           {mode === "track" ? (
             <div className="aware-actions">
-              {actionableTrackPairs.length === 0 ? (
+              {pendingTrackPairs.length === 0 ? (
                 <p className="shop-row-note">
                   Ingen åpne hent/søk. Track krever et treff med camcorder,
                   triggercam, EL Range, lagret skuddmarkør etter skudd — eller
@@ -2708,32 +2904,53 @@ export function AwareAppView({
                 </p>
               ) : (
                 <>
-                  {actionableTrackPairs.length > 1 ? (
-                    <div className="aware-track-pick" role="group" aria-label="Velg fugl">
-                      <p className="shop-row-note aware-track-pick-label">
-                        Velg hvilken fugl du skal hente / søke
-                      </p>
-                      <div className="aware-track-pick-btns">
-                        {actionableTrackPairs.map((p) => (
+                  <div
+                    className="aware-track-pick"
+                    role="group"
+                    aria-label="Ventende fugler"
+                  >
+                    <p className="shop-row-note aware-track-pick-label">
+                      {pendingTrackPairs.length === 1
+                        ? "1 fugl venter (hent/søk):"
+                        : `${pendingTrackPairs.length} fugler venter (hent/søk):`}{" "}
+                      Du står i {cellLabel(cell)}. Hent/søk bare i samme celle.
+                    </p>
+                    <div className="aware-track-pick-btns">
+                      {pendingTrackPairs.map((p) => {
+                        const here =
+                          p.cell.row === cell.row && p.cell.col === cell.col;
+                        return (
                           <button
                             key={p.id}
                             type="button"
                             className={
-                              p.id === trackActivePair?.id
+                              here && p.id === trackActivePair?.id
                                 ? "intro-button aware-track-pick-btn is-active"
                                 : "intro-button sheriff-secondary aware-track-pick-btn"
                             }
-                            aria-pressed={p.id === trackActivePair?.id}
-                            onClick={() => setActivePairId(p.id)}
+                            aria-pressed={here && p.id === trackActivePair?.id}
+                            disabled={!here}
+                            title={
+                              here
+                                ? trackPairPickLabel(p)
+                                : `Gå til ${cellLabel(p.cell)} for å hente/søke`
+                            }
+                            onClick={() => {
+                              if (!here) return;
+                              setActivePairId(p.id);
+                            }}
                           >
                             {trackPairPickLabel(p)}
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
-                  ) : trackActivePair ? (
+                  </div>
+
+                  {actionableTrackPairs.length === 0 ? (
                     <p className="shop-row-note">
-                      {trackPairPickLabel(trackActivePair)}
+                      Ingen åpne hent/søk i {cellLabel(cell)}. Gå til cellen
+                      der skuddmarkøren ligger for å fortsette.
                     </p>
                   ) : null}
 
