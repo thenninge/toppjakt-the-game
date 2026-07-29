@@ -59,7 +59,7 @@ export function clampRangeDistanceM(raw: number): number {
  * Center ring ≈ 6 mm Ø (sanity check).
  *
  * Pixels (measured on the asset): bullseye is NOT at image center.
- * Diamond tip ≈ 115 px from bullseye (diagonal flats × √2 / N–S tips).
+ * Diamond tip ≈ 130 px from bullseye (10 mm × pxPerMm 13.036).
  */
 export const CBA_IMAGE_NATIVE_WIDTH = 949;
 export const CBA_IMAGE_NATIVE_HEIGHT = 1024;
@@ -67,9 +67,9 @@ export const CBA_IMAGE_NATIVE_HEIGHT = 1024;
 export const CBA_BULLSEYE_X_PX = 487;
 export const CBA_BULLSEYE_Y_PX = 538;
 export const CBA_GRID_MM = 10;
-/** Center → diamond corner (N/E/S/W tip). */
+/** Center → diamond corner (N/E/S/W tip) = 10 mm on printed grid. */
 export const CBA_DIAMOND_CENTER_TO_TIP_MM = 10;
-export const CBA_DIAMOND_CENTER_TO_TIP_PX = 115;
+export const CBA_DIAMOND_CENTER_TO_TIP_PX = 130.36;
 export const CBA_CENTER_DOT_DIAMETER_MM = 6;
 
 /**
@@ -464,12 +464,20 @@ export function rollTriggerTargetMs(
 export function triggerPullErrorFactor(
   releaseElapsedMs: number,
   targetMs: number,
+  opts?: { perfectBandMs?: number },
 ): number {
+  const perfectBandMs =
+    opts?.perfectBandMs != null && Number.isFinite(opts.perfectBandMs)
+      ? Math.max(0, opts.perfectBandMs)
+      : TRIGGER_PERFECT_BAND_MS;
   const err = Math.abs(releaseElapsedMs - targetMs);
-  if (err <= TRIGGER_PERFECT_BAND_MS) return 0;
-  const maxErr = Math.max(targetMs, getRealismParams().triggerBarMs - targetMs);
-  const span = Math.max(1, maxErr - TRIGGER_PERFECT_BAND_MS);
-  return clamp01((err - TRIGGER_PERFECT_BAND_MS) / span);
+  if (err <= perfectBandMs) return 0;
+  const maxErr = Math.max(
+    targetMs,
+    getRealismParams().triggerBarMs - targetMs,
+  );
+  const span = Math.max(1, maxErr - perfectBandMs);
+  return clamp01((err - perfectBandMs) / span);
 }
 
 /**

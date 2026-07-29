@@ -4,9 +4,10 @@
  * ZCO 5-27 MCT is explicitly keyed — current admin tube look is that scope’s face.
  */
 
-export type GameRealism = "medium" | "high";
+export type GameRealism = "low" | "medium" | "high";
 
 export const GAME_REALISM_LEVELS: readonly GameRealism[] = [
+  "low",
   "medium",
   "high",
 ] as const;
@@ -59,7 +60,7 @@ export function normalizeGameRealism(
   raw: unknown,
   fallback: GameRealism = DEFAULT_GAME_REALISM,
 ): GameRealism {
-  if (raw === "medium" || raw === "high") return raw;
+  if (raw === "low" || raw === "medium" || raw === "high") return raw;
   return fallback;
 }
 

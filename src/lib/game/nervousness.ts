@@ -85,11 +85,12 @@ export type EncounterNerveContext = {
   isMoving: boolean;
   /** Continuous real seconds the player has been holding move (0 when still). */
   moveHoldSec: number;
-  /**
-   * Combined kit clothing sneak % (additive). Higher = birds spook slower.
-   * Nerve rate is multiplied by (1 − sneakPct/100).
-   */
+  /** Combined kit clothing sneak % (additive). Higher = birds spook slower. */
   camoSneakPct: number;
+  /**
+   * Realism nerve-rate multiplier (Low → 0.5). Default 1.
+   */
+  nerveRateMult?: number;
   /** Optional LOS / cover hooks for future tuning. */
   birdSeesPlayer?: number;
   coverFactor?: number;
@@ -205,11 +206,18 @@ export function tickEncounterNerve(
   }
 
   const { rate, reason } = encounterNerveRatePerSec(ctx);
-  const next = Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, nerve + rate * dtSec));
+  const nerveMult =
+    ctx.nerveRateMult != null && Number.isFinite(ctx.nerveRateMult)
+      ? Math.max(0, ctx.nerveRateMult)
+      : 1;
+  const next = Math.min(
+    ENCOUNTER_NERVE.nerveCap,
+    Math.max(0, nerve + rate * nerveMult * dtSec),
+  );
   return {
     nerve: next,
     flushes: next >= flushThreshold,
-    ratePerSec: rate,
+    ratePerSec: rate * nerveMult,
     reason,
   };
 }

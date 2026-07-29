@@ -7,6 +7,7 @@
  */
 
 import type { GameRealism } from "@/lib/optics/turretStyle";
+import { realismLevelKey } from "@/lib/range/realismGameplay";
 
 const STORAGE_KEY = "toppjakt-realism-controls-v1";
 
@@ -49,9 +50,18 @@ export const REALISM_FEATURE_LABELS: Record<RealismFeatureKey, string> = {
   tubeTurrets: "Tube-mounted turrets (elev/wind/para/illum)",
   parallaxBlur: "Parallax DOF blur",
   illumination: "Reticle illumination turret",
-  cant: "Cant / bubble level (needs bubble in kit)",
+  cant: "Cant (bubble level measures when in kit)",
   focusHold: "Focus hold (F) bar + settle",
   triggerTiming: "Trigger timing (Space) bar + pull error",
+};
+
+const DEFAULT_LOW: RealismLevelFeatures = {
+  tubeTurrets: false,
+  parallaxBlur: false,
+  illumination: false,
+  cant: false,
+  focusHold: true,
+  triggerTiming: true,
 };
 
 const DEFAULT_MEDIUM: RealismLevelFeatures = {
@@ -82,6 +92,7 @@ export const DEFAULT_REALISM_PARAMS: RealismParams = {
 
 export const DEFAULT_REALISM_CONTROLS: RealismControlsState = {
   features: {
+    low: { ...DEFAULT_LOW },
     medium: { ...DEFAULT_MEDIUM },
     high: { ...DEFAULT_HIGH },
   },
@@ -156,6 +167,7 @@ function normalizeState(raw: unknown): RealismControlsState {
       : {};
   return {
     features: {
+      low: normalizeFeatures(featuresRaw.low, DEFAULT_LOW),
       medium: normalizeFeatures(featuresRaw.medium, DEFAULT_MEDIUM),
       high: normalizeFeatures(featuresRaw.high, DEFAULT_HIGH),
     },
@@ -197,16 +209,14 @@ export function getRealismControls(): RealismControlsState {
 }
 
 export function getRealismFeatures(level: GameRealism): RealismLevelFeatures {
-  const lvl = level === "high" ? "high" : "medium";
-  return ensureCache().features[lvl];
+  return ensureCache().features[realismLevelKey(level)];
 }
 
 export function realismFeatureEnabled(
   level: GameRealism | null | undefined,
   feature: RealismFeatureKey,
 ): boolean {
-  const lvl = level === "high" ? "high" : "medium";
-  return ensureCache().features[lvl][feature];
+  return ensureCache().features[realismLevelKey(level)][feature];
 }
 
 export function getRealismParams(): RealismParams {
@@ -224,7 +234,7 @@ export function patchRealismLevelFeatures(
   patch: Partial<RealismLevelFeatures>,
 ): void {
   const cur = ensureCache();
-  const lvl = level === "high" ? "high" : "medium";
+  const lvl = realismLevelKey(level);
   setRealismControls({
     ...cur,
     features: {

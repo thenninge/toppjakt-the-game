@@ -23,6 +23,7 @@ import { miscKitWeaponCalmGrams, miscKitMirageMult, isChamberCoolerMisc } from "
 import {
   FOCUS_HOLD_MS,
   TRIGGER_BAR_MS,
+  TRIGGER_PERFECT_BAND_MS,
   caliberBulletDiameterMm,
   clampScopeZoom,
   combinedDispersionMoa,
@@ -71,6 +72,10 @@ import {
   getRealismControls,
   subscribeRealismControls,
 } from "@/lib/range/realismControls";
+import {
+  realismDispersionMult,
+  realismLevelKey,
+} from "@/lib/range/realismGameplay";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   angularMmAtDistance,
@@ -265,8 +270,9 @@ export function MoaCompetitionView({
     getRealismControls,
     () => DEFAULT_REALISM_CONTROLS,
   );
-  const realismLevel = realism === "high" ? "high" : "medium";
+  const realismLevel = realismLevelKey(realism);
   const features = realismControls.features[realismLevel];
+  const isRealismLow = realismLevel === "low";
   const tubeMode = features.tubeTurrets;
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
   const barrelWearScale = useMemo(
@@ -610,6 +616,7 @@ export function MoaCompetitionView({
         rifle.id,
         customBarrels[rifle.id],
       ),
+      envelopeMult: realismDispersionMult(realism),
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const pull = triggerPullOffsetMm(
@@ -822,7 +829,12 @@ export function MoaCompetitionView({
       TRIGGER_BAR_MS,
       Math.max(0, nowMs - trig.startedAtMs),
     );
-    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
+    const perfectBandMs = isRealismLow
+      ? TRIGGER_PERFECT_BAND_MS * 2
+      : TRIGGER_PERFECT_BAND_MS;
+    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs, {
+      perfectBandMs,
+    });
     triggerRef.current = { held: false, startedAtMs: null };
     resetTriggerProgress();
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));

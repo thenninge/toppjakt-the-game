@@ -26,6 +26,7 @@ import {
   triggerPullErrorFactor,
   triggerPullOffsetMm,
   wobbleAmplitudeMm,
+  TRIGGER_PERFECT_BAND_MS,
 } from "@/lib/range/precision";
 import {
   DEFAULT_REALISM_CONTROLS,
@@ -90,8 +91,15 @@ import {
   initialCantDeg,
   isCantGameplayActive,
   nudgeCantDeg,
+  showBubbleLevelHud,
 } from "@/lib/range/cant";
 import type { GameRealism } from "@/lib/optics/turretStyle";
+import {
+  realismAutoTurretDial,
+  realismDispersionMult,
+  realismLevelKey,
+  realismNerveRateMult,
+} from "@/lib/range/realismGameplay";
 import { useTriggerBarPaint } from "@/components/range/useTriggerBarPaint";
 import { useFocusBarPaint } from "@/components/range/useFocusBarPaint";
 import { HuntShotConditions } from "@/components/hunt/HuntShotConditions";
@@ -553,8 +561,9 @@ export function HuntShootView({
     getRealismControls,
     () => DEFAULT_REALISM_CONTROLS,
   );
-  const realismLevel = realism === "high" ? "high" : "medium";
+  const realismLevel = realismLevelKey(realism);
   const features = realismControls.features[realismLevel];
+  const isRealismLow = realismLevel === "low";
   const params = realismControls.params;
   const tubeMode = features.tubeTurrets;
   const blurPx = features.parallaxBlur
@@ -650,12 +659,11 @@ export function HuntShootView({
     () => resolveBubbleLevelFromKit(kitItems),
     [kitItems],
   );
-  const cantActive = isCantGameplayActive(realism, !!bubbleLevel);
+  const cantActive = isCantGameplayActive(realism);
   const cantActiveRef = useRef(cantActive);
   cantActiveRef.current = cantActive;
-  const [cantDeg, setCantDeg] = useState(() =>
-    initialCantDeg(realism, !!resolveBubbleLevelFromKit(kitItems)),
-  );
+  const bubbleHud = showBubbleLevelHud(realism, !!bubbleLevel);
+  const [cantDeg, setCantDeg] = useState(() => initialCantDeg(realism));
   const cantDegRef = useRef(cantDeg);
   cantDegRef.current = cantDeg;
   const liveCantDeg = () =>
@@ -694,6 +702,7 @@ export function HuntShootView({
         isMoving: false,
         moveHoldSec: 0,
         camoSneakPct: camoSneakPctRef.current,
+        nerveRateMult: realismNerveRateMult(realism),
       });
       birdNerveRef.current = tick.nerve;
       setNerveUi(tick.nerve);
@@ -703,7 +712,7 @@ export function HuntShootView({
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [fired, gunPrepOnly]);
+  }, [fired, gunPrepOnly, realism]);
 
   function leaveToAware() {
     if (firedRef.current) return;
@@ -811,6 +820,39 @@ export function HuntShootView({
   }, [selectedAmmo, kestrelProfiles, realSolveArg]);
   const ballisticsAmmoRef = useRef(ballisticsAmmo);
   ballisticsAmmoRef.current = ballisticsAmmo;
+
+  useEffect(() => {
+    if (!realismAutoTurretDial(realism)) return;
+    if (fired || gunPrepOnly || !scope || !selectedAmmo || !ballisticsAmmo) return;
+    const hold = exactBallisticHold(
+      ballisticsAmmo.ammo,
+      measuredDistanceM,
+      crosswindMs,
+      {
+        densityRatio,
+        powderTempC: temperatureC,
+        dvDtMpsPerC: ballisticsAmmo.dvDtMpsPerC,
+        cantDeg: liveCantDeg(),
+      },
+    );
+    setSessionZeroXMm(clampTurretMm(Math.round(hold.dialXMmAt100)));
+    setSessionZeroYMm(
+      clampElevationTurretMm(Math.round(hold.dialYMmAt100), scope.scope),
+    );
+  }, [
+    realism,
+    fired,
+    gunPrepOnly,
+    scope,
+    selectedAmmo,
+    ballisticsAmmo,
+    measuredDistanceM,
+    crosswindMs,
+    densityRatio,
+    temperatureC,
+    cantDeg,
+  ]);
+
   const ammoRemaining = selectedAmmo
     ? getInventoryQty(inventory, selectedAmmo.id)
     : 0;
@@ -1012,6 +1054,7 @@ export function HuntShootView({
       dispersionScale: usingReal
         ? 1
         : fatigueDispersionFactor(fatigueRef.current),
+      envelopeMult: realismDispersionMult(realism),
       mirageFactor: usingReal ? 0 : undefined,
       // Measured real-load MV already includes this rifle's barrel.
       barrelV0Factor: usingReal
@@ -1520,7 +1563,12 @@ export function HuntShootView({
       barMs,
       Math.max(0, nowMs - trig.startedAtMs),
     );
-    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
+    const perfectBandMs = isRealismLow
+      ? TRIGGER_PERFECT_BAND_MS * 2
+      : TRIGGER_PERFECT_BAND_MS;
+    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs, {
+      perfectBandMs,
+    });
     triggerRef.current = { held: false, startedAtMs: null };
     resetTriggerProgress();
     setTriggerUi((prev) => ({
@@ -1952,7 +2000,6 @@ export function HuntShootView({
     ? shotGeom.nativeW * (100 / birdWidthPct)
     : shotGeom.nativeW;
   const sceneH = landscapeSrc ? sceneW / landAspect : shotGeom.nativeH;
-  const worldRollDeg = -liveCantDeg();
 
   const abFasitHold =
     ballisticHold && selectedAmmo && ballisticsAmmo
@@ -2372,7 +2419,42 @@ export function HuntShootView({
                 >
                   <div ref={triggerFillRef} className="range-trigger-fill" />
                   {triggerUi.targetPct > 0 ? (
-                    <span className="range-trigger-mark" aria-hidden />
+                    isRealismLow ? (
+                      <>
+                        {(() => {
+                          const barMs = Math.max(1, triggerBarMsRef.current);
+                          const halfPct =
+                            (TRIGGER_PERFECT_BAND_MS * 2) / barMs * 100;
+                          const targetPct = triggerUi.targetPct * 100;
+                          const lo = Math.max(0, Math.min(100, targetPct - halfPct));
+                          const hi = Math.max(0, Math.min(100, targetPct + halfPct));
+                          return (
+                            <>
+                              <span
+                                className="range-trigger-mark"
+                                aria-hidden
+                                style={
+                                  {
+                                    ["--trigger-mark-pct" as string]: `${lo}%`,
+                                  } as CSSProperties
+                                }
+                              />
+                              <span
+                                className="range-trigger-mark"
+                                aria-hidden
+                                style={
+                                  {
+                                    ["--trigger-mark-pct" as string]: `${hi}%`,
+                                  } as CSSProperties
+                                }
+                              />
+                            </>
+                          );
+                        })()}
+                      </>
+                    ) : (
+                      <span className="range-trigger-mark" aria-hidden />
+                    )
                   ) : null}
                 </div>
               </div>
@@ -2453,16 +2535,7 @@ export function HuntShootView({
               onLostPointerCapture={onAimPointerUp}
             >
               <ScopeFocusZoom scale={focusZoomBoost}>
-              <div
-                className="scope-cant-roll"
-                style={
-                  Math.abs(worldRollDeg) > 0.02
-                    ? {
-                        transform: `rotate(${worldRollDeg.toFixed(3)}deg)`,
-                      }
-                    : undefined
-                }
-              >
+              <div className="scope-cant-roll">
               <div
                 ref={scopeWorldRef}
                 className="scope-world"
@@ -2601,12 +2674,21 @@ export function HuntShootView({
                 )}
               </div>
               </div>
-              <ScopeReticle
-                scope={scope.scope}
-                zoom={zoom}
-                imgScale={reticleScale}
-                illumination={illumOn ? reticleIllum : 0}
-              />
+              <div
+                className="scope-reticle-offset"
+                style={
+                  Math.abs(cantDeg) > 0.02
+                    ? { transform: `rotate(${cantDeg.toFixed(3)}deg)` }
+                    : undefined
+                }
+              >
+                <ScopeReticle
+                  scope={scope.scope}
+                  zoom={zoom}
+                  imgScale={reticleScale}
+                  illumination={illumOn ? reticleIllum : 0}
+                />
+              </div>
               </ScopeFocusZoom>
             </div>
             <ScopeZoomRing
@@ -2615,9 +2697,9 @@ export function HuntShootView({
               onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
               disabled={fired}
             />
-            {cantActive && bubbleLevel ? (
+            {bubbleHud ? (
               <BubbleLevel
-                visualId={bubbleLevel.visualId}
+                visualId={bubbleLevel!.visualId}
                 cantDeg={cantDeg}
                 onCantChange={setCantDeg}
                 disabled={fired}
@@ -2646,7 +2728,49 @@ export function HuntShootView({
                   >
                     <div ref={triggerFillRef} className="range-trigger-fill" />
                     {triggerUi.targetPct > 0 ? (
-                      <span className="range-trigger-mark" aria-hidden />
+                      isRealismLow ? (
+                        <>
+                          {(() => {
+                            const barMs = Math.max(1, triggerBarMsRef.current);
+                            const halfPct =
+                              (TRIGGER_PERFECT_BAND_MS * 2) / barMs * 100;
+                            const targetPct =
+                              triggerUi.targetPct * 100;
+                            const lo = Math.max(
+                              0,
+                              Math.min(100, targetPct - halfPct),
+                            );
+                            const hi = Math.max(
+                              0,
+                              Math.min(100, targetPct + halfPct),
+                            );
+                            return (
+                              <>
+                                <span
+                                  className="range-trigger-mark"
+                                  aria-hidden
+                                  style={
+                                    {
+                                      ["--trigger-mark-pct" as string]: `${lo}%`,
+                                    } as CSSProperties
+                                  }
+                                />
+                                <span
+                                  className="range-trigger-mark"
+                                  aria-hidden
+                                  style={
+                                    {
+                                      ["--trigger-mark-pct" as string]: `${hi}%`,
+                                    } as CSSProperties
+                                  }
+                                />
+                              </>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <span className="range-trigger-mark" aria-hidden />
+                      )
                     ) : null}
                   </div>
                 </div>

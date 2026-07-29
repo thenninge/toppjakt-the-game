@@ -67,6 +67,7 @@ import {
   sampleShotFromPoa,
   triggerPullErrorFactor,
   triggerPullOffsetMm,
+  TRIGGER_PERFECT_BAND_MS,
   wobbleAmplitudeMm,
   type GroupMeasurement,
   type ShotImpact,
@@ -76,6 +77,10 @@ import {
   getRealismControls,
   subscribeRealismControls,
 } from "@/lib/range/realismControls";
+import {
+  realismDispersionMult,
+  realismLevelKey,
+} from "@/lib/range/realismGameplay";
 import { zeroingTargetAndReticleScale } from "@/lib/range/scopeViewScale";
 import {
   RANGE_TARGET_IDS,
@@ -129,6 +134,7 @@ import {
 import { MaybeScopeTube } from "@/components/range/ScopeTubeLayout";
 import { ParallaxTurret } from "@/components/range/ParallaxTurret";
 import { IlluminationTurret } from "@/components/range/IlluminationTurret";
+import { ShooterAuxTurrets } from "@/components/range/ShooterAuxTurrets";
 import { focusBlurPx } from "@/lib/range/parallaxFocus";
 import { BubbleLevel } from "@/components/range/BubbleLevel";
 import { resolveBubbleLevelFromKit } from "@/lib/range/bubbleLevel";
@@ -138,6 +144,7 @@ import {
   initialCantDeg,
   isCantGameplayActive,
   nudgeCantDeg,
+  showBubbleLevelHud,
 } from "@/lib/range/cant";
 import { RangeChronoPanel } from "@/components/range/RangeChronoPanel";
 import { ScopeZoomRing } from "@/components/range/ScopeZoomRing";
@@ -530,8 +537,9 @@ export function ShootingRange({
     getRealismControls,
     () => DEFAULT_REALISM_CONTROLS,
   );
-  const realismLevel = realism === "high" ? "high" : "medium";
+  const realismLevel = realismLevelKey(realism);
   const features = realismControls.features[realismLevel];
+  const isRealismLow = realismLevel === "low";
   const params = realismControls.params;
   const tubeMode = features.tubeTurrets;
   const blurPx = features.parallaxBlur
@@ -586,12 +594,11 @@ export function ShootingRange({
     () => resolveBubbleLevelFromKit(kitItems),
     [kitItems],
   );
-  const cantActive = isCantGameplayActive(realism, !!bubbleLevel);
+  const cantActive = isCantGameplayActive(realism);
   const cantActiveRef = useRef(cantActive);
   cantActiveRef.current = cantActive;
-  const [cantDeg, setCantDeg] = useState(() =>
-    initialCantDeg(realism, !!resolveBubbleLevelFromKit(kitItems)),
-  );
+  const bubbleHud = showBubbleLevelHud(realism, !!bubbleLevel);
+  const [cantDeg, setCantDeg] = useState(() => initialCantDeg(realism));
   const cantDegRef = useRef(cantDeg);
   cantDegRef.current = cantDeg;
   const liveCantDeg = () =>
@@ -886,6 +893,7 @@ export function ShootingRange({
         barrelV0Factor: usingReal
           ? 1
           : barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]),
+        envelopeMult: realismDispersionMult(realism),
       };
       let poa: { xMm: number; yMm: number };
       let seriesGroupEnvelopeMoa: number | null = null;
@@ -1197,7 +1205,7 @@ export function ShootingRange({
       }));
       return;
     }
-    if (featuresRef.current.focusHold && (!focusRef.current.held || markMs == null)) {
+    if (featuresRef.current.focusHold && !focusRef.current.held) {
       abortTrigger("Mistet fokus under avtrekk.");
       return;
     }
@@ -1210,7 +1218,12 @@ export function ShootingRange({
       barMs,
       Math.max(0, nowMs - trig.startedAtMs),
     );
-    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
+    const perfectBandMs = isRealismLow
+      ? TRIGGER_PERFECT_BAND_MS * 2
+      : TRIGGER_PERFECT_BAND_MS;
+    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs, {
+      perfectBandMs,
+    });
     triggerRef.current = { held: false, startedAtMs: null };
     resetTriggerProgress();
     setTriggerUi((prev) => ({
@@ -1397,8 +1410,11 @@ export function ShootingRange({
 
       const reticleEl = scopeReticleOffsetRef.current;
       if (reticleEl) {
+        const cant = cantActiveRef.current ? cantDegRef.current : 0;
+        const cantRot =
+          Math.abs(cant) > 0.02 ? `rotate(${cant.toFixed(3)}deg)` : "";
         if (!tracking) {
-          reticleEl.style.transform = "";
+          reticleEl.style.transform = cantRot;
         } else {
           const dist = distanceRef.current;
           const sx = trackingClickScaleRef.current.x;
@@ -1421,7 +1437,9 @@ export function ShootingRange({
             ox -= wobbleRef.current.x * ppmX * scale;
             oy -= wobbleRef.current.y * ppmY * scale;
           }
-          reticleEl.style.transform = `translate(${ox}px, ${oy}px)`;
+          reticleEl.style.transform = cantRot
+            ? `translate(${ox}px, ${oy}px) ${cantRot}`
+            : `translate(${ox}px, ${oy}px)`;
         }
       }
     }
@@ -1729,7 +1747,7 @@ export function ShootingRange({
     setShots([]);
     setMeasurement(null);
     realSeriesEnvelopeMoaRef.current = null;
-    setCantDeg(initialCantDeg(realism, cantActiveRef.current));
+    setCantDeg(initialCantDeg(realism));
     abortTrigger("");
     setStatus("Ny serie — hold Fokus, piltaster, hold Avtrekk.");
     wobblePhase.current = { a: Math.random() * 10, b: Math.random() * 10 };
@@ -2494,7 +2512,6 @@ export function ShootingRange({
           </section>
   ) : null;
 
-  const worldRollDeg = -liveCantDeg();
 
   return (
     <div className="shooting-range">
@@ -2628,6 +2645,16 @@ export function ShootingRange({
           elevationClicksPerRev={scopeElevationClicksPerRev(scope.scope)}
           windageClicksPerRev={scopeWindageClicksPerRev(scope.scope)}
           hideShooterDials={tubeMode}
+          shooterAuxTurrets={
+            !tubeMode ? (
+              <ShooterAuxTurrets
+                parallaxFocusM={parallaxFocusM}
+                onParallaxChange={setParallaxFocusM}
+                reticleIllum={reticleIllum}
+                onIllumChange={setReticleIllum}
+              />
+            ) : null
+          }
           belowTabs={setupUnderHud ? rangeSerieSetup : undefined}
           enviroPanel={
             <HuntShotConditions
@@ -2926,7 +2953,48 @@ export function ShootingRange({
                   >
                     <div ref={triggerFillRef} className="range-trigger-fill" />
                     {triggerUi.targetPct > 0 ? (
-                      <span className="range-trigger-mark" />
+                      isRealismLow ? (
+                        <>
+                          {(() => {
+                            const barMs = Math.max(1, triggerBarMsRef.current);
+                            const halfPct =
+                              (TRIGGER_PERFECT_BAND_MS * 2) / barMs * 100;
+                            const targetPct = triggerUi.targetPct * 100;
+                            const lo = Math.max(
+                              0,
+                              Math.min(100, targetPct - halfPct),
+                            );
+                            const hi = Math.max(
+                              0,
+                              Math.min(100, targetPct + halfPct),
+                            );
+                            return (
+                              <>
+                                <span
+                                  className="range-trigger-mark"
+                                  aria-hidden
+                                  style={
+                                    {
+                                      ["--trigger-mark-pct" as string]: `${lo}%`,
+                                    } as CSSProperties
+                                  }
+                                />
+                                <span
+                                  className="range-trigger-mark"
+                                  aria-hidden
+                                  style={
+                                    {
+                                      ["--trigger-mark-pct" as string]: `${hi}%`,
+                                    } as CSSProperties
+                                  }
+                                />
+                              </>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <span className="range-trigger-mark" />
+                      )
                     ) : null}
                   </div>
                 </div>
@@ -3013,16 +3081,7 @@ export function ShootingRange({
                 onLostPointerCapture={onAimPointerUp}
               >
                 <ScopeFocusZoom scale={focusZoomBoost}>
-                <div
-                  className="scope-cant-roll"
-                  style={
-                    Math.abs(worldRollDeg) > 0.02
-                      ? {
-                          transform: `rotate(${worldRollDeg.toFixed(3)}deg)`,
-                        }
-                      : undefined
-                  }
-                >
+                <div className="scope-cant-roll">
                 <div
                   ref={scopeWorldRef}
                   className="scope-world"
@@ -3124,7 +3183,7 @@ export function ShootingRange({
                     scope={scope.scope}
                     zoom={zoom}
                     imgScale={reticleImgScale}
-                    illumination={illumOn ? reticleIllum : 0}
+                    illumination={(tubeMode ? illumOn : true) ? reticleIllum : 0}
                   />
                 </div>
                 </ScopeFocusZoom>
@@ -3135,9 +3194,9 @@ export function ShootingRange({
                 zoom={zoom}
                 onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
               />
-              {cantActive && bubbleLevel ? (
+              {bubbleHud ? (
                 <BubbleLevel
-                  visualId={bubbleLevel.visualId}
+                  visualId={bubbleLevel!.visualId}
                   cantDeg={cantDeg}
                   onCantChange={setCantDeg}
                   disabled={!!measurement}
@@ -3197,7 +3256,48 @@ export function ShootingRange({
                     >
                       <div ref={triggerFillRef} className="range-trigger-fill" />
                       {triggerUi.targetPct > 0 ? (
-                        <span className="range-trigger-mark" />
+                        isRealismLow ? (
+                          <>
+                            {(() => {
+                              const barMs = Math.max(1, triggerBarMsRef.current);
+                              const halfPct =
+                                (TRIGGER_PERFECT_BAND_MS * 2) / barMs * 100;
+                              const targetPct = triggerUi.targetPct * 100;
+                              const lo = Math.max(
+                                0,
+                                Math.min(100, targetPct - halfPct),
+                              );
+                              const hi = Math.max(
+                                0,
+                                Math.min(100, targetPct + halfPct),
+                              );
+                              return (
+                                <>
+                                  <span
+                                    className="range-trigger-mark"
+                                    aria-hidden
+                                    style={
+                                      {
+                                        ["--trigger-mark-pct" as string]: `${lo}%`,
+                                      } as CSSProperties
+                                    }
+                                  />
+                                  <span
+                                    className="range-trigger-mark"
+                                    aria-hidden
+                                    style={
+                                      {
+                                        ["--trigger-mark-pct" as string]: `${hi}%`,
+                                      } as CSSProperties
+                                    }
+                                  />
+                                </>
+                              );
+                            })()}
+                          </>
+                        ) : (
+                          <span className="range-trigger-mark" />
+                        )
                       ) : null}
                     </div>
                   </div>

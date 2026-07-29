@@ -7,8 +7,8 @@
  * Elevation dial / aim offsets live in the scope frame; gravity drop is world
  * down. Cant rotates scope-frame vectors into the world before impact.
  *
- * Gameplay gate: Admin Realism controls «cant» for the active level, plus a
- * bubble level in kit. Default: high on / medium off.
+ * High realism: cant is always active when the feature flag is on — bubble
+ * level only measures/displays it. Without bubble, adjust by feel (Q/E).
  */
 
 import type { GameRealism } from "@/lib/optics/turretStyle";
@@ -32,33 +32,38 @@ function cantEntrySpreadDeg(): number {
 }
 
 /**
- * Cant challenge + bubble HUD: feature flag for level + bubble in kit.
- * Without level (or feature off) → cant stays 0 and does not affect POI.
+ * Cant challenge: Admin Realism «cant» for the active level.
+ * Bubble level is optional HUD — see {@link showBubbleLevelHud}.
  */
 export function isCantGameplayActive(
   realism: GameRealism | null | undefined,
+): boolean {
+  return realismFeatureEnabled(realism, "cant");
+}
+
+/** Bubble HUD when cant is on and a bubble level is in kit. */
+export function showBubbleLevelHud(
+  realism: GameRealism | null | undefined,
   hasBubbleLevel: boolean,
 ): boolean {
-  return realismFeatureEnabled(realism, "cant") && hasBubbleLevel;
+  return isCantGameplayActive(realism) && hasBubbleLevel;
 }
 
 /** Entry / series cant — 0 when gameplay is inactive. */
 export function initialCantDeg(
   realism: GameRealism | null | undefined,
-  hasBubbleLevel: boolean,
   random: () => number = Math.random,
 ): number {
-  if (!isCantGameplayActive(realism, hasBubbleLevel)) return 0;
+  if (!isCantGameplayActive(realism)) return 0;
   return rollEntryCantDeg(random);
 }
 
 /** Ballistics / impact cant — forced 0 when inactive. */
 export function effectiveCantDeg(
   realism: GameRealism | null | undefined,
-  hasBubbleLevel: boolean,
   cantDeg: number,
 ): number {
-  if (!isCantGameplayActive(realism, hasBubbleLevel)) return 0;
+  if (!isCantGameplayActive(realism)) return 0;
   return clampCantDeg(cantDeg);
 }
 

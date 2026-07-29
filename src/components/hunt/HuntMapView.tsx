@@ -217,6 +217,11 @@ import {
   type RealLoadProfile,
 } from "@/lib/ballistics/realLoad";
 import type { GameRealism } from "@/lib/optics/turretStyle";
+import {
+  realismAutoSkuddpar,
+  realismEttersokFindMult,
+  realismNerveRateMult,
+} from "@/lib/range/realismGameplay";
 import { crosswindMs, fullValueWindageMs, type DayWeather } from "@/lib/weather/spec";
 import {
   ENCOUNTER_NERVE,
@@ -1607,6 +1612,7 @@ export function HuntMapView({
           isMoving: false,
           moveHoldSec: 0,
           camoSneakPct,
+          nerveRateMult: realismNerveRateMult(realism),
         });
         if (!tick.flushes) return { nerve: tick.nerve, flushed: false as const };
         const result = spookBird(birdsRef.current, birdId, map);
@@ -4072,15 +4078,25 @@ export function HuntMapView({
       birdFlip: !!shootSession.bird.flip,
     };
 
-    const autoVisible = estimateVisibleShotPair({
-      stand,
-      trueAim: result.kind === "miss" ? impact : birdPos,
-      hasTriggercam: triggercamOn,
-      hasCamcorder: camcorderOn,
-      hasElRange: elRangeOn,
-      metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
-      maxDistanceM: map ? awareMapMaxMFor(map) : undefined,
-    });
+    const autoVisible = realismAutoSkuddpar(realism)
+      ? estimateVisibleShotPair({
+          stand,
+          trueAim: result.kind === "miss" ? impact : birdPos,
+          hasTriggercam: false,
+          hasCamcorder: false,
+          hasElRange: true,
+          metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
+          maxDistanceM: map ? awareMapMaxMFor(map) : undefined,
+        })
+      : estimateVisibleShotPair({
+          stand,
+          trueAim: result.kind === "miss" ? impact : birdPos,
+          hasTriggercam: triggercamOn,
+          hasCamcorder: camcorderOn,
+          hasElRange: elRangeOn,
+          metersPerPct: map ? awareMetersPerPctFor(map) : undefined,
+          maxDistanceM: map ? awareMapMaxMFor(map) : undefined,
+        });
 
     /** Pre-saved Shoot skuddpar on this cell (no harvest yet) — no-cam fallback. */
     const manualPair = shotPairs.find(
@@ -4129,11 +4145,13 @@ export function HuntMapView({
       };
       setShotPairs((prev) => [pair!, ...prev]);
       pairNote =
-        autoVisible.source === "el_range"
-          ? " EL Range lagret skuddpar (eksakt)."
-          : autoVisible.source === "camcorder"
-            ? " Camcorder lagret skuddpar (±10 m)."
-            : " Triggercam lagret skuddpar (±30 m).";
+        realismAutoSkuddpar(realism)
+          ? " Realism Low: skuddpar lagret automatisk (eksakt)."
+          : autoVisible.source === "el_range"
+            ? " EL Range lagret skuddpar (eksakt)."
+            : autoVisible.source === "camcorder"
+              ? " Camcorder lagret skuddpar (±10 m)."
+              : " Triggercam lagret skuddpar (±30 m).";
     } else if (manualPair && result.kind !== "miss") {
       const treeKill =
         result.kind === "instant_kill" || result.kind === "vital_kill";
@@ -5101,6 +5119,7 @@ export function HuntMapView({
         onGunDeployed={() => setFieldGunDeployed(true)}
         onMountGun={() => mountFieldGun()}
         clockMinutes={clockMinutes}
+        realism={realism}
         shotPairs={shotPairs}
         focusPairId={awareSession.ettersokPairId ?? null}
         onShotPairsChange={setShotPairs}

@@ -331,6 +331,7 @@ function trackCoverageVsImpact(pair: ShotPair): {
 export function estimateEttersokFind(
   pair: ShotPair,
   random: () => number = Math.random,
+  findChanceMult = 1,
 ): EttersokEstimate {
   const isKill =
     pair.resultKind === "instant_kill" || pair.resultKind === "vital_kill";
@@ -423,7 +424,11 @@ export function estimateEttersokFind(
 
   if (attempts >= 1) chance -= 0.025 * Math.min(4, attempts);
 
-  chance = Math.max(0.03, Math.min(0.93, chance));
+  const mult =
+    findChanceMult != null && Number.isFinite(findChanceMult)
+      ? Math.max(0.05, findChanceMult)
+      : 1;
+  chance = Math.max(0.03, Math.min(0.93, chance * mult));
   const found = random() < chance;
   const reason = found
     ? isKill

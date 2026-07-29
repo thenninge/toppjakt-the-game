@@ -83,7 +83,13 @@ export type DispersionInput = {
    * Multiplier on the combined envelope (mental fatigue: 1 = fresh, 2 = exhausted).
    * Applied after rifle+ammo+stock+customs (+ barrel wear on rifle).
    */
+  /** MIND fatigue etc. — values ≥ 1 widen groups. */
   dispersionScale?: number;
+  /**
+   * Extra envelope multiplier (e.g. realism Low → 0.5× MOA).
+   * Unlike {@link dispersionScale}, not clamped to ≥ 1.
+   */
+  envelopeMult?: number;
   /**
    * Barrel wear multiplier on rifle MOA only (1 = fresh … 2 = worn out).
    * See `barrelWearMoaScale`.
@@ -110,6 +116,10 @@ export function combinedDispersionMoa(input: DispersionInput): number {
     input.dispersionScale != null && Number.isFinite(input.dispersionScale)
       ? Math.max(1, input.dispersionScale)
       : 1;
+  const envMult =
+    input.envelopeMult != null && Number.isFinite(input.envelopeMult)
+      ? Math.max(0.05, input.envelopeMult)
+      : 1;
 
   // Real-data measured system group — replaces catalog rifle+ammo stack.
   const override = input.ammo.systemGroupMoaOverride;
@@ -119,7 +129,7 @@ export function combinedDispersionMoa(input: DispersionInput): number {
     override > 0
   ) {
     // Mirage still widens in sampleShotFromPoa; fatigue scale applies here.
-    return Math.max(0.05, override * scale);
+    return Math.max(0.05, override * scale * envMult);
   }
 
   const wear =
@@ -135,7 +145,7 @@ export function combinedDispersionMoa(input: DispersionInput): number {
   if (input.customsMoaDelta) {
     moa += input.customsMoaDelta;
   }
-  return Math.max(0.05, moa * scale);
+  return Math.max(0.05, moa * scale * envMult);
 }
 
 /** 1σ angular dispersion (MOA) from the combined N-σ envelope. */

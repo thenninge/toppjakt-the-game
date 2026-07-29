@@ -294,8 +294,8 @@ export type PlayerStats = {
    */
   useRealDataInSimulation: boolean;
   /**
-   * Scope / turret realism: medium = classic HUD dials; high = tube-mounted
-   * realistic turrets (per-scope chrome via turretStyleForScope).
+   * Scope / turret realism: low = assisted; medium = classic HUD dials;
+   * high = tube-mounted realistic turrets (per-scope chrome via turretStyleForScope).
    */
   realism: GameRealism;
   /**

@@ -111,6 +111,8 @@ type ScopeTurretsProps = {
    * Tabs / Enviro / Kestrel still work.
    */
   hideShooterDials?: boolean;
+  /** Para + illum cell shown left of elevation in shooter tab (low/medium). */
+  shooterAuxTurrets?: ReactNode;
 };
 
 function angularLabel(mmAt100: number, unit: ScopeClickUnit): string {
@@ -766,6 +768,7 @@ export function ScopeTurrets({
   belowTabs,
   onHudTabChange,
   hideShooterDials = false,
+  shooterAuxTurrets,
 }: ScopeTurretsProps) {
   const hasEnviro = enviroPanel != null;
   const hasChrono = chronoPanel != null;
@@ -919,6 +922,7 @@ export function ScopeTurrets({
 
       {showTurrets ? (
         <>
+          {shooterAuxTurrets ?? null}
           <TurretDial
             title="Elevation"
             axisHint="Topptårn"

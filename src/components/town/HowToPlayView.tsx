@@ -13,10 +13,12 @@ type GuideSection = {
 
 const SECTIONS: GuideSection[] = [
   {
-    title: "Realism (Medium / High)",
+    title: "Realism (Low / Medium / High)",
     bullets: [
-      "Hunter Status → ☰ → Realism. Medium = klassiske HUD-tårn. High = tårn på kikkerttuben (elev/wind/parallax/illum).",
-      "High: parallax-DOF (uskarphet når trommelen ikke matcher avstand), retikkel-belysning, og cant hvis du har boblelevel i kit (Ulf m.fl.) — rett inn bobla før skudd.",
+      "Hunter Status → ☰ → Realism.",
+      "Low: halv MOA-spredning, tårn justeres automatisk etter LRF-avstand og vind, skuddpar lagres i Aware ved skudd uten Triggercam/camcorder, dobbelt så lett ettersøk, halv bird-nerve.",
+      "Medium = klassiske HUD-tårn. High = tårn på kikkerttuben (elev/wind/parallax/illum).",
+      "High: cant finnes alltid når funksjonen er på — boblelevel måler og viser vinkelen; uten boble må du rette på feeling (Q/E). Parallax-DOF og retikkel-belysning.",
       "F (fokus) og avtrekksbar (Space) finnes på begge nivåer når de er påslått — roligere sikte og «slipp på merket» for best pull.",
       "Noen premium-kikkerter har Focus zoom (hold F): glass + retikkel forstørrer sammen — mil/hash/drop forblir riktig.",
       "Music: Off i statuslinjen muter også SFX (skudd, hylse, turret-klikk). Volum for musikk/SFX justeres under ☰ → Avansert.",

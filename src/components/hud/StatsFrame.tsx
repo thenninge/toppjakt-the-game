@@ -37,6 +37,7 @@ const MENU_COPY: Record<
     music: string;
     sfx: string;
     realism: string;
+    realismLow: string;
     realismMedium: string;
     realismHigh: string;
     rename: string;
@@ -60,6 +61,7 @@ const MENU_COPY: Record<
     music: "Musikk",
     sfx: "Lydeffekter",
     realism: "Realism",
+    realismLow: "Low",
     realismMedium: "Medium",
     realismHigh: "High",
     rename: "Endre navn",
@@ -82,6 +84,7 @@ const MENU_COPY: Record<
     music: "Music",
     sfx: "Sound effects",
     realism: "Realism",
+    realismLow: "Low",
     realismMedium: "Medium",
     realismHigh: "High",
     rename: "Change name",
@@ -104,6 +107,7 @@ const MENU_COPY: Record<
     music: "音楽",
     sfx: "効果音",
     realism: "Realism",
+    realismLow: "Low",
     realismMedium: "Medium",
     realismHigh: "High",
     rename: "名前を変更",
@@ -369,9 +373,11 @@ export function StatsFrame({
                           aria-checked={(stats.realism ?? "medium") === level}
                           onClick={() => onRealismChange(level)}
                         >
-                          {level === "medium"
-                            ? copy.realismMedium
-                            : copy.realismHigh}
+                          {level === "low"
+                            ? copy.realismLow
+                            : level === "medium"
+                              ? copy.realismMedium
+                              : copy.realismHigh}
                         </button>
                       ))}
                     </div>

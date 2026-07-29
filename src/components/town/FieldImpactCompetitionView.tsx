@@ -32,6 +32,7 @@ import {
   focusPhase,
   focusRemainingMs,
   focusShouldAbort,
+  TRIGGER_PERFECT_BAND_MS,
   rollTriggerTargetMs,
   sampleShotFromPoa,
   triggerPullErrorFactor,
@@ -71,6 +72,10 @@ import {
   getRealismControls,
   subscribeRealismControls,
 } from "@/lib/range/realismControls";
+import {
+  realismDispersionMult,
+  realismLevelKey,
+} from "@/lib/range/realismGameplay";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   angularMmAtDistance,
@@ -137,6 +142,20 @@ import {
   type FieldImpactStageLayout,
 } from "@/lib/range/fieldImpactComp";
 import { HuntShotAarView } from "@/components/hunt/HuntShotAarView";
+import { ShooterAuxTurrets } from "@/components/range/ShooterAuxTurrets";
+import { ParallaxTurret } from "@/components/range/ParallaxTurret";
+import { IlluminationTurret } from "@/components/range/IlluminationTurret";
+import { BubbleLevel } from "@/components/range/BubbleLevel";
+import { resolveBubbleLevelFromKit } from "@/lib/range/bubbleLevel";
+import { focusBlurPx } from "@/lib/range/parallaxFocus";
+import {
+  CANT_KEY_DEG_PER_SEC,
+  composeCantedImpactMm,
+  initialCantDeg,
+  isCantGameplayActive,
+  nudgeCantDeg,
+  showBubbleLevelHud,
+} from "@/lib/range/cant";
 
 type FieldImpactCompetitionViewProps = {
   balance: number;
@@ -171,6 +190,8 @@ type Keys = {
   down: boolean;
   left: boolean;
   right: boolean;
+  ccw: boolean;
+  cw: boolean;
 };
 
 type Phase = "lobby" | "shooting" | "result" | "aar";
@@ -277,9 +298,33 @@ export function FieldImpactCompetitionView({
     getRealismControls,
     () => DEFAULT_REALISM_CONTROLS,
   );
-  const realismLevel = realism === "high" ? "high" : "medium";
+  const realismLevel = realismLevelKey(realism);
   const features = realismControls.features[realismLevel];
+  const isRealismLow = realismLevel === "low";
   const tubeMode = features.tubeTurrets;
+  const illumOn = features.illumination;
+  const params = realismControls.params;
+  const bubbleLevel = useMemo(
+    () => resolveBubbleLevelFromKit(kitItems),
+    [kitItems],
+  );
+  const cantActive = isCantGameplayActive(realism);
+  const cantActiveRef = useRef(cantActive);
+  cantActiveRef.current = cantActive;
+  const bubbleHud = showBubbleLevelHud(realism, !!bubbleLevel);
+  const [cantDeg, setCantDeg] = useState(() => initialCantDeg(realism));
+  const cantDegRef = useRef(cantDeg);
+  cantDegRef.current = cantDeg;
+  const liveCantDeg = () =>
+    cantActiveRef.current ? cantDegRef.current : 0;
+
+  useEffect(() => {
+    if (cantActive) return;
+    if (cantDegRef.current === 0) return;
+    cantDegRef.current = 0;
+    setCantDeg(0);
+  }, [cantActive]);
+
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
   const barrelWearScale = useMemo(
     () =>
@@ -326,6 +371,9 @@ export function FieldImpactCompetitionView({
     weather.live.windFromDeg,
     FIELD_IMPACT_SHOT_BEARING_DEG,
   );
+
+  const [parallaxFocusM, setParallaxFocusM] = useState(Infinity);
+  const [reticleIllum, setReticleIllum] = useState(0.45);
 
   const [phase, setPhase] = useState<Phase>("lobby");
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
@@ -376,6 +424,9 @@ export function FieldImpactCompetitionView({
     [stage],
   );
   const distanceM = stage?.distanceM ?? 100;
+  const blurPx = features.parallaxBlur
+    ? focusBlurPx(distanceM, parallaxFocusM) * params.parallaxBlurMult
+    : 0;
   const birdWidthPct = stage?.widthPct ?? 2;
   const landscapeFocusX = stage?.x ?? 50;
   const landscapeFocusY = stage?.y ?? 50;
@@ -526,6 +577,8 @@ export function FieldImpactCompetitionView({
     down: false,
     left: false,
     right: false,
+    ccw: false,
+    cw: false,
   });
   const aimRef = useRef(aimMm);
   const aimDragRef = useRef<{
@@ -599,7 +652,7 @@ export function FieldImpactCompetitionView({
   const roundLayoutRef = useRef(roundLayout);
   roundLayoutRef.current = roundLayout;
 
-  const { playShot } = useRangeAudio({ enabled: true });
+  const { playShot } = useRangeAudio({ enabled: true, ambient: false });
   const {
     fillRef: triggerFillRef,
     paintTriggerProgress,
@@ -759,6 +812,9 @@ export function FieldImpactCompetitionView({
     advancingRef.current = false;
     setSessionZeroXMm(0);
     setSessionZeroYMm(0);
+    const entryCant = initialCantDeg(realism);
+    cantDegRef.current = entryCant;
+    setCantDeg(entryCant);
     barrelHeatStateRef.current = createBarrelHeatState();
     miragePhaseRef.current = createMiragePhase();
     mirageStrengthRef.current = 0;
@@ -813,6 +869,7 @@ export function FieldImpactCompetitionView({
         rifle.id,
         customBarrels[rifle.id],
       ),
+      envelopeMult: realismDispersionMult(realism),
     };
     const envelopeMoa = combinedDispersionMoa(dispersionInput);
     const dist = distanceRef.current;
@@ -858,9 +915,23 @@ export function FieldImpactCompetitionView({
         dist,
       ),
     };
+    const windageMm = shot.spinDriftMm + windMm;
+    const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
+    const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
+    const canted = composeCantedImpactMm({
+      poaXMm: poa.xMm,
+      poaYMm: poa.yMm,
+      zeroXMm: realizedZero.xMm,
+      zeroYMm: realizedZero.yMm,
+      scatterXMm,
+      scatterYMm,
+      dropMm: shot.dropBelowLosMm,
+      windageMm,
+      cantDeg: liveCantDeg(),
+    });
     const impact = {
-      xMm: shot.xMm + realizedZero.xMm + windMm,
-      yMm: shot.yMm + realizedZero.yMm,
+      xMm: canted.xMm,
+      yMm: canted.yMm,
       diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
     };
 
@@ -1104,7 +1175,12 @@ export function FieldImpactCompetitionView({
       TRIGGER_BAR_MS,
       Math.max(0, nowMs - trig.startedAtMs),
     );
-    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs);
+    const perfectBandMs = isRealismLow
+      ? TRIGGER_PERFECT_BAND_MS * 2
+      : TRIGGER_PERFECT_BAND_MS;
+    triggerPullRef.current = triggerPullErrorFactor(elapsed, markMs, {
+      perfectBandMs,
+    });
     triggerRef.current = { held: false, startedAtMs: null };
     resetTriggerProgress();
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));
@@ -1156,6 +1232,14 @@ export function FieldImpactCompetitionView({
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         keysRef.current.right = true;
+      } else if (e.key === "q" || e.key === "Q") {
+        if (!cantActiveRef.current) return;
+        e.preventDefault();
+        keysRef.current.ccw = true;
+      } else if (e.key === "e" || e.key === "E") {
+        if (!cantActiveRef.current) return;
+        e.preventDefault();
+        keysRef.current.cw = true;
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         if (e.repeat) return;
@@ -1173,6 +1257,8 @@ export function FieldImpactCompetitionView({
       else if (e.key === "ArrowDown") keysRef.current.down = false;
       else if (e.key === "ArrowLeft") keysRef.current.left = false;
       else if (e.key === "ArrowRight") keysRef.current.right = false;
+      else if (e.key === "q" || e.key === "Q") keysRef.current.ccw = false;
+      else if (e.key === "e" || e.key === "E") keysRef.current.cw = false;
       else if (e.key === "f" || e.key === "F") {
         endFocus("Fokus sluppet — avtrekk avbrutt.");
       } else if (e.key === " " || e.code === "Space") {
@@ -1184,7 +1270,14 @@ export function FieldImpactCompetitionView({
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
-      keysRef.current = { up: false, down: false, left: false, right: false };
+      keysRef.current = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        ccw: false,
+        cw: false,
+      };
     };
   }, [phase, ready]);
 
@@ -1245,6 +1338,20 @@ export function FieldImpactCompetitionView({
       x = Math.max(-limitX, Math.min(limitX, x));
       y = Math.max(-limitY, Math.min(limitY, y));
       aimRef.current = { x, y };
+
+      if (cantActiveRef.current && (k.ccw || k.cw)) {
+        let next = cantDegRef.current;
+        if (k.ccw) {
+          next = nudgeCantDeg(next, -CANT_KEY_DEG_PER_SEC * dt);
+        }
+        if (k.cw) {
+          next = nudgeCantDeg(next, CANT_KEY_DEG_PER_SEC * dt);
+        }
+        if (next !== cantDegRef.current) {
+          cantDegRef.current = next;
+          setCantDeg(next);
+        }
+      }
 
       if (focusShouldAbort(focusRef.current, now)) {
         endFocus("Fokus brutt etter 7 s — slipp F og start på nytt.");
@@ -1696,7 +1803,20 @@ export function FieldImpactCompetitionView({
               clicksPerRev={scopeElevationClicksPerRev(scope!.scope)}
             />
           }
-          parallax={null}
+          parallax={
+            <div className="scope-tube-para-stack">
+              {illumOn ? (
+                <IlluminationTurret
+                  value={reticleIllum}
+                  onChange={setReticleIllum}
+                />
+              ) : null}
+              <ParallaxTurret
+                focusM={parallaxFocusM}
+                onChange={setParallaxFocusM}
+              />
+            </div>
+          }
           windage={
             <ScopeWindageDial
               sessionZeroMm={sessionZeroXMm}
@@ -1825,7 +1945,15 @@ export function FieldImpactCompetitionView({
               onLostPointerCapture={onAimPointerUp}
             >
               <ScopeFocusZoom scale={focusZoomBoost}>
-              <div ref={scopeWorldRef} className="scope-world">
+              <div
+                ref={scopeWorldRef}
+                className="scope-world"
+                style={
+                  blurPx > 0.05
+                    ? { filter: `blur(${blurPx.toFixed(2)}px)` }
+                    : undefined
+                }
+              >
                 <div ref={mirageSceneRef} className="scope-world-scene">
                   {shotGeom ? (
                     <div
@@ -1926,11 +2054,21 @@ export function FieldImpactCompetitionView({
                   </filter>
                 </defs>
               </svg>
-              <ScopeReticle
-                scope={scope!.scope}
-                zoom={zoom}
-                imgScale={reticleScale}
-              />
+              <div
+                className="scope-reticle-offset"
+                style={
+                  Math.abs(cantDeg) > 0.02
+                    ? { transform: `rotate(${cantDeg.toFixed(3)}deg)` }
+                    : undefined
+                }
+              >
+                <ScopeReticle
+                  scope={scope!.scope}
+                  zoom={zoom}
+                  imgScale={reticleScale}
+                  illumination={(tubeMode ? illumOn : true) ? reticleIllum : 0}
+                />
+              </div>
               </ScopeFocusZoom>
               {impactFlash ? (
                 <div className="field-impact-flash" aria-live="assertive">
@@ -1943,6 +2081,13 @@ export function FieldImpactCompetitionView({
               zoom={zoom}
               onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
             />
+            {bubbleHud ? (
+              <BubbleLevel
+                visualId={bubbleLevel!.visualId}
+                cantDeg={cantDeg}
+                onCantChange={setCantDeg}
+              />
+            ) : null}
           </div>
 
           {!tubeMode ? (
@@ -2017,6 +2162,16 @@ export function FieldImpactCompetitionView({
           elevationClicksPerRev={scopeElevationClicksPerRev(scope?.scope)}
           windageClicksPerRev={scopeWindageClicksPerRev(scope?.scope)}
           hideShooterDials={tubeMode}
+          shooterAuxTurrets={
+            !tubeMode ? (
+              <ShooterAuxTurrets
+                parallaxFocusM={parallaxFocusM}
+                onParallaxChange={setParallaxFocusM}
+                reticleIllum={reticleIllum}
+                onIllumChange={setReticleIllum}
+              />
+            ) : null
+          }
           onNudge={(axis, deltaMm) => {
             if (axis === "x") {
               return turretNudgeMoved(setSessionZeroXMm, (v) =>

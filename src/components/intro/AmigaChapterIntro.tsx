@@ -1,6 +1,7 @@
 "use client";
 
-export const CHAPTER_TITLE = "The Quest for Cold Bore's Treasure";
+export const CHAPTER_TITLE =
+  "The Quest for Cold Bore's Lost Tiur-Treasure";
 
 type AmigaChapterIntroProps = {
   onContinue: () => void;

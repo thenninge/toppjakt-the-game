@@ -174,7 +174,8 @@ function RealismLevelCard({
   level: GameRealism;
   features: Record<RealismFeatureKey, boolean>;
 }) {
-  const title = level === "high" ? "High" : "Medium";
+  const title =
+    level === "high" ? "High" : level === "low" ? "Low" : "Medium";
   return (
     <section className="admin-spot-controls" aria-label={`${title} features`}>
       <p className="intro-line intro-gift">{title}</p>

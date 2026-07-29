@@ -87,6 +87,11 @@ import {
   formatHuntClock,
   treeRecoveryMinutes,
 } from "@/lib/hunt/travel";
+import type { GameRealism } from "@/lib/optics/turretStyle";
+import {
+  realismEttersokFindMult,
+  realismNerveRateMult,
+} from "@/lib/range/realismGameplay";
 import {
   crosswindMs,
   formatWindCompass,
@@ -249,6 +254,8 @@ type AwareAppViewProps = {
   /** Rifle mounted back into the pack (parent bumps unspotted birds). */
   onMountGun?: () => void;
   clockMinutes: number;
+  /** Hunt realism — Low eases nerve + ettersøk find chance. */
+  realism?: GameRealism;
   shotPairs: ShotPair[];
   focusPairId?: string | null;
   onShotPairsChange: (pairs: ShotPair[]) => void;
@@ -494,6 +501,7 @@ export function AwareAppView({
   onGunDeployed,
   onMountGun,
   clockMinutes,
+  realism = "medium",
   shotPairs,
   focusPairId = null,
   onShotPairsChange,
@@ -880,6 +888,7 @@ export function AwareAppView({
             moveHoldSec: moveHoldRef.current,
             camoSneakPct: camoRef.current,
             coverFactor,
+            nerveRateMult: realismNerveRateMult(realism),
           });
           nerveRef.current = result.nerve;
           setNerve(result.nerve);
@@ -904,7 +913,7 @@ export function AwareAppView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode, gunPrepOnly]);
+  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode, gunPrepOnly, realism]);
 
   const activePair = shotPairs.find((p) => p.id === activePairId) ?? null;
 
@@ -1380,7 +1389,11 @@ export function AwareAppView({
       distanceM: ettersokSearchDistanceM(trackN, trackActivePair.distanceM),
     });
     const attemptNo = (trackActivePair.ettersokAttempts ?? 0) + 1;
-    const est = estimateEttersokFind(trackActivePair);
+    const est = estimateEttersokFind(
+      trackActivePair,
+      Math.random,
+      realismEttersokFindMult(realism),
+    );
     const sweep = {
       points: [...trackActivePair.trackPoints],
       atMs: Date.now(),
