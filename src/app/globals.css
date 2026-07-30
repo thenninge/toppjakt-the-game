@@ -10435,17 +10435,35 @@ body {
   white-space: nowrap;
 }
 
-/** Track ettersøk: 4 buttons on 2×2 so labels stay readable on phones. */
+/** Track ettersøk: stacked rows — primary search, tools, leave. */
 .aware-map-actions-row-track {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
+  width: 100%;
 }
 
 .aware-map-actions-row-track .intro-button {
   flex: none;
   width: 100%;
   white-space: normal;
+}
+
+.aware-map-actions-track-search {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.aware-map-actions-track-tools,
+.aware-map-actions-track-leave {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.aware-map-actions-track-abandon {
+  color: #c9a090;
+  border-color: #5a4038;
 }
 
 .aware-map-actions-shoot {

@@ -2375,15 +2375,86 @@ export function AwareAppView({
               </button>
             </div>
           ) : null}
-          <div
-            className={
-              mode === "track" &&
-              trackActivePair?.resultKind === "ettersok" &&
-              trackActivePair.found !== true
-                ? "aware-map-actions-row aware-map-actions-row-track"
-                : "aware-map-actions-row"
-            }
-          >
+          {mode === "track" &&
+          trackActivePair?.resultKind === "ettersok" &&
+          trackActivePair.found !== true ? (
+            <div className="aware-map-actions-row aware-map-actions-row-track">
+              <button
+                type="button"
+                className="intro-button aware-map-actions-track-search"
+                disabled={trackActivePair.trackPoints.length === 0}
+                onClick={runEttersokSearch}
+                title={`Utfør ettersøk (${ettersokMinutesForSearch(
+                  trackActivePair.trackPoints.length,
+                  trackActivePair.distanceM,
+                )} min)`}
+              >
+                {trackActivePair.trackPoints.length === 0
+                  ? "Søk — legg spor først"
+                  : `Utfør ettersøk · ${ettersokMinutesForSearch(
+                      trackActivePair.trackPoints.length,
+                      trackActivePair.distanceM,
+                    )} min`}
+              </button>
+              <div className="aware-map-actions-track-tools">
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  disabled={trackActivePair.trackPoints.length === 0}
+                  onClick={clearDraftTrack}
+                >
+                  Fjern spor
+                </button>
+                {!gunDeployed ? (
+                  <button
+                    type="button"
+                    className="intro-button sheriff-secondary"
+                    onClick={deployGun}
+                    title="Ta rifla frem for å se scope / skru tårn"
+                  >
+                    Deploy gun
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="intro-button sheriff-secondary"
+                    onClick={openGunScopeReview}
+                    title="Se scope — skuddavstand, tårn. Track beholdes."
+                  >
+                    Use gun scope
+                  </button>
+                )}
+              </div>
+              <div className="aware-map-actions-track-leave">
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary"
+                  onClick={() =>
+                    onAbort({
+                      hunter: { ...hunter },
+                      gunDeployed,
+                      rest,
+                      bagriderActive: bagriderOn,
+                      kestrelEnviroReady,
+                    })
+                  }
+                >
+                  {abortLabel}
+                </button>
+                {onAbandonSearch ? (
+                  <button
+                    type="button"
+                    className="intro-button sheriff-secondary aware-map-actions-track-abandon"
+                    onClick={() => onAbandonSearch(trackActivePair.id)}
+                    title="Gir opp søket etter denne fuglen — fuglen tapes (mentalt −30 %)"
+                  >
+                    Gi opp
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+          <div className="aware-map-actions-row">
           <button
             type="button"
             className="intro-button sheriff-secondary"
@@ -2399,66 +2470,7 @@ export function AwareAppView({
           >
             {abortLabel}
           </button>
-          {mode === "track" &&
-          trackActivePair?.resultKind === "ettersok" &&
-          trackActivePair.found !== true ? (
-            <>
-              <button
-                type="button"
-                className="intro-button sheriff-secondary"
-                disabled={trackActivePair.trackPoints.length === 0}
-                onClick={clearDraftTrack}
-              >
-                Fjern spor
-              </button>
-              <button
-                type="button"
-                className="intro-button"
-                disabled={trackActivePair.trackPoints.length === 0}
-                onClick={runEttersokSearch}
-                title={`Utfør ettersøk (${ettersokMinutesForSearch(
-                  trackActivePair.trackPoints.length,
-                  trackActivePair.distanceM,
-                )} min)`}
-              >
-                Søk ·{" "}
-                {ettersokMinutesForSearch(
-                  trackActivePair.trackPoints.length,
-                  trackActivePair.distanceM,
-                )}{" "}
-                min
-              </button>
-              {onAbandonSearch ? (
-                <button
-                  type="button"
-                  className="intro-button sheriff-secondary"
-                  onClick={() => onAbandonSearch(trackActivePair.id)}
-                  title="Gir opp søket etter denne fuglen — fuglen tapes (mentalt −30 %)"
-                >
-                  Gi opp søket
-                </button>
-              ) : null}
-              {!gunDeployed ? (
-                <button
-                  type="button"
-                  className="intro-button sheriff-secondary"
-                  onClick={deployGun}
-                  title="Ta rifla frem for å se scope / skru tårn"
-                >
-                  Deploy gun
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="intro-button"
-                  onClick={openGunScopeReview}
-                  title="Se scope — skuddavstand, tårn. Track beholdes."
-                >
-                  Use gun scope
-                </button>
-              )}
-            </>
-          ) : trackActivePair?.found === true ||
+          {trackActivePair?.found === true ||
             (focusPairId &&
               (trackActivePair ?? activePair)?.found === true) ? (
             <>
@@ -2546,6 +2558,7 @@ export function AwareAppView({
             </button>
           )}
           </div>
+          )}
             </>
           )}
         </div>

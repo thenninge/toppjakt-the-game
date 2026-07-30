@@ -2869,6 +2869,7 @@ export function HuntMapView({
     const pair = shotPairs.find((p) => p.id === session.ettersokPairId);
     if (pair?.found === true) {
       harvestFoundPair(pair);
+      mountFieldGun({ silent: true });
       setAwareSession(null);
       setPanel("arrived");
       setLog(
@@ -3174,6 +3175,7 @@ export function HuntMapView({
       }
       if (pair?.found === true) {
         harvestFoundPair(pair);
+        mountFieldGun({ silent: true });
         setLog(
           awareSession.recoveryOnly
             ? "Fugl hentet ved treet — i sekken."
@@ -5287,6 +5289,18 @@ export function HuntMapView({
           const pair = findReveal.pair;
           setFindReveal(null);
           harvestFoundPair(pair);
+          // Bagging ends the engagement — rifle stays in the pack.
+          mountFieldGun({ silent: true });
+          setAwareSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  returnGunDeployed: false,
+                  returnRest: "none",
+                  returnBagriderActive: false,
+                }
+              : prev,
+          );
           if (pair.hitFasit) setFindHitAar(pair);
         }}
         skipLabel="Fortsett"
@@ -5481,8 +5495,27 @@ export function HuntMapView({
         hasBagrider={!!customsMods.bagrider}
         bipodWeaponCalm={bipodWeaponCalm}
         gunDeployNerve={backpackRifleRaiseNerve(kitItems)}
-        onGunDeployed={() => setFieldGunDeployed(true)}
-        onMountGun={() => mountFieldGun()}
+        onGunDeployed={() => {
+          setFieldGunDeployed(true);
+          setAwareSession((prev) =>
+            prev ? { ...prev, returnGunDeployed: true } : prev,
+          );
+        }}
+        onMountGun={() => {
+          mountFieldGun();
+          // Keep session sticky in sync — otherwise find-reveal remount
+          // OR`s stale returnGunDeployed and resurrects «Use gun scope».
+          setAwareSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  returnGunDeployed: false,
+                  returnRest: "none",
+                  returnBagriderActive: false,
+                }
+              : prev,
+          );
+        }}
         clockMinutes={clockMinutes}
         realism={realism}
         shotPairs={shotPairs}
