@@ -252,12 +252,7 @@ export function IntroScreen() {
     savePlayerStats(next);
     setStats(next);
     setName(next.name);
-    if (!isJegerproveCleared(next.jegerprovePassed)) {
-      setLocation("jegerprove");
-      afterChapterRef.current = "location";
-    } else {
-      afterChapterRef.current = "town";
-    }
+    afterChapterRef.current = "town";
   }
 
   useEffect(() => {
@@ -582,18 +577,12 @@ export function IntroScreen() {
   }
 
   function enterLocation(id: TownLocationId) {
-    if (!isJegerproveCleared(stats.jegerprovePassed) && id !== "jegerprove") return;
     if (id === "admin-office" && !adminUnlocked) return;
     setLocation(id);
     setPhase("location");
   }
 
   function backToTown() {
-    if (!isJegerproveCleared(stats.jegerprovePassed)) {
-      setLocation("jegerprove");
-      setPhase("location");
-      return;
-    }
     setLocation(null);
     setPhase("town");
   }
@@ -1414,24 +1403,15 @@ export function IntroScreen() {
   }
 
   function headIntoTown() {
-    let needsExam = true;
     setStats((prev) => {
       const balance = startingBalanceForName(prev.name);
       const withBalance = { ...prev, balance };
-      const next =
-        isCheatPlayerName(prev.name) || isVipPlayerName(prev.name)
-          ? ensureNamedStarterGear(withBalance)
-          : grantUncleRifle(withBalance);
-      needsExam = !isJegerproveCleared(next.jegerprovePassed);
-      return next;
+      return isCheatPlayerName(prev.name) || isVipPlayerName(prev.name)
+        ? ensureNamedStarterGear(withBalance)
+        : grantUncleRifle(withBalance);
     });
-    if (needsExam) {
-      setLocation("jegerprove");
-      setPhase("location");
-    } else {
-      setLocation(null);
-      setPhase("town");
-    }
+    setLocation(null);
+    setPhase("town");
   }
 
   return (
@@ -1640,8 +1620,8 @@ export function IntroScreen() {
             </p>
             <p className="intro-line intro-gift">
               Here, take my CZ452 — and that Biltema 3-9× I stuck on it. Great
-              for squirrels in the back yard! But first — jegerprøven. No exam,
-              no town.
+              for squirrels in the back yard! Head into town — ammo, range, and
+              the rest is up to you.
             </p>
 
             <blockquote className="intro-thought">
@@ -1660,7 +1640,7 @@ export function IntroScreen() {
           </div>
         )}
 
-        {phase === "town" && isJegerproveCleared(stats.jegerprovePassed) && (
+        {phase === "town" && (
           <TownHub
             playerName={stats.name}
             nickname={stats.nickname}
@@ -1669,36 +1649,12 @@ export function IntroScreen() {
           />
         )}
 
-        {phase === "town" && !isJegerproveCleared(stats.jegerprovePassed) ? (
-          <JegerproveView
-            playerName={stats.name}
-            nickname={stats.nickname}
-            alreadyPassed={false}
-            locked
-            lang={stats.lang}
-            onLangChange={(lang) =>
-              setStats((prev) => (prev.lang === lang ? prev : { ...prev, lang }))
-            }
-            onPassed={() =>
-              setStats((prev) =>
-                prev.jegerprovePassed
-                  ? prev
-                  : { ...prev, jegerprovePassed: true },
-              )
-            }
-            onLeave={() => {
-              setLocation(null);
-              setPhase("town");
-            }}
-          />
-        ) : null}
-
         {phase === "location" && location === "jegerprove" && (
           <JegerproveView
             playerName={stats.name}
             nickname={stats.nickname}
             alreadyPassed={stats.jegerprovePassed}
-            locked={!isJegerproveCleared(stats.jegerprovePassed)}
+            locked={false}
             lang={stats.lang}
             onLangChange={(lang) =>
               setStats((prev) => (prev.lang === lang ? prev : { ...prev, lang }))
@@ -1710,10 +1666,7 @@ export function IntroScreen() {
                   : { ...prev, jegerprovePassed: true },
               )
             }
-            onLeave={() => {
-              setLocation(null);
-              setPhase("town");
-            }}
+            onLeave={backToTown}
           />
         )}
 

@@ -125,7 +125,7 @@ const SECTIONS: GuideSection[] = [
   {
     title: "Kit, by & progresjon",
     bullets: [
-      "Jegerprøven: nye jegere må bestå 18 av 20 før byen åpnes (fugl, patron, kamuflasje). Du får bevis med navn og nickname.",
+      "Jegerprøven: valgfri teori i byen (under How to play) — 18 av 20 for bevis med navn og nickname (fugl, patron, kamuflasje).",
       "Bygg kit hjemme: rifle, scope, ammo, optikk, camo, mat. Uten jaktkort (inatur.no) kommer du ikke ut.",
       "Camo/klær: sneak % reduserer bird nerve (summeres). Speed % endrer gangtid. Focus % øker caution-prespot og demper Mind-drain. Recovery % øker Body i rest/pause. Ghillie eksklusiv mot jakke+bukse. Arc'teryx LEAF = VIP. Snøkamo/M05 kommer i sesong.",
       "Gange på kartet: pace + celle-effort styrer minutter. Kit «top speed» (Home) påvirkes av ski vs støvler, ski-max/flyt/bredde, sekk-vekt og carry comfort — skistøvler kreves hvis du har ski i kit.",

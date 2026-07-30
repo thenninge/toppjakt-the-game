@@ -18,7 +18,7 @@ type TownLocation = {
   blurb: string;
 };
 
-/** Core town list (no Admin, no Jegerprøven — those live elsewhere). */
+/** Core town list (Admin is pinned separately when unlocked). */
 const LOCATIONS: TownLocation[] = [
   {
     id: "home",
@@ -60,6 +60,11 @@ const LOCATIONS: TownLocation[] = [
     name: "How to play",
     blurb:
       "Realism, BODY/MIND, Kestrel, Track/ettersøk, zero, DOPE — det som betyr noe.",
+  },
+  {
+    id: "jegerprove",
+    name: "Jegerprøven",
+    blurb: "Teori: fugl, patron, kamuflasje — 18 av 20 for bevis.",
   },
 ];
 

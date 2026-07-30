@@ -22,8 +22,8 @@ type JegerproveViewProps = {
   nickname: string;
   alreadyPassed: boolean;
   /**
-   * Forced gate — cannot leave for town until passed
-   * (new hunters / jegerprovePassed === false).
+   * Legacy forced-gate UI (cannot leave until passed). Intro no longer uses
+   * this — exam is optional from town. Kept for possible future re-enable.
    */
   locked?: boolean;
   /** Player preferred language (persisted). */

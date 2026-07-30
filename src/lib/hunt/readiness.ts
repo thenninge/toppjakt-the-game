@@ -113,7 +113,7 @@ export function huntReadyCheck(input: {
   selectedHuntingTerrainId: string | null;
   jaktkort: JaktkortBook;
   zeroingProfiles: Record<string, ZeroingProfile>;
-  /** Required for new hunters (Norwegian-style exam). */
+  /** Optional exam pass — only blocks hunt when {@link JEGERPROVE_REQUIRED}. */
   jegerprovePassed?: boolean;
 }): HuntReadyResult {
   const blockers: string[] = [];

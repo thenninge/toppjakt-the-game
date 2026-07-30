@@ -22,12 +22,13 @@ export {
 } from "@/lib/jegerprove/locales";
 
 /**
- * When false, the exam UI stays available but is not required to enter town
- * or start a hunt. Flip to true to restore the gate.
+ * When false, the exam is optional in town (not forced after intro) and does
+ * not block hunting. Flip to true to require a pass before hunt ready.
+ * Town access is never gated by the exam.
  */
 export const JEGERPROVE_REQUIRED = false;
 
-/** True when the player may proceed past the exam gate. */
+/** True when the player clears the optional hunt-ready exam gate. */
 export function isJegerproveCleared(passed: boolean): boolean {
   return !JEGERPROVE_REQUIRED || passed;
 }
