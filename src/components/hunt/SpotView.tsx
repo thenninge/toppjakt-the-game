@@ -25,10 +25,18 @@ import {
   type LrfSpec,
   type ScopeClickUnit,
 } from "@/lib/optics/spec";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import { mmAt100ToAngular } from "@/lib/optics/clicks";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
+import {
+  playSpotRuffle,
+  playSpotThermal,
+  playSpotThermalClick,
+  playSpotLrf,
+  type SpotAudioHandle,
+} from "@/lib/hunt/spotAudio";
 import {
   ThermalCanvas,
   type ThermalCanvasHandle,
@@ -139,6 +147,10 @@ type SpotViewProps = {
   thermalBatteryMaxGameSec?: number;
   /** Drain battery by thermal game-seconds; return remaining. */
   onThermalBatteryDrain?: (gameSeconds: number) => number;
+  /**
+   * Hunt realism (passed through for future spotting rules).
+   */
+  realism?: GameRealism;
   /** Called with game-seconds elapsed while looking. */
   onGameSeconds: (seconds: number) => void;
   /**
@@ -413,6 +425,7 @@ export function SpotView({
   thermalBatteryGameSec = 0,
   thermalBatteryMaxGameSec = 60 * 60,
   onThermalBatteryDrain,
+  realism = "medium",
   onGameSeconds,
   solveLrfHold,
   solveElevClicks,
@@ -458,6 +471,13 @@ export function SpotView({
   );
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
+  /**
+   * Solid black veil while optic raise SFX play; cleared when the new view opens.
+   */
+  const [opticRevealGen, setOpticRevealGen] = useState(0);
+  const [opticRevealing, setOpticRevealing] = useState(false);
+  const opticRaiseGenRef = useRef(0);
+  const opticAudioHandlesRef = useRef<SpotAudioHandle[]>([]);
   /** Photo aspect (w/h) so the frame does not squash landscapes into one box. */
   const [landAspect, setLandAspect] = useState(1.6);
   /**
@@ -945,7 +965,25 @@ export function SpotView({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  function enterOpticMode(targetMode: "binos" | "thermal") {
+  function stopOpticRaiseAudio() {
+    for (const h of opticAudioHandlesRef.current) h.stop();
+    opticAudioHandlesRef.current = [];
+  }
+
+  function abortOpticRaise() {
+    opticRaiseGenRef.current += 1;
+    stopOpticRaiseAudio();
+    setOpticRevealing(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      opticRaiseGenRef.current += 1;
+      stopOpticRaiseAudio();
+    };
+  }, []);
+
+  function applyOpticMode(targetMode: "binos" | "thermal") {
     const center = { x: 50, y: 50 };
     panRef.current = center;
     setPan(center);
@@ -955,7 +993,52 @@ export function SpotView({
     setRangedBird(null);
   }
 
+  /**
+   * Black → ruffle → open optic.
+   * Thermal: after ruffle, play thermal boot; open when thermal ends.
+   * Applies to first raise and every bino ↔ thermal swap.
+   */
+  function enterOpticMode(targetMode: "binos" | "thermal") {
+    const from = modeRef.current;
+    if (from === targetMode) {
+      applyOpticMode(targetMode);
+      return;
+    }
+
+    const gen = opticRaiseGenRef.current + 1;
+    opticRaiseGenRef.current = gen;
+    stopOpticRaiseAudio();
+
+    setOpticRevealing(true);
+    setOpticRevealGen((g) => g + 1);
+
+    const ruffle = playSpotRuffle();
+    if (ruffle) opticAudioHandlesRef.current.push(ruffle);
+
+    void (async () => {
+      try {
+        await ruffle?.ended;
+        if (gen !== opticRaiseGenRef.current) return;
+
+        if (targetMode === "thermal") {
+          const thermal = playSpotThermal();
+          if (thermal) opticAudioHandlesRef.current.push(thermal);
+          await thermal?.ended;
+          if (gen !== opticRaiseGenRef.current) return;
+        }
+
+        applyOpticMode(targetMode);
+        setOpticRevealing(false);
+      } catch {
+        if (gen !== opticRaiseGenRef.current) return;
+        applyOpticMode(targetMode);
+        setOpticRevealing(false);
+      }
+    })();
+  }
+
   function leaveToEyes() {
+    abortOpticRaise();
     modeRef.current = "eyes";
     setMode("eyes");
     resetLrfHud();
@@ -1033,6 +1116,7 @@ export function SpotView({
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (mode !== "binos" && mode !== "thermal") return;
+    if (opticRevealing) return;
     // Ignore non-primary mouse (right-click) and multi-touch extras.
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerType === "touch" && !e.isPrimary) return;
@@ -1092,6 +1176,7 @@ export function SpotView({
 
   function fireLrf(activeLrf: SpotLrfMeta | null) {
     if (!landscapeReady) return;
+    playSpotLrf();
     const zeiss = isZeissVictoryLrf(activeLrf);
     const kilo3000 = isSigKilo3000Lrf(activeLrf);
     const genericSig = usesGenericSigStyleLrfHud(activeLrf, {
@@ -1497,8 +1582,10 @@ export function SpotView({
                   }
                   onClick={() => {
                     if (mode === "thermal" && thermalPolarity === "wh") {
+                      playSpotThermalClick();
                       setThermalPolarity("bh");
                     } else if (mode === "thermal" && thermalPolarity === "bh") {
+                      playSpotThermalClick();
                       setThermalPolarity("wh");
                     } else {
                       setThermalPolarity("wh");
@@ -1522,6 +1609,15 @@ export function SpotView({
                         : "intro-button sheriff-secondary"
                     }
                     onClick={() => {
+                      if (mode === "thermal" && thermalPolarity === "outline") {
+                        playSpotThermalClick();
+                        return;
+                      }
+                      if (mode === "thermal") {
+                        playSpotThermalClick();
+                        setThermalPolarity("outline");
+                        return;
+                      }
                       setThermalPolarity("outline");
                       enterOpticMode("thermal");
                     }}
@@ -1538,6 +1634,15 @@ export function SpotView({
                         : "intro-button sheriff-secondary"
                     }
                     onClick={() => {
+                      if (mode === "thermal" && thermalPolarity === "fusion") {
+                        playSpotThermalClick();
+                        return;
+                      }
+                      if (mode === "thermal") {
+                        playSpotThermalClick();
+                        setThermalPolarity("fusion");
+                        return;
+                      }
                       setThermalPolarity("fusion");
                       enterOpticMode("thermal");
                     }}
@@ -1554,6 +1659,7 @@ export function SpotView({
                   }
                   title="Slå av termisk — sparer batteri (dagoptikk)"
                   onClick={() => {
+                    playSpotThermalClick();
                     if (isThermalBinocular) {
                       enterOpticMode("binos");
                     } else {
@@ -1591,6 +1697,35 @@ export function SpotView({
                 }
               >
                 Engage
+              </button>
+            ) : null}
+            {/* Separate bino + thermal spotter: switch optic without leaving to map. */}
+            {!isThermalBinocular && mode === "binos" && hasThermal ? (
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => {
+                  if (thermalBatteryGameSec <= 0) return;
+                  enterOpticMode("thermal");
+                }}
+                disabled={thermalBatteryGameSec <= 0}
+                title={
+                  thermalBatteryGameSec <= 0
+                    ? "Batteri tomt"
+                    : `Bytt til termisk (T) · batteri ${battMin} min`
+                }
+              >
+                Termisk
+              </button>
+            ) : null}
+            {!isThermalBinocular && mode === "thermal" && hasBinos ? (
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => enterOpticMode("binos")}
+                title="Bytt til kikkert (B)"
+              >
+                Bino
               </button>
             ) : null}
             {onOpenAware ? (
@@ -1664,6 +1799,13 @@ export function SpotView({
         onLostPointerCapture={onPointerUp}
         onClick={onFrameClick}
       >
+        {opticRevealing ? (
+          <div
+            key={opticRevealGen}
+            className="spot-optic-raise-veil"
+            aria-hidden
+          />
+        ) : null}
         <div
           className="spot-compass"
           role="img"

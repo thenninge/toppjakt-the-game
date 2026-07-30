@@ -16,6 +16,19 @@ import {
   type StarterKitSelection,
 } from "@/lib/reloading/starterKit";
 import { SCOPE_FOV_DIAMETER_PREMIUM } from "@/lib/optics/spec";
+import { getReticleDef } from "@/lib/range/reticles";
+
+/**
+ * Budget joke scopes stay for sale without a calibrated reticle asset.
+ * Everything else needs a {@link getReticleDef} entry to be buyable in XXL.
+ */
+const BUDGET_SCOPE_BRANDS = new Set(["Biltema", "Jula", "Clas Ohlson"]);
+
+function scopeMissingCalibratedReticle(item: CatalogDraft): boolean {
+  if (item.category !== "scope" || !item.scope) return false;
+  if (BUDGET_SCOPE_BRANDS.has(item.brand)) return false;
+  return getReticleDef(item.scope.reticleId) == null;
+}
 
 /**
  * XXL catalog.
@@ -4592,6 +4605,16 @@ function finalizeCatalog(draft: CatalogDraft[]): ShopItem[] {
       item.category,
       item.weightGrams,
     );
+    let soldOut = item.soldOut;
+
+    if (scopeMissingCalibratedReticle(item)) {
+      soldOut = true;
+      if (!note?.includes("utsolgt")) {
+        note = note
+          ? `${note} — For tiden utsolgt.`
+          : "For tiden utsolgt.";
+      }
+    }
 
     if (isReloadStarterKitId(item.id)) {
       const ids = starterKitContentIds(null);
@@ -4619,12 +4642,19 @@ function finalizeCatalog(draft: CatalogDraft[]): ShopItem[] {
         priceNok,
         note,
         weightGrams,
+        ...(soldOut ? { soldOut: true as const } : {}),
         rifle: {
           averageBestAccuracyMoa: rifleAverageBestMoa(item.id),
         },
       };
     }
-    return { ...item, priceNok, note, weightGrams };
+    return {
+      ...item,
+      priceNok,
+      note,
+      weightGrams,
+      ...(soldOut ? { soldOut: true as const } : {}),
+    };
   }) as ShopItem[];
 }
 

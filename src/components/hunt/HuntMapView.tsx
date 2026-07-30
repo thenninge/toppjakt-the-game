@@ -1366,9 +1366,19 @@ export function HuntMapView({
   }
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (
-        e.key === "Escape" &&
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        t.isContentEditable
+      );
+    }
+
+    function mapHudIdle(): boolean {
+      return (
         !spotSession &&
         !shootSession &&
         !awareSession &&
@@ -1381,16 +1391,53 @@ export function HuntMapView({
         !endexReveal &&
         !lostCatchReveal &&
         !prespotReveal
-      ) {
+      );
+    }
+
+    function onKey(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+
+      if (e.key === "Escape" && mapHudIdle()) {
         if (map && isAtParking(pos, map)) {
           leaveHunt();
         }
+        return;
+      }
+
+      /** Same actions as Spot for birds / Aware / Eat / Study map buttons. */
+      const hk = mapActionHotkeysRef.current;
+      if (!mapHudIdle() || hk.panel !== "arrived" || hk.pendingPostShot) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const k = e.key.length === 1 ? e.key.toLowerCase() : "";
+      if (k === "s") {
+        if (!canHuntAtTime(hk.clockMinutes)) return;
+        e.preventDefault();
+        hk.beginSpot();
+        return;
+      }
+      if (k === "a") {
+        e.preventDefault();
+        hk.openAwareOverview();
+        return;
+      }
+      if (k === "r") {
+        e.preventDefault();
+        setPanel("eat");
+        return;
+      }
+      if (k === "m") {
+        e.preventDefault();
+        setSelected(null);
+        setPanel("study");
+        setLog("Study map — klikk rundt på ruter. Go back avslutter.");
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
-    onLeave,
     map,
     pos,
     spotSession,
@@ -1406,6 +1453,22 @@ export function HuntMapView({
     lostCatchReveal,
     prespotReveal,
   ]);
+
+  const mapActionHotkeysRef = useRef({
+    panel: "arrived" as PanelMode,
+    pendingPostShot: null as typeof pendingPostShot,
+    clockMinutes,
+    beginSpot: (() => {}) as (opts?: {
+      reuseImageSrc?: string | null;
+      initialMode?: SpotMode;
+      focusBirdId?: string;
+      distanceByBirdId?: Record<
+        string,
+        { distanceM: number; fromDistanceM?: number }
+      >;
+    }) => void,
+    openAwareOverview: () => {},
+  });
 
   function triggerLostCatchOvernight() {
     if (lostCatchReveal || campOvernight) return;
@@ -4162,6 +4225,14 @@ export function HuntMapView({
     setPanel("arrived");
   }
 
+  mapActionHotkeysRef.current = {
+    panel,
+    pendingPostShot,
+    clockMinutes,
+    beginSpot,
+    openAwareOverview,
+  };
+
   function continueSpottingAfterShot() {
     if (!pendingPostShot) {
       beginSpot();
@@ -5506,6 +5577,7 @@ export function HuntMapView({
         thermalLabel={thermalLabel}
         thermalBatteryGameSec={thermalBatteryGameSec}
         thermalBatteryMaxGameSec={thermalBatteryMaxGameSec}
+        realism={realism}
         onThermalBatteryDrain={(wantGameSec) => {
           if (!Number.isFinite(wantGameSec) || wantGameSec <= 0) {
             return thermalBatteryGameSecRef.current;
@@ -5873,6 +5945,7 @@ export function HuntMapView({
                       className="intro-button"
                       onClick={() => beginSpot()}
                       disabled={!huntingAllowed}
+                      title="S"
                     >
                       Spot for birds
                     </button>
@@ -5880,6 +5953,7 @@ export function HuntMapView({
                       type="button"
                       className="intro-button"
                       onClick={() => openAwareOverview()}
+                      title="A"
                     >
                       Aware
                     </button>
@@ -5887,6 +5961,7 @@ export function HuntMapView({
                       type="button"
                       className="intro-button"
                       onClick={() => setPanel("eat")}
+                      title="R"
                     >
                       Eat/Rest
                     </button>
@@ -5900,6 +5975,7 @@ export function HuntMapView({
                           "Study map — klikk rundt på ruter. Go back avslutter.",
                         );
                       }}
+                      title="M"
                     >
                       Study map
                     </button>

@@ -1418,7 +1418,7 @@ export function AwareAppView({
       return;
     }
     // Leaving the shot stand to search → rifle back in the pack.
-    if (gunDeployed) mountGun();
+    mountGunForSearchOrRecover();
     const searchMin = ettersokMinutesForSearch(
       trackN,
       trackActivePair.distanceM,
@@ -1475,7 +1475,7 @@ export function AwareAppView({
       return;
     }
     // Leaving the shot stand to recover → rifle back in the pack.
-    if (gunDeployed) mountGun();
+    mountGunForSearchOrRecover();
     const tree = shotPairTrueBirdPoint(trackActivePair);
     const walkM = Math.round(distanceMBetween(hunter, tree, metersPerPct));
     const recoverMin = treeRecoveryMinutes(walkM);
@@ -1653,11 +1653,14 @@ export function AwareAppView({
   }
 
   function mountGun() {
-    if (!gunDeployed || flushedRef.current) return;
+    if (!gunDeployed) return;
     /**
      * Refund Deploy QR + anlegg. Leaving deploy on the bird meant Mount →
      * Deploy stacked the same backpack QR cost twice (deploy + deploy).
      * Til spotting with gun still out never hits this path.
+     *
+     * Always allow Mount even after flush — Søk / Hent / leave stand must
+     * put the rifle back in the pack regardless of flushedRef.
      */
     const trackReview = !!focusPairId;
     const restRefund = shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
@@ -1681,6 +1684,16 @@ export function AwareAppView({
         ? "Gun mounted — rifla i sekken."
         : "Gun mounted — rifla i sekken. Uspottede fugler i feltet blir mer nervøse.",
     );
+  }
+
+  /** Søk / Hent: rifle must go in the pack (sync local + sticky field state). */
+  function mountGunForSearchOrRecover() {
+    if (gunDeployed) {
+      mountGun();
+      return;
+    }
+    // Local UI thought gun was already mounted — still clear sticky Deploy.
+    onMountGun?.();
   }
 
   function applyRestChoice(next: HuntShootRest) {
