@@ -18,6 +18,14 @@ import {
   powderTempDvDtMpsPerC,
   POWDER_TEMP_REFERENCE_C,
 } from "@/lib/ballistics/powderTemp";
+import {
+  dropMmToDialYMmAt100,
+} from "@/lib/ballistics/holdHint";
+import {
+  interpolateRealDropCm,
+  type RealLoadProfile,
+} from "@/lib/ballistics/realLoad";
+import { ZERO_CLICK_MM } from "@/lib/player";
 import { crosswindMs, MAX_WIND_SPEED_MS } from "@/lib/weather/spec";
 import {
   clickUnitSuffix,
@@ -44,6 +52,11 @@ type LapuaBallisticsAppProps = {
   autoPrefill?: boolean;
   /** Equipped scope click unit — MOA scopes show ¼-MOA clicks. */
   clickUnit?: ScopeClickUnit;
+  /**
+   * CB Real drop table — when filled, elevation matches the same table
+   * that drives range impacts (physics windage still from dials).
+   */
+  realDropTable?: RealLoadProfile | null;
 };
 
 const RANGE_VALUES = Array.from({ length: 41 }, (_, i) => 50 + i * 10); // 50–450
@@ -220,6 +233,7 @@ export function LapuaBallisticsApp({
   shotBearingDeg,
   autoPrefill = false,
   clickUnit = "MRAD",
+  realDropTable = null,
 }: LapuaBallisticsAppProps) {
   const dialRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -252,11 +266,34 @@ export function LapuaBallisticsApp({
 
   const hold = useMemo(() => {
     const cw = crosswindMs(windSpeed, windFromDeg, shotBearingDeg);
-    return exactBallisticHold(ammo, Math.max(50, rangeM), cw, {
+    const physics = exactBallisticHold(ammo, Math.max(50, rangeM), cw, {
       densityRatio: densityRatioFromTempC(tempC),
       powderTempC: tempC,
     });
-  }, [ammo, rangeM, windSpeed, windFromDeg, shotBearingDeg, tempC]);
+    // CB Real table drives range paper — keep elev klikk on the same numbers.
+    if (realDropTable) {
+      const tableCm = interpolateRealDropCm(realDropTable, rangeM);
+      if (tableCm != null) {
+        const dropMm = tableCm * 10;
+        const dialYMmAt100 = dropMmToDialYMmAt100(dropMm, rangeM);
+        return {
+          ...physics,
+          dropMm,
+          dialYMmAt100,
+          elevationClicks: dialYMmAt100 / ZERO_CLICK_MM,
+        };
+      }
+    }
+    return physics;
+  }, [
+    ammo,
+    rangeM,
+    windSpeed,
+    windFromDeg,
+    shotBearingDeg,
+    tempC,
+    realDropTable,
+  ]);
 
   const v0AtTemp = muzzleVelocityAtPowderTempC(ammo.v0, tempC, ammo.caliber);
   const dvdt = powderTempDvDtMpsPerC(ammo.caliber);
@@ -464,7 +501,9 @@ export function LapuaBallisticsApp({
       <p className="lapua-app-hint">
         {autoPrefill
           ? `Kestrel-prefill · juster ved behov, dial tårnene etter ${unitSuffix}.`
-          : `Ingen auto-data — still Range + Wind + Temp selv, deretter dial tårnene (${unitSuffix}).`}
+          : realDropTable
+            ? `Ingen Kestrel-prefill — still Range/Wind/Temp. Elev følger CB Real drop-tabell (samme som treff); vind fra dialene.`
+            : `Ingen auto-data — still Range + Wind + Temp selv (kopier Enviro), deretter dial tårnene (${unitSuffix}).`}
       </p>
     </div>
   );

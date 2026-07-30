@@ -22,6 +22,7 @@ import {
   type SpotPerch,
 } from "@/lib/hunt/spotPerches";
 import { weightedSpawnCells } from "@/lib/hunt/mapPlacements";
+import { OWL_SPAWN_EVERY } from "@/lib/hunt/owlEasterEgg";
 import { suppressorShotStayChance } from "@/lib/suppressor/spec";
 import {
   HABROK_GREEN_MIN_ZOOM,
@@ -463,6 +464,8 @@ export function relocateBirdCell(
  * Spawn birds across the map (tiur / orrhane mix from terrain ratings).
  * Cells are weighted by hand-marked seats (green = tiur, red = orrhane).
  * Same-species companions: tiur +20 %, orrhane +80 %.
+ * Every {@link OWL_SPAWN_EVERY}th bird placed is an ugle (keeps seat of the
+ * rolled gamebird — no dedicated owl seats on maps).
  */
 export function spawnTiurOnMap(
   map: HuntMapAsset,
@@ -511,9 +514,12 @@ export function spawnTiurOnMap(
 
   let nextId = 1;
   const pushBird = (species: BirdSpecies, cell: HuntGridCell) => {
+    const placedIndex = birds.length + 1;
+    const finalSpecies: BirdSpecies =
+      placedIndex % OWL_SPAWN_EVERY === 0 ? "ugle" : species;
     birds.push({
-      id: `${species}-${nextId++}`,
-      species,
+      id: `${finalSpecies}-${nextId++}`,
+      species: finalSpecies,
       cell: { ...cell },
       distanceM: rollBirdDistance(random),
       spookCount: 0,
@@ -530,7 +536,13 @@ export function spawnTiurOnMap(
     }
     if (!cell) return;
     pushBird(species, cell);
-    if (random() < companionChanceForSpecies(species)) {
+    const last = birds[birds.length - 1];
+    // Companions only for the rolled gamebird — never pair an owl.
+    if (
+      last &&
+      last.species !== "ugle" &&
+      random() < companionChanceForSpecies(species)
+    ) {
       pushBird(species, cell);
     }
   };
@@ -733,11 +745,14 @@ export function bindBirdsToSpotImage(
       };
       next = [...next, bird];
     } else {
+      // Keep spawned owls — perch seats are only tiur/orrhane authored.
+      const keepSpecies: BirdSpecies =
+        bird.species === "ugle" ? "ugle" : perch.species;
       next = next.map((b) =>
         b.id === bird!.id
           ? {
               ...b,
-              species: perch.species,
+              species: keepSpecies,
               distanceM,
               cell: { ...cell },
             }
@@ -745,22 +760,43 @@ export function bindBirdsToSpotImage(
       );
       bird = {
         ...bird,
-        species: perch.species,
+        species: keepSpecies,
         distanceM,
         cell: { ...cell },
       };
     }
     assignedIds.add(bird.id);
-    placements.push(
-      placementFromPerch(
-        bird,
-        perch,
+    if (bird.species === "ugle") {
+      const sprite = getBirdSprite("ugle-1");
+      placements.push({
+        birdId: bird.id,
+        species: "ugle",
+        perchId: perch.id,
+        eyesVisible: perch.eyesVisible === true,
+        spriteId: "ugle-1",
+        imageSrc: sprite.toppSrc,
         distanceM,
-        random() < 0.5,
-        random,
-        imageSrc,
-      ),
-    );
+        x: perch.x,
+        y: perch.y,
+        widthPct: spriteWidthPctForDistance(
+          distanceM,
+          "ugle-1",
+          perch.scalePercent ?? 100,
+        ),
+        flip: random() < 0.5,
+      });
+    } else {
+      placements.push(
+        placementFromPerch(
+          bird,
+          perch,
+          distanceM,
+          random() < 0.5,
+          random,
+          imageSrc,
+        ),
+      );
+    }
   }
 
   // Leftover birds in cell (more birds than perches): random crown fallback.

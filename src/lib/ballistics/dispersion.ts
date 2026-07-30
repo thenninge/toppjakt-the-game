@@ -252,6 +252,8 @@ export type SampledShot = {
   dropBelowLosMm: number;
   /** Spin drift (mm, +right). */
   spinDriftMm: number;
+  /** Time of flight (s) — for wind-lag drift. */
+  timeOfFlightS: number;
 };
 
 /**
@@ -347,5 +349,6 @@ export function sampleShotFromPoa(
     deltaV0,
     dropBelowLosMm: traj.dropBelowLosMm,
     spinDriftMm: traj.spinDriftMm,
+    timeOfFlightS: traj.timeOfFlightS,
   };
 }

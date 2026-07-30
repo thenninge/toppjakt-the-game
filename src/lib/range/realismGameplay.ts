@@ -47,3 +47,10 @@ export function realismAutoSkuddpar(
 ): boolean {
   return realism === "low";
 }
+
+/** Visual scope recoil kick — High is 10× Medium/Low. */
+export function realismRecoilKickMult(
+  realism: GameRealism | null | undefined,
+): number {
+  return realismLevelKey(realism) === "high" ? 10 : 1;
+}

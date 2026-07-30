@@ -45,7 +45,7 @@ const SECTIONS: GuideSection[] = [
       "Habrok (termisk binokular med LRF) + Kestrel Elite → samme fasit; manuell dial.",
       "Budsjett-LRF uten ballistikk: sett hold selv (Enviro / DOPE / øyemål).",
       "Vind i spillet er 0–5 m/s. Retning: vind fra venstre blåser kula til høyre → hold LEFT.",
-      "CB Real / Real data: egne målte drop-tabeller per våpen — kan styre simulasjon når «bruk Real data» er på.",
+      "CB Real / Real data: egne målte drop-tabeller per våpen — kan styre simulasjon når «bruk Real data» er på. På banen uten Kestrel: hold-kort viser ca. mrad/klikk (±0.15 mrad); med Kestrel: eksakt. App (Lapua) uten Kestrel starter blank — kopier Enviro (vind/temp) for klikk som matcher papiret.",
     ],
   },
   {

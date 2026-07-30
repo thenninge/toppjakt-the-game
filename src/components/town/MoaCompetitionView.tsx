@@ -394,7 +394,7 @@ export function MoaCompetitionView({
         bipodGrams: bipod?.weightGrams,
       }),
     });
-    return recoilKickScale(felt);
+    return recoilKickScale(felt, realism);
   }, [
     rifle,
     scope,
@@ -404,6 +404,7 @@ export function MoaCompetitionView({
     selectedAmmo,
     calmFactor,
     customBarrels,
+    realism,
   ]);
 
   const hasChamberCooler = useMemo(
@@ -696,7 +697,7 @@ export function MoaCompetitionView({
       recoilClearRef.current = window.setTimeout(() => {
         setRecoilActive(false);
         recoilClearRef.current = null;
-      }, 320);
+      }, 400);
     });
 
     setShots((prev) => {

@@ -1,7 +1,12 @@
 /**
- * Owl easter egg — after 25 bagged gamebirds (tiur+orre), observation #26
- * is an ugle; if missed, again at #36, #46, …
+ * Owl easter egg —
+ * - Spawn: every {@link OWL_SPAWN_EVERY}th bird placed on the hunt map is an ugle.
+ * - Bag milestone: after 25 bagged gamebirds (tiur+orre), observation #26 is an
+ *   ugle; if missed, again at #36, #46, …
  */
+
+/** Every Nth bird pushed by {@link spawnTiurOnMap} becomes an ugle. */
+export const OWL_SPAWN_EVERY = 20;
 
 export const OWL_FIRST_MILESTONE = 26;
 export const OWL_MILESTONE_STEP = 10;

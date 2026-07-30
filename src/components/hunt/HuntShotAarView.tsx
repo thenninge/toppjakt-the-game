@@ -51,6 +51,26 @@ function fmtSigned(n: number, digits = 1, unit = ""): string {
 }
 
 /**
+ * Classic topp sprites are ~80–150 px; AAR used ×2.4 (~200–360 px on screen).
+ * Nerve-pair PNGs are 600–1000+ px — same ×2.4 fills the viewport. Cap the
+ * displayed box so every bird reads at a similar size; overlays share the scale.
+ */
+const AAR_SCALE_CLASSIC = 2.4;
+/** Keep high-res nerve-pair sprites near classic AAR on-screen size. */
+const AAR_MAX_DISPLAY_W = 360;
+const AAR_MAX_DISPLAY_H = 320;
+
+function aarDisplayScale(nativeW: number, nativeH: number): number {
+  const w = Math.max(1, nativeW);
+  const h = Math.max(1, nativeH);
+  return Math.min(
+    AAR_SCALE_CLASSIC,
+    AAR_MAX_DISPLAY_W / w,
+    AAR_MAX_DISPLAY_H / h,
+  );
+}
+
+/**
  * After-action / find fasit: topp sprite + CSS vital rings + impact hole.
  * Target PNGs are analysis-only (zone centres); never shown to the player.
  * With {@link adminDebug}, also marks aim/POA and lists shot effects.
@@ -67,7 +87,7 @@ export function HuntShotAarView({
   onContinue,
 }: HuntShotAarViewProps) {
   const geom = birdShotGeom(birdSpriteId);
-  const aarScale = 2.4;
+  const aarScale = aarDisplayScale(geom.nativeW, geom.nativeH);
   const mmToPx = (mm: number) => birdMmToNativePx(mm, geom);
   const vitalBase = birdVitalOffsetFromImageCenterPx(geom);
   const vitalOff = birdFlip

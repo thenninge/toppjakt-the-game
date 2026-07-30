@@ -12,6 +12,7 @@ import {
   type DopeCardEntry,
 } from "@/lib/player";
 import type { AmmoSpec } from "@/lib/ammo/spec";
+import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import { LapuaBallisticsApp } from "@/components/hunt/LapuaBallisticsApp";
 import {
   isSigKilo3000Bdx,
@@ -65,6 +66,10 @@ type HuntShotConditionsProps = {
    * Shooting range: always Lapua in App-tab (LRF device UIs stay for hunt).
    */
   forceLapuaApp?: boolean;
+  /**
+   * CB Real drop table — Lapua elev follows the same table as range impacts.
+   */
+  realDropTable?: RealLoadProfile | null;
 };
 
 /**
@@ -92,6 +97,7 @@ export function HuntShotConditions({
   lrfLabel = null,
   lrfElevClicks = null,
   forceLapuaApp = false,
+  realDropTable = null,
 }: HuntShotConditionsProps) {
   const tempC = Number.isFinite(temperatureC)
     ? temperatureC
@@ -317,6 +323,7 @@ export function HuntShotConditions({
             shotBearingDeg={shotBearingDeg}
             autoPrefill={hasKestrel}
             clickUnit={clickUnit}
+            realDropTable={realDropTable}
           />
         ) : (
           <p className="hunt-dope-empty">Velg ammo for å bruke appen.</p>

@@ -519,7 +519,7 @@ export function FieldImpactCompetitionView({
         bipodGrams: bipod?.weightGrams,
       }),
     });
-    return recoilKickScale(felt);
+    return recoilKickScale(felt, realism);
   }, [
     rifle,
     scope,
@@ -529,6 +529,7 @@ export function FieldImpactCompetitionView({
     selectedAmmo,
     calmFactor,
     customBarrels,
+    realism,
   ]);
 
   const hasChamberCooler = useMemo(
@@ -965,7 +966,7 @@ export function FieldImpactCompetitionView({
       recoilClearRef.current = window.setTimeout(() => {
         setRecoilActive(false);
         recoilClearRef.current = null;
-      }, 320);
+      }, 400);
     });
 
     const nextShots = shotsFiredRef.current + 1;

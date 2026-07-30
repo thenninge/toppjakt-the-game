@@ -20,10 +20,12 @@ import {
   customsRecoilDampingMultiplier,
   type CustomsMods,
 } from "@/lib/customs/spec";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   fatigueCalmFactor,
   type ShooterFatigueInput,
 } from "@/lib/range/precision";
+import { realismRecoilKickMult } from "@/lib/range/realismGameplay";
 import { suppressorRecoilDamping } from "@/lib/suppressor/spec";
 
 /** Felt recoil with calm=1, damping=1, reference impulse/mass. */
@@ -187,9 +189,18 @@ export function scopeLandDistanceErrorFrac(feltRecoil: number): number {
   return Math.min(0.35, Math.max(0.14, 0.12 + feltRecoil * 0.45));
 }
 
-/** CSS kick scale: 1 = hard kick, soft setups ~0.25–0.5. */
-export function recoilKickScale(feltRecoil: number): number {
-  return Math.min(1.6, Math.max(0.18, feltRecoil));
+/**
+ * CSS kick scale: soft kits stay visible; hard setups still hit harder.
+ * Realism High is 10× Medium/Low (felt recoil unchanged).
+ */
+export function recoilKickScale(
+  feltRecoil: number,
+  realism?: GameRealism | null,
+): number {
+  const f = Math.min(2.2, Math.max(0.08, feltRecoil));
+  // felt 0.08 → ~0.42, 1.0 → 1.0, 2.2 → 1.6 at Medium/Low
+  const base = Math.min(1.6, Math.max(0.4, 0.35 + f * 0.65));
+  return base * realismRecoilKickMult(realism);
 }
 
 export function formatFeltRecoil(feltRecoil: number): string {

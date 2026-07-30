@@ -992,7 +992,7 @@ export function HuntShootView({
     selectedAmmo,
     customBarrels,
   ]);
-  const recoilKick = recoilKickScale(feltRecoil);
+  const recoilKick = recoilKickScale(feltRecoil, realism);
   useEffect(() => {
     fatigueRef.current = { physicalFatigue, mentalFatigue };
   }, [physicalFatigue, mentalFatigue]);
@@ -1230,7 +1230,7 @@ export function HuntShootView({
       recoilClearRef.current = window.setTimeout(() => {
         setRecoilActive(false);
         recoilClearRef.current = null;
-      }, 320);
+      }, 400);
     });
 
     const { kind, zone } = classifyHuntShot(

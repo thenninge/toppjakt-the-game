@@ -8770,6 +8770,11 @@ body {
   transition: transform 0.22s ease-out;
 }
 
+/* Don't let focus transition fight recoil keyframes (was muting the kick). */
+.scope-optic .scope-viewport.is-recoiling {
+  transition: none;
+}
+
 .scope-optic.is-focus-immersive .scope-viewport {
   position: relative;
   z-index: 12;
@@ -9049,8 +9054,7 @@ body {
 }
 
 .scope-viewport.is-recoiling {
-  --recoil-kick: 1;
-  animation: scope-recoil 0.32s ease-out;
+  animation: scope-recoil 0.38s cubic-bezier(0.2, 0.7, 0.25, 1);
 }
 
 @keyframes scope-recoil {
@@ -9058,28 +9062,28 @@ body {
     transform: translate(0, 0) rotate(0deg)
       scale(var(--focus-viewport-scale, 1));
   }
-  12% {
+  10% {
     transform: translate(
-        calc(-5px * var(--recoil-kick, 1)),
-        calc(11px * var(--recoil-kick, 1))
+        calc(-10px * var(--recoil-kick, 1)),
+        calc(22px * var(--recoil-kick, 1))
       )
-      rotate(calc(-0.55deg * var(--recoil-kick, 1)))
+      rotate(calc(-1.1deg * var(--recoil-kick, 1)))
       scale(var(--focus-viewport-scale, 1));
   }
-  28% {
+  26% {
     transform: translate(
-        calc(4px * var(--recoil-kick, 1)),
-        calc(7px * var(--recoil-kick, 1))
+        calc(8px * var(--recoil-kick, 1)),
+        calc(14px * var(--recoil-kick, 1))
       )
-      rotate(calc(0.35deg * var(--recoil-kick, 1)))
+      rotate(calc(0.7deg * var(--recoil-kick, 1)))
       scale(var(--focus-viewport-scale, 1));
   }
-  55% {
+  52% {
     transform: translate(
-        calc(-2px * var(--recoil-kick, 1)),
-        calc(3px * var(--recoil-kick, 1))
+        calc(-4px * var(--recoil-kick, 1)),
+        calc(6px * var(--recoil-kick, 1))
       )
-      rotate(calc(-0.15deg * var(--recoil-kick, 1)))
+      rotate(calc(-0.3deg * var(--recoil-kick, 1)))
       scale(var(--focus-viewport-scale, 1));
   }
   100% {

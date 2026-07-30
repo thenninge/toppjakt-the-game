@@ -172,11 +172,12 @@ import {
 import {
   densityRatioFromTempC,
   exactBallisticHold,
+  windDriftMm,
 } from "@/lib/ballistics/solver";
 import {
   dropMmToMrad,
-  formatApproximateHoldMrad,
-  formatExactHoldMrad,
+  formatApproximateHoldLabel,
+  formatExactHoldLabel,
 } from "@/lib/ballistics/holdHint";
 import {
   chronographKindFromKitIds,
@@ -762,7 +763,7 @@ export function ShootingRange({
         bipodGrams: bipod?.weightGrams,
       }),
     });
-    return recoilKickScale(felt);
+    return recoilKickScale(felt, realism);
   }, [
     rifle,
     scope,
@@ -773,6 +774,7 @@ export function ShootingRange({
     calmFactor,
     recoilDamping,
     customBarrels,
+    realism,
   ]);
   useEffect(() => {
     weaponCalmRef.current = calmFactor;
@@ -957,6 +959,18 @@ export function ShootingRange({
           dropMm = tableCm * 10;
         }
       }
+      // Outdoor range: live wind drifts the bullet (same model as Lapua / Kestrel).
+      const cwMs = crosswindMs(
+        weather.live.windSpeedMs,
+        weather.live.windFromDeg,
+        rangeShotBearingDeg,
+      );
+      const wDrift = windDriftMm(
+        cwMs,
+        shot.timeOfFlightS,
+        distanceRef.current,
+        shot.v0,
+      );
       const clickErr = scope.scope.clickErrorPercent ?? 0;
       const realizedZero = zeroProfile
         ? effectiveZeroOffsetMm(
@@ -976,7 +990,7 @@ export function ShootingRange({
               distanceRef.current,
             ),
           };
-      const windageMm = shot.spinDriftMm;
+      const windageMm = shot.spinDriftMm + wDrift;
       const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
       const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
       const impactBase = composeCantedImpactMm({
@@ -1026,7 +1040,7 @@ export function ShootingRange({
         recoilClearRef.current = window.setTimeout(() => {
           setRecoilActive(false);
           recoilClearRef.current = null;
-        }, 320);
+        }, 400);
       });
       const nextShots = [...prev, impact];
       barrelHeatStateRef.current = bumpBarrelHeatTarget(
@@ -1677,12 +1691,13 @@ export function ShootingRange({
               densityRatio,
             });
             const mrad = dropMmToMrad(dropMm, distanceMRow);
+            const clickUnit = scope?.scope.clickUnit ?? "MRAD";
             const label =
               distanceMRow <= DEFAULT_ZERO_DISTANCE_M || mrad < 0.05
                 ? "0"
                 : hasKestrel
-                  ? formatExactHoldMrad(mrad)
-                  : formatApproximateHoldMrad(mrad);
+                  ? formatExactHoldLabel(mrad, clickUnit)
+                  : formatApproximateHoldLabel(mrad, clickUnit);
             return { distanceM: distanceMRow, label, dropMm };
           });
         })()
@@ -2716,6 +2731,9 @@ export function ShootingRange({
                   : null
               }
               forceLapuaApp
+              realDropTable={
+                usingCbRealLoads ? activeRealLoad : null
+              }
             />
           }
           chronoPanel={
@@ -2784,8 +2802,8 @@ export function ShootingRange({
                 <p className="range-setup-label">CB Real loads</p>
                 <p className="shop-row-note">
                   {hasKestrel
-                    ? "Hold (Kestrel) — nøyaktig dropp fra real load."
-                    : "Hold (ca.) — finn klikk og skriv DOPE selv."}
+                    ? "Hold (Kestrel) — nøyaktig dropp + klikk (samme modell som treff)."
+                    : "Hold (ca.) — omtrentlig dropp/klikk; finjuster på papiret og skriv DOPE."}
                 </p>
                 <div className="range-cb-real-drops-grid">
                   {holdHintRows.map((row) => (
