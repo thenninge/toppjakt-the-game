@@ -56,12 +56,12 @@ export const RIFLE_AVERAGE_BEST_MOA: Record<string, number> = {
   "rifle-browning-xbolt-pro": 0.45,
   "rifle-sako-85-finnlight": 0.5,
   "rifle-blaser-r8": 0.5,
+  "rifle-tikka-t3x-lite": 0.5,
 
   // Solid hunting / mid
   "rifle-rem-700-aac-sd": 0.55,
   "rifle-rem-700-sa-65cm": 0.55,
   "rifle-bergara-b14-ridge": 0.55,
-  "rifle-tikka-t3x-lite": 0.6,
   "rifle-howa-1500-hs": 0.65,
   "rifle-ruger-american-predator": 0.75,
   "rifle-ruger-american-ranch-300blk": 0.9,

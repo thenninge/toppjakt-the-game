@@ -332,6 +332,7 @@ export const VIP_NAME_TOKENS = [
   "ivar",
   "tomas",
   "einar",
+  "eirik",
   "konrad",
   "dyre",
   "hoftun",
@@ -339,7 +340,8 @@ export const VIP_NAME_TOKENS = [
 export const VIP_STARTING_BALANCE = 100_000;
 /**
  * Substrings in the chosen hunter name that grant elevated starting cash only
- * (no VIP kit). Case-insensitive — e.g. "Smarteclaus", "Eirik Hesla".
+ * (no VIP kit). Case-insensitive — e.g. "Smarteclaus".
+ * («Hesla» uten fornavnet Eirik; Eirik selv er VIP med full kit.)
  */
 export const BONUS_CASH_NAME_SUBSTRINGS = ["smart", "hesla"] as const;
 export const BONUS_CASH_STARTING_BALANCE = VIP_STARTING_BALANCE;
@@ -385,7 +387,13 @@ export const STARTER_HUNT_QTY: Partial<Record<string, number>> = {
   "food-dronning-kokesjokolade": 1,
 };
 
-export type KitProfileId = "tomas" | "ivar" | "jorn" | "einar" | "neppe";
+export type KitProfileId =
+  | "tomas"
+  | "ivar"
+  | "jorn"
+  | "einar"
+  | "dyre"
+  | "neppe";
 
 export type KitProfile = {
   id: KitProfileId;
@@ -448,12 +456,12 @@ export const KIT_PROFILE_TOMAS: KitProfile = {
   },
 };
 
-/** Ivar — CarbonWölf Berillium Level + Nightforce MIL + Hausken JD184 + softgun. */
+/** Ivar — CarbonWölf Berillium Level + Nightforce NX8 MOA + Hausken JD184 + softgun. */
 export const KIT_PROFILE_IVAR: KitProfile = {
   id: "ivar",
   weaponIds: [
     "rifle-carbonwolf-berillium",
-    "scope-nf-nx8-4-32-mrad",
+    "scope-nf-nx8-4-32-moa",
     "mount-spuhr-sp3001-30",
     "ammo-norma-65x55-black-diamond",
     "ammo-lapua-65x55-scenar",
@@ -473,18 +481,19 @@ export const KIT_PROFILE_IVAR: KitProfile = {
   },
 };
 
-/** Jørn — Rem700 SA Hansen Custom + MDT HNT26 + Kahles K525i + A-TEC + Caldwell XLA. */
+/** Jørn — Rem700 SA Hansen Custom + MDT HNT26 + Kahles K624i MSR + A-TEC + Caldwell XLA + bordvifte. */
 export const KIT_PROFILE_JORN: KitProfile = {
   id: "jorn",
   weaponIds: [
     "rifle-rem-700-sa-hansen-custom",
     "stock-mdt-hnt26-rem700",
-    "scope-kahles-k525i-5-25-mrad",
+    "scope-kahles-k624i-6-24-mrad",
     "mount-spuhr-sp4002-34",
     "ammo-norma-65cm-black-diamond",
     "ammo-lapua-65cm-scenar-l",
     "sup-atec-optima-50",
     "bipod-caldwell-xla",
+    "misc-bordvifte-batteri",
   ],
   lrfId: "lrf-leica-geovid-r-10x42",
   zeroAmmoIds: [
@@ -500,8 +509,9 @@ export const KIT_PROFILE_JORN: KitProfile = {
 };
 
 /**
- * Einar — Sauer 200 + ZCO 527 (ingen Triggercam-zoom-lås) + Recknagel 36 +
- * Svemko Hunter + Spartan Javelin + Lynx + Sig KILO3000 + support-kit.
+ * Einar / Eirik / Konrad / Hoftun — Sauer 200 STR + ZCO 527 (ingen
+ * Triggercam-zoom-lås) + Recknagel 36 + Svemko Hunter + Spartan Javelin +
+ * Lynx + Sig KILO3000 + support-kit. VIP-start: 100 000 kr.
  */
 export const KIT_PROFILE_EINAR: KitProfile = {
   id: "einar",
@@ -539,6 +549,46 @@ export const KIT_PROFILE_EINAR: KitProfile = {
   realism: "high",
 };
 
+/**
+ * Dyre — same support / optic stack as Einar, but Tikka T3x Lite instead of
+ * Sauer 200 STR.
+ */
+export const KIT_PROFILE_DYRE: KitProfile = {
+  id: "dyre",
+  weaponIds: [
+    "rifle-tikka-t3x-lite",
+    "scope-zco-527-mct",
+    "mount-recknagel-eratac-36",
+    "ammo-lapua-65x55-scenar",
+    "sup-svemko-hunter-1",
+    "bipod-spartan-javelin",
+    "misc-ulf-bubblelevel",
+    "thermal-hikmicro-lynx-le10",
+    "misc-garmin-xero-c1-pro",
+  ],
+  supportIds: [
+    "misc-kestrel-5700-elite",
+    "misc-vorn-deer-42",
+    "misc-triggercam",
+    "misc-thermos-jula",
+    "outdoors-opptenningsbrikker",
+    "food-boller-5pk",
+    "camo-boots-crispi-titan-evo",
+  ],
+  lrfId: "lrf-sig-kilo3000-bdx-10x42",
+  itemQty: {
+    "ammo-lapua-65x55-scenar": 100,
+  },
+  zeroAmmoIds: ["ammo-lapua-65x55-scenar"],
+  license: {
+    id: "license-vip-dyre-tikka-t3x-lite",
+    brand: "Tikka",
+    type: "T3x Lite",
+    caliber: "6,5×55",
+  },
+  realism: "high",
+};
+
 /** Neppe (cheat) — competition Sauer + NF + Genesis + ACC Elite. */
 export const KIT_PROFILE_NEPPE: KitProfile = {
   id: "neppe",
@@ -569,6 +619,7 @@ export const KIT_PROFILES: Record<KitProfileId, KitProfile> = {
   ivar: KIT_PROFILE_IVAR,
   jorn: KIT_PROFILE_JORN,
   einar: KIT_PROFILE_EINAR,
+  dyre: KIT_PROFILE_DYRE,
   neppe: KIT_PROFILE_NEPPE,
 };
 
@@ -630,7 +681,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Einar / Konrad / Dyre — e.g. "Jørn Nilsson"),
+ * (Jørn / Ivar / Tomas / Einar / Eirik / Konrad / Dyre — e.g. "Jørn Nilsson"),
  * or the name contains «Hoftun» (family VIP).
  */
 export function isVipPlayerName(name: string): boolean {
@@ -649,11 +700,13 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
   if (words.includes("tomas")) return "tomas";
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
-  // Konrad / Dyre / Hoftun share Einar’s Sauer + ZCO loadout + High realism.
+  // Konrad / Hoftun / Eirik share Einar’s Sauer 200 + ZCO 527 + High realism.
+  // Dyre gets the same stack with Tikka T3x Lite.
+  if (words.includes("dyre")) return "dyre";
   if (
     words.includes("einar") ||
+    words.includes("eirik") ||
     words.includes("konrad") ||
-    words.includes("dyre") ||
     normalized.includes("hoftun")
   ) {
     return "einar";
@@ -796,7 +849,7 @@ export function grantStarterGear(stats: PlayerStats): PlayerStats {
   return grantKitProfile(stats, KIT_PROFILE_NEPPE);
 }
 
-/** VIP first-name loadout (Tomas / Ivar / Jørn / Einar). */
+/** VIP first-name loadout (Tomas / Ivar / Jørn / Einar / Eirik / …). */
 export function grantVipStarterGear(
   stats: PlayerStats,
   name: string,

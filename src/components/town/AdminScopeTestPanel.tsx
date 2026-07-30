@@ -59,11 +59,13 @@ import {
   FOCUS_VIEWPORT_SCALE_MIN,
   FOCUS_ZOOM_MULTIPLIER_MAX,
   FOCUS_ZOOM_MULTIPLIER_MIN,
+  decodeReticleIllumination,
   scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
   scopeFovDiameterScale,
+  scopeIlluminationBipolar,
   scopeTriggercamMinZoomDefault,
   scopeWindageClicksPerRev,
   type ScopeClickUnit,
@@ -93,13 +95,22 @@ import {
 } from "@/lib/range/precision";
 import {
   getReticleDef,
+  normalizeReticleHiRes,
   normalizeReticleIllumination,
+  normalizeReticleImageCrop,
   reticleDisplaySizePx,
+  reticleHiResKey,
   reticleIlluminationKey,
+  reticleIlluminationRegions,
+  reticleImageCropKey,
   reticleOpticalCenter,
+  RETICLE_HIRES_FADE_FROM,
+  RETICLE_HIRES_FADE_TO,
   type ReticleDef,
+  type ReticleHiResLayer,
   type ReticleIllumination,
   type ReticleIlluminationRegion,
+  type ReticleImageCrop,
 } from "@/lib/range/reticles";
 import {
   downloadBlob,
@@ -175,6 +186,36 @@ function isTypingTarget(el: EventTarget | null): boolean {
   );
 }
 
+function draftIllumRegion(opts: {
+  shape: IllumShapeMode;
+  rMils: number;
+  rPx: number;
+  rectX: number;
+  rectY: number;
+  rectW: number;
+  rectH: number;
+}): ReticleIlluminationRegion | null {
+  if (opts.shape === "circleMils" && opts.rMils > 0) {
+    return {
+      shape: "circleMils",
+      rMils: Math.round(opts.rMils * 1000) / 1000,
+    };
+  }
+  if (opts.shape === "circle" && opts.rPx > 0) {
+    return { shape: "circle", r: Math.round(opts.rPx * 1000) / 1000 };
+  }
+  if (opts.shape === "rect" && opts.rectW > 0 && opts.rectH > 0) {
+    return {
+      shape: "rect",
+      x: Math.round(opts.rectX * 1000) / 1000,
+      y: Math.round(opts.rectY * 1000) / 1000,
+      w: Math.round(opts.rectW * 1000) / 1000,
+      h: Math.round(opts.rectH * 1000) / 1000,
+    };
+  }
+  return null;
+}
+
 function buildLiveIllumination(opts: {
   shape: IllumShapeMode;
   rMils: number;
@@ -184,34 +225,25 @@ function buildLiveIllumination(opts: {
   rectW: number;
   rectH: number;
   maskSrc: string;
+  /** Committed multi-field regions. Active draft shape is appended when non-whole. */
+  regions?: ReticleIlluminationRegion[];
 }): ReticleIllumination | null {
-  let region: ReticleIlluminationRegion | undefined;
-  if (opts.shape === "circleMils" && opts.rMils > 0) {
-    region = {
-      shape: "circleMils",
-      rMils: Math.round(opts.rMils * 1000) / 1000,
-    };
-  } else if (opts.shape === "circle" && opts.rPx > 0) {
-    region = { shape: "circle", r: Math.round(opts.rPx * 1000) / 1000 };
-  } else if (
-    opts.shape === "rect" &&
-    opts.rectW > 0 &&
-    opts.rectH > 0
-  ) {
-    region = {
-      shape: "rect",
-      x: Math.round(opts.rectX * 1000) / 1000,
-      y: Math.round(opts.rectY * 1000) / 1000,
-      w: Math.round(opts.rectW * 1000) / 1000,
-      h: Math.round(opts.rectH * 1000) / 1000,
-    };
-  }
+  const committed = opts.regions ?? [];
+  const draft =
+    opts.shape === "whole" ? null : draftIllumRegion(opts);
+  const regions = draft ? [...committed, draft] : committed;
   return (
     normalizeReticleIllumination({
       maskSrc: opts.maskSrc.trim() || undefined,
-      region,
+      regions: regions.length > 0 ? regions : undefined,
     }) ?? null
   );
+}
+
+function regionShortLabel(r: ReticleIlluminationRegion): string {
+  if (r.shape === "circleMils") return `Sirkel ${r.rMils} mil`;
+  if (r.shape === "circle") return `Sirkel r=${Math.round(r.r)}px`;
+  return `Rect ${Math.round(r.w)}×${Math.round(r.h)} @${Math.round(r.x)},${Math.round(r.y)}`;
 }
 
 function hydrateIllumStateFromCatalog(
@@ -225,11 +257,12 @@ function hydrateIllumStateFromCatalog(
   rectW: number;
   rectH: number;
   maskSrc: string;
+  regions: ReticleIlluminationRegion[];
 } {
   const n = normalizeReticleIllumination(illum ?? undefined);
   const maskSrc = n?.maskSrc ?? "";
-  const region = n?.region;
-  if (!region) {
+  const all = reticleIlluminationRegions(n);
+  if (all.length === 0) {
     return {
       shape: "whole",
       rMils: 1.5,
@@ -239,8 +272,24 @@ function hydrateIllumStateFromCatalog(
       rectW: 200,
       rectH: 200,
       maskSrc,
+      regions: [],
     };
   }
+  /** Multi: all fields in the list (shape = whole). Single: editable draft. */
+  if (all.length > 1) {
+    return {
+      shape: "whole",
+      rMils: 1.5,
+      rPx: 80,
+      rectX: 0,
+      rectY: 0,
+      rectW: 200,
+      rectH: 200,
+      maskSrc,
+      regions: all,
+    };
+  }
+  const region = all[0]!;
   if (region.shape === "circleMils") {
     return {
       shape: "circleMils",
@@ -251,6 +300,7 @@ function hydrateIllumStateFromCatalog(
       rectW: 200,
       rectH: 200,
       maskSrc,
+      regions: [],
     };
   }
   if (region.shape === "circle") {
@@ -263,6 +313,7 @@ function hydrateIllumStateFromCatalog(
       rectW: 200,
       rectH: 200,
       maskSrc,
+      regions: [],
     };
   }
   return {
@@ -274,6 +325,7 @@ function hydrateIllumStateFromCatalog(
     rectW: region.w,
     rectH: region.h,
     maskSrc,
+    regions: [],
   };
 }
 
@@ -362,6 +414,15 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   focusZoomEnabledRef.current = focusZoomEnabled;
   previewFocusStickyRef.current = previewFocusSticky;
   const [calHashmarks, setCalHashmarks] = useState(false);
+  /**
+   * Dual-layer preview / edit target.
+   * Composite = ring+disk as in game; base/hiRes = solo that asset.
+   */
+  const [reticleLayer, setReticleLayer] = useState<
+    "base" | "hiRes" | "composite"
+  >("composite");
+  /** Keep hole↔disk mils in sync when adjusting seam. */
+  const [seamLinked, setSeamLinked] = useState(true);
   const [calIllum, setCalIllum] = useState(false);
   const [illumShape, setIllumShape] = useState<IllumShapeMode>("whole");
   const [illumRMils, setIllumRMils] = useState(1.5);
@@ -371,6 +432,27 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const [illumRectW, setIllumRectW] = useState(200);
   const [illumRectH, setIllumRectH] = useState(200);
   const [illumMaskSrc, setIllumMaskSrc] = useState("");
+  /** Multi-field illumination (committed). Empty → use single shape draft. */
+  const [illumRegions, setIllumRegions] = useState<ReticleIlluminationRegion[]>(
+    [],
+  );
+  const [cropEnabled, setCropEnabled] = useState(false);
+  const [cropMode, setCropMode] = useState<"circleMils" | "circle">(
+    "circleMils",
+  );
+  const [cropRMils, setCropRMils] = useState(8);
+  const [cropRInnerMils, setCropRInnerMils] = useState(0);
+  const [cropRPx, setCropRPx] = useState(700);
+  const [cropRInnerPx, setCropRInnerPx] = useState(0);
+  const [hiResSrc, setHiResSrc] = useState("");
+  const [hiResW, setHiResW] = useState(0);
+  const [hiResH, setHiResH] = useState(0);
+  const [hiResHashPx, setHiResHashPx] = useState(55.5);
+  const [hiResOpticalX, setHiResOpticalX] = useState<number | null>(null);
+  const [hiResOpticalY, setHiResOpticalY] = useState<number | null>(null);
+  const [hiResCropRMils, setHiResCropRMils] = useState(0);
+  const [hiResFadeFrom, setHiResFadeFrom] = useState(RETICLE_HIRES_FADE_FROM);
+  const [hiResFadeTo, setHiResFadeTo] = useState(RETICLE_HIRES_FADE_TO);
   /** After «Lagre til repo», treat these as clean until scope change / HMR. */
   const [repoCalOverride, setRepoCalOverride] = useState<{
     rot: number;
@@ -378,6 +460,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     y: number;
     hashPx: number;
     illumination: ReticleIllumination | null;
+    imageCrop?: ReticleImageCrop | null;
+    hiRes?: ReticleHiResLayer | null;
   } | null>(null);
   const [repoFovOverride, setRepoFovOverride] = useState<{
     zoomMagCal: number;
@@ -625,6 +709,42 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       setIllumRectW(h.rectW);
       setIllumRectH(h.rectH);
       setIllumMaskSrc(h.maskSrc);
+      setIllumRegions(h.regions);
+      const crop = def.imageCrop;
+      if (crop?.shape === "circleMils") {
+        setCropEnabled(true);
+        setCropMode("circleMils");
+        setCropRMils(crop.rMils);
+        setCropRInnerMils(crop.rInnerMils ?? 0);
+      } else if (crop?.shape === "circle") {
+        setCropEnabled(true);
+        setCropMode("circle");
+        setCropRPx(crop.r);
+        setCropRInnerPx(crop.rInner ?? 0);
+      } else {
+        setCropEnabled(false);
+        setCropRInnerMils(0);
+        setCropRInnerPx(0);
+      }
+      const hi = def.hiRes;
+      if (hi) {
+        setHiResSrc(hi.src);
+        setHiResW(hi.nativeWidth);
+        setHiResH(hi.nativeHeight);
+        setHiResHashPx(hi.centerTo1MilPx);
+        setHiResOpticalX(hi.opticalCenterX ?? null);
+        setHiResOpticalY(hi.opticalCenterY ?? null);
+        setHiResCropRMils(hi.cropRMils ?? 0);
+        setHiResFadeFrom(hi.fadeFromZoomFrac ?? RETICLE_HIRES_FADE_FROM);
+        setHiResFadeTo(hi.fadeToZoomFrac ?? RETICLE_HIRES_FADE_TO);
+      } else {
+        setHiResSrc("");
+        setHiResW(0);
+        setHiResH(0);
+        setHiResOpticalX(null);
+        setHiResOpticalY(null);
+        setHiResCropRMils(0);
+      }
     } else {
       setOpticalCenterX(0);
       setOpticalCenterY(0);
@@ -637,38 +757,79 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       setIllumRectW(h.rectW);
       setIllumRectH(h.rectH);
       setIllumMaskSrc(h.maskSrc);
+      setIllumRegions([]);
+      setCropEnabled(false);
+      setCropRInnerMils(0);
+      setCropRInnerPx(0);
+      setHiResSrc("");
+      setHiResW(0);
+      setHiResH(0);
+      setHiResOpticalX(null);
+      setHiResOpticalY(null);
+      setHiResCropRMils(0);
     }
     setRepoCalOverride(null);
     setRepoFovOverride(null);
     setRepoFocusZoomOverride(null);
     setRepoTriggercamZoomOverride(null);
+    setReticleLayer("composite");
+    setSeamLinked(true);
   }, [scopeId]);
 
   function applyIlluminationToState(
     illum: ReticleIllumination | null | undefined,
   ) {
-    const n = normalizeReticleIllumination(illum ?? undefined);
-    setIllumMaskSrc(n?.maskSrc ?? "");
-    const region = n?.region;
-    if (!region) {
-      setIllumShape("whole");
+    const h = hydrateIllumStateFromCatalog(illum);
+    setIllumShape(h.shape);
+    setIllumRMils(h.rMils);
+    setIllumRPx(h.rPx);
+    setIllumRectX(h.rectX);
+    setIllumRectY(h.rectY);
+    setIllumRectW(h.rectW);
+    setIllumRectH(h.rectH);
+    setIllumMaskSrc(h.maskSrc);
+    setIllumRegions(h.regions);
+  }
+
+  function applyCropToState(crop: ReticleImageCrop | null | undefined) {
+    if (crop?.shape === "circleMils") {
+      setCropEnabled(true);
+      setCropMode("circleMils");
+      setCropRMils(crop.rMils);
+      setCropRInnerMils(crop.rInnerMils ?? 0);
       return;
     }
-    if (region.shape === "circleMils") {
-      setIllumShape("circleMils");
-      setIllumRMils(region.rMils);
+    if (crop?.shape === "circle") {
+      setCropEnabled(true);
+      setCropMode("circle");
+      setCropRPx(crop.r);
+      setCropRInnerPx(crop.rInner ?? 0);
       return;
     }
-    if (region.shape === "circle") {
-      setIllumShape("circle");
-      setIllumRPx(region.r);
+    setCropEnabled(false);
+    setCropRInnerMils(0);
+    setCropRInnerPx(0);
+  }
+
+  function applyHiResToState(hi: ReticleHiResLayer | null | undefined) {
+    if (hi) {
+      setHiResSrc(hi.src);
+      setHiResW(hi.nativeWidth);
+      setHiResH(hi.nativeHeight);
+      setHiResHashPx(hi.centerTo1MilPx);
+      setHiResOpticalX(hi.opticalCenterX ?? null);
+      setHiResOpticalY(hi.opticalCenterY ?? null);
+      setHiResCropRMils(hi.cropRMils ?? 0);
+      setHiResFadeFrom(hi.fadeFromZoomFrac ?? RETICLE_HIRES_FADE_FROM);
+      setHiResFadeTo(hi.fadeToZoomFrac ?? RETICLE_HIRES_FADE_TO);
       return;
     }
-    setIllumShape("rect");
-    setIllumRectX(region.x);
-    setIllumRectY(region.y);
-    setIllumRectW(region.w);
-    setIllumRectH(region.h);
+    setHiResSrc("");
+    setHiResW(0);
+    setHiResH(0);
+    setHiResOpticalX(null);
+    setHiResOpticalY(null);
+    setHiResCropRMils(0);
   }
 
   useEffect(() => {
@@ -838,6 +999,12 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       }
     : null;
 
+  const illumDecoded = decodeReticleIllumination(
+    reticleIllum,
+    liveScope ?? scope,
+  );
+  const illumBipolar = scopeIlluminationBipolar(liveScope ?? scope);
+
   const zoomRange = useMemo(
     () =>
       scopeEffectiveZoomRange(
@@ -976,6 +1143,14 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     repoCalOverride != null
       ? repoCalOverride.illumination
       : (reticleDef?.illumination ?? null);
+  const catalogCrop =
+    repoCalOverride?.imageCrop !== undefined
+      ? repoCalOverride.imageCrop
+      : (reticleDef?.imageCrop ?? null);
+  const catalogHiRes =
+    repoCalOverride?.hiRes !== undefined
+      ? repoCalOverride.hiRes
+      : (reticleDef?.hiRes ?? null);
   const catalogZoomMag =
     repoFovOverride?.zoomMagCal ??
     (scope?.zoomMagCal != null && scope.zoomMagCal > 0
@@ -992,23 +1167,35 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
   const catalogClickUnit =
     repoScopeOverride?.clickUnit ??
     (scope?.clickUnit === "MOA" ? "MOA" : "MRAD");
-  /** Native px per turret click (0.1 mil / 0.25 MOA). */
+  /** Edit target: composite falls through to base for centre/hash nudges. */
+  const editLayer = reticleLayer === "hiRes" ? "hiRes" : "base";
+  /** Native px per turret click (0.1 mil / 0.25 MOA) — active layer. */
+  const activeHashPx =
+    editLayer === "hiRes" && hiResHashPx > 0 ? hiResHashPx : centerTo1MilPx;
   const pxPerClick =
-    clickUnit === "MOA" ? centerTo1MilPx * 0.25 : centerTo1MilPx * 0.1;
+    clickUnit === "MOA" ? activeHashPx * 0.25 : activeHashPx * 0.1;
   const nativeW =
-    reticleNativeOverride?.width ?? reticleDef?.nativeWidth ?? 0;
+    editLayer === "hiRes" && hiResW > 0
+      ? hiResW
+      : (reticleNativeOverride?.width ?? reticleDef?.nativeWidth ?? 0);
   const nativeH =
-    reticleNativeOverride?.height ?? reticleDef?.nativeHeight ?? 0;
+    editLayer === "hiRes" && hiResH > 0
+      ? hiResH
+      : (reticleNativeOverride?.height ?? reticleDef?.nativeHeight ?? 0);
   const midX = nativeW / 2;
   const midY = nativeH / 2;
+  const activeOpticalX =
+    editLayer === "hiRes" ? (hiResOpticalX ?? midX) : opticalCenterX;
+  const activeOpticalY =
+    editLayer === "hiRes" ? (hiResOpticalY ?? midY) : opticalCenterY;
   /** Positive = reticle shifted right / up on glass vs image midpoint. */
   const shiftRightClicks =
     reticleDef && pxPerClick > 0
-      ? (midX - opticalCenterX) / pxPerClick
+      ? (midX - activeOpticalX) / pxPerClick
       : 0;
   const shiftUpClicks =
     reticleDef && pxPerClick > 0
-      ? (opticalCenterY - midY) / pxPerClick
+      ? (activeOpticalY - midY) / pxPerClick
       : 0;
 
   const liveIllumination = buildLiveIllumination({
@@ -1020,7 +1207,43 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     rectW: illumRectW,
     rectH: illumRectH,
     maskSrc: illumMaskSrc,
+    regions: illumRegions,
   });
+  const liveImageCrop = normalizeReticleImageCrop(
+    cropEnabled
+      ? cropMode === "circleMils"
+        ? {
+            shape: "circleMils",
+            rMils: cropRMils,
+            ...(cropRInnerMils > 0 ? { rInnerMils: cropRInnerMils } : null),
+          }
+        : {
+            shape: "circle",
+            r: cropRPx,
+            ...(cropRInnerPx > 0 ? { rInner: cropRInnerPx } : null),
+          }
+      : null,
+  ) ?? null;
+  const liveHiRes =
+    normalizeReticleHiRes(
+      hiResSrc.trim() && hiResW > 0 && hiResH > 0 && hiResHashPx > 0
+        ? {
+            src: hiResSrc.trim(),
+            nativeWidth: hiResW,
+            nativeHeight: hiResH,
+            centerTo1MilPx: hiResHashPx,
+            ...(hiResOpticalX != null
+              ? { opticalCenterX: hiResOpticalX }
+              : null),
+            ...(hiResOpticalY != null
+              ? { opticalCenterY: hiResOpticalY }
+              : null),
+            ...(hiResCropRMils > 0 ? { cropRMils: hiResCropRMils } : null),
+            fadeFromZoomFrac: hiResFadeFrom,
+            fadeToZoomFrac: hiResFadeTo,
+          }
+        : null,
+    ) ?? null;
 
   const calDirty =
     !!(reticleDef || reticleSrcOverride) &&
@@ -1029,7 +1252,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
       Math.abs(opticalCenterY - catalogCenter.y) > 1e-6 ||
       Math.abs(centerTo1MilPx - catalogHashPx) > 1e-6 ||
       reticleIlluminationKey(liveIllumination) !==
-        reticleIlluminationKey(catalogIllum));
+        reticleIlluminationKey(catalogIllum) ||
+      reticleImageCropKey(liveImageCrop) !==
+        reticleImageCropKey(catalogCrop) ||
+      reticleHiResKey(liveHiRes) !== reticleHiResKey(catalogHiRes));
   const fovDirty =
     Math.abs(zoomMagCal - catalogZoomMag) > 1e-6 ||
     Math.abs(minZoomMagCal - catalogMinZoomMag) > 1e-6 ||
@@ -1095,32 +1321,46 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     Math.abs(liveMaxZoom - catalogMaxZoom) > 1e-6 ||
     liveClickUnit !== catalogClickUnit;
 
+  const hashCalOnHiRes =
+    calHashmarks && editLayer === "hiRes" && !!liveHiRes;
   const hashRingPxPerUnit =
-    liveScope && (reticleDef || reticleNativeOverride) && reticleImgScale > 0
-      ? reticleDisplaySizePx(
-          liveScope,
-          zoom,
-          reticleImgScale,
-          reticleDef
-            ? {
-                ...reticleDef,
-                centerTo1MilPx,
-                ...(reticleNativeOverride
-                  ? {
-                      nativeWidth: reticleNativeOverride.width,
-                      nativeHeight: reticleNativeOverride.height,
-                    }
-                  : null),
-              }
-            : {
-                id: "upload",
-                label: "Upload",
-                src: reticleSrcOverride ?? "",
-                nativeWidth: reticleNativeOverride!.width,
-                nativeHeight: reticleNativeOverride!.height,
-                centerTo1MilPx,
-              },
-        ).scale * centerTo1MilPx
+    liveScope &&
+    (hashCalOnHiRes
+      ? liveHiRes != null && reticleImgScale > 0
+      : (reticleDef || reticleNativeOverride) && reticleImgScale > 0)
+      ? hashCalOnHiRes && liveHiRes
+        ? reticleDisplaySizePx(liveScope, zoom, reticleImgScale, {
+            id: "hires-cal",
+            label: "hiRes",
+            src: liveHiRes.src,
+            nativeWidth: liveHiRes.nativeWidth,
+            nativeHeight: liveHiRes.nativeHeight,
+            centerTo1MilPx: liveHiRes.centerTo1MilPx,
+          }).scale * liveHiRes.centerTo1MilPx
+        : reticleDisplaySizePx(
+            liveScope,
+            zoom,
+            reticleImgScale,
+            reticleDef
+              ? {
+                  ...reticleDef,
+                  centerTo1MilPx,
+                  ...(reticleNativeOverride
+                    ? {
+                        nativeWidth: reticleNativeOverride.width,
+                        nativeHeight: reticleNativeOverride.height,
+                      }
+                    : null),
+                }
+              : {
+                  id: "upload",
+                  label: "Upload",
+                  src: reticleSrcOverride ?? "",
+                  nativeWidth: reticleNativeOverride!.width,
+                  nativeHeight: reticleNativeOverride!.height,
+                  centerTo1MilPx,
+                },
+          ).scale * centerTo1MilPx
       : 0;
   /** Alias — illumination / legacy call sites. */
   const hashRingPxPerMil = hashRingPxPerUnit;
@@ -1157,15 +1397,9 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     setOpticalCenterX(catalogCenter.x);
     setOpticalCenterY(catalogCenter.y);
     setCenterTo1MilPx(catalogHashPx);
-    const h = hydrateIllumStateFromCatalog(catalogIllum);
-    setIllumShape(h.shape);
-    setIllumRMils(h.rMils);
-    setIllumRPx(h.rPx);
-    setIllumRectX(h.rectX);
-    setIllumRectY(h.rectY);
-    setIllumRectW(h.rectW);
-    setIllumRectH(h.rectH);
-    setIllumMaskSrc(h.maskSrc);
+    applyIlluminationToState(catalogIllum);
+    applyCropToState(catalogCrop);
+    applyHiResToState(catalogHiRes);
   }
 
   async function bakeReticleCalToRepo() {
@@ -1184,6 +1418,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
           opticalCenterY,
           centerTo1MilPx,
           illumination: liveIllumination,
+          imageCrop: liveImageCrop,
+          hiRes: liveHiRes,
         }),
       });
       const data = (await res.json()) as {
@@ -1195,6 +1431,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         opticalCenterY?: number;
         centerTo1MilPx?: number;
         illumination?: ReticleIllumination | null;
+        imageCrop?: ReticleImageCrop | null;
+        hiRes?: ReticleHiResLayer | null;
       };
       if (!res.ok || !data.ok) {
         setBakeStatus(data.error ?? `Feil ${res.status}`);
@@ -1216,21 +1454,21 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         data.illumination !== undefined
           ? (data.illumination ?? null)
           : liveIllumination;
-      const h = hydrateIllumStateFromCatalog(savedIllum);
-      setIllumShape(h.shape);
-      setIllumRMils(h.rMils);
-      setIllumRPx(h.rPx);
-      setIllumRectX(h.rectX);
-      setIllumRectY(h.rectY);
-      setIllumRectW(h.rectW);
-      setIllumRectH(h.rectH);
-      setIllumMaskSrc(h.maskSrc);
+      applyIlluminationToState(savedIllum);
+      const savedCrop =
+        data.imageCrop !== undefined ? (data.imageCrop ?? null) : liveImageCrop;
+      applyCropToState(savedCrop);
+      const savedHiRes =
+        data.hiRes !== undefined ? (data.hiRes ?? null) : liveHiRes;
+      applyHiResToState(savedHiRes);
       setRepoCalOverride({
         rot: data.imageRotationDeg ?? reticleRotDeg,
         x: data.opticalCenterX ?? opticalCenterX,
         y: data.opticalCenterY ?? opticalCenterY,
         hashPx: data.centerTo1MilPx ?? centerTo1MilPx,
         illumination: savedIllum,
+        imageCrop: savedCrop,
+        hiRes: savedHiRes,
       });
       setBakeStatus(
         `OK → ${data.path ?? "reticles.ts"} (${reticleId}). Commit + push.`,
@@ -1528,10 +1766,17 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     }
   }
 
-  async function uploadReticleImage(file: File) {
+  async function uploadReticleImage(
+    file: File,
+    layer: "base" | "hiRes" = "base",
+  ) {
     if (!scopeId) return;
     setUploadingReticle(true);
-    setBakeStatus("Laster opp retikkelbilde…");
+    setBakeStatus(
+      layer === "hiRes"
+        ? "Laster opp indre retikkelbilde…"
+        : "Laster opp retikkelbilde…",
+    );
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -1560,6 +1805,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
           nativeWidth: dims.w,
           nativeHeight: dims.h,
           fileName: file.name,
+          layer,
         }),
       });
       const data = (await res.json()) as {
@@ -1570,27 +1816,39 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         nativeHeight?: number;
         reticleId?: string;
         path?: string;
+        layer?: string;
       };
       if (!res.ok || !data.ok || !data.src) {
         setBakeStatus(data.error ?? `Feil ${res.status}`);
         return;
       }
       const bust = `${data.src}?t=${Date.now()}`;
+      const w = data.nativeWidth ?? dims.w;
+      const h = data.nativeHeight ?? dims.h;
+      if (layer === "hiRes") {
+        setHiResSrc(bust.split("?")[0] ?? data.src);
+        setHiResW(w);
+        setHiResH(h);
+        setHiResOpticalX(w / 2);
+        setHiResOpticalY(h / 2);
+        setHiResHashPx(
+          Math.round((Math.min(w, h) / 20) * 10) / 10,
+        );
+        setReticleLayer("hiRes");
+        setBakeStatus(
+          `OK indre → ${data.src}. Calibrate hash/centre, lagre til repo.`,
+        );
+        return;
+      }
       setReticleSrcOverride(bust);
-      setReticleNativeOverride({
-        width: data.nativeWidth ?? dims.w,
-        height: data.nativeHeight ?? dims.h,
-      });
+      setReticleNativeOverride({ width: w, height: h });
       if (data.reticleId) setUploadedReticleId(data.reticleId);
-      setOpticalCenterX((data.nativeWidth ?? dims.w) / 2);
-      setOpticalCenterY((data.nativeHeight ?? dims.h) / 2);
+      setOpticalCenterX(w / 2);
+      setOpticalCenterY(h / 2);
       setCenterTo1MilPx(
-        Math.round(
-          (Math.min(data.nativeWidth ?? dims.w, data.nativeHeight ?? dims.h) /
-            20) *
-            10,
-        ) / 10,
+        Math.round((Math.min(w, h) / 20) * 10) / 10,
       );
+      setReticleLayer("base");
       setBakeStatus(
         `OK retikkel → ${data.src} (${data.reticleId}). Calibrate hash/centre, commit + push.`,
       );
@@ -1661,6 +1919,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             opticalCenterY,
             imageRotationDeg: reticleRotDeg,
             ...(liveIllumination ? { illumination: liveIllumination } : null),
+            ...(liveImageCrop ? { imageCrop: liveImageCrop } : null),
+            ...(liveHiRes ? { hiRes: liveHiRes } : null),
           }
         : null;
     return {
@@ -1966,8 +2226,34 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
   function nudgeOpticalByClicks(dxClicks: number, dyClicks: number) {
     /* Right on glass → lower opticalCenterX; up on glass → higher opticalCenterY. */
-    setOpticalCenterX((x) => round4(x - dxClicks * pxPerClick));
-    setOpticalCenterY((y) => round4(y + dyClicks * pxPerClick));
+    const step = pxPerClick;
+    if (editLayer === "hiRes") {
+      setHiResOpticalX((x) =>
+        round4((x ?? hiResW / 2) - dxClicks * step),
+      );
+      setHiResOpticalY((y) =>
+        round4((y ?? hiResH / 2) + dyClicks * step),
+      );
+      return;
+    }
+    setOpticalCenterX((x) => round4(x - dxClicks * step));
+    setOpticalCenterY((y) => round4(y + dyClicks * step));
+  }
+
+  function setSeamHoleMils(n: number) {
+    const v = Math.round(n * 100) / 100;
+    setCropRInnerMils(v);
+    if (seamLinked) setHiResCropRMils(v);
+  }
+
+  function setSeamDiskMils(n: number) {
+    const v = Math.round(n * 100) / 100;
+    setHiResCropRMils(v);
+    if (seamLinked) {
+      setCropEnabled(true);
+      setCropMode("circleMils");
+      setCropRInnerMils(v);
+    }
   }
 
   function aimLimitsMm(): { limitX: number; limitY: number } {
@@ -2183,7 +2469,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             <div className="admin-spot-row">
               <label className="admin-spot-field admin-spot-field-wide">
                 <span>
-                  Retikkelbilde
+                  Ytre retikkelbilde
                   {reticleSrcOverride
                     ? " · lastet opp"
                     : reticleDef
@@ -2197,7 +2483,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     e.target.value = "";
-                    if (file) void uploadReticleImage(file);
+                    if (file) void uploadReticleImage(file, "base");
                   }}
                 />
               </label>
@@ -2709,17 +2995,49 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
         {scope && (reticleDef || reticleSrcOverride) ? (
           <div className="admin-scope-cal">
             <p className="admin-scope-cal-hint">
-              Live kalibrering. «Lagre til repo» skriver rotasjon / optisk
-              senter / <code>centerTo1MilPx</code> /{" "}
-              <code>illumination</code> til <code>reticles.ts</code>. «Lagre
-              FOV» / «Lagre til repo» skriver <code>zoomMagCal</code> /{" "}
-              <code>minZoomMagCal</code> / focus zoom til{" "}
-              <code>catalog.ts</code> (kun dev). Calibrate illumination:
-              sirkel/rektangel/maske for hva som lyser rødt.
+              Dual-lag: Ytre / Indre / Composite styrer glass-preview og hvilken
+              hash/senter du redigerer. Crop + seam er alltid synlig under.
+              «Lagre til repo» skriver rotasjon / senter / hash / crop / hiRes /
+              illumination til <code>reticles.ts</code>.
               {calDirty || fovDirty || focusZoomDirty || triggercamZoomDirty
                 ? " · lokale endringer"
                 : ""}
             </p>
+
+            <div className="admin-spot-row admin-scope-layer-switch">
+              {(
+                [
+                  ["composite", "Composite"],
+                  ["base", "Ytre"],
+                  ["hiRes", "Indre"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={
+                    reticleLayer === id
+                      ? "intro-button admin-spot-btn is-selected"
+                      : "intro-button admin-spot-btn"
+                  }
+                  aria-pressed={reticleLayer === id}
+                  disabled={id === "hiRes" && !liveHiRes && !hiResSrc.trim()}
+                  title={
+                    id === "composite"
+                      ? "Ring + disk som i spillet"
+                      : id === "base"
+                        ? "Kun ytre (wide) bilde"
+                        : "Kun indre (narrow) bilde"
+                  }
+                  onClick={() => setReticleLayer(id)}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="admin-scope-cal-clicks">
+                Redigerer {editLayer === "hiRes" ? "indre" : "ytre"}
+              </span>
+            </div>
 
             <div className="admin-spot-row admin-scope-rot-row">
               <label className="admin-spot-field admin-scope-rot-field">
@@ -2774,15 +3092,26 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
 
             <div className="admin-spot-row">
               <label className="admin-spot-field admin-spot-scale">
-                <span>Center X px</span>
+                <span>
+                  Center X px
+                  {editLayer === "hiRes" && liveHiRes
+                    ? " (indre)"
+                    : liveHiRes
+                      ? " (ytre)"
+                      : ""}
+                </span>
                 <input
                   type="number"
                   className="admin-spot-scale-num"
                   step={0.01}
-                  value={round4(opticalCenterX)}
+                  value={round4(activeOpticalX)}
                   onChange={(e) => {
                     const n = Number(e.target.value);
                     if (!Number.isFinite(n)) return;
+                    if (editLayer === "hiRes") {
+                      setHiResOpticalX(round4(n));
+                      return;
+                    }
                     setOpticalCenterX(round4(n));
                   }}
                   aria-label="Optical center X native pixels"
@@ -2790,15 +3119,26 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 />
               </label>
               <label className="admin-spot-field admin-spot-scale">
-                <span>Center Y px</span>
+                <span>
+                  Center Y px
+                  {editLayer === "hiRes" && liveHiRes
+                    ? " (indre)"
+                    : liveHiRes
+                      ? " (ytre)"
+                      : ""}
+                </span>
                 <input
                   type="number"
                   className="admin-spot-scale-num"
                   step={0.01}
-                  value={round4(opticalCenterY)}
+                  value={round4(activeOpticalY)}
                   onChange={(e) => {
                     const n = Number(e.target.value);
                     if (!Number.isFinite(n)) return;
+                    if (editLayer === "hiRes") {
+                      setHiResOpticalY(round4(n));
+                      return;
+                    }
                     setOpticalCenterY(round4(n));
                   }}
                   aria-label="Optical center Y native pixels"
@@ -2902,7 +3242,9 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                   setCalIllum((v) => {
                     const next = !v;
                     if (next) {
-                      setReticleIllum((i) => (i < 0.35 ? 0.85 : i));
+                      setReticleIllum((i) =>
+                        Math.abs(i) < 0.35 ? 0.85 : i,
+                      );
                     }
                     return next;
                   });
@@ -3202,75 +3544,179 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
             </div>
 
             {calHashmarks ? (
-              <div className="admin-spot-row">
-                <label className="admin-spot-field admin-scope-rot-field">
-                  <span>
-                    px → 1 {hashUnitShort} {centerTo1MilPx.toFixed(3)}
-                  </span>
-                  <input
-                    type="range"
-                    className="admin-scope-rot-slider"
-                    min={10}
-                    max={120}
-                    step={0.1}
-                    value={Math.min(120, Math.max(10, centerTo1MilPx))}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (!Number.isFinite(n)) return;
-                      setCenterTo1MilPx(Math.round(n * 1000) / 1000);
-                    }}
-                    aria-label={
-                      hashUnitIsMoa
-                        ? "Reticle center to 1 MOA px"
-                        : "Reticle center to 1 mil px"
+              <>
+                <div className="admin-spot-row">
+                  <label
+                    className={
+                      editLayer === "base" || !liveHiRes
+                        ? "admin-spot-field admin-scope-rot-field is-hash-cal-active"
+                        : "admin-spot-field admin-scope-rot-field"
                     }
-                  />
-                </label>
-                <label className="admin-spot-field admin-spot-scale">
-                  <span>px</span>
-                  <input
-                    type="number"
-                    className="admin-spot-scale-num"
-                    step={0.1}
-                    value={centerTo1MilPx}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (!Number.isFinite(n) || n <= 0) return;
-                      setCenterTo1MilPx(Math.round(n * 1000) / 1000);
+                  >
+                    <span>
+                      {liveHiRes ? "ytre " : ""}px → 1 {hashUnitShort}{" "}
+                      {centerTo1MilPx.toFixed(3)}
+                    </span>
+                    <input
+                      type="range"
+                      className="admin-scope-rot-slider"
+                      min={10}
+                      max={400}
+                      step={0.1}
+                      value={Math.min(400, Math.max(10, centerTo1MilPx))}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n)) return;
+                        setCenterTo1MilPx(Math.round(n * 1000) / 1000);
+                        if (liveHiRes) setReticleLayer("base");
+                      }}
+                      aria-label={
+                        hashUnitIsMoa
+                          ? "Ytre reticle center to 1 MOA px"
+                          : "Ytre reticle center to 1 mil px"
+                      }
+                    />
+                  </label>
+                  <label className="admin-spot-field admin-spot-scale">
+                    <span>px</span>
+                    <input
+                      type="number"
+                      className="admin-spot-scale-num"
+                      step={0.1}
+                      value={centerTo1MilPx}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n) || n <= 0) return;
+                        setCenterTo1MilPx(Math.round(n * 1000) / 1000);
+                        if (liveHiRes) setReticleLayer("base");
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    onClick={() => {
+                      setCenterTo1MilPx(
+                        (v) => Math.round((v - 0.5) * 1000) / 1000,
+                      );
+                      if (liveHiRes) setReticleLayer("base");
                     }}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="intro-button admin-spot-btn"
-                  onClick={() =>
-                    setCenterTo1MilPx(
-                      (v) => Math.round((v - 0.5) * 1000) / 1000,
-                    )
-                  }
-                >
-                  −0.5
-                </button>
-                <button
-                  type="button"
-                  className="intro-button admin-spot-btn"
-                  onClick={() =>
-                    setCenterTo1MilPx(
-                      (v) => Math.round((v + 0.5) * 1000) / 1000,
-                    )
-                  }
-                >
-                  +0.5
-                </button>
-                <button
-                  type="button"
-                  className="intro-button admin-spot-btn"
-                  disabled={Math.abs(centerTo1MilPx - catalogHashPx) < 1e-6}
-                  onClick={() => setCenterTo1MilPx(catalogHashPx)}
-                >
-                  Nullstill hash
-                </button>
-              </div>
+                  >
+                    −0.5
+                  </button>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    onClick={() => {
+                      setCenterTo1MilPx(
+                        (v) => Math.round((v + 0.5) * 1000) / 1000,
+                      );
+                      if (liveHiRes) setReticleLayer("base");
+                    }}
+                  >
+                    +0.5
+                  </button>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    disabled={Math.abs(centerTo1MilPx - catalogHashPx) < 1e-6}
+                    onClick={() => setCenterTo1MilPx(catalogHashPx)}
+                  >
+                    Nullstill
+                  </button>
+                </div>
+                {liveHiRes ? (
+                  <div className="admin-spot-row">
+                    <label
+                      className={
+                        editLayer === "hiRes"
+                          ? "admin-spot-field admin-scope-rot-field is-hash-cal-active"
+                          : "admin-spot-field admin-scope-rot-field"
+                      }
+                    >
+                      <span>
+                        indre px → 1 {hashUnitShort}{" "}
+                        {hiResHashPx.toFixed(3)}
+                      </span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={10}
+                        max={400}
+                        step={0.1}
+                        value={Math.min(400, Math.max(10, hiResHashPx))}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setHiResHashPx(Math.round(n * 1000) / 1000);
+                          setReticleLayer("hiRes");
+                        }}
+                        aria-label={
+                          hashUnitIsMoa
+                            ? "Indre reticle center to 1 MOA px"
+                            : "Indre reticle center to 1 mil px"
+                        }
+                      />
+                    </label>
+                    <label className="admin-spot-field admin-spot-scale">
+                      <span>px</span>
+                      <input
+                        type="number"
+                        className="admin-spot-scale-num"
+                        step={0.1}
+                        value={hiResHashPx}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n) || n <= 0) return;
+                          setHiResHashPx(Math.round(n * 1000) / 1000);
+                          setReticleLayer("hiRes");
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="intro-button admin-spot-btn"
+                      onClick={() => {
+                        setHiResHashPx(
+                          (v) => Math.round((v - 0.5) * 1000) / 1000,
+                        );
+                        setReticleLayer("hiRes");
+                      }}
+                    >
+                      −0.5
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button admin-spot-btn"
+                      onClick={() => {
+                        setHiResHashPx(
+                          (v) => Math.round((v + 0.5) * 1000) / 1000,
+                        );
+                        setReticleLayer("hiRes");
+                      }}
+                    >
+                      +0.5
+                    </button>
+                    <button
+                      type="button"
+                      className="intro-button admin-spot-btn"
+                      disabled={
+                        Math.abs(
+                          hiResHashPx -
+                            (catalogHiRes?.centerTo1MilPx ?? hiResHashPx),
+                        ) < 1e-6
+                      }
+                      onClick={() => {
+                        if (catalogHiRes) {
+                          setHiResHashPx(catalogHiRes.centerTo1MilPx);
+                        }
+                      }}
+                    >
+                      Nullstill
+                    </button>
+                  </div>
+                ) : null}
+              </>
             ) : null}
 
             {calIllum ? (
@@ -3456,23 +3902,363 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                       reticleIlluminationKey(liveIllumination) ===
                       reticleIlluminationKey(catalogIllum)
                     }
-                    onClick={() => {
-                      const h = hydrateIllumStateFromCatalog(catalogIllum);
-                      setIllumShape(h.shape);
-                      setIllumRMils(h.rMils);
-                      setIllumRPx(h.rPx);
-                      setIllumRectX(h.rectX);
-                      setIllumRectY(h.rectY);
-                      setIllumRectW(h.rectW);
-                      setIllumRectH(h.rectH);
-                      setIllumMaskSrc(h.maskSrc);
-                    }}
+                    onClick={() => applyIlluminationToState(catalogIllum)}
                   >
                     Nullstill illum
                   </button>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    disabled={illumShape === "whole"}
+                    title="Legg gjeldende form til listen (flere illum-felt)"
+                    onClick={() => {
+                      const draft = draftIllumRegion({
+                        shape: illumShape,
+                        rMils: illumRMils,
+                        rPx: illumRPx,
+                        rectX: illumRectX,
+                        rectY: illumRectY,
+                        rectW: illumRectW,
+                        rectH: illumRectH,
+                      });
+                      if (!draft) return;
+                      setIllumRegions((prev) => [...prev, draft]);
+                      setIllumShape("whole");
+                    }}
+                  >
+                    + Felt
+                  </button>
                 </div>
+                {illumRegions.length > 0 ? (
+                  <div className="admin-spot-row" style={{ flexWrap: "wrap" }}>
+                    {illumRegions.map((r, idx) => (
+                      <button
+                        key={`illum-r-${idx}`}
+                        type="button"
+                        className="intro-button admin-spot-btn"
+                        title="Fjern felt"
+                        onClick={() =>
+                          setIllumRegions((prev) =>
+                            prev.filter((_, i) => i !== idx),
+                          )
+                        }
+                      >
+                        {regionShortLabel(r)} ×
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="intro-button admin-spot-btn"
+                      onClick={() => setIllumRegions([])}
+                    >
+                      Tøm felt
+                    </button>
+                  </div>
+                ) : null}
               </>
             ) : null}
+
+            <div className="admin-scope-layers">
+              <div className="admin-scope-layers-head">
+                <h3 className="admin-scope-layers-title">Crop &amp; lag</h3>
+                <button
+                  type="button"
+                  className={
+                    seamLinked
+                      ? "intro-button admin-spot-btn is-selected"
+                      : "intro-button admin-spot-btn"
+                  }
+                  aria-pressed={seamLinked}
+                  title="Synk hull (ytre) ↔ cropR (indre) i mil"
+                  onClick={() => {
+                    setSeamLinked((v) => {
+                      const next = !v;
+                      if (next && cropRInnerMils > 0) {
+                        setHiResCropRMils(cropRInnerMils);
+                      }
+                      return next;
+                    });
+                  }}
+                >
+                  Synk seam {seamLinked ? "på" : "av"}
+                </button>
+              </div>
+
+              <div className="admin-scope-layer-card">
+                <p className="admin-scope-layer-card-label">Ytre ring (crop)</p>
+                <div className="admin-spot-row">
+                  <button
+                    type="button"
+                    className={
+                      cropEnabled
+                        ? "intro-button admin-spot-btn is-selected"
+                        : "intro-button admin-spot-btn"
+                    }
+                    aria-pressed={cropEnabled}
+                    onClick={() => setCropEnabled((v) => !v)}
+                  >
+                    Crop {cropEnabled ? "på" : "av"}
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      cropMode === "circleMils"
+                        ? "intro-button admin-spot-btn is-selected"
+                        : "intro-button admin-spot-btn"
+                    }
+                    disabled={!cropEnabled}
+                    onClick={() => setCropMode("circleMils")}
+                  >
+                    mil
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      cropMode === "circle"
+                        ? "intro-button admin-spot-btn is-selected"
+                        : "intro-button admin-spot-btn"
+                    }
+                    disabled={!cropEnabled}
+                    onClick={() => setCropMode("circle")}
+                  >
+                    px
+                  </button>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    disabled={
+                      reticleImageCropKey(liveImageCrop) ===
+                      reticleImageCropKey(catalogCrop)
+                    }
+                    onClick={() => applyCropToState(catalogCrop)}
+                  >
+                    Nullstill
+                  </button>
+                </div>
+                {cropEnabled && cropMode === "circleMils" ? (
+                  <div className="admin-spot-row">
+                    <label className="admin-spot-field admin-scope-rot-field">
+                      <span>ytre r {cropRMils.toFixed(2)} mil</span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={1}
+                        max={40}
+                        step={0.1}
+                        value={Math.min(40, Math.max(1, cropRMils))}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setCropRMils(Math.round(n * 100) / 100);
+                        }}
+                      />
+                    </label>
+                    <label className="admin-spot-field admin-scope-rot-field">
+                      <span>
+                        hull {cropRInnerMils.toFixed(2)} mil
+                        {seamLinked ? " = disk" : ""}
+                      </span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={0}
+                        max={Math.max(0.5, cropRMils - 0.2)}
+                        step={0.1}
+                        value={Math.min(
+                          cropRMils - 0.2,
+                          Math.max(0, cropRInnerMils),
+                        )}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setSeamHoleMils(n);
+                        }}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+                {cropEnabled && cropMode === "circle" ? (
+                  <div className="admin-spot-row">
+                    <label className="admin-spot-field admin-scope-rot-field">
+                      <span>ytre r {cropRPx} px</span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={50}
+                        max={2000}
+                        step={5}
+                        value={Math.min(2000, Math.max(50, cropRPx))}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setCropRPx(Math.round(n));
+                        }}
+                      />
+                    </label>
+                    <label className="admin-spot-field admin-scope-rot-field">
+                      <span>hull {cropRInnerPx} px</span>
+                      <input
+                        type="range"
+                        className="admin-scope-rot-slider"
+                        min={0}
+                        max={Math.max(10, cropRPx - 10)}
+                        step={5}
+                        value={Math.min(
+                          cropRPx - 10,
+                          Math.max(0, cropRInnerPx),
+                        )}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isFinite(n)) return;
+                          setCropRInnerPx(Math.round(n));
+                        }}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="admin-scope-layer-card">
+                <p className="admin-scope-layer-card-label">
+                  Indre disk (narrow FOV)
+                </p>
+                <div className="admin-spot-row">
+                  <label className="admin-spot-field admin-spot-field-wide">
+                    <span>src</span>
+                    <input
+                      type="text"
+                      className="admin-spot-scale-num admin-spot-src-input"
+                      placeholder="/range/reticles/…20x.png"
+                      value={hiResSrc}
+                      onChange={(e) => setHiResSrc(e.target.value)}
+                    />
+                  </label>
+                  <label className="admin-spot-field admin-spot-field-wide">
+                    <span>Last opp indre PNG</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/PNG"
+                      disabled={uploadingReticle}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) void uploadReticleImage(file, "hiRes");
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="admin-spot-row">
+                  <label className="admin-spot-field admin-spot-scale">
+                    <span>W</span>
+                    <input
+                      type="number"
+                      className="admin-spot-scale-num"
+                      value={hiResW || ""}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n) || n < 0) return;
+                        setHiResW(Math.round(n));
+                      }}
+                    />
+                  </label>
+                  <label className="admin-spot-field admin-spot-scale">
+                    <span>H</span>
+                    <input
+                      type="number"
+                      className="admin-spot-scale-num"
+                      value={hiResH || ""}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n) || n < 0) return;
+                        setHiResH(Math.round(n));
+                      }}
+                    />
+                  </label>
+                  <label className="admin-spot-field admin-spot-scale">
+                    <span>hash px</span>
+                    <input
+                      type="number"
+                      className="admin-spot-scale-num"
+                      step={0.1}
+                      value={hiResHashPx}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n) || n <= 0) return;
+                        setHiResHashPx(Math.round(n * 1000) / 1000);
+                        setReticleLayer("hiRes");
+                      }}
+                    />
+                  </label>
+                  <label className="admin-spot-field admin-scope-rot-field">
+                    <span>
+                      disk r {hiResCropRMils.toFixed(2)} mil
+                      {seamLinked ? " = hull" : ""}
+                    </span>
+                    <input
+                      type="range"
+                      className="admin-scope-rot-slider"
+                      min={0}
+                      max={40}
+                      step={0.1}
+                      value={Math.min(40, Math.max(0, hiResCropRMils))}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n)) return;
+                        setSeamDiskMils(n);
+                        setReticleLayer(
+                          reticleLayer === "base" ? "composite" : reticleLayer,
+                        );
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="admin-spot-row">
+                  <label className="admin-spot-field admin-spot-scale">
+                    <span>fadeFra</span>
+                    <input
+                      type="number"
+                      className="admin-spot-scale-num"
+                      step={0.05}
+                      min={0}
+                      max={1}
+                      value={hiResFadeFrom}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n)) return;
+                        setHiResFadeFrom(Math.min(1, Math.max(0, n)));
+                      }}
+                    />
+                  </label>
+                  <label className="admin-spot-field admin-spot-scale">
+                    <span>fadeTil</span>
+                    <input
+                      type="number"
+                      className="admin-spot-scale-num"
+                      step={0.05}
+                      min={0}
+                      max={1}
+                      value={hiResFadeTo}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n)) return;
+                        setHiResFadeTo(Math.min(1, Math.max(0, n)));
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="intro-button admin-spot-btn"
+                    disabled={
+                      reticleHiResKey(liveHiRes) ===
+                      reticleHiResKey(catalogHiRes)
+                    }
+                    onClick={() => applyHiResToState(catalogHiRes)}
+                  >
+                    Nullstill indre
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <div className="admin-spot-row">
               <button
@@ -3584,6 +4370,7 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                 <IlluminationTurret
                   value={reticleIllum}
                   onChange={setReticleIllum}
+                  bipolar={illumBipolar}
                 />
                 <ParallaxTurret
                   focusM={parallaxFocusM}
@@ -3732,7 +4519,8 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                             scope={liveScope ?? scope}
                             zoom={zoom}
                             imgScale={reticleImgScale}
-                            illumination={reticleIllum}
+                            illumination={illumDecoded.intensity}
+                            illuminationColor={illumDecoded.color}
                             rotationDeg={reticleRotDeg}
                             opticalCenterPx={{
                               x: opticalCenterX,
@@ -3740,69 +4528,177 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
                             }}
                             centerTo1MilPx={centerTo1MilPx}
                             illuminationDef={liveIllumination}
+                            imageCropDef={liveImageCrop}
+                            hiResDef={liveHiRes}
+                            calibrateLayer={
+                              reticleLayer === "composite"
+                                ? null
+                                : reticleLayer
+                            }
+                            calibrateFullAsset={calHashmarks}
                             srcOverride={reticleSrcOverride ?? undefined}
                             nativeSizeOverride={
                               reticleNativeOverride ?? undefined
                             }
                           />
                         </div>
-                        {calIllum &&
-                        liveIllumination?.region &&
-                        hashRingPxPerMil > 0 ? (
-                          <div
-                            className="admin-scope-illum-region"
-                            aria-hidden
-                          >
-                            {liveIllumination.region.shape === "circleMils" ||
-                            liveIllumination.region.shape === "circle" ? (
+                        {cropEnabled && liveImageCrop && hashRingPxPerMil > 0 ? (
+                          <div className="admin-scope-crop-region" aria-hidden>
+                            <span
+                              className="admin-scope-crop-region-circle"
+                              style={{
+                                width:
+                                  liveImageCrop.shape === "circleMils"
+                                    ? 2 *
+                                      liveImageCrop.rMils *
+                                      hashRingPxPerMil
+                                    : 2 *
+                                      liveImageCrop.r *
+                                      (hashRingPxPerMil / centerTo1MilPx),
+                                height:
+                                  liveImageCrop.shape === "circleMils"
+                                    ? 2 *
+                                      liveImageCrop.rMils *
+                                      hashRingPxPerMil
+                                    : 2 *
+                                      liveImageCrop.r *
+                                      (hashRingPxPerMil / centerTo1MilPx),
+                                ...(liveImageCrop.shape === "circle" &&
+                                (liveImageCrop.cx != null ||
+                                  liveImageCrop.cy != null)
+                                  ? {
+                                      left: `calc(50% + ${
+                                        ((liveImageCrop.cx ??
+                                          opticalCenterX) -
+                                          opticalCenterX) *
+                                        (hashRingPxPerMil / centerTo1MilPx)
+                                      }px)`,
+                                      top: `calc(50% + ${
+                                        ((liveImageCrop.cy ??
+                                          opticalCenterY) -
+                                          opticalCenterY) *
+                                        (hashRingPxPerMil / centerTo1MilPx)
+                                      }px)`,
+                                    }
+                                  : null),
+                              }}
+                            />
+                            {(liveImageCrop.shape === "circleMils" &&
+                              (liveImageCrop.rInnerMils ?? 0) > 0) ||
+                            (liveImageCrop.shape === "circle" &&
+                              (liveImageCrop.rInner ?? 0) > 0) ? (
                               <span
-                                className="admin-scope-illum-region-circle"
+                                className="admin-scope-crop-region-circle admin-scope-crop-region-circle--inner"
                                 style={{
                                   width:
-                                    liveIllumination.region.shape ===
-                                    "circleMils"
+                                    liveImageCrop.shape === "circleMils"
                                       ? 2 *
-                                        liveIllumination.region.rMils *
+                                        (liveImageCrop.rInnerMils ?? 0) *
                                         hashRingPxPerMil
                                       : 2 *
-                                        liveIllumination.region.r *
+                                        (liveImageCrop.rInner ?? 0) *
                                         (hashRingPxPerMil / centerTo1MilPx),
                                   height:
-                                    liveIllumination.region.shape ===
-                                    "circleMils"
+                                    liveImageCrop.shape === "circleMils"
                                       ? 2 *
-                                        liveIllumination.region.rMils *
+                                        (liveImageCrop.rInnerMils ?? 0) *
                                         hashRingPxPerMil
                                       : 2 *
-                                        liveIllumination.region.r *
+                                        (liveImageCrop.rInner ?? 0) *
                                         (hashRingPxPerMil / centerTo1MilPx),
+                                  ...(liveImageCrop.shape === "circle" &&
+                                  (liveImageCrop.cx != null ||
+                                    liveImageCrop.cy != null)
+                                    ? {
+                                        left: `calc(50% + ${
+                                          ((liveImageCrop.cx ??
+                                            opticalCenterX) -
+                                            opticalCenterX) *
+                                          (hashRingPxPerMil / centerTo1MilPx)
+                                        }px)`,
+                                        top: `calc(50% + ${
+                                          ((liveImageCrop.cy ??
+                                            opticalCenterY) -
+                                            opticalCenterY) *
+                                          (hashRingPxPerMil / centerTo1MilPx)
+                                        }px)`,
+                                      }
+                                    : null),
                                 }}
                               />
-                            ) : (
-                              <span
-                                className="admin-scope-illum-region-rect"
-                                style={{
-                                  width:
-                                    liveIllumination.region.w *
-                                    (hashRingPxPerMil / centerTo1MilPx),
-                                  height:
-                                    liveIllumination.region.h *
-                                    (hashRingPxPerMil / centerTo1MilPx),
-                                  left: `calc(50% + ${
-                                    (liveIllumination.region.x -
-                                      opticalCenterX) *
-                                    (hashRingPxPerMil / centerTo1MilPx)
-                                  }px)`,
-                                  top: `calc(50% + ${
-                                    (liveIllumination.region.y -
-                                      opticalCenterY) *
-                                    (hashRingPxPerMil / centerTo1MilPx)
-                                  }px)`,
-                                }}
-                              />
-                            )}
+                            ) : null}
                           </div>
                         ) : null}
+                        {calIllum &&
+                        liveIllumination &&
+                        hashRingPxPerMil > 0
+                          ? (() => {
+                              const illumRegs =
+                                reticleIlluminationRegions(liveIllumination);
+                              if (illumRegs.length === 0) return null;
+                              return (
+                                <div
+                                  className="admin-scope-illum-region"
+                                  aria-hidden
+                                >
+                                  {illumRegs.map((reg, idx) =>
+                                    reg.shape === "circleMils" ||
+                                    reg.shape === "circle" ? (
+                                      <span
+                                        key={`illum-ov-${idx}`}
+                                        className="admin-scope-illum-region-circle"
+                                        style={{
+                                          width:
+                                            reg.shape === "circleMils"
+                                              ? 2 *
+                                                reg.rMils *
+                                                hashRingPxPerMil
+                                              : 2 *
+                                                reg.r *
+                                                (hashRingPxPerMil /
+                                                  centerTo1MilPx),
+                                          height:
+                                            reg.shape === "circleMils"
+                                              ? 2 *
+                                                reg.rMils *
+                                                hashRingPxPerMil
+                                              : 2 *
+                                                reg.r *
+                                                (hashRingPxPerMil /
+                                                  centerTo1MilPx),
+                                        }}
+                                      />
+                                    ) : (
+                                      <span
+                                        key={`illum-ov-${idx}`}
+                                        className="admin-scope-illum-region-rect"
+                                        style={{
+                                          width:
+                                            reg.w *
+                                            (hashRingPxPerMil /
+                                              centerTo1MilPx),
+                                          height:
+                                            reg.h *
+                                            (hashRingPxPerMil /
+                                              centerTo1MilPx),
+                                          left: `calc(50% + ${
+                                            (reg.x - opticalCenterX) *
+                                            (hashRingPxPerMil /
+                                              centerTo1MilPx)
+                                          }px)`,
+                                          top: `calc(50% + ${
+                                            (reg.y - opticalCenterY) *
+                                            (hashRingPxPerMil /
+                                              centerTo1MilPx)
+                                          }px)`,
+                                        }}
+                                      />
+                                    ),
+                                  )}
+                                </div>
+                              );
+                            })()
+                          : null}
                         {calHashmarks && hashRingPxPerUnit > 0 ? (
                           <div
                             className={

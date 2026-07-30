@@ -89,11 +89,13 @@ import {
 } from "@/lib/player";
 import {
   applyScopeClickError,
+  decodeReticleIllumination,
   scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
   scopeFovDiameterScale,
+  scopeIlluminationBipolar,
   scopeWindageClicksPerRev,
 } from "@/lib/optics/spec";
 import { densityRatioFromTempC, exactBallisticHold } from "@/lib/ballistics/solver";
@@ -374,6 +376,11 @@ export function FieldImpactCompetitionView({
 
   const [parallaxFocusM, setParallaxFocusM] = useState(Infinity);
   const [reticleIllum, setReticleIllum] = useState(0.45);
+  const illumDecoded = decodeReticleIllumination(
+    reticleIllum,
+    scope?.scope,
+  );
+  const illumBipolar = scopeIlluminationBipolar(scope?.scope);
 
   const [phase, setPhase] = useState<Phase>("lobby");
   const [ammoId, setAmmoId] = useState(ammoOptions[0]?.id ?? "");
@@ -1809,6 +1816,7 @@ export function FieldImpactCompetitionView({
                 <IlluminationTurret
                   value={reticleIllum}
                   onChange={setReticleIllum}
+                  bipolar={illumBipolar}
                 />
               ) : null}
               <ParallaxTurret
@@ -2066,7 +2074,10 @@ export function FieldImpactCompetitionView({
                   scope={scope!.scope}
                   zoom={zoom}
                   imgScale={reticleScale}
-                  illumination={(tubeMode ? illumOn : true) ? reticleIllum : 0}
+                  illumination={
+                    (tubeMode ? illumOn : true) ? illumDecoded.intensity : 0
+                  }
+                  illuminationColor={illumDecoded.color}
                 />
               </div>
               </ScopeFocusZoom>
@@ -2169,6 +2180,7 @@ export function FieldImpactCompetitionView({
                 onParallaxChange={setParallaxFocusM}
                 reticleIllum={reticleIllum}
                 onIllumChange={setReticleIllum}
+                bipolar={illumBipolar}
               />
             ) : null
           }

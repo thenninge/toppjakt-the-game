@@ -126,7 +126,77 @@ export type ScopeSpec = {
    * At in-game 27×, premium circle shows ±7.2 mrad centre→edge (real ZCO).
    */
   fovDiameterScale?: number;
+  /**
+   * Reticle illumination colours this optic supports.
+   * Omit / `["red"]` = unipolar red drum (0→1).
+   * `["red","green"]` (ZCO) = bipolar drum (−1 green ↔ 0 ↔ +1 red).
+   */
+  illuminationColors?: ReticleIllumColor[];
 };
+
+/** Illuminated reticle colour (etched strokes stay black). */
+export type ReticleIllumColor = "red" | "green";
+
+export const DEFAULT_ILLUMINATION_COLORS: ReticleIllumColor[] = ["red"];
+
+export function scopeIlluminationColors(
+  scope: Pick<ScopeSpec, "illuminationColors"> | null | undefined,
+): ReticleIllumColor[] {
+  const raw = scope?.illuminationColors;
+  if (!raw?.length) return [...DEFAULT_ILLUMINATION_COLORS];
+  const out: ReticleIllumColor[] = [];
+  for (const c of raw) {
+    if ((c === "red" || c === "green") && !out.includes(c)) out.push(c);
+  }
+  return out.length > 0 ? out : [...DEFAULT_ILLUMINATION_COLORS];
+}
+
+/** True when the illum drum supports both red and green (−1…+1). */
+export function scopeIlluminationBipolar(
+  scope: Pick<ScopeSpec, "illuminationColors"> | null | undefined,
+): boolean {
+  const c = scopeIlluminationColors(scope);
+  return c.includes("red") && c.includes("green");
+}
+
+/**
+ * Decode signed drum value (−1…+1 or 0…1) → intensity + colour.
+ * Positive = red (or sole colour); negative = green when bipolar.
+ */
+export function decodeReticleIllumination(
+  signed: number,
+  scope?: Pick<ScopeSpec, "illuminationColors"> | null,
+): { intensity: number; color: ReticleIllumColor } {
+  const bipolar = scopeIlluminationBipolar(scope);
+  const colors = scopeIlluminationColors(scope);
+  if (!Number.isFinite(signed) || signed === 0) {
+    return { intensity: 0, color: colors[0] ?? "red" };
+  }
+  if (bipolar) {
+    if (signed > 0) {
+      return { intensity: Math.min(1, signed), color: "red" };
+    }
+    return { intensity: Math.min(1, -signed), color: "green" };
+  }
+  const sole = colors[0] ?? "red";
+  return { intensity: Math.min(1, Math.max(0, signed)), color: sole };
+}
+
+/** CSS filter that maps black PNG pixels to the illumination colour. */
+export function reticleIlluminationCssFilter(color: ReticleIllumColor): string {
+  if (color === "green") {
+    return "brightness(0) saturate(100%) invert(42%) sepia(93%) saturate(1200%) hue-rotate(78deg) brightness(1.15)";
+  }
+  return "brightness(0) saturate(100%) invert(18%) sepia(98%) saturate(6500%) hue-rotate(350deg) brightness(1.05)";
+}
+
+/** Force etched strokes black regardless of source PNG colour. */
+export const RETICLE_ETCH_BLACK_FILTER = "brightness(0)";
+
+/** UI hex for drum sun icons. */
+export function reticleIllumColorHex(color: ReticleIllumColor): string {
+  return color === "green" ? "#3dcf4a" : "#e82424";
+}
 
 function defaultClicksPerRev(unit: ScopeClickUnit): number {
   return unit === "MOA"

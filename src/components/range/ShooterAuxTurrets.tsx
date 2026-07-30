@@ -10,6 +10,8 @@ export type ShooterAuxTurretsProps = {
   reticleIllum: number;
   onIllumChange: (value: number) => void;
   disabled?: boolean;
+  /** ZCO-style bipolar red/green drum. */
+  bipolar?: boolean;
 };
 
 /**
@@ -22,6 +24,7 @@ export function ShooterAuxTurrets({
   reticleIllum,
   onIllumChange,
   disabled = false,
+  bipolar = false,
 }: ShooterAuxTurretsProps) {
   return (
     <div className="scope-turret scope-turret--aux scope-turret-view--shooter">
@@ -35,6 +38,7 @@ export function ShooterAuxTurrets({
             value={reticleIllum}
             onChange={onIllumChange}
             disabled={disabled}
+            bipolar={bipolar}
           />
           <ParallaxTurret
             focusM={parallaxFocusM}

@@ -2,11 +2,20 @@ import { NextResponse, type NextRequest } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import {
+  normalizeReticleHiRes,
   normalizeReticleIllumination,
+  normalizeReticleImageCrop,
   RETICLES,
+  type ReticleHiResLayer,
   type ReticleIllumination,
   type ReticleIlluminationRegion,
+  type ReticleImageCrop,
 } from "@/lib/range/reticles";
+import {
+  escapeRegExp,
+  findReticleEntry,
+  removeDuplicateReticleEntries,
+} from "@/lib/range/reticleFilePatch";
 
 type Body = {
   reticleId?: unknown;
@@ -16,60 +25,14 @@ type Body = {
   centerTo1MilPx?: unknown;
   /** Partial illum; `null` clears catalog illumination (whole reticle). */
   illumination?: unknown;
+  /** Circular crop; `null` clears. */
+  imageCrop?: unknown;
+  /** Hi-res FFP overlay; `null` clears. */
+  hiRes?: unknown;
 };
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Locate `"id": { ... },` with brace matching so nested objects
- * (e.g. {@code illumination}) do not truncate the entry.
- */
-function findReticleEntry(
-  src: string,
-  reticleId: string,
-): {
-  index: number;
-  open: string;
-  inner: string;
-  close: string;
-  fullLength: number;
-} | null {
-  const openRe = new RegExp(`"${escapeRegExp(reticleId)}":\\s*\\{`);
-  const openMatch = openRe.exec(src);
-  if (!openMatch || openMatch.index == null) return null;
-  const open = openMatch[0];
-  const bodyStart = openMatch.index + open.length;
-  let depth = 1;
-  let i = bodyStart;
-  for (; i < src.length; i += 1) {
-    const ch = src[i]!;
-    if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        i += 1;
-        break;
-      }
-    }
-  }
-  if (depth !== 0) return null;
-  let closeEnd = i;
-  while (closeEnd < src.length && /\s/.test(src[closeEnd]!)) closeEnd += 1;
-  if (src[closeEnd] === ",") closeEnd += 1;
-  const close = src.slice(i - 1, closeEnd);
-  return {
-    index: openMatch.index,
-    open,
-    inner: src.slice(bodyStart, i - 1),
-    close,
-    fullLength: closeEnd - openMatch.index,
-  };
 }
 
 function formatSignedClicks(n: number): string {
@@ -145,8 +108,26 @@ function parseIlluminationBody(
     typeof o.maskSrc === "string" && o.maskSrc.trim()
       ? o.maskSrc.trim()
       : undefined;
-  const region = parseIlluminationRegion(o.region);
-  return normalizeReticleIllumination({ maskSrc, region }) ?? null;
+  const regionsRaw = Array.isArray(o.regions) ? o.regions : null;
+  const regions = regionsRaw
+    ? regionsRaw
+        .map(parseIlluminationRegion)
+        .filter((r): r is ReticleIlluminationRegion => !!r)
+    : undefined;
+  const region =
+    regions && regions.length > 0
+      ? undefined
+      : parseIlluminationRegion(o.region);
+  return (
+    normalizeReticleIllumination({
+      maskSrc,
+      region,
+      regions:
+        regions && regions.length > 0
+          ? regions
+          : undefined,
+    }) ?? null
+  );
 }
 
 function formatRegionLiteral(region: ReticleIlluminationRegion): string {
@@ -167,24 +148,135 @@ function formatIlluminationLiteral(illum: ReticleIllumination): string {
   if (illum.maskSrc) {
     lines.push(`maskSrc: ${JSON.stringify(illum.maskSrc)}`);
   }
-  if (illum.region) {
-    lines.push(`region: ${formatRegionLiteral(illum.region)}`);
+  if (illum.regions && illum.regions.length > 1) {
+    const body = illum.regions
+      .map((r) => formatRegionLiteral(r))
+      .join(", ");
+    lines.push(`regions: [${body}]`);
+  } else if (illum.region || illum.regions?.[0]) {
+    lines.push(
+      `region: ${formatRegionLiteral(illum.region ?? illum.regions![0]!)}`,
+    );
   }
   return `{\n      ${lines.join(",\n      ")},\n    }`;
 }
 
-/** Remove existing `illumination: { ... },` (nested braces) from a reticle entry body. */
-function stripIlluminationField(block: string): string {
-  const keyIdx = block.search(/\n    illumination:\s*/);
+function parseImageCropBody(
+  raw: unknown,
+): ReticleImageCrop | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  if (o.shape === "circleMils" && isFiniteNumber(o.rMils) && o.rMils > 0) {
+    return normalizeReticleImageCrop({
+      shape: "circleMils",
+      rMils: o.rMils,
+      ...(isFiniteNumber(o.rInnerMils) ? { rInnerMils: o.rInnerMils } : null),
+    }) ?? null;
+  }
+  if (o.shape === "circle" && isFiniteNumber(o.r) && o.r > 0) {
+    return (
+      normalizeReticleImageCrop({
+        shape: "circle",
+        r: o.r,
+        ...(isFiniteNumber(o.cx) ? { cx: o.cx } : null),
+        ...(isFiniteNumber(o.cy) ? { cy: o.cy } : null),
+        ...(isFiniteNumber(o.rInner) ? { rInner: o.rInner } : null),
+      }) ?? null
+    );
+  }
+  return null;
+}
+
+function parseHiResBody(
+  raw: unknown,
+): ReticleHiResLayer | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.src !== "string" || !o.src.trim()) return null;
+  if (
+    !isFiniteNumber(o.nativeWidth) ||
+    !isFiniteNumber(o.nativeHeight) ||
+    !isFiniteNumber(o.centerTo1MilPx)
+  ) {
+    return null;
+  }
+  return (
+    normalizeReticleHiRes({
+      src: o.src,
+      nativeWidth: o.nativeWidth,
+      nativeHeight: o.nativeHeight,
+      centerTo1MilPx: o.centerTo1MilPx,
+      ...(isFiniteNumber(o.opticalCenterX)
+        ? { opticalCenterX: o.opticalCenterX }
+        : null),
+      ...(isFiniteNumber(o.opticalCenterY)
+        ? { opticalCenterY: o.opticalCenterY }
+        : null),
+      ...(isFiniteNumber(o.cropRMils) ? { cropRMils: o.cropRMils } : null),
+      ...(isFiniteNumber(o.fadeFromZoomFrac)
+        ? { fadeFromZoomFrac: o.fadeFromZoomFrac }
+        : null),
+      ...(isFiniteNumber(o.fadeToZoomFrac)
+        ? { fadeToZoomFrac: o.fadeToZoomFrac }
+        : null),
+    }) ?? null
+  );
+}
+
+function formatImageCropLiteral(crop: ReticleImageCrop): string {
+  if (crop.shape === "circleMils") {
+    const bits = [`shape: "circleMils"`, `rMils: ${crop.rMils}`];
+    if (crop.rInnerMils != null) bits.push(`rInnerMils: ${crop.rInnerMils}`);
+    return `{\n      ${bits.join(",\n      ")},\n    }`;
+  }
+  const bits = [`shape: "circle"`, `r: ${crop.r}`];
+  if (crop.cx != null) bits.push(`cx: ${crop.cx}`);
+  if (crop.cy != null) bits.push(`cy: ${crop.cy}`);
+  if (crop.rInner != null) bits.push(`rInner: ${crop.rInner}`);
+  return `{\n      ${bits.join(",\n      ")},\n    }`;
+}
+
+function formatHiResLiteral(hi: ReticleHiResLayer): string {
+  const lines = [
+    `src: ${JSON.stringify(hi.src)}`,
+    `nativeWidth: ${hi.nativeWidth}`,
+    `nativeHeight: ${hi.nativeHeight}`,
+    `centerTo1MilPx: ${hi.centerTo1MilPx}`,
+  ];
+  if (hi.opticalCenterX != null) {
+    lines.push(`opticalCenterX: ${hi.opticalCenterX}`);
+  }
+  if (hi.opticalCenterY != null) {
+    lines.push(`opticalCenterY: ${hi.opticalCenterY}`);
+  }
+  if (hi.cropRMils != null) {
+    lines.push(`cropRMils: ${hi.cropRMils}`);
+  }
+  if (hi.fadeFromZoomFrac != null) {
+    lines.push(`fadeFromZoomFrac: ${hi.fadeFromZoomFrac}`);
+  }
+  if (hi.fadeToZoomFrac != null) {
+    lines.push(`fadeToZoomFrac: ${hi.fadeToZoomFrac}`);
+  }
+  return `{\n      ${lines.join(",\n      ")},\n    }`;
+}
+
+/** Remove nested `key: { ... },` from a reticle entry body. */
+function stripObjectField(block: string, key: string): string {
+  const keyIdx = block.search(new RegExp(`\\n    ${key}:\\s*`));
   if (keyIdx < 0) return block;
-  const afterKey = block.slice(keyIdx).match(/^\n    illumination:\s*/);
+  const afterKey = block.slice(keyIdx).match(new RegExp(`^\\n    ${key}:\\s*`));
   if (!afterKey) return block;
   let i = keyIdx + afterKey[0].length;
   while (i < block.length && /\s/.test(block[i]!)) i += 1;
   if (block[i] !== "{") {
-    return block.slice(0, keyIdx) + block.slice(keyIdx).replace(
-      /^\n    illumination:\s*[^\n]*/,
-      "",
+    return (
+      block.slice(0, keyIdx) +
+      block.slice(keyIdx).replace(new RegExp(`^\\n    ${key}:\\s*[^\\n]*`), "")
     );
   }
   let depth = 0;
@@ -205,15 +297,27 @@ function stripIlluminationField(block: string): string {
   return block.slice(0, keyIdx) + block.slice(j);
 }
 
+function upsertObjectField(
+  block: string,
+  key: string,
+  literal: string | null,
+): string {
+  let next = stripObjectField(block, key);
+  if (!literal) return next;
+  const trimmed = next.replace(/\s*$/, "");
+  const comma = /,\s*$/.test(trimmed) ? "" : ",";
+  return `${trimmed}${comma}\n    ${key}: ${literal},`;
+}
+
 function upsertIlluminationField(
   block: string,
   illum: ReticleIllumination | null,
 ): string {
-  let next = stripIlluminationField(block);
-  if (!illum) return next;
-  const trimmed = next.replace(/\s*$/, "");
-  const comma = /,\s*$/.test(trimmed) ? "" : ",";
-  return `${trimmed}${comma}\n    illumination: ${formatIlluminationLiteral(illum)},`;
+  return upsertObjectField(
+    block,
+    "illumination",
+    illum ? formatIlluminationLiteral(illum) : null,
+  );
 }
 
 /**
@@ -265,6 +369,8 @@ export async function POST(req: NextRequest) {
       ? Math.round(body.centerTo1MilPx * 1000) / 1000
       : null;
   const illumParsed = parseIlluminationBody(body.illumination);
+  const cropParsed = parseImageCropBody(body.imageCrop);
+  const hiResParsed = parseHiResBody(body.hiRes);
 
   const def = RETICLES[reticleId];
   const pxPerClick = (def?.centerTo1MilPx ?? hashPx ?? 55.5) * 0.1;
@@ -277,6 +383,7 @@ export async function POST(req: NextRequest) {
   const relPath = "src/lib/range/reticles.ts";
   const target = path.join(process.cwd(), relPath);
   let src = await fs.readFile(target, "utf8");
+  src = removeDuplicateReticleEntries(src, reticleId);
 
   const match = findReticleEntry(src, reticleId);
   if (!match) {
@@ -296,6 +403,20 @@ export async function POST(req: NextRequest) {
   if (illumParsed !== undefined) {
     inner = upsertIlluminationField(inner, illumParsed);
   }
+  if (cropParsed !== undefined) {
+    inner = upsertObjectField(
+      inner,
+      "imageCrop",
+      cropParsed ? formatImageCropLiteral(cropParsed) : null,
+    );
+  }
+  if (hiResParsed !== undefined) {
+    inner = upsertObjectField(
+      inner,
+      "hiRes",
+      hiResParsed ? formatHiResLiteral(hiResParsed) : null,
+    );
+  }
 
   const replacement = `${match.open}${inner}${match.close}`;
   src =
@@ -305,9 +426,10 @@ export async function POST(req: NextRequest) {
 
   /* Refresh JSDoc optical-centre summary when present above this entry. */
   const summary = ` * Optical centre: ${formatSignedClicks(shiftRightClicks)} klikk X / ${formatSignedClicks(shiftUpClicks)} klikk Y (1 klikk = 0.1 mil) + ${rot}° CW.`;
+  const idPat = escapeRegExp(reticleId);
   src = src.replace(
     new RegExp(
-      `(\\* Optical centre:[^\\n]*\\n)([\\s\\S]*?"${escapeRegExp(reticleId)}":)`,
+      `(\\* Optical centre:[^\\n]*\\n)([\\s\\S]*?(?:"${idPat}"|\\b${idPat}):)`,
     ),
     `${summary}\n$2`,
   );
@@ -318,6 +440,10 @@ export async function POST(req: NextRequest) {
     illumParsed === undefined
       ? (def?.illumination ?? null)
       : illumParsed;
+  const savedCrop =
+    cropParsed === undefined ? (def?.imageCrop ?? null) : cropParsed;
+  const savedHiRes =
+    hiResParsed === undefined ? (def?.hiRes ?? null) : hiResParsed;
 
   return NextResponse.json({
     ok: true,
@@ -328,5 +454,7 @@ export async function POST(req: NextRequest) {
     opticalCenterY: cy,
     centerTo1MilPx: hashPx ?? def?.centerTo1MilPx ?? 55.5,
     illumination: savedIllum,
+    imageCrop: savedCrop,
+    hiRes: savedHiRes,
   });
 }

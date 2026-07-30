@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import { RETICLES } from "@/lib/range/reticles";
+import {
+  escapeRegExp,
+  findReticleEntry,
+  removeDuplicateReticleEntries,
+} from "@/lib/range/reticleFilePatch";
 import { getCatalogByCategory } from "@/lib/shop/catalog";
 import { isScopeItem } from "@/lib/shop/types";
 
@@ -12,56 +17,12 @@ type Body = {
   fileName?: unknown;
   nativeWidth?: unknown;
   nativeHeight?: unknown;
+  /** base = patch reticles.ts src; hiRes = write PNG only. */
+  layer?: unknown;
 };
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function findReticleEntry(
-  src: string,
-  reticleId: string,
-): {
-  index: number;
-  open: string;
-  inner: string;
-  close: string;
-  fullLength: number;
-} | null {
-  const openRe = new RegExp(`"${escapeRegExp(reticleId)}":\\s*\\{`);
-  const openMatch = openRe.exec(src);
-  if (!openMatch || openMatch.index == null) return null;
-  const open = openMatch[0];
-  const bodyStart = openMatch.index + open.length;
-  let depth = 1;
-  let i = bodyStart;
-  for (; i < src.length; i += 1) {
-    const ch = src[i]!;
-    if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        i += 1;
-        break;
-      }
-    }
-  }
-  if (depth !== 0) return null;
-  let closeEnd = i;
-  while (closeEnd < src.length && /\s/.test(src[closeEnd]!)) closeEnd += 1;
-  if (src[closeEnd] === ",") closeEnd += 1;
-  const close = src.slice(i - 1, closeEnd);
-  return {
-    index: openMatch.index,
-    open,
-    inner: src.slice(bodyStart, i - 1),
-    close,
-    fullLength: closeEnd - openMatch.index,
-  };
 }
 
 function pngSize(buf: Buffer): { w: number; h: number } | null {
@@ -173,6 +134,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const layer =
+    body.layer === "hiRes" ? "hiRes" : "base";
+
   const existingId = item.scope.reticleId;
   const reticleId =
     existingId && RETICLES[existingId]
@@ -184,7 +148,9 @@ export async function POST(req: NextRequest) {
   const base =
     sanitizeFileBase(
       fileNameRaw.replace(/\.png$/i, "") ||
-        reticleId.replace(/^admin-/, "") ||
+        (layer === "hiRes"
+          ? `${reticleId.replace(/^admin-/, "")}-hires`
+          : reticleId.replace(/^admin-/, "")) ||
         scopeId,
     ) || reticleId;
   const publicSrc = `/range/reticles/${base}.png`;
@@ -192,9 +158,23 @@ export async function POST(req: NextRequest) {
   await fs.mkdir(path.dirname(absPng), { recursive: true });
   await fs.writeFile(absPng, buf);
 
+  if (layer === "hiRes") {
+    return NextResponse.json({
+      ok: true,
+      scopeId,
+      reticleId,
+      layer,
+      src: publicSrc,
+      nativeWidth,
+      nativeHeight,
+      path: `public/range/reticles/${base}.png`,
+    });
+  }
+
   const reticlesRel = "src/lib/range/reticles.ts";
   const reticlesAbs = path.join(process.cwd(), reticlesRel);
   let reticlesSrc = await fs.readFile(reticlesAbs, "utf8");
+  reticlesSrc = removeDuplicateReticleEntries(reticlesSrc, reticleId);
 
   const entryMatch = findReticleEntry(reticlesSrc, reticleId);
   if (entryMatch) {

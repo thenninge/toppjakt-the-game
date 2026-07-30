@@ -127,11 +127,13 @@ import {
 } from "@/lib/player";
 import {
   applyScopeClickError,
+  decodeReticleIllumination,
   scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
   scopeFovDiameterScale,
+  scopeIlluminationBipolar,
   scopeWindageClicksPerRev,
 } from "@/lib/optics/spec";
 import {
@@ -576,6 +578,11 @@ export function HuntShootView({
     ? focusBlurPx(trueDistanceM, parallaxFocusM) * params.parallaxBlurMult
     : 0;
   const illumOn = features.illumination;
+  const illumDecoded = decodeReticleIllumination(
+    reticleIllum,
+    scope?.scope,
+  );
+  const illumBipolar = scopeIlluminationBipolar(scope?.scope);
   const featuresRef = useRef(features);
   featuresRef.current = features;
   const triggerBarMsRef = useRef(params.triggerBarMs);
@@ -2370,6 +2377,7 @@ export function HuntShootView({
                   value={reticleIllum}
                   onChange={setReticleIllum}
                   disabled={fired}
+                  bipolar={illumBipolar}
                 />
               ) : null}
               <ParallaxTurret
@@ -2712,7 +2720,8 @@ export function HuntShootView({
                   scope={scope.scope}
                   zoom={zoom}
                   imgScale={reticleScale}
-                  illumination={illumOn ? reticleIllum : 0}
+                  illumination={illumOn ? illumDecoded.intensity : 0}
+                  illuminationColor={illumDecoded.color}
                 />
               </div>
               </ScopeFocusZoom>

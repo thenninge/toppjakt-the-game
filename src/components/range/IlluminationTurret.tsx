@@ -6,19 +6,35 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import {
+  reticleIllumColorHex,
+  type ReticleIllumColor,
+} from "@/lib/optics/spec";
 
-/** Full OFF→ON travel in px (stepless). */
+/** Full OFF→ON travel in px (stepless). Bipolar uses 2× this for −1…+1. */
 const ILLUM_TRAVEL_PX = 220;
 
 type IlluminationTurretProps = {
-  /** 0 = black etched reticle, 1 = full red illumination. */
+  /**
+   * Unipolar: 0…1 (off→full).
+   * Bipolar (red+green): −1…+1 (full green ↔ off ↔ full red).
+   */
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  /**
+   * When true, drum travels both ways: up = red, down = green.
+   * Sun icons are tinted to match.
+   */
+  bipolar?: boolean;
 };
 
 function clamp01(v: number) {
   return Math.min(1, Math.max(0, v));
+}
+
+function clampSigned(v: number) {
+  return Math.min(1, Math.max(-1, v));
 }
 
 function IllumSunIcon({ size = 14 }: { size?: number }) {
@@ -57,7 +73,6 @@ function IllumHalfSunIcon({
       <g clipPath={`url(#${clipId})`}>
         <circle cx="12" cy="12" r="3.4" fill="currentColor" />
       </g>
-      {/* Vertical diameter edge */}
       <line
         x1="12"
         y1="8.6"
@@ -78,18 +93,31 @@ function IllumHalfSunIcon({
   );
 }
 
+function sunStyle(color: ReticleIllumColor, strong: boolean): CSSProperties {
+  const hex = reticleIllumColorHex(color);
+  return {
+    color: hex,
+    filter: strong
+      ? `drop-shadow(0 0 3px ${hex}aa) drop-shadow(0 1px 1px rgba(0,0,0,0.9))`
+      : `drop-shadow(0 1px 1px rgba(0,0,0,0.85))`,
+    opacity: strong ? 1 : 0.92,
+  };
+}
+
 /**
  * Compact outer illumination tower — sits left of the parallax knurl
- * (ZCO-style). Stepless vertical drag maps 0→1 black→red on the reticle.
- * Face: knurl strip + black panel with “0” / half-sun / full sun.
+ * (ZCO-style). Unipolar: stepless 0→1 black→colour. Bipolar: −1 green ↔
+ * 0 ↔ +1 red; sun icons tinted to match.
  */
 export function IlluminationTurret({
   value,
   onChange,
   disabled = false,
+  bipolar = false,
 }: IlluminationTurretProps) {
-  const t = clamp01(value);
+  const t = bipolar ? clampSigned(value) : clamp01(value);
   const halfClipId = useId().replace(/:/g, "");
+  const halfClipIdGreen = `${halfClipId}-g`;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const faceRef = useRef<HTMLDivElement>(null);
@@ -134,21 +162,36 @@ export function IlluminationTurret({
       return;
     }
     const delta = e.clientY - drag.startY;
-    /* Drag up → brighter (higher T). */
-    const nextT = clamp01(drag.startT - delta / ILLUM_TRAVEL_PX);
+    /* Drag up → higher T (red / brighter). Drag down → lower T (green when bipolar). */
+    const nextT = bipolar
+      ? clampSigned(drag.startT - delta / ILLUM_TRAVEL_PX)
+      : clamp01(drag.startT - delta / ILLUM_TRAVEL_PX);
     onChangeRef.current(nextT);
   }
 
   const markOffY = (0 - t) * ILLUM_TRAVEL_PX;
   const markHalfY = (0.5 - t) * ILLUM_TRAVEL_PX;
   const markMaxY = (1 - t) * ILLUM_TRAVEL_PX;
+  const markHalfGreenY = (-0.5 - t) * ILLUM_TRAVEL_PX;
+  const markMaxGreenY = (-1 - t) * ILLUM_TRAVEL_PX;
+
+  const title =
+    Math.abs(t) < 0.02
+      ? "Illumination OFF"
+      : bipolar
+        ? t > 0
+          ? `Illumination red ${(t * 100).toFixed(0)}%`
+          : `Illumination green ${((-t) * 100).toFixed(0)}%`
+        : `Illumination ${(t * 100).toFixed(0)}%`;
 
   return (
     <div
       className={
         disabled
           ? "scope-turret scope-turret--illum scope-turret--compact is-disabled"
-          : "scope-turret scope-turret--illum scope-turret--compact"
+          : bipolar
+            ? "scope-turret scope-turret--illum scope-turret--compact scope-turret--illum-bipolar"
+            : "scope-turret scope-turret--illum scope-turret--compact"
       }
       aria-label="Reticle illumination"
       style={
@@ -177,16 +220,42 @@ export function IlluminationTurret({
             onLostPointerCapture={() => endDrag()}
             onContextMenu={(ev) => ev.preventDefault()}
             role="presentation"
-            title={
-              t < 0.02
-                ? "Illumination OFF"
-                : `Illumination ${(t * 100).toFixed(0)}%`
-            }
+            title={title}
           >
             <span className="illum-drum-knurl" />
             <span className="illum-drum-shade illum-drum-shade--a" />
             <span className="illum-drum-shade illum-drum-shade--b" />
             <div className="illum-drum-band">
+              {bipolar ? (
+                <>
+                  <div
+                    className="illum-drum-mark illum-drum-mark--max-green"
+                    style={{
+                      transform: `translateY(calc(-50% + ${markMaxGreenY}px))`,
+                    }}
+                  >
+                    <span
+                      className="illum-drum-sun illum-drum-sun--max"
+                      style={sunStyle("green", true)}
+                    >
+                      <IllumSunIcon size={15} />
+                    </span>
+                  </div>
+                  <div
+                    className="illum-drum-mark illum-drum-mark--half-green"
+                    style={{
+                      transform: `translateY(calc(-50% + ${markHalfGreenY}px))`,
+                    }}
+                  >
+                    <span
+                      className="illum-drum-sun illum-drum-sun--half"
+                      style={sunStyle("green", false)}
+                    >
+                      <IllumHalfSunIcon clipId={`illum-half-${halfClipIdGreen}`} />
+                    </span>
+                  </div>
+                </>
+              ) : null}
               <div
                 className="illum-drum-mark illum-drum-mark--off"
                 style={{
@@ -201,7 +270,10 @@ export function IlluminationTurret({
                   transform: `translateY(calc(-50% + ${markHalfY}px))`,
                 }}
               >
-                <span className="illum-drum-sun illum-drum-sun--half">
+                <span
+                  className="illum-drum-sun illum-drum-sun--half"
+                  style={sunStyle("red", false)}
+                >
                   <IllumHalfSunIcon clipId={`illum-half-${halfClipId}`} />
                 </span>
               </div>
@@ -211,7 +283,10 @@ export function IlluminationTurret({
                   transform: `translateY(calc(-50% + ${markMaxY}px))`,
                 }}
               >
-                <span className="illum-drum-sun illum-drum-sun--max">
+                <span
+                  className="illum-drum-sun illum-drum-sun--max"
+                  style={sunStyle("red", true)}
+                >
                   <IllumSunIcon size={15} />
                 </span>
               </div>

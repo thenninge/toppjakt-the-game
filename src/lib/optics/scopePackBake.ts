@@ -5,52 +5,19 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { ScopeSpec } from "@/lib/optics/spec";
-import type { ReticleDef, ReticleIllumination } from "@/lib/range/reticles";
+import type {
+  ReticleDef,
+  ReticleHiResLayer,
+  ReticleIllumination,
+  ReticleIlluminationRegion,
+  ReticleImageCrop,
+} from "@/lib/range/reticles";
 import type { ScopePack } from "@/lib/optics/scopePack";
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function findObjectEntry(
-  src: string,
-  keyPattern: RegExp,
-): {
-  index: number;
-  open: string;
-  inner: string;
-  close: string;
-  fullLength: number;
-} | null {
-  const openMatch = keyPattern.exec(src);
-  if (!openMatch || openMatch.index == null) return null;
-  const open = openMatch[0];
-  const bodyStart = openMatch.index + open.length;
-  let depth = 1;
-  let i = bodyStart;
-  for (; i < src.length; i += 1) {
-    const ch = src[i]!;
-    if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        i += 1;
-        break;
-      }
-    }
-  }
-  if (depth !== 0) return null;
-  let closeEnd = i;
-  while (closeEnd < src.length && /\s/.test(src[closeEnd]!)) closeEnd += 1;
-  if (src[closeEnd] === ",") closeEnd += 1;
-  return {
-    index: openMatch.index,
-    open,
-    inner: src.slice(bodyStart, i - 1),
-    close: src.slice(i - 1, closeEnd),
-    fullLength: closeEnd - openMatch.index,
-  };
-}
+import {
+  escapeRegExp,
+  findReticleEntry,
+} from "@/lib/range/reticleFilePatch";
+import { RETICLES } from "@/lib/range/reticles";
 
 function findCatalogScopeBlock(
   src: string,
@@ -132,6 +99,13 @@ function formatScopeSpecTs(scope: ScopeSpec, level: number): string {
   if (scope.focusViewportScale != null) {
     lines.push(`${pad}focusViewportScale: ${scope.focusViewportScale},`);
   }
+  if (scope.illuminationColors?.length) {
+    lines.push(
+      `${pad}illuminationColors: [${scope.illuminationColors
+        .map((c) => JSON.stringify(c))
+        .join(", ")}],`,
+    );
+  }
   if (scope.triggercamZoomRestrict != null) {
     lines.push(
       `${pad}triggercamZoomRestrict: ${scope.triggercamZoomRestrict},`,
@@ -146,6 +120,38 @@ function formatScopeSpecTs(scope: ScopeSpec, level: number): string {
   return lines.join("\n");
 }
 
+function formatRegionTs(
+  region: ReticleIlluminationRegion,
+  level: number,
+): string {
+  const pad = indent(level);
+  if (region.shape === "circle") {
+    const lines = [`${pad}{`, `${indent(level + 1)}shape: "circle",`];
+    if (region.cx != null) lines.push(`${indent(level + 1)}cx: ${region.cx},`);
+    if (region.cy != null) lines.push(`${indent(level + 1)}cy: ${region.cy},`);
+    lines.push(`${indent(level + 1)}r: ${region.r},`);
+    lines.push(`${pad}}`);
+    return lines.join("\n");
+  }
+  if (region.shape === "rect") {
+    return [
+      `${pad}{`,
+      `${indent(level + 1)}shape: "rect",`,
+      `${indent(level + 1)}x: ${region.x},`,
+      `${indent(level + 1)}y: ${region.y},`,
+      `${indent(level + 1)}w: ${region.w},`,
+      `${indent(level + 1)}h: ${region.h},`,
+      `${pad}}`,
+    ].join("\n");
+  }
+  return [
+    `${pad}{`,
+    `${indent(level + 1)}shape: "circleMils",`,
+    `${indent(level + 1)}rMils: ${region.rMils},`,
+    `${pad}}`,
+  ].join("\n");
+}
+
 function formatIlluminationTs(
   illum: ReticleIllumination,
   level: number,
@@ -156,32 +162,87 @@ function formatIlluminationTs(
   if (illum.maskSrc) {
     parts.push(`${innerPad}maskSrc: ${JSON.stringify(illum.maskSrc)},`);
   }
-  if (illum.region) {
-    const r = illum.region;
-    if (r.shape === "circle") {
-      parts.push(`${innerPad}region: {`);
-      parts.push(`${indent(level + 2)}shape: "circle",`);
-      if (r.cx != null) parts.push(`${indent(level + 2)}cx: ${r.cx},`);
-      if (r.cy != null) parts.push(`${indent(level + 2)}cy: ${r.cy},`);
-      parts.push(`${indent(level + 2)}r: ${r.r},`);
-      parts.push(`${innerPad}},`);
-    } else if (r.shape === "rect") {
-      parts.push(`${innerPad}region: {`);
-      parts.push(`${indent(level + 2)}shape: "rect",`);
-      parts.push(`${indent(level + 2)}x: ${r.x},`);
-      parts.push(`${indent(level + 2)}y: ${r.y},`);
-      parts.push(`${indent(level + 2)}w: ${r.w},`);
-      parts.push(`${indent(level + 2)}h: ${r.h},`);
-      parts.push(`${innerPad}},`);
-    } else if (r.shape === "circleMils") {
-      parts.push(`${innerPad}region: {`);
-      parts.push(`${indent(level + 2)}shape: "circleMils",`);
-      parts.push(`${indent(level + 2)}rMils: ${r.rMils},`);
-      parts.push(`${innerPad}},`);
+  if (illum.regions && illum.regions.length > 1) {
+    parts.push(`${innerPad}regions: [`);
+    for (const r of illum.regions) {
+      parts.push(`${formatRegionTs(r, level + 2)},`);
+    }
+    parts.push(`${innerPad}],`);
+  } else if (illum.region || illum.regions?.[0]) {
+    const r = illum.region ?? illum.regions![0]!;
+    if (r.shape === "circleMils") {
+      parts.push(
+        `${innerPad}region: { shape: "circleMils", rMils: ${r.rMils} },`,
+      );
+    } else if (r.shape === "circle") {
+      const bits = [`shape: "circle"`, `r: ${r.r}`];
+      if (r.cx != null) bits.push(`cx: ${r.cx}`);
+      if (r.cy != null) bits.push(`cy: ${r.cy}`);
+      parts.push(`${innerPad}region: { ${bits.join(", ")} },`);
+    } else {
+      parts.push(
+        `${innerPad}region: { shape: "rect", x: ${r.x}, y: ${r.y}, w: ${r.w}, h: ${r.h} },`,
+      );
     }
   }
   parts.push(`${pad}},`);
   return parts.join("\n");
+}
+
+function formatImageCropTs(crop: ReticleImageCrop, level: number): string {
+  const pad = indent(level);
+  const innerPad = indent(level + 1);
+  if (crop.shape === "circleMils") {
+    const lines = [
+      `${pad}imageCrop: {`,
+      `${innerPad}shape: "circleMils",`,
+      `${innerPad}rMils: ${crop.rMils},`,
+    ];
+    if (crop.rInnerMils != null) {
+      lines.push(`${innerPad}rInnerMils: ${crop.rInnerMils},`);
+    }
+    lines.push(`${pad}},`);
+    return lines.join("\n");
+  }
+  const lines = [
+    `${pad}imageCrop: {`,
+    `${innerPad}shape: "circle",`,
+  ];
+  if (crop.cx != null) lines.push(`${innerPad}cx: ${crop.cx},`);
+  if (crop.cy != null) lines.push(`${innerPad}cy: ${crop.cy},`);
+  lines.push(`${innerPad}r: ${crop.r},`);
+  if (crop.rInner != null) lines.push(`${innerPad}rInner: ${crop.rInner},`);
+  lines.push(`${pad}},`);
+  return lines.join("\n");
+}
+
+function formatHiResTs(hi: ReticleHiResLayer, level: number): string {
+  const pad = indent(level);
+  const innerPad = indent(level + 1);
+  const lines = [
+    `${pad}hiRes: {`,
+    `${innerPad}src: ${JSON.stringify(hi.src)},`,
+    `${innerPad}nativeWidth: ${hi.nativeWidth},`,
+    `${innerPad}nativeHeight: ${hi.nativeHeight},`,
+    `${innerPad}centerTo1MilPx: ${hi.centerTo1MilPx},`,
+  ];
+  if (hi.opticalCenterX != null) {
+    lines.push(`${innerPad}opticalCenterX: ${hi.opticalCenterX},`);
+  }
+  if (hi.opticalCenterY != null) {
+    lines.push(`${innerPad}opticalCenterY: ${hi.opticalCenterY},`);
+  }
+  if (hi.cropRMils != null) {
+    lines.push(`${innerPad}cropRMils: ${hi.cropRMils},`);
+  }
+  if (hi.fadeFromZoomFrac != null) {
+    lines.push(`${innerPad}fadeFromZoomFrac: ${hi.fadeFromZoomFrac},`);
+  }
+  if (hi.fadeToZoomFrac != null) {
+    lines.push(`${innerPad}fadeToZoomFrac: ${hi.fadeToZoomFrac},`);
+  }
+  lines.push(`${pad}},`);
+  return lines.join("\n");
 }
 
 function formatReticleEntryTs(reticle: ReticleDef): string {
@@ -205,6 +266,12 @@ function formatReticleEntryTs(reticle: ReticleDef): string {
   }
   if (reticle.illumination) {
     lines.push(formatIlluminationTs(reticle.illumination, 2));
+  }
+  if (reticle.imageCrop) {
+    lines.push(formatImageCropTs(reticle.imageCrop, 2));
+  }
+  if (reticle.hiRes) {
+    lines.push(formatHiResTs(reticle.hiRes, 2));
   }
   lines.push(`  },`);
   return lines.join("\n");
@@ -270,6 +337,17 @@ export async function bakeScopePackToRepo(
   let publicSrc: string | null = null;
   let reticle: ReticleDef | null = pack.reticle ? { ...pack.reticle } : null;
 
+  // Older exports omitted imageCrop / hiRes — keep repo values when missing.
+  if (reticle) {
+    const existing = RETICLES[reticle.id];
+    if (existing?.imageCrop && !reticle.imageCrop) {
+      reticle.imageCrop = existing.imageCrop;
+    }
+    if (existing?.hiRes && !reticle.hiRes) {
+      reticle.hiRes = existing.hiRes;
+    }
+  }
+
   if (pack.image?.base64) {
     const buf = Buffer.from(pack.image.base64, "base64");
     if (buf.length < 64) {
@@ -322,10 +400,7 @@ export async function bakeScopePackToRepo(
 
   if (reticle) {
     let reticlesSrc = await fs.readFile(reticlesAbs, "utf8");
-    const entry = findObjectEntry(
-      reticlesSrc,
-      new RegExp(`"${escapeRegExp(reticle.id)}":\\s*\\{`),
-    );
+    const entry = findReticleEntry(reticlesSrc, reticle.id);
     const block = formatReticleEntryTs(reticle);
     if (entry) {
       reticlesSrc =

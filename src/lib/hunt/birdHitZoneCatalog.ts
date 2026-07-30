@@ -13,7 +13,7 @@
  * - Body ellipse: wound — ettersøk toward max fly radius
  * - Outside: clean miss
  *
- * Auto-generated 2026-07-26T19:58:13.557Z — do not hand-edit unless needed.
+ * Auto-generated 2026-07-30T16:24:30.658Z — do not hand-edit unless needed.
  */
 
 import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
@@ -45,13 +45,13 @@ export const BIRD_HIT_ZONE_CATALOG: Record<BirdSpriteId, BirdHitZone> = {
     vitalCyPx: 75,
     instantDiameterMm: 61,
     vitalDiameterMm: 106,
-    headCxPx: 31.6,
-    headCyPx: 31.3,
-    headDiameterMm: 42,
+    headCxPx: 29.7,
+    headCyPx: 28.7,
+    headDiameterMm: 52,
     neckCxPx: 35.3,
-    neckCyPx: 48.4,
+    neckCyPx: 47.8,
     neckWidthMm: 28,
-    neckHeightMm: 79,
+    neckHeightMm: 123,
     neckRotationDeg: 349,
     bodyRxMm: 72,
     bodyRyMm: 96,
@@ -70,13 +70,13 @@ export const BIRD_HIT_ZONE_CATALOG: Record<BirdSpriteId, BirdHitZone> = {
     neckCxPx: 57.2,
     neckCyPx: 29.6,
     neckWidthMm: 28,
-    neckHeightMm: 89,
+    neckHeightMm: 126,
     neckRotationDeg: 7,
-    bodyRxMm: 59,
-    bodyRyMm: 108,
-    bodyOffsetXMm: -33,
-    bodyOffsetYMm: 26,
-    bodyRotationDeg: 51,
+    bodyRxMm: 69,
+    bodyRyMm: 131,
+    bodyOffsetXMm: -47,
+    bodyOffsetYMm: 36,
+    bodyRotationDeg: 59,
   },
   "tiur-1b": {
     vitalCxPx: 100,
@@ -85,17 +85,17 @@ export const BIRD_HIT_ZONE_CATALOG: Record<BirdSpriteId, BirdHitZone> = {
     vitalDiameterMm: 95,
     headCxPx: 86.6,
     headCyPx: 63.4,
-    headDiameterMm: 42,
+    headDiameterMm: 48,
     neckCxPx: 98.8,
     neckCyPx: 103,
     neckWidthMm: 28,
-    neckHeightMm: 89,
+    neckHeightMm: 110,
     neckRotationDeg: 352,
-    bodyRxMm: 61,
-    bodyRyMm: 81,
-    bodyOffsetXMm: -12,
-    bodyOffsetYMm: 19,
-    bodyRotationDeg: 23,
+    bodyRxMm: 74,
+    bodyRyMm: 105,
+    bodyOffsetXMm: -24,
+    bodyOffsetYMm: 39,
+    bodyRotationDeg: 38,
   },
   "tiur-2b": {
     vitalCxPx: 188.4,

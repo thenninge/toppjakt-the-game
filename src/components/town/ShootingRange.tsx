@@ -105,12 +105,14 @@ import { MM_PER_MOA_AT_100M } from "@/lib/ballistics/dispersion";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
 import {
   applyScopeClickError,
+  decodeReticleIllumination,
   rollScopeClickScale,
   scopeEffectiveZoomRange,
   scopeElevationClicksPerRev,
   scopeFocusViewportBoost,
   scopeFocusZoomBoost,
   scopeFovDiameterScale,
+  scopeIlluminationBipolar,
   scopeWindageClicksPerRev,
 } from "@/lib/optics/spec";
 import type { GameRealism } from "@/lib/optics/turretStyle";
@@ -546,6 +548,11 @@ export function ShootingRange({
     ? focusBlurPx(distanceM, parallaxFocusM) * params.parallaxBlurMult
     : 0;
   const illumOn = features.illumination;
+  const illumDecoded = decodeReticleIllumination(
+    reticleIllum,
+    scope?.scope,
+  );
+  const illumBipolar = scopeIlluminationBipolar(scope?.scope);
   const featuresRef = useRef(features);
   featuresRef.current = features;
   const triggerBarMsRef = useRef(params.triggerBarMs);
@@ -2652,6 +2659,7 @@ export function ShootingRange({
                 onParallaxChange={setParallaxFocusM}
                 reticleIllum={reticleIllum}
                 onIllumChange={setReticleIllum}
+                bipolar={illumBipolar}
               />
             ) : null
           }
@@ -2869,6 +2877,7 @@ export function ShootingRange({
                   <IlluminationTurret
                     value={reticleIllum}
                     onChange={setReticleIllum}
+                    bipolar={illumBipolar}
                   />
                 ) : null}
                 <ParallaxTurret
@@ -3183,7 +3192,10 @@ export function ShootingRange({
                     scope={scope.scope}
                     zoom={zoom}
                     imgScale={reticleImgScale}
-                    illumination={(tubeMode ? illumOn : true) ? reticleIllum : 0}
+                    illumination={
+                      (tubeMode ? illumOn : true) ? illumDecoded.intensity : 0
+                    }
+                    illuminationColor={illumDecoded.color}
                   />
                 </div>
                 </ScopeFocusZoom>

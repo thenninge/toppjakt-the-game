@@ -160,6 +160,14 @@ export function parseScopePack(raw: unknown): ScopePack | { error: string } {
   if (isFiniteNumber(sc.focusViewportScale)) {
     scope.focusViewportScale = sc.focusViewportScale;
   }
+  if (Array.isArray(sc.illuminationColors)) {
+    const colors = sc.illuminationColors.filter(
+      (c): c is "red" | "green" => c === "red" || c === "green",
+    );
+    if (colors.length > 0) {
+      scope.illuminationColors = [...new Set(colors)];
+    }
+  }
   if (typeof sc.triggercamZoomRestrict === "boolean") {
     scope.triggercamZoomRestrict = sc.triggercamZoomRestrict;
   }
@@ -212,6 +220,12 @@ export function parseScopePack(raw: unknown): ScopePack | { error: string } {
     }
     if (r.illumination && typeof r.illumination === "object") {
       reticle.illumination = r.illumination as ReticleIllumination;
+    }
+    if (r.imageCrop && typeof r.imageCrop === "object") {
+      reticle.imageCrop = r.imageCrop as import("@/lib/range/reticles").ReticleImageCrop;
+    }
+    if (r.hiRes && typeof r.hiRes === "object") {
+      reticle.hiRes = r.hiRes as import("@/lib/range/reticles").ReticleHiResLayer;
     }
     if (!scope.reticleId) scope.reticleId = rid;
   }

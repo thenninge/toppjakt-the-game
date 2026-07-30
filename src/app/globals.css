@@ -2035,6 +2035,11 @@ body {
     drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
 }
 
+/* Bipolar drum (ZCO): green marks below 0, red above — taller travel. */
+.scope-turret--illum-bipolar .illum-drum-knurl {
+  background-position: 0 calc(var(--illum-t, 0) * -36px);
+}
+
 .illum-drum-band {
   position: absolute;
   /* Sit entirely on the black panel (right of knurl). */
@@ -2289,6 +2294,94 @@ body {
   transform: translate(-50%, -50%);
 }
 
+.admin-scope-crop-region {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.admin-scope-crop-region-circle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  box-sizing: border-box;
+  border: 1.5px dashed rgba(120, 220, 160, 0.95);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  opacity: 0.9;
+}
+
+.admin-scope-crop-region-circle--inner {
+  border-color: rgba(100, 180, 255, 0.95);
+}
+
+.admin-spot-field.is-hash-cal-active .admin-scope-rot-slider {
+  outline: 2px solid rgba(64, 200, 255, 0.65);
+  outline-offset: 2px;
+}
+
+.admin-spot-field.is-hash-cal-active > span {
+  color: rgba(100, 210, 255, 0.95);
+}
+
+.admin-scope-layer-switch {
+  align-items: center;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(107, 82, 56, 0.35);
+  margin-bottom: 0.15rem;
+}
+
+.admin-scope-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid rgba(100, 180, 255, 0.28);
+  border-radius: 0.35rem;
+  background: rgba(12, 20, 28, 0.35);
+}
+
+.admin-scope-layers-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.admin-scope-layers-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: rgba(160, 210, 255, 0.95);
+}
+
+.admin-scope-layer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid rgba(107, 82, 56, 0.4);
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.admin-scope-layer-card-label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #c9b89a;
+}
+
+.admin-spot-src-input {
+  min-width: 12rem !important;
+  width: 100% !important;
+  flex: 1;
+}
+
 .admin-scope-illum-region-rect {
   /* left/top set inline as calc(50% + offset) from optical centre. */
 }
@@ -2449,7 +2542,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  width: min(100%, 40rem);
+  width: min(100%, 56rem);
   margin: 0.45rem auto 0.15rem;
   padding: 0.55rem 0.65rem;
   border: 1px solid #4a3828;
@@ -9218,6 +9311,8 @@ body {
 
 .scope-reticle--image {
   display: block;
+  /* Circular imageCrop clip-path is applied inline; keep overflow visible
+   * so absolute reticle imgs paint, then clip-path masks to the circle. */
 }
 
 .scope-reticle-img {

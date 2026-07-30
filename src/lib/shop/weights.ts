@@ -36,6 +36,7 @@ export const WEIGHT_G_BY_ID: Record<string, number> = {
   "scope-nf-atacr-7-35-f1": 1110,
   "scope-zco-527-mct": 1045,
   "scope-element-titan-5-20-mrad": 980,
+  "scope-element-nexus-g1-5-20-mrad": 794,
   "scope-element-theos-5-25-mrad": 1030,
   "scope-leupold-mk5hd-5-25-mrad": 850,
   "scope-kahles-k318i-3-18-mrad": 940,
