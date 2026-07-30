@@ -164,7 +164,10 @@ import {
   type HuntAdminShotDebug,
   type HuntShotResult,
 } from "@/lib/hunt/shoot";
-import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
+import {
+  resolveBirdSpriteIdForNerve,
+  type BirdSpriteId,
+} from "@/lib/hunt/birdSprites";
 import {
   findBirdNearLandscapePoint,
   type BirdVisualPlacement,
@@ -496,7 +499,22 @@ export function HuntShootView({
   onSideDrumsChange,
   realism = "medium",
 }: HuntShootViewProps) {
-  const shotGeom = useMemo(() => birdShotGeom(birdSpriteId), [birdSpriteId]);
+  const [nerveUi, setNerveUi] = useState(() =>
+    Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
+  );
+  const activeSpriteId = useMemo(
+    () =>
+      resolveBirdSpriteIdForNerve(
+        birdSpriteId,
+        nerveUi,
+        ENCOUNTER_NERVE.flushThreshold,
+      ),
+    [birdSpriteId, nerveUi],
+  );
+  const shotGeom = useMemo(
+    () => birdShotGeom(activeSpriteId),
+    [activeSpriteId],
+  );
   const mmToPx = (mm: number) => birdMmToNativePx(mm, shotGeom);
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
@@ -604,9 +622,6 @@ export function HuntShootView({
   const hudTabRef = useRef(hudTab);
   hudTabRef.current = hudTab;
   const birdNerveRef = useRef(
-    Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
-  );
-  const [nerveUi, setNerveUi] = useState(() =>
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
   );
   const camoSneakPctRef = useRef(camoSneakPct);

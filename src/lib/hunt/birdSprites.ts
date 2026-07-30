@@ -9,6 +9,8 @@
  * Batch B (`*b.png`): no painted target guides yet — vitals measured on the
  * topp itself (chest / heart-lung landmark). Same physical zone Ø as A
  * ({@link TIUR_INSTANT_KILL_DIAMETER_MM} / {@link TIUR_VITAL_DIAMETER_MM}).
+ * Nerve pairs (`*-n1` / `*-n1-alert`): calm↔alert pose swap at
+ * {@link BIRD_NERVE_ALERT_FRAC} of flush threshold (scope view).
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
@@ -21,6 +23,10 @@ export type BirdSpriteId =
   | "tiur-2b"
   | "tiur-3b"
   | "tiur-4b"
+  /** Nerve-pair calm (from tiur_pairs). */
+  | "tiur-n1"
+  /** Nerve-pair alert — not picked randomly; see {@link BirdSpriteDef.nerveAlertSpriteId}. */
+  | "tiur-n1-alert"
   | "orre-1"
   | "orre-2"
   | "orre-1b"
@@ -28,7 +34,15 @@ export type BirdSpriteId =
   | "orre-3b"
   | "orre-4b"
   | "orre-5b"
+  | "orre-n1"
+  | "orre-n1-alert"
   | "ugle-1";
+
+/**
+ * Fraction of flush-threshold nerve where calm→alert pose swaps.
+ * Matches {@link BirdNerveBar} “hot” at 75 %.
+ */
+export const BIRD_NERVE_ALERT_FRAC = 0.75;
 
 export type BirdSpriteDef = {
   id: BirdSpriteId;
@@ -50,6 +64,11 @@ export type BirdSpriteDef = {
   /** Same point on the target guide (for AAR overlays). */
   targetVitalCxPx: number;
   targetVitalCyPx: number;
+  /**
+   * When set, scope/spot display swaps to this sprite once nerve reaches
+   * {@link BIRD_NERVE_ALERT_FRAC} of the encounter flush threshold.
+   */
+  nerveAlertSpriteId?: BirdSpriteId;
 };
 
 function mapToTopp(
@@ -99,6 +118,7 @@ function defTopp(partial: {
   toppH: number;
   vitalCxPx: number;
   vitalCyPx: number;
+  nerveAlertSpriteId?: BirdSpriteId;
 }): BirdSpriteDef {
   return {
     id: partial.id,
@@ -113,6 +133,9 @@ function defTopp(partial: {
     vitalCyPx: partial.vitalCyPx,
     targetVitalCxPx: partial.vitalCxPx,
     targetVitalCyPx: partial.vitalCyPx,
+    ...(partial.nerveAlertSpriteId
+      ? { nerveAlertSpriteId: partial.nerveAlertSpriteId }
+      : {}),
   };
 }
 
@@ -185,6 +208,30 @@ export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
     toppH: 190,
     vitalCxPx: 100,
     vitalCyPx: 95,
+  }),
+  /**
+   * Nerve-pair calm (tiurpair1 left). Placeholder vitals — calibrate in Admin.
+   * Swaps to `tiur-n1-alert` at {@link BIRD_NERVE_ALERT_FRAC}.
+   */
+  "tiur-n1": defTopp({
+    id: "tiur-n1",
+    species: "tiur",
+    toppSrc: "/images/birds/tiur/tiur-n1.png",
+    toppW: 768,
+    toppH: 605,
+    vitalCxPx: 403,
+    vitalCyPx: 342,
+    nerveAlertSpriteId: "tiur-n1-alert",
+  }),
+  /** Nerve-pair alert (tiurpair1 right). */
+  "tiur-n1-alert": defTopp({
+    id: "tiur-n1-alert",
+    species: "tiur",
+    toppSrc: "/images/birds/tiur/tiur-n1-alert.png",
+    toppW: 618,
+    toppH: 901,
+    vitalCxPx: 348,
+    vitalCyPx: 623,
   }),
   "orre-1": def({
     id: "orre-1",
@@ -260,6 +307,30 @@ export const BIRD_SPRITES: Record<BirdSpriteId, BirdSpriteDef> = {
     vitalCxPx: 72,
     vitalCyPx: 130,
   }),
+  /**
+   * Nerve-pair calm (orrepair1 left). Placeholder vitals — calibrate in Admin.
+   * Swaps to `orre-n1-alert` at {@link BIRD_NERVE_ALERT_FRAC}.
+   */
+  "orre-n1": defTopp({
+    id: "orre-n1",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre-n1.png",
+    toppW: 720,
+    toppH: 1024,
+    vitalCxPx: 387,
+    vitalCyPx: 691,
+    nerveAlertSpriteId: "orre-n1-alert",
+  }),
+  /** Nerve-pair alert (orrepair1 right). */
+  "orre-n1-alert": defTopp({
+    id: "orre-n1-alert",
+    species: "orrhane",
+    toppSrc: "/images/birds/orre/orre-n1-alert.png",
+    toppW: 642,
+    toppH: 809,
+    vitalCxPx: 361,
+    vitalCyPx: 579,
+  }),
   "ugle-1": def({
     id: "ugle-1",
     species: "ugle",
@@ -281,6 +352,7 @@ const TIUR_IDS: BirdSpriteId[] = [
   "tiur-2b",
   "tiur-3b",
   "tiur-4b",
+  "tiur-n1",
 ];
 const ORRE_IDS: BirdSpriteId[] = [
   "orre-1",
@@ -290,6 +362,7 @@ const ORRE_IDS: BirdSpriteId[] = [
   "orre-3b",
   "orre-4b",
   "orre-5b",
+  "orre-n1",
 ];
 const UGLE_IDS: BirdSpriteId[] = ["ugle-1"];
 
@@ -306,6 +379,21 @@ export function allBirdSpriteIds(): BirdSpriteId[] {
 
 export function getBirdSprite(id: BirdSpriteId): BirdSpriteDef {
   return BIRD_SPRITES[id];
+}
+
+/**
+ * Active pose for display / hit geom given current nerve.
+ * Alert variants are never picked for encounters — only resolved here.
+ */
+export function resolveBirdSpriteIdForNerve(
+  spriteId: BirdSpriteId,
+  nerve: number,
+  flushThreshold = 1,
+): BirdSpriteId {
+  const alertId = BIRD_SPRITES[spriteId]?.nerveAlertSpriteId;
+  if (!alertId) return spriteId;
+  const frac = nerve / Math.max(1e-6, flushThreshold);
+  return frac >= BIRD_NERVE_ALERT_FRAC ? alertId : spriteId;
 }
 
 export function pickBirdSpriteId(

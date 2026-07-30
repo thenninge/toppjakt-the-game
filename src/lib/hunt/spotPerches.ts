@@ -22,6 +22,7 @@
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
+import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
 import {
   cloudPerchesForImage,
   cloudSceneImageSrcs,
@@ -58,6 +59,11 @@ export type SpotPerch = {
    * after distance + per-sprite scale.
    */
   scalePercent?: number;
+  /**
+   * Force a specific topp sprite (e.g. nerve-pair calm `tiur-n1`).
+   * When unset, pickBirdSpriteId chooses from the species pool.
+   */
+  spriteId?: BirdSpriteId;
   /** Inferred placement-guide color (from bracket). */
   colorBand?: SpotColorBand;
   /** Optional human note (which tree / color). */

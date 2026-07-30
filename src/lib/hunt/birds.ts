@@ -549,9 +549,11 @@ function placementFromPerch(
   random: () => number,
   spotImageSrc: string,
 ): BirdVisualPlacement {
-  const spriteId = pickBirdSpriteId(perch.species, random, {
-    spotImageSrc,
-  });
+  const spriteId =
+    perch.spriteId ??
+    pickBirdSpriteId(perch.species, random, {
+      spotImageSrc,
+    });
   const sprite = getBirdSprite(spriteId);
   return {
     birdId: bird.id,
