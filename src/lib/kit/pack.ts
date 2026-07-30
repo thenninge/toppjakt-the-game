@@ -17,6 +17,7 @@ import {
   DEFAULT_CARRY,
   scoreToBackpackFeltFraction,
   scoreToFeltFraction,
+  scoreToOpticsRaiseTransitionSec,
   scoreToQuickReleaseNerve,
   type CarrySpec,
 } from "@/lib/carry/spec";
@@ -175,6 +176,15 @@ export function chestrigOpticsRaiseNerve(kitItems: ShopItem[]): number {
   if (!hasOptics) return 0;
   const chest = chestrigFromKit(kitItems);
   return scoreToQuickReleaseNerve(chest?.quickRelease ?? 1);
+}
+
+/**
+ * Black-veil duration when raising binos/thermal.
+ * Chestrig QR 10 → 0.5 s, QR 1 → 2 s. No chestrig → treated as QR 1.
+ */
+export function chestrigOpticsRaiseTransitionSec(kitItems: ShopItem[]): number {
+  const chest = chestrigFromKit(kitItems);
+  return scoreToOpticsRaiseTransitionSec(chest?.quickRelease ?? 1);
 }
 
 /**

@@ -65,12 +65,15 @@ import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import {
   isAmmoItem,
+  isBackpackItem,
+  isChestrigItem,
   isFoodItem,
   isMiscItem,
   isMountItem,
   isRifleItem,
   isScopeItem,
   isStockItem,
+  isThermalItem,
 } from "@/lib/shop/types";
 import {
   mountClearsZeroOnMountRemove,
@@ -357,6 +360,7 @@ export const STARTER_LICENSE_ID = "license-starter-cz452";
  */
 export const STARTER_HUNT_SUPPORT_IDS = [
   "misc-vorn-deer-42",
+  "chest-sitka-mountain",
   "food-msr-pocketrocket",
   "food-msr-isopro-230",
   "food-real-turmat",
@@ -375,6 +379,17 @@ export const STARTER_HUNT_SUPPORT_IDS = [
   "camo-boots-m77",
   "misc-kestrel-5700-elite",
 ] as const;
+
+/** Shared VIP carry: Vorn Deer backpack + Sitka Mountain (QR 10) chestrig. */
+export const VIP_BACKPACK_ID = "misc-vorn-deer-42";
+export const VIP_CHESTRIG_ID = "chest-sitka-mountain";
+/** Ivar VIP: battery desk fan for range mirage. */
+export const IVAR_BORDVIFTE_ID = "misc-bordvifte-batteri";
+/** Einar-loadout (inkl. Hoftun): Kestrel + Hikmicro Lynx. */
+export const EINAR_KESTREL_ID = "misc-kestrel-5700-elite";
+export const EINAR_LYNX_ID = "thermal-hikmicro-lynx-le10";
+/** Best regular inatur terrain (not VIP / Rulles / cloud-custom). */
+export const EINAR_SEASON_TERRAIN_ID = "svenskegrensa";
 
 /** Default LRF when a kit profile omits {@link KitProfile.lrfId}. */
 export const DEFAULT_VIP_LRF_ID = "lrf-sig-kilo3000-bdx-10x42";
@@ -456,7 +471,7 @@ export const KIT_PROFILE_TOMAS: KitProfile = {
   },
 };
 
-/** Ivar — CarbonWölf Berillium Level + Nightforce NX8 MOA + Hausken JD184 + softgun. */
+/** Ivar — CarbonWölf Berillium Level + Nightforce NX8 MOA + Hausken JD184 + softgun + bordvifte. */
 export const KIT_PROFILE_IVAR: KitProfile = {
   id: "ivar",
   weaponIds: [
@@ -467,6 +482,7 @@ export const KIT_PROFILE_IVAR: KitProfile = {
     "ammo-lapua-65x55-scenar",
     "sup-hausken-jd184-xtrm",
     "bipod-game-on-softgun",
+    "misc-bordvifte-batteri",
   ],
   lrfId: "lrf-zeiss-victory-rf-10x42",
   zeroAmmoIds: [
@@ -529,6 +545,7 @@ export const KIT_PROFILE_EINAR: KitProfile = {
   supportIds: [
     "misc-kestrel-5700-elite",
     "misc-vorn-deer-42",
+    "chest-sitka-mountain",
     "misc-triggercam",
     "misc-thermos-jula",
     "outdoors-opptenningsbrikker",
@@ -569,6 +586,7 @@ export const KIT_PROFILE_DYRE: KitProfile = {
   supportIds: [
     "misc-kestrel-5700-elite",
     "misc-vorn-deer-42",
+    "chest-sitka-mountain",
     "misc-triggercam",
     "misc-thermos-jula",
     "outdoors-opptenningsbrikker",
@@ -900,10 +918,72 @@ function syncProfileLrf(stats: PlayerStats, profile: KitProfile): PlayerStats {
 }
 
 /**
+ * VIP packs: Vorn Deer + Sitka Mountain Optics Harness (best QR).
+ * Ivar also gets bordvifte. Einar-loadout (Hoftun m.fl.) gets Kestrel + Lynx.
+ * Exclusive backpack/chestrig/thermal slots swapped in kit.
+ */
+function syncVipCarryGear(
+  stats: PlayerStats,
+  profile: KitProfile,
+): PlayerStats {
+  let inv = [...stats.inventory];
+  let kit = [...stats.kit];
+  let changed = false;
+
+  const ensureOwned = (id: string) => {
+    if (inv.some((e) => e.itemId === id)) return;
+    inv.push({ itemId: id, qty: 1 });
+    changed = true;
+  };
+
+  ensureOwned(VIP_BACKPACK_ID);
+  ensureOwned(VIP_CHESTRIG_ID);
+  if (profile.id === "ivar") ensureOwned(IVAR_BORDVIFTE_ID);
+  if (profile.id === "einar" || profile.id === "dyre") {
+    ensureOwned(EINAR_KESTREL_ID);
+    ensureOwned(EINAR_LYNX_ID);
+  }
+
+  const ensureExclusiveKit = (
+    wantId: string,
+    isSlot: (item: ShopItem) => boolean,
+  ) => {
+    if (kit.includes(wantId)) return;
+    const others = kit.filter((id) => {
+      const item = getShopItem(id);
+      return item ? isSlot(item) : false;
+    });
+    if (others.length > 0) {
+      kit = kit.filter((id) => !others.includes(id));
+    }
+    kit.push(wantId);
+    changed = true;
+  };
+
+  const ensureKitItem = (wantId: string) => {
+    if (kit.includes(wantId)) return;
+    kit.push(wantId);
+    changed = true;
+  };
+
+  ensureExclusiveKit(VIP_BACKPACK_ID, isBackpackItem);
+  ensureExclusiveKit(VIP_CHESTRIG_ID, isChestrigItem);
+
+  if (profile.id === "ivar") ensureKitItem(IVAR_BORDVIFTE_ID);
+  if (profile.id === "einar" || profile.id === "dyre") {
+    ensureKitItem(EINAR_KESTREL_ID);
+    ensureExclusiveKit(EINAR_LYNX_ID, isThermalItem);
+  }
+
+  if (!changed) return stats;
+  return { ...stats, inventory: inv, kit };
+}
+
+/**
  * Grant cheat/VIP loadout when the name matches but the profile rifle is
  * missing — e.g. saves created before VIP kits, or load skipping intro.
- * Idempotent if the kit is already present; still syncs profile LRF.
- * Hoftun also gets a free Sandbekken sesongkort when missing/expired.
+ * Idempotent if the kit is already present; still syncs profile LRF + carry.
+ * Hoftun also gets Sandbekken sesongkort; Einar-loadout gets Svenskegrensa.
  */
 export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
   const profile = namedStarterProfile(stats.name);
@@ -916,9 +996,11 @@ export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
       }
     } else {
       next = syncProfileLrf(next, profile);
+      next = syncVipCarryGear(next, profile);
     }
   }
-  return ensureHoftunSandbekkenPass(next);
+  next = ensureHoftunSandbekkenPass(next);
+  return ensureEinarSeasonPass(next);
 }
 
 /** Hoftun VIP: free Sandbekken season card (idempotent while days remain). */
@@ -942,6 +1024,31 @@ export function ensureHoftunSandbekkenPass(stats: PlayerStats): PlayerStats {
     jaktkort: upsertJaktkort(stats.jaktkort, kort),
     selectedHuntingTerrainId:
       stats.selectedHuntingTerrainId ?? HOFTUN_SANDBEKKEN_TERRAIN_ID,
+  };
+}
+
+/**
+ * Einar-loadout VIP (Einar, Eirik, Konrad, Hoftun): season pass on Svenskegrensa —
+ * best priced regular Inatur terrain (not VIP/Rulles/cloud-custom maps).
+ */
+export function ensureEinarSeasonPass(stats: PlayerStats): PlayerStats {
+  if (vipKitProfileIdForName(stats.name) !== "einar") return stats;
+  const existing = getJaktkortForTerrain(
+    stats.jaktkort,
+    EINAR_SEASON_TERRAIN_ID,
+  );
+  if (existing && existing.daysRemaining > 0) return stats;
+  const terrain = getHuntingTerrain(EINAR_SEASON_TERRAIN_ID);
+  const kort = createJaktkort(
+    EINAR_SEASON_TERRAIN_ID,
+    "season",
+    terrain?.pricePerDayNok ?? 1100,
+  );
+  return {
+    ...stats,
+    jaktkort: upsertJaktkort(stats.jaktkort, kort),
+    selectedHuntingTerrainId:
+      stats.selectedHuntingTerrainId ?? EINAR_SEASON_TERRAIN_ID,
   };
 }
 

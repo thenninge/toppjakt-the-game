@@ -215,6 +215,12 @@ export function InaturNo({
           overnatting ute). Uke- og sesongkort tærer én jaktdag per overnatting.
           Du kan ha aktive kort i flere terreng samtidig.
         </p>
+        {isVip || isAdmin ? (
+          <p className="shop-row-note">
+            VIP: Einar-loadout får sesongkort på Svenskegrensa; Hoftun får i
+            tillegg Sandbekken.
+          </p>
+        ) : null}
         {activeKorts.length > 0 ? (
           <p className="shop-row-note">
             Aktive kort:{" "}

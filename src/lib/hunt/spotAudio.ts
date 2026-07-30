@@ -2,7 +2,7 @@
  * Spotting optic SFX under /public/sfx/.
  * - ruffle: raise binos / switch optic (play to completion under black)
  * - thermal: thermal boot (after ruffle) + WH/BH/Outline/Fusion clicks
- * - lrf: F / Space / LRF button ranging (Web Audio gain > 1)
+ * - lrf: F / Space / LRF button ranging (Web Audio buffer, gain > 1)
  */
 
 import { effectiveSfxVolume } from "@/lib/audio/volumes";
@@ -15,7 +15,7 @@ export const SPOT_AUDIO = {
 
 const RUFFLE_VOLUME = 0.7;
 const THERMAL_VOLUME = 0.65;
-/** Base HTML volume × 3 via Web Audio (HTMLAudioElement.volume caps at 1). */
+/** Base gain × 3 via Web Audio (HTMLAudioElement.volume caps at 1). */
 const LRF_GAIN = 0.7 * 3;
 
 export type SpotAudioHandle = {
@@ -26,6 +26,8 @@ export type SpotAudioHandle = {
 };
 
 let audioCtx: AudioContext | null = null;
+/** Decoded LRF click — BufferSource so every press plays (MediaElementSource often one-shots). */
+const bufferCache = new Map<string, AudioBuffer | Promise<AudioBuffer>>();
 
 function getAudioCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -39,6 +41,31 @@ function getAudioCtx(): AudioContext | null {
     void audioCtx.resume().catch(() => {});
   }
   return audioCtx;
+}
+
+function loadBuffer(
+  ctx: AudioContext,
+  src: string,
+): Promise<AudioBuffer> {
+  const hit = bufferCache.get(src);
+  if (hit instanceof AudioBuffer) return Promise.resolve(hit);
+  if (hit) return hit;
+  const pending = fetch(src)
+    .then((r) => {
+      if (!r.ok) throw new Error(`SFX fetch ${r.status}`);
+      return r.arrayBuffer();
+    })
+    .then((raw) => ctx.decodeAudioData(raw.slice(0)))
+    .then((buf) => {
+      bufferCache.set(src, buf);
+      return buf;
+    })
+    .catch((err) => {
+      bufferCache.delete(src);
+      throw err;
+    });
+  bufferCache.set(src, pending);
+  return pending;
 }
 
 function playTracked(
@@ -83,10 +110,9 @@ function playTracked(
 }
 
 /**
- * One-shot with Web Audio gain (can exceed HTML volume 1.0).
- * Used for LRF click which needs +3× loudness.
+ * One-shot via AudioBuffer — safe to fire on every LRF press (overlap OK).
  */
-function playWithGain(src: string, gainValue: number): void {
+function playBufferOneShot(src: string, gainValue: number): void {
   if (typeof window === "undefined") return;
   const scaled = gainValue * effectiveSfxVolume();
   if (scaled <= 0) return;
@@ -99,25 +125,23 @@ function playWithGain(src: string, gainValue: number): void {
     return;
   }
 
-  const audio = new Audio(src);
-  audio.volume = 1;
-  const source = ctx.createMediaElementSource(audio);
-  const gain = ctx.createGain();
-  gain.gain.value = scaled;
-  source.connect(gain);
-  gain.connect(ctx.destination);
-  const cleanup = () => {
+  void (async () => {
     try {
-      source.disconnect();
-      gain.disconnect();
+      if (ctx.state === "suspended") await ctx.resume();
+      const buffer = await loadBuffer(ctx, src);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      const gain = ctx.createGain();
+      gain.gain.value = scaled;
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.start(0);
     } catch {
-      /* ignore */
+      const audio = new Audio(src);
+      audio.volume = Math.min(1, scaled);
+      void audio.play().catch(() => {});
     }
-    audio.src = "";
-  };
-  audio.addEventListener("ended", cleanup, { once: true });
-  audio.addEventListener("error", cleanup, { once: true });
-  void audio.play().catch(cleanup);
+  })();
 }
 
 /** Cloth/gear ruffle — raising binos or swapping optic. */
@@ -135,7 +159,7 @@ export function playSpotThermalClick(): void {
   playSpotThermal();
 }
 
-/** LRF ranging (F / Space / LRF button) — 3× louder than base. */
+/** LRF ranging (F / Space / LRF button) — plays on every press. */
 export function playSpotLrf(): void {
-  playWithGain(SPOT_AUDIO.lrf, LRF_GAIN);
+  playBufferOneShot(SPOT_AUDIO.lrf, LRF_GAIN);
 }

@@ -27,6 +27,10 @@ import {
 } from "@/lib/optics/spec";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import { mmAt100ToAngular } from "@/lib/optics/clicks";
+import {
+  OPTICS_RAISE_TRANSITION_SEC_FAST,
+  OPTICS_RAISE_TRANSITION_SEC_SLOW,
+} from "@/lib/carry/spec";
 import { compassLabelFromDeg } from "@/lib/aware/ettersok";
 import { bearingFromSpotFrame } from "@/lib/hunt/spotCompass";
 import { formatHuntClock } from "@/lib/hunt/travel";
@@ -126,6 +130,11 @@ type SpotViewProps = {
   binosAperturePercent?: number | null;
   /** Shop price of equipped thermal — drives circular bezel thickness. */
   thermalPriceNok?: number;
+  /**
+   * Black-veil seconds when raising binos/thermal (chestrig QR).
+   * QR 10 → 0.5 s, QR 1 → 2 s.
+   */
+  opticsRaiseTransitionSec?: number;
   /** Absolute hunt clock in minutes (for HUD). */
   clockMinutes: number;
   /** Player has binoculars in kit. */
@@ -414,6 +423,7 @@ export function SpotView({
   binosPriceNok = 0,
   binosAperturePercent = null,
   thermalPriceNok = 0,
+  opticsRaiseTransitionSec = OPTICS_RAISE_TRANSITION_SEC_SLOW,
   clockMinutes,
   hasBinos,
   hasThermal = false,
@@ -472,7 +482,7 @@ export function SpotView({
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
   /**
-   * Solid black veil while optic raise SFX play; cleared when the new view opens.
+   * Solid black veil while optic raise transition runs; cleared when the new view opens.
    */
   const [opticRevealGen, setOpticRevealGen] = useState(0);
   const [opticRevealing, setOpticRevealing] = useState(false);
@@ -994,9 +1004,8 @@ export function SpotView({
   }
 
   /**
-   * Black → ruffle → open optic.
-   * Thermal: after ruffle, play thermal boot; open when thermal ends.
-   * Applies to first raise and every bino ↔ thermal swap.
+   * Black → ruffle (+ thermal boot) → open optic after chestrig QR transition time.
+   * QR 10 → 0.5 s, QR 1 → 2 s. Applies to first raise and every bino ↔ thermal swap.
    */
   function enterOpticMode(targetMode: "binos" | "thermal") {
     const from = modeRef.current;
@@ -1015,22 +1024,39 @@ export function SpotView({
     const ruffle = playSpotRuffle();
     if (ruffle) opticAudioHandlesRef.current.push(ruffle);
 
+    const transitionMs = Math.round(
+      Math.max(
+        OPTICS_RAISE_TRANSITION_SEC_FAST,
+        Math.min(OPTICS_RAISE_TRANSITION_SEC_SLOW, opticsRaiseTransitionSec),
+      ) * 1000,
+    );
+
     void (async () => {
       try {
-        await ruffle?.ended;
-        if (gen !== opticRaiseGenRef.current) return;
-
         if (targetMode === "thermal") {
-          const thermal = playSpotThermal();
-          if (thermal) opticAudioHandlesRef.current.push(thermal);
-          await thermal?.ended;
-          if (gen !== opticRaiseGenRef.current) return;
+          void (async () => {
+            try {
+              await ruffle?.ended;
+              if (gen !== opticRaiseGenRef.current) return;
+              const thermal = playSpotThermal();
+              if (thermal) opticAudioHandlesRef.current.push(thermal);
+            } catch {
+              /* audio aborted */
+            }
+          })();
         }
 
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, transitionMs);
+        });
+        if (gen !== opticRaiseGenRef.current) return;
+
+        stopOpticRaiseAudio();
         applyOpticMode(targetMode);
         setOpticRevealing(false);
       } catch {
         if (gen !== opticRaiseGenRef.current) return;
+        stopOpticRaiseAudio();
         applyOpticMode(targetMode);
         setOpticRevealing(false);
       }

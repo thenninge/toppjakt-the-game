@@ -7,7 +7,7 @@
  * | Score            | Meaning                                                      |
  * |------------------|--------------------------------------------------------------|
  * | carryComfort     | Fraction of optic (LRF/thermal) weight felt on Body          |
- * | quickRelease     | Bird-nerve when raising binos (10 = 0 %, 1 = +10 %)          |
+ * | quickRelease     | Bird-nerve + black raise time (10 = 0 % / 0.5 s, 1 = +10 % / 2 s) |
  *
  * Backpack:
  * | carryComfort     | Felt pack load: 10 = 25% lighter (75% felt), 1 = full weight |
@@ -24,7 +24,7 @@ export type CarrySpec = {
   carryComfort: Score10;
   /**
    * 1–10. Higher = less bird-nerve when deploying that carry's gear
-   * (chestrig → optics, backpack → rifle).
+   * (chestrig → optics + faster raise veil, backpack → rifle).
    */
   quickRelease: Score10;
 };
@@ -41,6 +41,24 @@ export const DEFAULT_CARRY: CarrySpec = {
  */
 export function scoreToQuickReleaseNerve(quickRelease: Score10): number {
   return ((10 - clampScore10(quickRelease)) / 9) * 0.1;
+}
+
+/** Chestrig QR 10 — black veil when raising binos/thermal. */
+export const OPTICS_RAISE_TRANSITION_SEC_FAST = 0.5;
+/** Chestrig QR 1 (or no chestrig) — black veil when raising binos/thermal. */
+export const OPTICS_RAISE_TRANSITION_SEC_SLOW = 2;
+
+/**
+ * QR → optic raise transition seconds (black veil).
+ * 10 → 0.5 s, 1 → 2 s (linear).
+ */
+export function scoreToOpticsRaiseTransitionSec(quickRelease: Score10): number {
+  const qr = clampScore10(quickRelease);
+  return (
+    OPTICS_RAISE_TRANSITION_SEC_FAST +
+    ((10 - qr) / 9) *
+      (OPTICS_RAISE_TRANSITION_SEC_SLOW - OPTICS_RAISE_TRANSITION_SEC_FAST)
+  );
 }
 
 /**

@@ -3338,7 +3338,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Sitka",
     name: "Mountain Optics Harness",
     priceNok: 2990,
-    note: "Topp QR (nesten ingen nerve-bump) og god comfort for tung LRF.",
+    note: "Topp QR — nesten ingen nerve-bump, ~0,5 s raise til bino/termisk, og god comfort for tung LRF.",
     carry: {
       carryComfort: 6,
       quickRelease: 10,
@@ -3362,7 +3362,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Jula",
     name: "Nakkerem + pouch",
     priceNok: 99,
-    note: "Billig nakkestropp — lav QR og comfort.",
+    note: "Billig nakkestropp — lav QR (treg raise + mer bird-nerve) og comfort.",
     carry: {
       carryComfort: 2,
       quickRelease: 3,

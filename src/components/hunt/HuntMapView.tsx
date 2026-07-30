@@ -110,7 +110,7 @@ import {
   type BirdHarvestInput,
   type GameCarcass,
 } from "@/lib/hunt/carcass";
-import { backpackRifleRaiseNerve, chestrigOpticsRaiseNerve, computePackLoad, MOUNT_GUN_UNSPOTTED_NERVE } from "@/lib/kit/pack";
+import { backpackRifleRaiseNerve, chestrigOpticsRaiseNerve, chestrigOpticsRaiseTransitionSec, computePackLoad, MOUNT_GUN_UNSPOTTED_NERVE } from "@/lib/kit/pack";
 import { formatWeightKg } from "@/lib/shop/weights";
 import { SpotView, type SpotMode, type SpotLrfHoldSolution } from "@/components/hunt/SpotView";
 import { HuntShootView } from "@/components/hunt/HuntShootView";
@@ -3724,7 +3724,7 @@ export function HuntMapView({
     setPanel("arrived");
   }
 
-  /** Fallback when the 60 s register window expires / Fortsett spotting.
+  /** Fallback when the 60 s register window expires.
    * Keeps hidden true land for Track — no visible skuddmarkør that spoils the seat.
    */
   function createFallbackPairFromGhost(g: PostShotGhost): ShotPair {
@@ -4032,6 +4032,12 @@ export function HuntMapView({
    */
   function openAwareOverview() {
     setSpotSession(null);
+    // Active 60 s post-shot window — reopen register Aware with bird marker.
+    const ghost = postShotGhostRef.current;
+    if (ghost && Date.now() < ghost.expiresAtMs) {
+      openPostShotSkuddparAware();
+      return;
+    }
     // Prefer unfinished pairs in this cell (side list opens other cells).
     const hereUnfinished = unfinishedShotPairs.filter(
       (p) => p.cell.row === pos.row && p.cell.col === pos.col,
@@ -4246,15 +4252,19 @@ export function HuntMapView({
       postShotGhost?.imageSrc ??
       spotLayoutByCell[`${pos.row},${pos.col}`]?.imageSrc ??
       null;
-    if (postShotGhost) {
-      // Spotting without registering → fallback pair so Track still works later.
-      expirePostShotGhost();
-    }
-    setPendingPostShot(null);
+    // Keep postShotGhost for the full 60 s — spotting / leaving Aware must
+    // not end the register window early.
+    const ghostLeft = postShotGhost
+      ? Math.max(0, Math.ceil((postShotGhost.expiresAtMs - Date.now()) / 1000))
+      : 0;
     setLog(
-      stayed > 0
-        ? `Du speider videre — ${stayed === 1 ? "kanskje én fugl" : "kanskje noen fugler"} ble sittende.`
-        : "Du speider videre.",
+      postShotGhost && ghostLeft > 0
+        ? stayed > 0
+          ? `Du speider videre — ${stayed === 1 ? "kanskje én fugl" : "kanskje noen fugler"} ble sittende. Fuglemarkør synlig i Aware i ${ghostLeft} s.`
+          : `Du speider videre. Fuglemarkør synlig i Aware i ${ghostLeft} s — registrer skuddmarkør før tiden går ut.`
+        : stayed > 0
+          ? `Du speider videre — ${stayed === 1 ? "kanskje én fugl" : "kanskje noen fugler"} ble sittende.`
+          : "Du speider videre.",
     );
     beginSpot({ reuseImageSrc });
   }
@@ -4559,7 +4569,7 @@ export function HuntMapView({
       // No cam / no pre-save: 60 s window to register skuddmarkør on Aware.
       pair = null;
       pairNote =
-        " Registrer skuddmarkør i Aware innen 60 s (fuglemarkør synlig). Etter det forsvinner markøren — fuglen ligger fortsatt til ettersøk, men uten synlig skuddmarkør.";
+        " Registrer skuddmarkør i Aware innen 60 s (fuglemarkør synlig — også hvis du går til spotting). Etter det forsvinner markøren — fuglen ligger fortsatt til ettersøk, men uten synlig skuddmarkør.";
     }
 
     const clip = pickShotVideoForResult(result.kind);
@@ -5542,20 +5552,28 @@ export function HuntMapView({
             return next;
           });
         }}
-        abortLabel={
-          awareSession.postShotSkuddpar
-            ? "Tilbake"
-            : "Til spotting"
-        }
+        abortLabel="Til spotting"
         onAbort={
           awareSession.postShotSkuddpar
             ? (opts) => {
                 rememberAwareStand(opts?.hunter);
                 setAwareSession(null);
+                // Keep the 60 s ghost — spotting must not end the register window.
+                const g = postShotGhostRef.current;
+                const left = g
+                  ? Math.max(
+                      0,
+                      Math.ceil((g.expiresAtMs - Date.now()) / 1000),
+                    )
+                  : 0;
+                beginSpot({
+                  reuseImageSrc: awareSession.imageSrc,
+                  initialMode: "binos",
+                });
                 setLog(
-                  postShotGhost
-                    ? `Tilbake til kart — ${Math.max(0, Math.ceil((postShotGhost.expiresAtMs - Date.now()) / 1000))} s igjen til å registrere skuddmarkør.`
-                    : "Tilbake til kart.",
+                  left > 0
+                    ? `Til spotting — fuglemarkør synlig i Aware i ${left} s. Åpne Aware for å registrere skuddmarkør.`
+                    : "Til spotting.",
                 );
               }
             : awareSession.ettersokPairId
@@ -5600,6 +5618,7 @@ export function HuntMapView({
         binosPriceNok={binoItem?.priceNok ?? (isHabrok ? thermalItem?.priceNok ?? 0 : 0)}
         binosAperturePercent={binoItem?.lrf.aperturePercent ?? null}
         thermalPriceNok={thermalItem?.priceNok ?? 0}
+        opticsRaiseTransitionSec={chestrigOpticsRaiseTransitionSec(kitItems)}
         clockMinutes={clockMinutes}
         hasBinos={hasBinos}
         hasThermal={hasThermal}

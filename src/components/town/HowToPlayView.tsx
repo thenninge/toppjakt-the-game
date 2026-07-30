@@ -78,7 +78,7 @@ const SECTIONS: GuideSection[] = [
     title: "Track, skuddmarkør & ettersøk",
     bullets: [
       "Etter treff: Track-modus i Aware — legg søkespor på kartet, deretter «Utfør ettersøk». Tid: 3 min/punkt + meter.",
-      "Uten Triggercam og uten oppsatt camcorder: skuddmarkør autofylles ikke — still retning og avstand selv (unntak: Swarovski EL Range lagrer skuddmarkør eksakt automatisk). Fluktcue er grov (±~30° σ) og snapper til 8-kompass (N, NØ, …). Ingen landingsavstand.",
+      "Uten Triggercam og uten oppsatt camcorder: skuddmarkør autofylles ikke — still retning og avstand selv innen 60 s (fuglemarkør synlig i Aware; vindu overlever Til spotting). Unntak: Swarovski EL Range lagrer skuddmarkør eksakt automatisk. Fluktcue er grov (±~30° σ) og snapper til 8-kompass (N, NØ, …). Ingen landingsavstand.",
       "Swarovski EL Range i kit: skuddmarkør lagres eksakt automatisk. Ettersøk-fluktcue krever fortsatt Triggercam eller camcorder.",
       "Triggercam i kit: after-action replay av treffpunkt; autofyll skuddmarkør med ±~30 m støy; fluktretning ±~10° σ (finere enn nakent øye).",
       "Camcorder: Sony-kamera + stativ i kit, sett opp før skudd. Biltema stål: +20 % nervøsitet. Manfrotto karbon: +15 %. Triggerstick Gen3: +13 % (raskere oppsett). Gir beste cue alene — autofyll ±~10 m, fluktretning ±~5° σ, pluss observert landingsavstand (±~12 %).",
@@ -129,7 +129,7 @@ const SECTIONS: GuideSection[] = [
       "Bygg kit hjemme: rifle, scope, ammo, optikk, camo, mat. Uten jaktkort (inatur.no) kommer du ikke ut.",
       "Camo/klær: sneak % reduserer bird nerve (summeres). Speed % endrer gangtid. Focus % øker caution-prespot og demper Mind-drain. Recovery % øker Body i rest/pause. Ghillie eksklusiv mot jakke+bukse. Arc'teryx LEAF = VIP. Snøkamo/M05 kommer i sesong.",
       "Gange på kartet: pace + celle-effort styrer minutter. Kit «top speed» (Home) påvirkes av ski vs støvler, ski-max/flyt/bredde, sekk-vekt og carry comfort — skistøvler kreves hvis du har ski i kit.",
-      "Chestrig: QR ved kikkert opp (10 = 0 %, 1 = +10 % bird-nerve). Comfort = andel av binovekt på Body (10 = 0 %, 1 = 100 %). Sekk: QR ved Klar til skudd (samme skala). Sekk-comfort: 10 = 25 % lettere felt last (20 kg → 15 kg), 1 = full vekt. Du må ha sekk i kit for å jakte.",
+      "Chestrig: QR ved kikkert/termisk opp — bird-nerve (10 = 0 %, 1 = +10 %) og raise-tid (10 = 0,5 s, 1 = 2 s). Comfort = andel av binovekt på Body (10 = 0 %, 1 = 100 %). Sekk: QR ved Klar til skudd (nerve-skala). Sekk-comfort: 10 = 25 % lettere felt last (20 kg → 15 kg), 1 = full vekt. Du må ha sekk i kit for å jakte.",
       "Google-innlogging synker save til skyen (samme konto som Aware) — last inn eller overskriv ved konflikt. Sky-sync skjer etter intro-kortet.",
       "Meat Market selger fugl for cash. XXL selger greier. Lensmannen gir lisens før rifle-kjøp.",
       "Rulles kebab: snakk med folk for å låse opp nye jaktterreng. Blakk? Ta oppvasken for en slant.",

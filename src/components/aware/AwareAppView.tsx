@@ -410,6 +410,8 @@ function DangerOverlay({
   bearingDeg,
   shotSafe,
   ringRadiusPct,
+  /** When set, shot ray goes through this point (bird / aim) to the ring tip. */
+  aimPoint = null,
 }: {
   wedges: DangerWedge[];
   center: CellPoint;
@@ -418,10 +420,29 @@ function DangerOverlay({
   shotSafe: boolean;
   /** Map-% radius of the 1000 m Aware ring. */
   ringRadiusPct: number;
+  aimPoint?: CellPoint | null;
 }) {
-  const tipRad = ((bearingDeg - 90) * Math.PI) / 180;
-  const tipX = center.x + ringRadiusPct * 0.92 * Math.cos(tipRad);
-  const tipY = center.y + ringRadiusPct * 0.92 * Math.sin(tipRad);
+  const tipReach = ringRadiusPct * 0.92;
+  let tipX: number;
+  let tipY: number;
+  let tipBearingDeg = bearingDeg;
+  if (
+    aimPoint &&
+    (Math.abs(aimPoint.x - center.x) > 1e-6 ||
+      Math.abs(aimPoint.y - center.y) > 1e-6)
+  ) {
+    // Geometric ray through the aim seat — must bisect the bird X visually.
+    const dx = aimPoint.x - center.x;
+    const dy = aimPoint.y - center.y;
+    const len = Math.hypot(dx, dy) || 1;
+    tipX = center.x + (dx / len) * tipReach;
+    tipY = center.y + (dy / len) * tipReach;
+    tipBearingDeg = bearingDegFromTo(center, aimPoint);
+  } else {
+    const tipRad = ((bearingDeg - 90) * Math.PI) / 180;
+    tipX = center.x + tipReach * Math.cos(tipRad);
+    tipY = center.y + tipReach * Math.sin(tipRad);
+  }
   const ringDiamPct = ringRadiusPct * 2;
   return (
     <>
@@ -457,7 +478,7 @@ function DangerOverlay({
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        {/* Shot direction — toward engage-bird, or last LRF when no bird. */}
+        {/* Shot direction — through bird X when known, else last LRF bearing. */}
         <line
           x1={center.x}
           y1={center.y}
@@ -475,7 +496,7 @@ function DangerOverlay({
           fill={
             shotSafe ? "rgba(143, 239, 106, 0.95)" : "rgba(240, 80, 70, 0.95)"
           }
-          transform={`translate(${tipX} ${tipY}) rotate(${bearingDeg})`}
+          transform={`translate(${tipX} ${tipY}) rotate(${tipBearingDeg})`}
         />
       </svg>
     </>
@@ -2022,6 +2043,9 @@ export function AwareAppView({
                   bearingDeg={planShotBearing}
                   shotSafe={bakgrunnOk}
                   ringRadiusPct={ringRadiusPct}
+                  aimPoint={
+                    hasActiveBird && birdOnMap ? birdWorld : null
+                  }
                 />
               ) : null}
               {stalking && destination && mode === "aware" ? (
