@@ -338,6 +338,7 @@ export const VIP_NAME_TOKENS = [
   "eirik",
   "konrad",
   "dyre",
+  "mona",
   "hoftun",
 ] as const;
 export const VIP_STARTING_BALANCE = 100_000;
@@ -408,6 +409,7 @@ export type KitProfileId =
   | "jorn"
   | "einar"
   | "dyre"
+  | "mona"
   | "neppe";
 
 export type KitProfile = {
@@ -607,6 +609,56 @@ export const KIT_PROFILE_DYRE: KitProfile = {
   realism: "high",
 };
 
+/**
+ * Mona — same kit as Einar, plus CB Customs crown / action trueing / søylebedding
+ * and 500 CB custom home-load rounds (6,5×55).
+ */
+export const KIT_PROFILE_MONA: KitProfile = {
+  id: "mona",
+  weaponIds: [
+    "rifle-sauer-200str",
+    "scope-zco-527-mct",
+    "mount-recknagel-eratac-36",
+    "ammo-lapua-65x55-scenar",
+    "ammo-cb-homeload-65x55",
+    "sup-svemko-hunter-1",
+    "bipod-spartan-javelin",
+    "misc-ulf-bubblelevel",
+    "thermal-hikmicro-lynx-le10",
+    "misc-garmin-xero-c1-pro",
+  ],
+  supportIds: [
+    "misc-kestrel-5700-elite",
+    "misc-vorn-deer-42",
+    "chest-sitka-mountain",
+    "misc-triggercam",
+    "misc-thermos-jula",
+    "outdoors-opptenningsbrikker",
+    "food-boller-5pk",
+    "camo-boots-crispi-titan-evo",
+  ],
+  lrfId: "lrf-sig-kilo3000-bdx-10x42",
+  itemQty: {
+    "ammo-lapua-65x55-scenar": 100,
+    "ammo-cb-homeload-65x55": 500,
+  },
+  zeroAmmoIds: ["ammo-lapua-65x55-scenar", "ammo-cb-homeload-65x55"],
+  license: {
+    id: "license-vip-mona-sauer-200str",
+    brand: "Sauer",
+    type: "200 STR",
+    caliber: "6,5×55",
+  },
+  customsMods: {
+    ...EMPTY_CUSTOMS_MODS,
+    pillarBedding: true,
+    actionTrueing: true,
+    barrelCrown: true,
+    homeLoadsSetup: true,
+  },
+  realism: "high",
+};
+
 /** Neppe (cheat) — competition Sauer + NF + Genesis + ACC Elite. */
 export const KIT_PROFILE_NEPPE: KitProfile = {
   id: "neppe",
@@ -638,8 +690,14 @@ export const KIT_PROFILES: Record<KitProfileId, KitProfile> = {
   jorn: KIT_PROFILE_JORN,
   einar: KIT_PROFILE_EINAR,
   dyre: KIT_PROFILE_DYRE,
+  mona: KIT_PROFILE_MONA,
   neppe: KIT_PROFILE_NEPPE,
 };
+
+/** Einar-stack support gear (Kestrel + Lynx): Einar / Dyre / Mona. */
+function isEinarStackProfile(id: KitProfileId): boolean {
+  return id === "einar" || id === "dyre" || id === "mona";
+}
 
 /** @deprecated Prefer {@link KIT_PROFILE_NEPPE}.weaponIds */
 export const TEST_RANGE_LOADOUT_IDS = KIT_PROFILE_NEPPE.weaponIds;
@@ -699,7 +757,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Einar / Eirik / Konrad / Dyre — e.g. "Jørn Nilsson"),
+ * (Jørn / Ivar / Tomas / Einar / Eirik / Konrad / Dyre / Mona — e.g. "Jørn Nilsson"),
  * or the name contains «Hoftun» (family VIP).
  */
 export function isVipPlayerName(name: string): boolean {
@@ -719,8 +777,9 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
   // Konrad / Hoftun / Eirik share Einar’s Sauer 200 + ZCO 527 + High realism.
-  // Dyre gets the same stack with Tikka T3x Lite.
+  // Dyre gets the same stack with Tikka T3x Lite. Mona = Einar + CB work/loads.
   if (words.includes("dyre")) return "dyre";
+  if (words.includes("mona")) return "mona";
   if (
     words.includes("einar") ||
     words.includes("eirik") ||
@@ -939,7 +998,7 @@ function syncVipCarryGear(
   ensureOwned(VIP_BACKPACK_ID);
   ensureOwned(VIP_CHESTRIG_ID);
   if (profile.id === "ivar") ensureOwned(IVAR_BORDVIFTE_ID);
-  if (profile.id === "einar" || profile.id === "dyre") {
+  if (isEinarStackProfile(profile.id)) {
     ensureOwned(EINAR_KESTREL_ID);
     ensureOwned(EINAR_LYNX_ID);
   }
@@ -970,7 +1029,7 @@ function syncVipCarryGear(
   ensureExclusiveKit(VIP_CHESTRIG_ID, isChestrigItem);
 
   if (profile.id === "ivar") ensureKitItem(IVAR_BORDVIFTE_ID);
-  if (profile.id === "einar" || profile.id === "dyre") {
+  if (isEinarStackProfile(profile.id)) {
     ensureKitItem(EINAR_KESTREL_ID);
     ensureExclusiveKit(EINAR_LYNX_ID, isThermalItem);
   }
@@ -1028,11 +1087,12 @@ export function ensureHoftunSandbekkenPass(stats: PlayerStats): PlayerStats {
 }
 
 /**
- * Einar-loadout VIP (Einar, Eirik, Konrad, Hoftun): season pass on Svenskegrensa —
- * best priced regular Inatur terrain (not VIP/Rulles/cloud-custom maps).
+ * Einar-loadout VIP (Einar, Eirik, Konrad, Hoftun, Mona): season pass on
+ * Svenskegrensa — best priced regular Inatur terrain (not VIP/Rulles/cloud-custom).
  */
 export function ensureEinarSeasonPass(stats: PlayerStats): PlayerStats {
-  if (vipKitProfileIdForName(stats.name) !== "einar") return stats;
+  const profileId = vipKitProfileIdForName(stats.name);
+  if (profileId !== "einar" && profileId !== "mona") return stats;
   const existing = getJaktkortForTerrain(
     stats.jaktkort,
     EINAR_SEASON_TERRAIN_ID,
