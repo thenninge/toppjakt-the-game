@@ -366,7 +366,11 @@ export function FieldImpactCompetitionView({
   );
   const mount = useMemo(() => kitItems.find(isMountItem) ?? null, [kitItems]);
   const ammoOptions = useMemo(() => kitItems.filter(isAmmoItem), [kitItems]);
-  const ready = !!(rifle && scope && ammoOptions.length > 0);
+  const mountFitsScope =
+    !!scope &&
+    !!mount &&
+    mount.mount.tubeDiameterMm === scope.scope.tubeDiameterMm;
+  const ready = !!(rifle && scope && mountFitsScope && ammoOptions.length > 0);
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
   const crosswind = crosswindMs(
     weather.live.windSpeedMs,
@@ -1535,7 +1539,7 @@ export function FieldImpactCompetitionView({
     return (
       <div className="field-impact-comp">
         <p className="intro-line">
-          IMPACT krever rifle, scope og ammo i kit.
+          IMPACT krever rifle, scope, matchende kikkertmontasje og ammo i kit.
         </p>
         <button type="button" className="intro-button" onClick={onBack}>
           ← Tilbake

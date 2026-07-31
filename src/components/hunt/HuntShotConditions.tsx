@@ -204,7 +204,7 @@ export function HuntShotConditions({
               : useZeissLrf
               ? "Zeiss Victory RF: avstand → elev-klikk i LRF-displayet."
               : useSigBdx
-                ? "Sig BDX: range fra LRF. Mål enviro med Kestrel i Aware for auto vind/temp, eller still manuelt (huskes). Tid går ×5 her; fuglen blir nervøs."
+                ? "Sig BDX: range fra LRF (trykk Range for manuell). Mål enviro med Kestrel i Aware for auto vind/temp, eller still manuelt (huskes). Tid går ×5 her; fuglen blir nervøs."
                 : useElRange
                   ? "EL Range: temp/trykk/fukt fra værmelding. Sett vindstyrke og crosswind angle selv. Tid går ×5 her; fuglen blir nervøs."
                   : "Uten Kestrel: App starter blank — knote range/vind/temp selv. Tid går ×5 her; fuglen blir nervøs."}
@@ -215,8 +215,8 @@ export function HuntShotConditions({
           </p>
         ) : useSigBdx ? (
           <p className="hunt-shot-cond-hint">
-            Sig BDX: range fra LRF. Kestrel-måling fyller vind, vindretning og
-            temp (dV/dT).
+            Sig BDX: range fra LRF (trykk for manuell — ny LRF-måling overskriver).
+            Kestrel-måling fyller vind, vindretning og temp (dV/dT).
           </p>
         ) : (
           <p className="hunt-shot-cond-hint">

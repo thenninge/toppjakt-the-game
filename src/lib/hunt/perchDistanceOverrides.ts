@@ -1,8 +1,11 @@
 /**
- * Admin overrides for perch distance brackets, eyes-band, and local scale %.
- * Keyed by spotting image + stable perch id. Catalog defaults apply when unset.
+ * Admin overrides for perch distance brackets, eyes-band, local scale %, and
+ * forced sprite. Keyed by spotting image + stable perch id. Catalog defaults
+ * apply when unset.
  */
 
+import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
+import { spriteIdsForSpecies } from "@/lib/hunt/birdSprites";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
 import {
   defaultEyesVisibleForBracket,
@@ -25,6 +28,11 @@ export type PerchDistanceBracket = {
   eyesVisible: boolean;
   /** Perch-local sprite size factor (1–200 %, default 100). */
   scalePercent: number;
+  /**
+   * Forced topp sprite for this perch. Empty string = auto from species pool
+   * (overrides a catalog `spriteId` when set via local draft).
+   */
+  spriteId: "" | BirdSpriteId;
 };
 
 /** spotImageSrc → perchId → bracket */
@@ -49,11 +57,34 @@ function clampScale(n: number): number {
   );
 }
 
+function normalizeSpriteId(
+  raw: unknown,
+  speciesHint?: SpotPerch["species"],
+): "" | BirdSpriteId {
+  if (typeof raw !== "string" || !raw) return "";
+  const species =
+    speciesHint === "orrhane" || speciesHint === "tiur"
+      ? speciesHint
+      : null;
+  if (species) {
+    const ids = spriteIdsForSpecies(species);
+    return ids.includes(raw as BirdSpriteId) ? (raw as BirdSpriteId) : "";
+  }
+  const tiur = spriteIdsForSpecies("tiur");
+  const orre = spriteIdsForSpecies("orrhane");
+  if (tiur.includes(raw as BirdSpriteId) || orre.includes(raw as BirdSpriteId)) {
+    return raw as BirdSpriteId;
+  }
+  return "";
+}
+
 function normalizeBracket(
   minM: number,
   maxM: number,
   eyesVisible?: boolean,
   scalePercent?: number,
+  spriteId?: unknown,
+  speciesHint?: SpotPerch["species"],
 ): PerchDistanceBracket {
   let lo = clampDist(minM);
   let hi = clampDist(maxM);
@@ -73,6 +104,7 @@ function normalizeBracket(
       typeof scalePercent === "number"
         ? clampScale(scalePercent)
         : PERCH_SCALE_DEFAULT,
+    spriteId: normalizeSpriteId(spriteId ?? "", speciesHint),
   };
 }
 
@@ -101,6 +133,7 @@ function readStorage(): OverrideMap {
           o.distanceMaxM,
           typeof o.eyesVisible === "boolean" ? o.eyesVisible : undefined,
           typeof o.scalePercent === "number" ? o.scalePercent : undefined,
+          typeof o.spriteId === "string" ? o.spriteId : "",
         );
       }
       if (Object.keys(row).length > 0) out[spot] = row;
@@ -143,8 +176,17 @@ export function setPerchDistanceOverride(
   maxM: number,
   eyesVisible?: boolean,
   scalePercent?: number,
+  spriteId?: unknown,
+  speciesHint?: SpotPerch["species"],
 ): PerchDistanceBracket {
-  const next = normalizeBracket(minM, maxM, eyesVisible, scalePercent);
+  const next = normalizeBracket(
+    minM,
+    maxM,
+    eyesVisible,
+    scalePercent,
+    spriteId,
+    speciesHint,
+  );
   const map = { ...ensureCache() };
   const row = { ...(map[spotImageSrc] ?? {}) };
   row[perchId] = next;
@@ -170,6 +212,25 @@ export function clearPerchDistanceOverride(
   notify();
 }
 
+/** Drop all local overrides for one spotting image (after bake to repo). */
+export function clearPerchDistanceOverridesForImage(
+  spotImageSrc: string,
+): void {
+  const map = { ...ensureCache() };
+  if (!(spotImageSrc in map)) return;
+  delete map[spotImageSrc];
+  cache = map;
+  writeStorage(map);
+  notify();
+}
+
+export function hasPerchDistanceOverridesForImage(
+  spotImageSrc: string,
+): boolean {
+  const row = ensureCache()[spotImageSrc];
+  return !!row && Object.keys(row).length > 0;
+}
+
 /** Apply stored overrides onto catalog perches (by id). */
 export function applyPerchDistanceOverrides(
   spotImageSrc: string,
@@ -188,12 +249,16 @@ export function applyPerchDistanceOverrides(
     const scalePercent = clampScale(
       ov?.scalePercent ?? p.scalePercent ?? PERCH_SCALE_DEFAULT,
     );
+    const spriteId: BirdSpriteId | undefined = ov
+      ? ov.spriteId || undefined
+      : p.spriteId;
     return {
       ...p,
       distanceMinM,
       distanceMaxM,
       eyesVisible,
       scalePercent,
+      spriteId,
       colorBand: spotColorBandFromBracket(distanceMinM, distanceMaxM),
     };
   });

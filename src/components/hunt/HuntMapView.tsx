@@ -506,8 +506,8 @@ type EatSession = {
   /** Drink one cup from the thermos fill. */
   consumeCoffeeCup?: boolean;
   /**
-   * Red Bull-style stim: mind → 100% for this many game minutes,
-   * then snap back to fatigue captured at drink time.
+   * Red Bull-style stim: mind → 100%, then drains back to pre-drink fatigue
+   * over this many game minutes.
    */
   mindStimMinutes?: number;
   /** Temporary BPM boost (Red Bull / coffee). */
@@ -516,7 +516,11 @@ type EatSession = {
 };
 
 type RedBullBuff = {
+  /** Mental fatigue to return to (captured at drink). */
   restoreMentalFatigue: number;
+  /** Clock minutes when the drink finished (crash start). */
+  startedAtClockMin: number;
+  /** Clock minutes when crash reaches restore level. */
   expiresAtClockMin: number;
 };
 
@@ -1183,15 +1187,25 @@ export function HuntMapView({
     setClockMinutes(Math.floor(clockSecondsRef.current / 60));
   }
 
-  function checkRedBullExpiry() {
+  function syncRedBullMind() {
     const buff = redBullBuffRef.current;
     if (!buff) return;
-    const now = Math.floor(clockSecondsRef.current / 60);
-    if (now < buff.expiresAtClockMin) return;
-    redBullBuffRef.current = null;
-    setRedBullBuff(null);
-    setMentalFatigue(buff.restoreMentalFatigue);
-    setLog("Red Bull-effekten er over — mind tilbake til før.");
+    const now = clockSecondsRef.current / 60;
+    if (now >= buff.expiresAtClockMin) {
+      redBullBuffRef.current = null;
+      setRedBullBuff(null);
+      setMentalFatigue(buff.restoreMentalFatigue);
+      setLog("Red Bull-crash ferdig — mind tilbake til før.");
+      return;
+    }
+    const dur = Math.max(1 / 60, buff.expiresAtClockMin - buff.startedAtClockMin);
+    const t = Math.min(1, Math.max(0, (now - buff.startedAtClockMin) / dur));
+    // 100% mind → pre-drink level over the crash window.
+    setMentalFatigue(clampFatigue(buff.restoreMentalFatigue * t));
+  }
+
+  function checkRedBullExpiry() {
+    syncRedBullMind();
   }
 
   function tickPulse(opts: {
@@ -1596,7 +1610,8 @@ export function HuntMapView({
 
   const redBullActive =
     !!redBullBuff && clockMinutes < redBullBuff.expiresAtClockMin;
-  const effectiveMentalFatigue = redBullActive ? 0 : mentalFatigue;
+  /** While crashing, HUD uses live mentalFatigue (drains toward pre-drink). */
+  const effectiveMentalFatigue = mentalFatigue;
   const redBullMinutesLeft = redBullActive
     ? Math.max(0, redBullBuff!.expiresAtClockMin - clockMinutes)
     : 0;
@@ -4944,9 +4959,10 @@ export function HuntMapView({
         physicalFatigue - eatSession.bodyGain,
       );
       setPhysicalFatigue(nextPhysical);
-      const afterMin = Math.floor(clockSecondsRef.current / 60);
+      const afterMin = clockSecondsRef.current / 60;
       const buff: RedBullBuff = {
         restoreMentalFatigue: restore,
+        startedAtClockMin: afterMin,
         expiresAtClockMin: afterMin + eatSession.mindStimMinutes,
       };
       redBullBuffRef.current = buff;
@@ -4955,7 +4971,7 @@ export function HuntMapView({
       applyEatPulseBoost(eatSession, nextPhysical);
       const pulseNote = " · Puls → 50 (mind 100%)";
       setLog(
-        `${eatSession.label}: Mind → 100% i ${eatSession.mindStimMinutes} min · deretter crash tilbake · ${eatSession.minutes} min${pulseNote}.`,
+        `${eatSession.label}: Mind → 100% · crash tilbake på ${eatSession.mindStimMinutes} min · ${eatSession.minutes} min${pulseNote}.`,
       );
       setEatSession(null);
       setPanel("arrived");
@@ -5266,7 +5282,7 @@ export function HuntMapView({
         title={eatSession.label}
         subtitle={
           eatSession.mindStimMinutes
-            ? `Mind → 100% i ${eatSession.mindStimMinutes} min · deretter crash`
+            ? `Mind → 100% · crash tilbake på ${eatSession.mindStimMinutes} min`
             : `Body +${formatStaminaPct(eatSession.bodyGain)} · ${
                 eatSession.mindToFull
                   ? "Mind → 100%"
@@ -5710,7 +5726,7 @@ export function HuntMapView({
             Rute {cellLabel(pos)} · Effort {hereEffort}/5
             {" · "}
             Mental {pct(staminaLeft(effectiveMentalFatigue))}
-            {redBullActive ? ` (Red Bull ${redBullMinutesLeft} min)` : ""} ·
+            {redBullActive ? ` (Red Bull crash ${redBullMinutesLeft} min)` : ""} ·
             Fysisk{" "}
             {pct(staminaLeft(physicalFatigue))}
             {physicalFatigue >= 1 ? " (på null!)" : ""}
@@ -6239,7 +6255,7 @@ export function HuntMapView({
                           {needsBoil
                             ? "Krever koking (brenner + gass)"
                             : item.food.temporaryMindFullMinutes
-                              ? `Mind → 100% i ${item.food.temporaryMindFullMinutes} min · deretter crash · ${recovery?.minutes ?? item.food.minutes} min`
+                              ? `Mind → 100% · crash ${item.food.temporaryMindFullMinutes} min tilbake · ${recovery?.minutes ?? item.food.minutes} min`
                               : recovery
                                 ? `Body +${formatStaminaPct(recovery.bodyGain)} · Mind +${formatStaminaPct(recovery.mindGain)} · ${recovery.minutes} min`
                                 : "—"}

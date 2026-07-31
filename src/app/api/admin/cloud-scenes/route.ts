@@ -13,6 +13,7 @@ import {
 } from "@/lib/supabaseAdmin";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
 import { resolveEyesVisible } from "@/lib/hunt/spotBands";
+import { sanitizePerchSpriteId } from "@/lib/hunt/sceneAuthoring";
 
 export const SPOT_SCENES_BUCKET = "spot-scenes";
 
@@ -24,6 +25,7 @@ type PerchBody = {
   distanceMaxM: number;
   eyesVisible?: boolean;
   scalePercent?: number;
+  spriteId?: string;
   id?: string;
 };
 
@@ -43,6 +45,7 @@ function normalizePerches(raw: PerchBody[]): SpotPerch[] {
   return raw.map((p, i) => {
     const lo = Math.min(p.distanceMinM, p.distanceMaxM);
     const hi = Math.max(p.distanceMinM, p.distanceMaxM);
+    const spriteId = sanitizePerchSpriteId(p.species, p.spriteId);
     return {
       id: `p${i}`,
       x: Math.round(p.x * 10) / 10,
@@ -55,6 +58,7 @@ function normalizePerches(raw: PerchBody[]): SpotPerch[] {
         typeof p.scalePercent === "number"
           ? Math.max(1, Math.min(200, Math.round(p.scalePercent)))
           : 100,
+      ...(spriteId ? { spriteId } : {}),
     };
   });
 }

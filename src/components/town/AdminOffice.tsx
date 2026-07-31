@@ -23,13 +23,18 @@ import {
 } from "@/lib/hunt/birdSpriteScale";
 import { spriteIdsForSpecies, type BirdSpriteId } from "@/lib/hunt/birdSprites";
 import {
+  applyBakedBirdSpriteSceneAllow,
+  exportEffectiveBirdSpriteSceneDenyMap,
   isBirdSpriteAllowedInScene,
+  isBirdSpriteSceneAllowDirty,
   setBirdSpriteAllowedInScene,
   subscribeBirdSpriteSceneAllow,
 } from "@/lib/hunt/birdSpriteSceneAllow";
 import {
   clearPerchDistanceOverride,
+  clearPerchDistanceOverridesForImage,
   getPerchDistanceOverride,
+  hasPerchDistanceOverridesForImage,
   PERCH_DISTANCE_EDIT_MAX_M,
   PERCH_DISTANCE_EDIT_MIN_M,
   PERCH_SCALE_DEFAULT,
@@ -229,6 +234,73 @@ function SpriteScaleBakeButton({
         }
       >
         {baking ? "Skriver…" : "Lagre til repo"}
+      </button>
+      {status ? <span className="admin-spot-allow-hint">{status}</span> : null}
+    </div>
+  );
+}
+
+function SpriteSceneAllowBakeButton() {
+  const [dirty, setDirty] = useState(() => isBirdSpriteSceneAllowDirty());
+  const [baking, setBaking] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sync = () => setDirty(isBirdSpriteSceneAllowDirty());
+    sync();
+    return subscribeBirdSpriteSceneAllow(sync);
+  }, []);
+
+  async function bakeToRepo() {
+    const denyMap = exportEffectiveBirdSpriteSceneDenyMap();
+    setBaking(true);
+    setStatus("Skriver…");
+    try {
+      const res = await fetch("/api/admin/sprite-scene-allow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ denyMap }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        scenes?: number;
+        path?: string;
+        denyMap?: Record<string, BirdSpriteId[]>;
+      };
+      if (!res.ok || !data.ok) {
+        setStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      applyBakedBirdSpriteSceneAllow(data.denyMap ?? denyMap);
+      setDirty(false);
+      setStatus(
+        `OK scene-pool (${data.scenes ?? 0} scener) → repo. Commit + push.`,
+      );
+    } catch (err) {
+      setStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBaking(false);
+    }
+  }
+
+  return (
+    <div className="admin-spot-field admin-spot-bake">
+      <span>Scene-pool → repo</span>
+      <button
+        type="button"
+        className="intro-button admin-spot-btn"
+        disabled={!dirty || baking}
+        onClick={() => void bakeToRepo()}
+        title={
+          dirty
+            ? "Skriv «Use in scene»-utelatelser til birdSpriteSceneAllowCatalog.ts"
+            : "Ingen lokale scene-pool-endringer"
+        }
+      >
+        {baking ? "Skriver…" : "Lagre scene-pool"}
       </button>
       {status ? <span className="admin-spot-allow-hint">{status}</span> : null}
     </div>
@@ -441,7 +513,12 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
   const [editMaxM, setEditMaxM] = useState(300);
   const [editEyesVisible, setEditEyesVisible] = useState(true);
   const [editPerchScale, setEditPerchScale] = useState(PERCH_SCALE_DEFAULT);
+  const [editPerchSpriteId, setEditPerchSpriteId] = useState<"" | BirdSpriteId>(
+    "",
+  );
   const [lrfHintM, setLrfHintM] = useState<number | null>(null);
+  const [bakingPerches, setBakingPerches] = useState(false);
+  const [bakeStatus, setBakeStatus] = useState<string | null>(null);
 
   useEffect(() => {
     return subscribeBirdSpriteScales(() => {
@@ -477,6 +554,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
     setEditMaxM(live.distanceMaxM);
     setEditEyesVisible(live.eyesVisible !== false);
     setEditPerchScale(live.scalePercent ?? PERCH_SCALE_DEFAULT);
+    setEditPerchSpriteId(live.spriteId ?? "");
   }, [selectedPerchId, scenePerches]);
 
   const birdPlacements = useMemo(() => {
@@ -509,12 +587,16 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
     scalePercent?: number;
     minM?: number;
     maxM?: number;
+    spriteId?: "" | BirdSpriteId;
   }) {
     if (!selectedPerchId) return;
     const eyes = next?.eyesVisible ?? editEyesVisible;
     const scale = next?.scalePercent ?? editPerchScale;
     const minM = next?.minM ?? editMinM;
     const maxM = next?.maxM ?? editMaxM;
+    const spriteId = next?.spriteId ?? editPerchSpriteId;
+    const live = scenePerches.find((p) => p.id === selectedPerchId);
+    const species = live?.species === "orrhane" ? "orrhane" : "tiur";
     setPerchDistanceOverride(
       imageSrc,
       selectedPerchId,
@@ -522,7 +604,71 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
       maxM,
       eyes,
       scale,
+      spriteId,
+      species,
     );
+  }
+
+  /**
+   * Apply current form (if a perch is selected), then bake the full scene
+   * perch list into spotPerches.ts so the game picks it up.
+   */
+  async function bakePerchesToRepo() {
+    if (!imageSrc) {
+      setBakeStatus("Velg en spotting-scene først.");
+      return;
+    }
+    if (selectedPerchId) {
+      savePerchDistance();
+    }
+    const live = perchesForSpotImage(imageSrc);
+    if (live.length === 0) {
+      setBakeStatus("Ingen perch i denne scenen.");
+      return;
+    }
+    setBakingPerches(true);
+    setBakeStatus("Skriver perch til repo…");
+    try {
+      const res = await fetch("/api/admin/scenes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageSrc,
+          perches: live.map((p) => ({
+            x: p.x,
+            y: p.y,
+            species: p.species === "orrhane" ? "orrhane" : "tiur",
+            distanceMinM: p.distanceMinM,
+            distanceMaxM: p.distanceMaxM,
+            eyesVisible: p.eyesVisible !== false,
+            scalePercent: p.scalePercent ?? 100,
+            spriteId: p.spriteId,
+            note: p.note,
+          })),
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        perches?: number;
+        pathPerches?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setBakeStatus(data.error ?? `Feil ${res.status}`);
+        return;
+      }
+      clearPerchDistanceOverridesForImage(imageSrc);
+      setDistEpoch((n) => n + 1);
+      setBakeStatus(
+        `OK ${data.perches ?? live.length} perch → ${data.pathPerches ?? "spotPerches.ts"}. HMR / refresh · commit + push.`,
+      );
+    } catch (err) {
+      setBakeStatus(
+        err instanceof Error ? err.message : "Klarte ikke å skrive filen.",
+      );
+    } finally {
+      setBakingPerches(false);
+    }
   }
 
   function onEyesVisibleChange(checked: boolean) {
@@ -539,6 +685,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
       setEditMaxM(cat.distanceMaxM);
       setEditEyesVisible(cat.eyesVisible !== false);
       setEditPerchScale(cat.scalePercent ?? PERCH_SCALE_DEFAULT);
+      setEditPerchSpriteId(cat.spriteId ?? "");
     }
   }
 
@@ -546,6 +693,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
     ? (scenePerches.find((p) => p.id === selectedPerchId) ?? null)
     : null;
   const editBand = spotColorBandFromBracket(editMinM, editMaxM);
+  const sceneHasOverrides = hasPerchDistanceOverridesForImage(imageSrc);
 
   const binoItem = useMemo(
     () => lrfItems.find((i) => i.id === binoId) ?? null,
@@ -641,6 +789,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
       onDone={onLeave}
       showPerchLabels
       adminEyesFlagPreview
+      opticsRaiseTransitionSec={0}
       belowFrame={
         <div
           className="admin-spot-controls"
@@ -739,6 +888,7 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
               spriteId={orreSpriteId}
             />
             <SpriteScaleBakeButton species="orrhane" />
+            <SpriteSceneAllowBakeButton />
           </div>
 
           <div className="admin-spot-row admin-spot-perch-row">
@@ -804,6 +954,30 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
               />
             </label>
 
+            <label className="admin-spot-field">
+              <span>Perch-sprite</span>
+              <select
+                disabled={!selectedPerchId}
+                value={editPerchSpriteId}
+                onChange={(e) => {
+                  const v = e.target.value as "" | BirdSpriteId;
+                  setEditPerchSpriteId(v);
+                  savePerchDistance({ spriteId: v });
+                }}
+                aria-label="Tvunget sprite på denne perch"
+              >
+                <option value="">Auto (pool)</option>
+                {(selectedLive?.species === "orrhane"
+                  ? ORRE_SPRITES
+                  : TIUR_SPRITES
+                ).map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="admin-spot-field admin-spot-allow">
               <span>Eyes ({editBand})</span>
               <span className="admin-spot-allow-row">
@@ -823,10 +997,20 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
             <button
               type="button"
               className="intro-button admin-spot-btn"
+              disabled={!imageSrc || bakingPerches || scenePerches.length === 0}
+              onClick={() => void bakePerchesToRepo()}
+              title="Skriv avstand / eyes / perch-% / spriteId for hele scenen til spotPerches.ts"
+            >
+              {bakingPerches ? "Skriver…" : "Lagre til repo"}
+            </button>
+            <button
+              type="button"
+              className="intro-button admin-spot-btn"
               disabled={!selectedPerchId}
               onClick={() => savePerchDistance()}
+              title="Kun lokal forhåndsvisning (localStorage) — bruk «Lagre til repo» for spillet"
             >
-              Lagre brakett
+              Forhåndsvis
             </button>
             <button
               type="button"
@@ -850,10 +1034,19 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
                   selectedLive
                     ? ` · ${selectedLive.eyesVisible !== false ? "eyes" : "optikk"}`
                     : ""
-                }${hasOverride ? " · override" : ""}`
+                }${hasOverride ? " · lokal override" : ""}`
               : " · LRF/klikk for å velge perch"}
+            {sceneHasOverrides ? " · usavede lokale endringer" : ""}
             {lrfHintM != null ? ` · LRF ${lrfHintM} m` : ""}
           </p>
+          {bakeStatus ? (
+            <p className="admin-spot-meta">{bakeStatus}</p>
+          ) : (
+            <p className="admin-spot-meta">
+              Juster brakett / sprite / scale → «Lagre til repo» (perch) eller
+              «Lagre scene-pool» (Use in scene). Deretter commit + push.
+            </p>
+          )}
         </div>
       }
     />

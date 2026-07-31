@@ -2,8 +2,8 @@
  * Scope mounts / kikkertmontasje — tube diameter + zero-retention tier.
  *
  * Tube diameters are fixed per mount SKU; a 30 mm mount cannot hold a 34 mm
- * scope (nor 35 / 36). Hunt readiness requires a kit mount matching the packed
- * scope.
+ * scope (nor 35 / 36). Kit packing and hunt/range readiness require a mount
+ * matching the packed scope tube exactly.
  *
  * Tiers:
  * - top (Spuhr / Recknagel): QD-class — keep zero when removing/remounting;

@@ -695,7 +695,7 @@ export function XxlShop({
                         : food.kind === "thermos"
                           ? "termos · 5 kaffekopper per tur"
                           : food.temporaryMindFullMinutes
-                            ? `Mind → 100% i ${food.temporaryMindFullMinutes} min · deretter crash · ${food.minutes} min`
+                            ? `Mind → 100% · crash ${food.temporaryMindFullMinutes} min tilbake · ${food.minutes} min`
                             : food.requiresBoil
                               ? `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min · krever koking`
                               : `Body +${Math.round(food.bodyGain * 100)}% · Mind +${Math.round(food.mindGain * 100)}% · ${food.minutes} min`}

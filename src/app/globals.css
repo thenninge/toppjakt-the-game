@@ -2087,6 +2087,22 @@ body {
     0 12px 32px rgba(0, 0, 0, 0.55);
 }
 
+/* Perfect calm — no focus/aim transform lag or mirage sway in admin scope. */
+.admin-scope-test .scope-optic .scope-viewport,
+.admin-scope-test .scope-optic .scope-zoom-ring {
+  transition: none;
+}
+
+.admin-scope-test .scope-world-scene.is-mirage,
+.admin-scope-test .scope-world-scene.is-mirage-heavy {
+  animation: none;
+  filter: none;
+}
+
+.admin-scope-test .scope-mirage-shimmer {
+  display: none;
+}
+
 .admin-scope-test .scope-world,
 .admin-scope-test .scope-world-scene {
   background: #fff;
@@ -5287,6 +5303,37 @@ body {
   box-shadow: 0 0 0 1px rgba(212, 32, 32, 0.35);
 }
 
+.lapua-wheel-range-edit.app-range-edit-btn {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #d42020;
+  background: #f4f6fa;
+  border: none;
+  border-radius: 0.15rem;
+  box-shadow: 0 0 0 1px rgba(212, 32, 32, 0.35);
+  cursor: text;
+  padding: 0.05rem 0.15rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.lapua-wheel-range-edit .app-range-input,
+.lapua-range-input {
+  width: 3.2rem;
+  border: 1px solid #d42020;
+  border-radius: 0.15rem;
+  background: #fff;
+  color: #d42020;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 0.05rem 0.1rem;
+}
+
 .lapua-wheel-nudge {
   display: flex;
   gap: 0.15rem;
@@ -5541,6 +5588,41 @@ body {
   font-size: 1.05rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.sig-bdx-accent.app-range-edit-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--sig-cyan);
+  font-variant-numeric: tabular-nums;
+  cursor: text;
+  border-radius: 0.15rem;
+}
+
+.sig-bdx-accent.app-range-edit-btn:hover,
+.sig-bdx-accent.app-range-edit-btn:focus-visible {
+  outline: 1px solid var(--sig-cyan);
+  outline-offset: 2px;
+}
+
+.sig-bdx-range-input,
+.app-range-input.sig-bdx-range-input {
+  width: 4.2rem;
+  border: 1px solid var(--sig-cyan);
+  border-radius: 0.2rem;
+  background: #0f1419;
+  color: var(--sig-cyan);
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.05rem 0.2rem;
 }
 
 .sig-bdx-accent small,

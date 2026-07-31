@@ -569,7 +569,7 @@ export const INVENTORY_GROUPS: readonly {
  * Gun-kit = rifle/optik/ammo/tofoter + våpenmontert bubble level.
  * Kit-kit = LRF/bino, thermal, Kestrel, chestrig, headlamp, camcorder, …
  * Hjemmelading = presse, dies, hylser (nye + brukte), krutt, kuler, …
- * Camo/clothes + Food = egne lister.
+ * Camo/clothes + Food = egne lister (inkl. opptenningsbrikker).
  */
 export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
   switch (item.category) {
@@ -588,13 +588,18 @@ export function inventoryGroupForItem(item: ShopItem): InventoryGroupId {
     case "food":
       return "food";
     case "misc":
+    case "outdoors":
       // Weapon-mounted accessories live with the gun, not sekk/kit-kit.
       if (item.misc.isBubbleLevel) {
         return "gun_kit";
       }
+      // Tenn-Fix / fire starters belong with cook kit, not optics bag.
+      if (item.misc.isFireStarter) {
+        return "food";
+      }
       return "kit_kit";
     default:
-      // lrf, thermal, ballistics, backpack, chestrig, skis, outdoors, other misc
+      // lrf, thermal, ballistics, backpack, chestrig, skis, other
       return "kit_kit";
   }
 }

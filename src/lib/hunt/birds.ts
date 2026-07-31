@@ -235,15 +235,15 @@ export function visibleInSpotMode(
     habrokZoom?: number | null;
     eyesVisible?: boolean;
     /**
-     * Admin calibration: eyes mode follows the eyesVisible flag only
-     * (ignore meter gate so you can verify the checkbox on far perches).
+     * Admin spotting / scene QA: eyes mode shows every perch (ignore distance
+     * and eyesVisible) so far / optics-only seats stay visible for editing.
      */
     adminEyesFlagPreview?: boolean;
   },
 ): boolean {
   if (mode === "eyes") {
     if (opts?.adminEyesFlagPreview) {
-      return opts.eyesVisible === true;
+      return true;
     }
     // Hunt: eyes visibility is distance-only (≤ {@link EYES_MAX_DISTANCE_M}).
     return visibleWithEyes(distanceM);
@@ -799,13 +799,9 @@ export function bindBirdsToSpotImage(
     }
   }
 
-  // Leftover birds in cell (more birds than perches): random crown fallback.
-  const leftovers = unused.filter((b) => !assignedIds.has(b.id));
-  leftovers.forEach((bird, i) => {
-    placements.push(
-      randomCrownPlacement(bird, i, leftovers.length, random, imageSrc),
-    );
-  });
+  // Leftover birds (more in cell than selected perches) are intentionally not
+  // given random crown placements when a perch catalog exists — those looked
+  // like misauthored seats and never appeared in Admin Spotting.
 
   return { birds: next, placements };
 }
@@ -838,7 +834,8 @@ export function adminPlacementsFromPerches(
 
   return seats.map((perch, i) => {
     const spriteId =
-      perch.species === "orrhane" ? opts.orreSpriteId : opts.tiurSpriteId;
+      perch.spriteId ??
+      (perch.species === "orrhane" ? opts.orreSpriteId : opts.tiurSpriteId);
     const sprite = getBirdSprite(spriteId);
     const perchId = perch.id ?? `p${i}`;
     let distanceM = opts.stableDistance

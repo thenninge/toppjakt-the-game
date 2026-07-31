@@ -12,6 +12,7 @@ import {
   cloudSyncedImageSrc,
   ensureSpotImageListed,
   formatPerchCatalogEntry,
+  sanitizePerchSpriteId,
   upsertPerchCatalog,
 } from "@/lib/hunt/sceneAuthoring";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
@@ -38,6 +39,7 @@ function normalizePerches(raw: unknown): SpotPerch[] {
     }
     const lo = Math.min(o.distanceMinM, o.distanceMaxM);
     const hi = Math.max(o.distanceMinM, o.distanceMaxM);
+    const spriteId = sanitizePerchSpriteId(o.species, o.spriteId);
     out.push({
       id: `p${out.length}`,
       x: Math.round(o.x * 10) / 10,
@@ -54,6 +56,7 @@ function normalizePerches(raw: unknown): SpotPerch[] {
         typeof o.scalePercent === "number"
           ? Math.max(1, Math.min(200, Math.round(o.scalePercent)))
           : 100,
+      ...(spriteId ? { spriteId } : {}),
     });
   }
   return out;

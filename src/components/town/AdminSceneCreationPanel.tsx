@@ -147,6 +147,7 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
   const [toolMaxM, setToolMaxM] = useState(DEFAULT_MAX_M);
   const [toolScale, setToolScale] = useState(PERCH_SCALE_DEFAULT);
   const [toolEyes, setToolEyes] = useState(true);
+  const [toolSpriteId, setToolSpriteId] = useState<"" | BirdSpriteId>("");
 
   const [tiurSpriteId, setTiurSpriteId] = useState<BirdSpriteId>(
     TIUR_SPRITES[0] ?? "tiur-1",
@@ -223,19 +224,36 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
     setToolMaxM(selected.distanceMaxM);
     setToolScale(selected.scalePercent);
     setToolEyes(selected.eyesVisible);
+    setToolSpriteId(selected.spriteId ?? "");
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps -- sync form when selection changes
 
   function applySelectedFields(
     patch: Partial<
       Pick<
         SceneDraftPerch,
-        "species" | "distanceMinM" | "distanceMaxM" | "scalePercent" | "eyesVisible"
+        | "species"
+        | "distanceMinM"
+        | "distanceMaxM"
+        | "scalePercent"
+        | "eyesVisible"
+        | "spriteId"
       >
     >,
   ) {
     if (!selectedId) return;
     setPerches((prev) =>
-      prev.map((p) => (p.id === selectedId ? { ...p, ...patch } : p)),
+      prev.map((p) => {
+        if (p.id !== selectedId) return p;
+        const next: SceneDraftPerch = { ...p, ...patch };
+        if ("spriteId" in patch && !patch.spriteId) {
+          delete next.spriteId;
+        }
+        if (patch.species && next.spriteId) {
+          const ok = spriteIdsForSpecies(patch.species).includes(next.spriteId);
+          if (!ok) delete next.spriteId;
+        }
+        return next;
+      }),
     );
     setDirty(true);
   }
@@ -299,6 +317,7 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
           distanceMaxM: Math.max(toolMinM, toolMaxM),
           eyesVisible: toolEyes,
           scalePercent: toolScale,
+          ...(toolSpriteId ? { spriteId: toolSpriteId } : {}),
         };
         queueMicrotask(() => setSelectedId(id));
         return [...prev, next];
@@ -313,6 +332,7 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
       toolMaxM,
       toolEyes,
       toolScale,
+      toolSpriteId,
     ],
   );
 
@@ -738,6 +758,7 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
       onDone={() => onLeave()}
       initialMode="eyes"
       adminEyesFlagPreview
+      opticsRaiseTransitionSec={0}
       showPerchLabels
       onPlacePoint={(pt) => placeAt(pt.x, pt.y)}
       worldOverlay={worldOverlay}
@@ -843,7 +864,8 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
                 onChange={(e) => {
                   const v = e.target.value as "tiur" | "orrhane";
                   setToolSpecies(v);
-                  applySelectedFields({ species: v });
+                  setToolSpriteId("");
+                  applySelectedFields({ species: v, spriteId: undefined });
                 }}
               >
                 <option value="tiur">Tiur</option>
@@ -910,6 +932,32 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
                   {toolEyes ? "øyne" : "optikk"}
                 </span>
               </span>
+            </label>
+            <label className="admin-spot-field">
+              <span>Perch-sprite</span>
+              <select
+                value={toolSpriteId}
+                onChange={(e) => {
+                  const v = e.target.value as "" | BirdSpriteId;
+                  setToolSpriteId(v);
+                  if (!selectedId) return;
+                  applySelectedFields(
+                    v
+                      ? { spriteId: v }
+                      : { spriteId: undefined },
+                  );
+                }}
+                aria-label="Tvunget sprite på valgt/ny perch"
+              >
+                <option value="">Auto (pool)</option>
+                {(toolSpecies === "orrhane" ? ORRE_SPRITES : TIUR_SPRITES).map(
+                  (id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ),
+                )}
+              </select>
             </label>
           </div>
 

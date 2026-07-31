@@ -61,6 +61,7 @@ import {
   upsertJaktkort,
 } from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
+import { sanitizeKitScopeMountIds } from "@/lib/mount/fit";
 import { getShopItem } from "@/lib/shop/catalog";
 import type { ShopItem } from "@/lib/shop/types";
 import {
@@ -1058,6 +1059,19 @@ export function ensureNamedStarterGear(stats: PlayerStats): PlayerStats {
       next = syncVipCarryGear(next, profile);
     }
   }
+  // Legacy / favorite kits may have packed wrong-diameter rings — drop mount.
+  const sanitizedKit = sanitizeKitScopeMountIds(next.kit, getShopItem);
+  if (!kitsEqual(next.kit, sanitizedKit)) {
+    next = {
+      ...next,
+      kit: sanitizedKit,
+      zeroingProfiles: applyMountZeroingAfterKitChange(
+        next.zeroingProfiles,
+        next.kit,
+        sanitizedKit,
+      ),
+    };
+  }
   next = ensureHoftunSandbekkenPass(next);
   return ensureEinarSeasonPass(next);
 }
@@ -1412,9 +1426,13 @@ export function ownedFavoriteKitIds(stats: PlayerStats): string[] {
 /**
  * Replace active kit with the saved favorite (owned items only).
  * Clears / transfers zero profiles based on mount tier rules.
+ * Drops a mount that does not match the favorite scope tube diameter.
  */
 export function applyFavoriteKit(stats: PlayerStats): PlayerStats {
-  const nextKit = ownedFavoriteKitIds(stats);
+  const nextKit = sanitizeKitScopeMountIds(
+    ownedFavoriteKitIds(stats),
+    getShopItem,
+  );
   if (kitsEqual(stats.kit, nextKit)) return stats;
   return {
     ...stats,

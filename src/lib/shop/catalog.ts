@@ -301,14 +301,14 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     priceNok: 41490,
     note:
       "Termisk binokular m/LRF — erstatter vanlig bino og ekstra termisk i kit. " +
-      "5–22× zoom, WH/BH/Outline/Fusion. Batteri 20% tregere enn Condor; tomt batteri = kun dagoptikk. " +
+      "5–22× zoom, WH/BH/Outline/Fusion. Batteritid 2× Condor (halv drain); tomt batteri = kun dagoptikk. " +
       "Grønn fugl krever >10×, gul >15×.",
     thermal: {
       pixelFactor: 2,
       magnification: 10,
       minZoom: 5,
       maxZoom: 22,
-      timeFactor: 24,
+      timeFactor: 12,
       hasIntegratedLrf: true,
       rangeErrorPercent: 1.2,
       isThermalBinocular: true,
@@ -3762,7 +3762,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Red Bull",
     name: "Energy Drink",
     priceNok: 39,
-    note: "Mind → 100% i 30 min spilltid, deretter crash tilbake til før. Puls +35. 1 min å drikke.",
+    note: "Mind → 100%, deretter rask crash (~5 min spilltid) tilbake til nivået før. Puls +35 i 30 min. 1 min å drikke.",
     food: {
       kind: "ready",
       huntTrips: 1,
@@ -3771,7 +3771,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       mindGain: 0,
       minutes: 1,
       requiresBoil: false,
-      temporaryMindFullMinutes: 30,
+      temporaryMindFullMinutes: 5,
       pulseBoostBpm: 35,
       pulseBoostMinutes: 30,
     },

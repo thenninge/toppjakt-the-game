@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -25,6 +26,20 @@ import {
   interpolateRealDropCm,
   type RealLoadProfile,
 } from "@/lib/ballistics/realLoad";
+import {
+  EditableRangeMeters,
+  APP_RANGE_MAX_M,
+  APP_RANGE_MIN_M,
+} from "@/components/hunt/EditableRangeMeters";
+import {
+  clampLapuaRangeM,
+  hasLapuaAppSettings,
+  LAPUA_RANGE_MAX_M,
+  LAPUA_RANGE_MIN_M,
+  LAPUA_RANGE_STEP_M,
+  loadLapuaAppSettings,
+  saveLapuaAppSettings,
+} from "@/lib/hunt/lapuaAppSettings";
 import { ZERO_CLICK_MM } from "@/lib/player";
 import { crosswindMs, MAX_WIND_SPEED_MS } from "@/lib/weather/spec";
 import {
@@ -59,7 +74,14 @@ type LapuaBallisticsAppProps = {
   realDropTable?: RealLoadProfile | null;
 };
 
-const RANGE_VALUES = Array.from({ length: 41 }, (_, i) => 50 + i * 10); // 50–450
+const RANGE_VALUES = Array.from(
+  {
+    length:
+      Math.floor((LAPUA_RANGE_MAX_M - LAPUA_RANGE_MIN_M) / LAPUA_RANGE_STEP_M) +
+      1,
+  },
+  (_, i) => LAPUA_RANGE_MIN_M + i * LAPUA_RANGE_STEP_M,
+); // 50–1000 m
 /** Match hunt wind band — birds rarely sit above ~5 m/s. */
 const WIND_VALUES = Array.from(
   { length: MAX_WIND_SPEED_MS + 1 },
@@ -108,20 +130,33 @@ function pointerAngleDeg(
   return deg;
 }
 
+function nearestIndex(values: number[], value: number): number {
+  let best = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (Math.abs(values[i]! - value) < Math.abs(values[best]! - value)) {
+      best = i;
+    }
+  }
+  return best;
+}
+
 function WheelColumn({
   label,
   unit,
   values,
   value,
   onChange,
+  allowTypeIn = false,
 }: {
   label: string;
   unit: string;
   values: number[];
   value: number;
   onChange: (n: number) => void;
+  /** Selected value can be tapped to type a number (range dial). */
+  allowTypeIn?: boolean;
 }) {
-  const idx = Math.max(0, values.indexOf(value));
+  const idx = nearestIndex(values, value);
   const window = [-2, -1, 0, 1, 2].map((d) => {
     const i = idx + d;
     if (i < 0 || i >= values.length) return null;
@@ -138,6 +173,18 @@ function WheelColumn({
         {window.map((row, slot) =>
           row == null ? (
             <span key={`pad-${label}-${slot}`} className="lapua-wheel-item is-empty" />
+          ) : row.d === 0 && allowTypeIn ? (
+            <EditableRangeMeters
+              key={`${label}-edit`}
+              valueM={value}
+              onChange={(m) => onChange(clampLapuaRangeM(m))}
+              minM={APP_RANGE_MIN_M}
+              maxM={APP_RANGE_MAX_M}
+              decimals={0}
+              className="lapua-wheel-item is-selected lapua-wheel-range-edit"
+              inputClassName="app-range-input lapua-range-input"
+              ariaLabel={`${label} — trykk for å taste inn`}
+            />
           ) : (
             <button
               key={`${label}-${row.v}`}
@@ -238,11 +285,15 @@ export function LapuaBallisticsApp({
   const dialRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
-  const [rangeM, setRangeM] = useState(() =>
-    autoPrefill
-      ? snapTo(RANGE_VALUES, Math.round(initialRangeM))
-      : snapTo(RANGE_VALUES, 200),
-  );
+  const [rangeM, setRangeM] = useState(() => {
+    if (hasLapuaAppSettings()) {
+      return clampLapuaRangeM(loadLapuaAppSettings().rangeM);
+    }
+    if (autoPrefill) {
+      return clampLapuaRangeM(Math.round(initialRangeM));
+    }
+    return clampLapuaRangeM(200);
+  });
   const [windSpeed, setWindSpeed] = useState(() =>
     autoPrefill
       ? snapTo(WIND_VALUES, Math.round(liveWindSpeedMs))
@@ -260,6 +311,10 @@ export function LapuaBallisticsApp({
       ? snapWindRelDeg(relativeWindDeg(liveWindFromDeg, shotBearingDeg))
       : 0,
   );
+
+  useEffect(() => {
+    saveLapuaAppSettings({ rangeM });
+  }, [rangeM]);
 
   const windFromDeg =
     ((shotBearingDeg + windRelDeg) % 360 + 360) % 360;
@@ -429,6 +484,7 @@ export function LapuaBallisticsApp({
               values={RANGE_VALUES}
               value={rangeM}
               onChange={setRangeM}
+              allowTypeIn
             />
             <WheelColumn
               label="Vind"

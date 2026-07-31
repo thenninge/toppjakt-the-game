@@ -6,6 +6,7 @@ import {
   formatPerchCatalogEntry,
   maxBatchBSpottingIndex,
   nextBatchBSpottingPath,
+  sanitizePerchSpriteId,
   upsertPerchCatalog,
 } from "@/lib/hunt/sceneAuthoring";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
@@ -19,7 +20,9 @@ type PerchBody = {
   distanceMaxM: number;
   eyesVisible?: boolean;
   scalePercent?: number;
+  spriteId?: string;
   id?: string;
+  note?: string;
 };
 
 function isPerch(v: unknown): v is PerchBody {
@@ -38,6 +41,7 @@ function normalizePerches(raw: PerchBody[]): SpotPerch[] {
   return raw.map((p, i) => {
     const lo = Math.min(p.distanceMinM, p.distanceMaxM);
     const hi = Math.max(p.distanceMinM, p.distanceMaxM);
+    const spriteId = sanitizePerchSpriteId(p.species, p.spriteId);
     return {
       id: `p${i}`,
       x: Math.round(p.x * 10) / 10,
@@ -50,6 +54,11 @@ function normalizePerches(raw: PerchBody[]): SpotPerch[] {
         typeof p.scalePercent === "number"
           ? Math.max(1, Math.min(200, Math.round(p.scalePercent)))
           : 100,
+      ...(spriteId ? { spriteId } : {}),
+      note:
+        typeof p.note === "string" && p.note.trim()
+          ? p.note.trim()
+          : undefined,
     };
   });
 }

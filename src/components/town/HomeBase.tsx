@@ -18,6 +18,7 @@ import {
   isFoodItem,
   isMiscItem,
   isMountItem,
+  isScopeItem,
   isSkiItem,
   isThermalItem,
   inventoryGroupForItem,
@@ -27,6 +28,11 @@ import {
   type ShopItem,
 } from "@/lib/shop/types";
 import { formatTubeDiameterMm, mountTierLabelNb, mountClearsZeroOnScopeRemove, mountClearsZeroOnMountRemove } from "@/lib/mount/spec";
+import {
+  huntReadyCheck,
+  type HuntReadyResult,
+} from "@/lib/hunt/readiness";
+import { kitScopeMountAddBlocked } from "@/lib/mount/fit";
 import { formatWeightKg } from "@/lib/shop/weights";
 import { formatScore10 } from "@/lib/shop/score";
 import {
@@ -81,7 +87,6 @@ import {
   type JaktkortKind,
 } from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
-import { huntReadyCheck, type HuntReadyResult } from "@/lib/hunt/readiness";
 
 /** Categories where only one equipped item makes sense at a time. */
 const EXCLUSIVE_KIT_CATEGORIES = new Set([
@@ -260,6 +265,8 @@ export function HomeBase({
   const [kitRemoveConfirm, setKitRemoveConfirm] = useState<ShopItem | null>(
     null,
   );
+  /** Scope/mount tube diameter mismatch — cannot pack. */
+  const [mountFitBlock, setMountFitBlock] = useState<string | null>(null);
   /** Pending Finn.no sale confirm (item + payout). */
   const [finnSaleConfirm, setFinnSaleConfirm] = useState<{
     item: ShopItem;
@@ -423,6 +430,8 @@ export function HomeBase({
           value = `${itemLabel(item)} · ${formatTubeDiameterMm(item.mount.tubeDiameterMm)}`;
           const tierNote = mountTierLabelNb(item.mount.tier);
           note = note ? `${note} · ${tierNote}` : tierNote;
+        } else if (item && isScopeItem(item)) {
+          value = `${itemLabel(item)} · ${formatTubeDiameterMm(item.scope.tubeDiameterMm)}`;
         }
         return {
           key: slot.key,
@@ -599,6 +608,18 @@ export function HomeBase({
     const mountInKit = kitItems.find(isMountItem) ?? null;
     const mountTier = mountInKit?.mount.tier ?? null;
     const alreadyEquipped = kit.includes(item.id);
+
+    // Diameter gate before any zero-wipe confirms — wrong rings never pack.
+    if (
+      !alreadyEquipped &&
+      (item.category === "scope" || item.category === "mount")
+    ) {
+      const blocked = kitScopeMountAddBlocked(kitItems, item);
+      if (blocked) {
+        setMountFitBlock(blocked);
+        return;
+      }
+    }
 
     if (item.category === "rifle" && alreadyEquipped) {
       setKitRemoveConfirm(item);
@@ -1290,7 +1311,7 @@ export function HomeBase({
                                     : item.food.kind === "thermos"
                                       ? "termos · 5 kaffekopper per tur"
                                       : item.food.temporaryMindFullMinutes
-                                        ? `Mind → 100% i ${item.food.temporaryMindFullMinutes} min · crash`
+                                        ? `Mind → 100% · crash ${item.food.temporaryMindFullMinutes} min tilbake`
                                         : item.food.requiresBoil
                                           ? `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · krever koking`
                                           : `Body +${Math.round(item.food.bodyGain * 100)}% · Mind +${Math.round(item.food.mindGain * 100)}% · ${item.food.minutes} min`}
@@ -1374,6 +1395,17 @@ export function HomeBase({
           cancelLabel="Avbryt"
           onConfirm={confirmKitSwap}
           onCancel={() => setKitSwapConfirm(null)}
+        />
+      ) : null}
+
+      {mountFitBlock ? (
+        <GameConfirmDialog
+          title="Montasje matcher ikke"
+          message={mountFitBlock}
+          confirmLabel="OK"
+          cancelLabel="Lukk"
+          onConfirm={() => setMountFitBlock(null)}
+          onCancel={() => setMountFitBlock(null)}
         />
       ) : null}
 

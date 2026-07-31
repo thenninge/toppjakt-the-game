@@ -494,7 +494,7 @@ export type ThermalSpec = {
   magnification: number;
   /**
    * Real→game time multiplier while spotting in thermal (also drains battery).
-   * Budget ≈ 20×; premium Condor ≈ 30×; Habrok ≈ 24× (20% slower drain than Condor).
+   * Budget ≈ 20×; premium Condor ≈ 30×; Habrok ≈ 12× (2× Condor battery life).
    */
   timeFactor?: number;
   /** Built-in laser rangefinder (e.g. Condor CQ35 LRF / Habrok). */

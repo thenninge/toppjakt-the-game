@@ -27,8 +27,8 @@ export type FoodSpec = {
   /** Freeze-dried / needs boiled water (stove + fuel required). */
   requiresBoil: boolean;
   /**
-   * Temporary full mind for this many game minutes after drinking/eating,
-   * then mental fatigue snaps back to the pre-consume value.
+   * After drink/eat: mind snaps to 100%, then drains back to the pre-consume
+   * fatigue over this many game minutes (Red Bull crash).
    */
   temporaryMindFullMinutes?: number;
   /**

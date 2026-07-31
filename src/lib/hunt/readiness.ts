@@ -15,12 +15,23 @@ import {
   type ShopItem,
 } from "@/lib/shop/types";
 import { formatTubeDiameterMm, type ScopeTubeDiameterMm } from "@/lib/mount/spec";
+import {
+  kitHasMatchingScopeMount,
+  scopeMountMismatchDetail,
+} from "@/lib/mount/fit";
 import { isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
 import type { JaktkortBook } from "@/lib/hunt/jaktkort";
 import { getJaktkortForTerrain } from "@/lib/hunt/jaktkort";
 import { isJegerproveCleared } from "@/lib/jegerprove/exam";
+
+export {
+  kitHasMatchingScopeMount,
+  kitScopeMountAddBlocked,
+  sanitizeKitScopeMountIds,
+  scopeMountMismatchDetail,
+} from "@/lib/mount/fit";
 
 export type HuntReadyResult = {
   ok: boolean;
@@ -48,17 +59,6 @@ export function kitHasVerifiedHuntZero(input: {
     isZeroVerified(
       input.zeroingProfiles[zeroingKey(rifle.id, scope.id, ammo.id)],
     ),
-  );
-}
-
-/** Mount in kit that matches the packed scope tube diameter. */
-export function kitHasMatchingScopeMount(kitItems: ShopItem[]): boolean {
-  const scope = kitItems.find(isScopeItem);
-  if (!scope) return false;
-  return kitItems.some(
-    (i) =>
-      isMountItem(i) &&
-      i.mount.tubeDiameterMm === scope.scope.tubeDiameterMm,
   );
 }
 
@@ -157,7 +157,10 @@ export function huntReadyCheck(input: {
     const packedMount = input.kitItems.find(isMountItem);
     blockers.push(
       packedMount
-        ? `Montasje må matche kikkert-rør (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)} — ikke ${formatTubeDiameterMm(packedMount.mount.tubeDiameterMm)})`
+        ? scopeMountMismatchDetail(
+            scope.scope.tubeDiameterMm,
+            packedMount.mount.tubeDiameterMm,
+          )
         : `Ta med kikkertmontasje i kit (${formatTubeDiameterMm(scope.scope.tubeDiameterMm)})`,
     );
   }

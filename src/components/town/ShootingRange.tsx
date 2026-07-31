@@ -16,6 +16,7 @@ import {
   isSuppressorItem,
   type ShopItem,
 } from "@/lib/shop/types";
+import { formatTubeDiameterMm } from "@/lib/mount/spec";
 import { isShotCamItemId } from "@/lib/hunt/shoot";
 import { resolveBulletWeightGrains } from "@/lib/ammo/spec";
 import {
@@ -509,8 +510,12 @@ export function ShootingRange({
   const rangeShotBearingDeg = 0;
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
 
-  /** Rifle + scope keep you on the range; empty ammo is a soft status, not eject. */
-  const gearReady = !!(rifle && scope);
+  /** Rifle + matching-diameter mount + scope; empty ammo is a soft status, not eject. */
+  const mountFitsScope =
+    !!scope &&
+    !!mount &&
+    mount.mount.tubeDiameterMm === scope.scope.tubeDiameterMm;
+  const gearReady = !!(rifle && scope && mountFitsScope);
   const hasAmmo = ammoOptions.length > 0;
   const ready = gearReady;
 
@@ -2223,7 +2228,7 @@ export function ShootingRange({
         </ul>
         {!ready ? (
           <p className="shop-row-note">
-            Trenger rifle, scope og ammo i kit for å delta.
+            Trenger rifle, scope, matchende montasje og ammo i kit for å delta.
           </p>
         ) : null}
         <div className="range-actions">
@@ -2245,11 +2250,25 @@ export function ShootingRange({
         <LocationNav onBackToTown={onLeave} />
         <p className="intro-line intro-gift">Shooting Range</p>
         <p className="intro-line">
-          Du mangler rifle eller kikkert i kit. Ta med dem fra Home — så tester
-          vi.
+          Du mangler rifle, kikkert eller matchende kikkertmontasje i kit. Ta
+          med dem fra Home — så tester vi. Montasje må ha samme rørdiameter som
+          kikkerten.
         </p>
         {!rifle ? <p className="shop-row-note">Mangler: rifle</p> : null}
         {!scope ? <p className="shop-row-note">Mangler: scope</p> : null}
+        {scope && !mount ? (
+          <p className="shop-row-note">
+            Mangler: kikkertmontasje (
+            {formatTubeDiameterMm(scope.scope.tubeDiameterMm)})
+          </p>
+        ) : null}
+        {scope && mount && !mountFitsScope ? (
+          <p className="shop-row-note">
+            Montasje matcher ikke (
+            {formatTubeDiameterMm(scope.scope.tubeDiameterMm)} kikkert ·{" "}
+            {formatTubeDiameterMm(mount.mount.tubeDiameterMm)} montasje)
+          </p>
+        ) : null}
         <div className="range-actions">
           <button
             type="button"

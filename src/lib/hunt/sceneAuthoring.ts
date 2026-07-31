@@ -3,6 +3,8 @@
  */
 
 import type { BirdSpecies } from "@/lib/hunt/birds";
+import type { BirdSpriteId } from "@/lib/hunt/birdSprites";
+import { spriteIdsForSpecies } from "@/lib/hunt/birdSprites";
 import type { SpotPerch } from "@/lib/hunt/spotPerches";
 import { SPOT_IMAGES } from "@/lib/hunt/images";
 import { SPOT_PERCHES } from "@/lib/hunt/spotPerches";
@@ -17,7 +19,21 @@ export type SceneDraftPerch = {
   distanceMaxM: number;
   eyesVisible: boolean;
   scalePercent: number;
+  /** Forced sprite; omit / undefined = auto from pool. */
+  spriteId?: BirdSpriteId;
 };
+
+/** Keep spriteId only when it belongs to the perch species. */
+export function sanitizePerchSpriteId(
+  species: Extract<BirdSpecies, "tiur" | "orrhane">,
+  spriteId: unknown,
+): BirdSpriteId | undefined {
+  if (typeof spriteId !== "string" || !spriteId) return undefined;
+  const ids = spriteIdsForSpecies(species);
+  return ids.includes(spriteId as BirdSpriteId)
+    ? (spriteId as BirdSpriteId)
+    : undefined;
+}
 
 const BATCH_B_RE = /\/images\/spot\/batchB\/spotting(\d+)b\.(png|jpe?g|webp)$/i;
 
@@ -51,33 +67,41 @@ export function renumberDraftPerches(
 
 export function draftPerchesFromCatalog(imageSrc: string): SceneDraftPerch[] {
   const raw = SPOT_PERCHES[imageSrc] ?? [];
-  return raw.map((p, i) => ({
-    id: p.id ?? `p${i}`,
-    x: p.x,
-    y: p.y,
-    species: p.species === "orrhane" ? "orrhane" : "tiur",
-    distanceMinM: p.distanceMinM,
-    distanceMaxM: p.distanceMaxM,
-    eyesVisible: resolveEyesVisible(
-      p.eyesVisible,
-      p.distanceMinM,
-      p.distanceMaxM,
-    ),
-    scalePercent: p.scalePercent ?? 100,
-  }));
+  return raw.map((p, i) => {
+    const species = p.species === "orrhane" ? "orrhane" : "tiur";
+    return {
+      id: p.id ?? `p${i}`,
+      x: p.x,
+      y: p.y,
+      species,
+      distanceMinM: p.distanceMinM,
+      distanceMaxM: p.distanceMaxM,
+      eyesVisible: resolveEyesVisible(
+        p.eyesVisible,
+        p.distanceMinM,
+        p.distanceMaxM,
+      ),
+      scalePercent: p.scalePercent ?? 100,
+      spriteId: sanitizePerchSpriteId(species, p.spriteId),
+    };
+  });
 }
 
 export function toSpotPerches(perches: SceneDraftPerch[]): SpotPerch[] {
-  return renumberDraftPerches(perches).map((p) => ({
-    id: p.id,
-    x: Math.round(p.x * 10) / 10,
-    y: Math.round(p.y * 10) / 10,
-    species: p.species,
-    distanceMinM: Math.round(p.distanceMinM),
-    distanceMaxM: Math.round(p.distanceMaxM),
-    eyesVisible: p.eyesVisible,
-    scalePercent: Math.round(p.scalePercent),
-  }));
+  return renumberDraftPerches(perches).map((p) => {
+    const spriteId = sanitizePerchSpriteId(p.species, p.spriteId);
+    return {
+      id: p.id,
+      x: Math.round(p.x * 10) / 10,
+      y: Math.round(p.y * 10) / 10,
+      species: p.species,
+      distanceMinM: Math.round(p.distanceMinM),
+      distanceMaxM: Math.round(p.distanceMaxM),
+      eyesVisible: p.eyesVisible,
+      scalePercent: Math.round(p.scalePercent),
+      ...(spriteId ? { spriteId } : {}),
+    };
+  });
 }
 
 /** TS fragment for one catalog entry (no trailing comma on object — caller adds). */
@@ -97,12 +121,20 @@ export function formatPerchCatalogEntry(
       p.scalePercent != null && p.scalePercent !== 100
         ? `\n      scalePercent: ${Math.round(p.scalePercent)},`
         : "";
+    const sprite =
+      p.spriteId && typeof p.spriteId === "string"
+        ? `\n      spriteId: ${JSON.stringify(p.spriteId)},`
+        : "";
+    const note =
+      p.note && p.note.trim()
+        ? `\n      note: ${JSON.stringify(p.note.trim())},`
+        : "";
     return `    {
       x: ${p.x},
       y: ${p.y},
       species: "${p.species}",
       distanceMinM: ${p.distanceMinM},
-      distanceMaxM: ${p.distanceMaxM},${eyes}${scale}
+      distanceMaxM: ${p.distanceMaxM},${eyes}${scale}${sprite}${note}
     }${comma}`;
   });
   return `  "${imageSrc}": [\n${lines.join("\n")}\n  ]`;

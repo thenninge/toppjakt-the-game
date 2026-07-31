@@ -313,7 +313,11 @@ export function MoaCompetitionView({
   );
   const mount = useMemo(() => kitItems.find(isMountItem) ?? null, [kitItems]);
   const ammoOptions = useMemo(() => kitItems.filter(isAmmoItem), [kitItems]);
-  const ready = !!(rifle && scope && ammoOptions.length > 0);
+  const mountFitsScope =
+    !!scope &&
+    !!mount &&
+    mount.mount.tubeDiameterMm === scope.scope.tubeDiameterMm;
+  const ready = !!(rifle && scope && mountFitsScope && ammoOptions.length > 0);
   const densityRatio = densityRatioFromTempC(weather.live.temperatureC);
 
   const [phase, setPhase] = useState<Phase>("lobby");
@@ -1105,7 +1109,8 @@ export function MoaCompetitionView({
     return (
       <div className="moa-comp">
         <p className="intro-line">
-          MOA-konkurranse på Losby krever rifle, scope og ammo i kit.
+          MOA-konkurranse på Losby krever rifle, scope, matchende
+          kikkertmontasje og ammo i kit.
         </p>
         <button type="button" className="intro-button" onClick={onBack}>
           ← Tilbake

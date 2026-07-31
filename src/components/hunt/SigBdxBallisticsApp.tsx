@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AmmoSpec } from "@/lib/ammo/spec";
 import {
   densityRatioFromTempC,
@@ -13,6 +13,12 @@ import {
   POWDER_TEMP_REFERENCE_C,
 } from "@/lib/ballistics/powderTemp";
 import { sampleTrajectory } from "@/lib/ballistics/trajectory";
+import {
+  EditableRangeMeters,
+  APP_RANGE_MAX_M,
+  APP_RANGE_MIN_M,
+  clampAppRangeM,
+} from "@/components/hunt/EditableRangeMeters";
 import {
   loadSigBdxAppSettings,
   saveSigBdxAppSettings,
@@ -33,7 +39,10 @@ export function isSigKilo3000Bdx(
 type SigBdxBallisticsAppProps = {
   ammo: Pick<AmmoSpec, "v0" | "bc" | "bcModel" | "caliber">;
   ammoLabel: string;
-  /** LRF / measured range — not player-editable. */
+  /**
+   * LRF range from Sig KILO — auto-fills the app. Player can type a manual
+   * override; a new LRF reading (changed {@link initialRangeM}) replaces it.
+   */
   initialRangeM: number;
   shotBearingDeg: number;
   /** Live wind — used when {@link autoPrefill} (Kestrel measured). */
@@ -96,8 +105,7 @@ function gunDisplayName(rifleId: string | null | undefined): string {
 }
 
 function rangeFromLrf(m: number): number {
-  if (!Number.isFinite(m) || m < 50) return 50;
-  return Math.round(m * 10) / 10;
+  return clampAppRangeM(m, APP_RANGE_MIN_M, APP_RANGE_MAX_M);
 }
 
 /** Relative wind-from vs shot: 0° = 12 o'clock (headwind), clockwise. */
@@ -107,7 +115,8 @@ function relativeWindDeg(windFromDeg: number, shotBearingDeg: number): number {
 
 /**
  * Sig Sauer BDX companion app (phone UI) — elevation / windage in MILS from
- * LRF range; player sets wind ±, clock direction, and temp (dV/dT).
+ * LRF range (or manual override); player sets wind ±, clock direction, and
+ * temp (dV/dT). New Sig LRF measure overwrites a typed range.
  * With Kestrel autoPrefill, wind + temp come from live measure; otherwise
  * wind/temp/dir persist across engagements via localStorage.
  */
@@ -124,6 +133,7 @@ export function SigBdxBallisticsApp({
   deviceSerial = "K3000BDX-000593",
 }: SigBdxBallisticsAppProps) {
   const [rangeM, setRangeM] = useState(() => rangeFromLrf(initialRangeM));
+  const lastLrfRangeRef = useRef(rangeFromLrf(initialRangeM));
   const [windSpeed, setWindSpeed] = useState(() => {
     if (autoPrefill) return clampWindMs(liveWindSpeedMs);
     return clampWindMs(loadSigBdxAppSettings().windSpeedMs);
@@ -142,8 +152,12 @@ export function SigBdxBallisticsApp({
   const [angleAbu] = useState(0);
   const [altitudeM] = useState(345);
 
+  // New Sig KILO reading overwrites a typed manual range.
   useEffect(() => {
-    setRangeM(rangeFromLrf(initialRangeM));
+    const next = rangeFromLrf(initialRangeM);
+    if (next === lastLrfRangeRef.current) return;
+    lastLrfRangeRef.current = next;
+    setRangeM(next);
   }, [initialRangeM]);
 
   useEffect(() => {
@@ -263,9 +277,16 @@ export function SigBdxBallisticsApp({
 
       <div className="sig-bdx-row sig-bdx-range-row">
         <span className="sig-bdx-muted">Range</span>
-        <span className="sig-bdx-accent">
-          {rangeM.toFixed(1)} <small>m</small>
-        </span>
+        <EditableRangeMeters
+          valueM={rangeM}
+          onChange={setRangeM}
+          minM={APP_RANGE_MIN_M}
+          maxM={APP_RANGE_MAX_M}
+          decimals={1}
+          className="sig-bdx-accent"
+          inputClassName="app-range-input sig-bdx-range-input"
+          ariaLabel="Range — trykk for å taste inn (overskriver LRF til neste måling)"
+        />
         <span className="sig-bdx-angle" title="Inclinometer">
           ∠ {angleAbu.toFixed(1)} ABU
         </span>

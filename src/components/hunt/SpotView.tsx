@@ -132,7 +132,8 @@ type SpotViewProps = {
   thermalPriceNok?: number;
   /**
    * Black-veil seconds when raising binos/thermal (chestrig QR).
-   * QR 10 → 0.5 s, QR 1 → 2 s.
+   * QR 10 → 0.5 s, QR 1 → 2 s. Pass 0 (or negative) for instant raise
+   * (admin spotting / scene creation — no veil, no SFX wait).
    */
   opticsRaiseTransitionSec?: number;
   /** Absolute hunt clock in minutes (for HUD). */
@@ -213,8 +214,8 @@ type SpotViewProps = {
   /** Admin: paint perch ids on birds. */
   showPerchLabels?: boolean;
   /**
-   * Admin: in eyes mode, show/hide by eyesVisible flag only (ignore distance
-   * gate) so calibration of the checkbox is visible immediately.
+   * Admin spotting / scene QA: eyes mode shows every perch (ignore distance
+   * and eyesVisible) so far / optics-only seats stay visible for editing.
    */
   adminEyesFlagPreview?: boolean;
   /**
@@ -1006,10 +1007,17 @@ export function SpotView({
   /**
    * Black → ruffle (+ thermal boot) → open optic after chestrig QR transition time.
    * QR 10 → 0.5 s, QR 1 → 2 s. Applies to first raise and every bino ↔ thermal swap.
+   * {@link opticsRaiseTransitionSec} ≤ 0 → instant (admin calibration).
    */
   function enterOpticMode(targetMode: "binos" | "thermal") {
     const from = modeRef.current;
     if (from === targetMode) {
+      applyOpticMode(targetMode);
+      return;
+    }
+
+    if (!(opticsRaiseTransitionSec > 0)) {
+      abortOpticRaise();
       applyOpticMode(targetMode);
       return;
     }
