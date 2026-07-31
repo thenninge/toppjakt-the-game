@@ -1601,9 +1601,6 @@ export function SpotView({
     height: `${zoom * 100}%`,
     left: `${(1 - zoom) * paintPan.x}%`,
     top: `${(1 - zoom) * paintPan.y}%`,
-    ...(mode === "binos" && opticFocusFilter
-      ? { filter: opticFocusFilter }
-      : {}),
   } as CSSProperties;
 
   /** Eyes = zoom 1, pan irrelevant; still same world box as optics. */
@@ -1614,11 +1611,19 @@ export function SpotView({
     top: "0%",
   } as const;
 
-  const thermalFocusLayerStyle = (
+  /**
+   * Blur on a full-frame layer (not the panned world). Slight scale offsets
+   * edge-softening so the price-based clear aperture doesn't look smaller.
+   */
+  const opticFocusLayerStyle = (
     opticFocusFilter
-      ? { filter: opticFocusFilter, width: "100%", height: "100%" }
-      : { width: "100%", height: "100%" }
-  ) as CSSProperties;
+      ? {
+          filter: opticFocusFilter,
+          transform: `scale(${(1 + Math.min(0.05, spotBlurPx * 0.01)).toFixed(4)})`,
+          transformOrigin: "center center",
+        }
+      : undefined
+  ) as CSSProperties | undefined;
 
   const battMin = Math.max(
     0,
@@ -2019,27 +2024,32 @@ export function SpotView({
         ) : mode === "binos" ? (
           <>
             <div
-              ref={binosWorldRef}
-              className="spot-binos-world"
-              style={worldStyle}
+              className="spot-optic-focus-layer"
+              style={opticFocusLayerStyle}
             >
-              <img
-                src={imageSrc}
-                alt=""
-                className="spot-binos-world-img"
-                draggable={false}
-                onLoad={() => setLandscapeReady(true)}
-              />
-              {birdsOnFrame.map((p) => (
-                <BirdOverlay
-                  key={p.birdId}
-                  placement={p}
-                  visualScale={birdVisualScale}
-                  showPerchLabel={showPerchLabels}
-                  onSelect={birdClickEnabled ? onBirdClick : undefined}
+              <div
+                ref={binosWorldRef}
+                className="spot-binos-world"
+                style={worldStyle}
+              >
+                <img
+                  src={imageSrc}
+                  alt=""
+                  className="spot-binos-world-img"
+                  draggable={false}
+                  onLoad={() => setLandscapeReady(true)}
                 />
-              ))}
-              {worldOverlay}
+                {birdsOnFrame.map((p) => (
+                  <BirdOverlay
+                    key={p.birdId}
+                    placement={p}
+                    visualScale={birdVisualScale}
+                    showPerchLabel={showPerchLabels}
+                    onSelect={birdClickEnabled ? onBirdClick : undefined}
+                  />
+                ))}
+                {worldOverlay}
+              </div>
             </div>
             <div className="spot-optic-vignette" aria-hidden />
             {showZeissHud ? (
@@ -2085,7 +2095,7 @@ export function SpotView({
           <>
             <div
               className="spot-optic-focus-layer"
-              style={thermalFocusLayerStyle}
+              style={opticFocusLayerStyle}
             >
               {thermalPolarity === "fusion" ? (
                 <div

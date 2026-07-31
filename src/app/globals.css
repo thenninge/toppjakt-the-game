@@ -4471,21 +4471,21 @@ body {
 /* High-realism optic focus — vertical rail on the right of the glass. */
 .spot-focus-slider-wrap {
   position: absolute;
-  top: 12%;
-  bottom: 12%;
-  right: 0.35rem;
+  top: 18%;
+  bottom: 18%;
+  right: 0.2rem;
   z-index: 8;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  gap: 0.35rem;
-  padding: 0.35rem 0.2rem;
-  border: 1px solid rgba(196, 165, 116, 0.4);
+  gap: 0.25rem;
+  width: 1.15rem;
+  padding: 0.28rem 0.08rem;
+  border: 1px solid rgba(196, 165, 116, 0.35);
   border-radius: 2px;
-  background: rgba(10, 8, 6, 0.72);
+  background: rgba(10, 8, 6, 0.55);
   pointer-events: auto;
-  backdrop-filter: blur(2px);
 }
 
 .spot-focus-slider-cap {
@@ -4498,7 +4498,7 @@ body {
 
 .spot-focus-slider {
   flex: 1 1 auto;
-  width: 1.35rem;
+  width: 1.05rem;
   margin: 0;
   writing-mode: vertical-lr;
   direction: rtl;
@@ -4510,7 +4510,9 @@ body {
 .spot-optic-focus-layer {
   position: absolute;
   inset: 0;
-  overflow: hidden;
+  /* Do not clip here — CSS blur + overflow makes the glass look smaller. */
+  overflow: visible;
+  pointer-events: none;
 }
 
 .spot-eyes-img {
