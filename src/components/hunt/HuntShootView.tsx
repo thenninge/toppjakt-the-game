@@ -41,6 +41,7 @@ import {
 } from "@/lib/range/recoil";
 import { resolveBulletWeightGrains, isSilentSuppressedShot } from "@/lib/ammo/spec";
 import {
+  advancePulsePhase,
   formatPulseBpm,
   pulseKickOffset,
   pulseVerticalAmpMm,
@@ -782,6 +783,8 @@ export function HuntShootView({
   const crosswindRef = useRef(crosswindMs);
   const firedRef = useRef(false);
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
+  /** Integrated beat phase (cycles) — rate = BPM/60 so it matches the pulse meter. */
+  const pulsePhaseRef = useRef(Math.random());
   const weaponCalmRef = useRef(1);
   const fatigueRef = useRef({
     physicalFatigue: physicalFatigue,
@@ -1906,8 +1909,12 @@ export function HuntShootView({
             : 1,
         },
       );
-      const pulseY =
-        pulseKickOffset(heartRateBpmRef.current, t) * pulseAmp;
+      pulsePhaseRef.current = advancePulsePhase(
+        pulsePhaseRef.current,
+        heartRateBpmRef.current,
+        dt,
+      );
+      const pulseY = pulseKickOffset(pulsePhaseRef.current) * pulseAmp;
       wobbleRef.current = {
         x:
           Math.sin(t * 2.1 + ph.a) * amp * 0.55 +

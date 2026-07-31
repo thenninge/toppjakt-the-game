@@ -105,7 +105,7 @@ Note calibrated values in the `ReticleDef` comment block (same style as ZCO).
 |------------|----------------|--------|
 | `mpct3x` | ZCO 5-27 | **Calibrated** |
 | `kahles` | K318i / K525i / K624i / K16i | TODO |
-| `nightforce-mil-r` | NX8 / ATACR MRAD | TODO |
+| `nightforce-mil-r` (`nf_mil.png`) | NX8 / ATACR MRAD | TODO |
 | `nf_moa` | NX8 MOA | TODO (MOA paper) |
 | `sb` | S&B PM II | TODO |
 | (Vortex / Element / …) | may share generic or need assets | TODO |

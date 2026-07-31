@@ -54,17 +54,24 @@ type LapuaBallisticsAppProps = {
   ammoLabel: string;
   /** Suggested starting range (LRF / Aware). */
   initialRangeM: number;
-  /** Live wind — used only when {@link autoPrefill} (Kestrel). */
+  /** Live wind — used only when {@link autoPrefill} (Kestrel / Zeiss LRF). */
   liveWindSpeedMs: number;
   liveWindFromDeg: number;
   /** Live air / powder temp — used only when {@link autoPrefill}. */
   liveTemperatureC: number;
   shotBearingDeg: number;
   /**
-   * When true (Kestrel in kit), dials start from live range/wind/temp.
-   * Without Kestrel the player must set everything manually.
+   * When true (Kestrel or Zeiss Victory RF), dials start from live range/wind/temp
+   * so elev/wind clicks match onboard LRF / Enviro.
    */
   autoPrefill?: boolean;
+  /**
+   * When true, a new LRF/Aware range ({@link initialRangeM}) overwrites the
+   * range dial (same pattern as Sig BDX).
+   */
+  syncRangeFromLrf?: boolean;
+  /** Optional brand line under header (e.g. Zeiss Victory RF). */
+  subtitle?: string;
   /** Equipped scope click unit — MOA scopes show ¼-MOA clicks. */
   clickUnit?: ScopeClickUnit;
   /**
@@ -279,18 +286,21 @@ export function LapuaBallisticsApp({
   liveTemperatureC,
   shotBearingDeg,
   autoPrefill = false,
+  syncRangeFromLrf = false,
+  subtitle,
   clickUnit = "MRAD",
   realDropTable = null,
 }: LapuaBallisticsAppProps) {
   const dialRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const lastLrfRangeRef = useRef(clampLapuaRangeM(Math.round(initialRangeM)));
 
   const [rangeM, setRangeM] = useState(() => {
+    if (autoPrefill || syncRangeFromLrf) {
+      return clampLapuaRangeM(Math.round(initialRangeM));
+    }
     if (hasLapuaAppSettings()) {
       return clampLapuaRangeM(loadLapuaAppSettings().rangeM);
-    }
-    if (autoPrefill) {
-      return clampLapuaRangeM(Math.round(initialRangeM));
     }
     return clampLapuaRangeM(200);
   });
@@ -315,6 +325,15 @@ export function LapuaBallisticsApp({
   useEffect(() => {
     saveLapuaAppSettings({ rangeM });
   }, [rangeM]);
+
+  /** New LRF reading → update range dial (Zeiss / range sync). */
+  useEffect(() => {
+    if (!syncRangeFromLrf && !autoPrefill) return;
+    const next = clampLapuaRangeM(Math.round(initialRangeM));
+    if (next === lastLrfRangeRef.current) return;
+    lastLrfRangeRef.current = next;
+    setRangeM(next);
+  }, [initialRangeM, syncRangeFromLrf, autoPrefill]);
 
   const windFromDeg =
     ((shotBearingDeg + windRelDeg) % 360 + 360) % 360;
@@ -428,6 +447,9 @@ export function LapuaBallisticsApp({
         <span className="lapua-app-ammo" title={ammoLabel}>
           {ammoLabel}
         </span>
+        {subtitle ? (
+          <span className="lapua-app-subtitle">{subtitle}</span>
+        ) : null}
       </header>
 
       <div className="lapua-dial-wrap">
@@ -556,7 +578,9 @@ export function LapuaBallisticsApp({
 
       <p className="lapua-app-hint">
         {autoPrefill
-          ? `Kestrel-prefill · juster ved behov, dial tårnene etter ${unitSuffix}.`
+          ? syncRangeFromLrf
+            ? `Zeiss/LRF-prefill · range oppdateres fra LRF. Samme ${unitSuffix}-klikk som LRF-displayet når vind/temp matcher.`
+            : `Kestrel-prefill · juster ved behov, dial tårnene etter ${unitSuffix}.`
           : realDropTable
             ? `Ingen Kestrel-prefill — still Range/Wind/Temp. Elev følger CB Real drop-tabell (samme som treff); vind fra dialene.`
             : `Ingen auto-data — still Range + Wind + Temp selv (kopier Enviro), deretter dial tårnene (${unitSuffix}).`}

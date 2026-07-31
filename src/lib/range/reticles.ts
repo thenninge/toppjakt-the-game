@@ -171,13 +171,17 @@ export type ReticleDef = {
 };
 
 export const RETICLES: Record<string, ReticleDef> = {
+  /**
+   * Nightforce MIL-R tree (nf_mil.png, 500×499).
+   * Shared by NX8 / ATACR MRAD scopes. `centerTo1MilPx` scaled from prior 742×741 cal (43 px/mil).
+   */
   "nightforce-mil-r": {
     id: "nightforce-mil-r",
     label: "MIL-R",
-    src: "/range/reticles/nightforce-mil-r.png",
-    nativeWidth: 742,
-    nativeHeight: 741,
-    centerTo1MilPx: 43,
+    src: "/range/reticles/nf_mil.png",
+    nativeWidth: 500,
+    nativeHeight: 499,
+    centerTo1MilPx: (43 * 500) / 742,
   },
   /**
    * Nightforce MOA tree (nf_moa.png, 1279×1280).
@@ -308,6 +312,50 @@ export const RETICLES: Record<string, ReticleDef> = {
     nativeWidth: 500,
     nativeHeight: 500,
     centerTo1MilPx: 20 / 1.12,
+  },
+  /**
+   * Schmidt & Bender P5FL — transparent PNGs from datasheet art.
+   * Base = low-zoom / wide FOV ({@code p5fl_min.png}); hiRes fades in the
+   * high-zoom detail asset ({@code p5fl_max.png}). Hash pitch measured on
+   * assets (~17 px/mil min, ~50.5 px/mil max). FOV cal on 6-36 PM II:
+   * ±36.5 / ±6.5 mrad (7.3→1.3 m @ 100 m).
+   */
+  p5fl: {
+    id: "p5fl",
+    label: "P5FL",
+    src: "/range/reticles/p5fl_min.png",
+    nativeWidth: 1688,
+    nativeHeight: 1314,
+    centerTo1MilPx: 17,
+    opticalCenterX: 844,
+    opticalCenterY: 657,
+    imageRotationDeg: 0,
+    imageCrop: {
+      shape: "circle",
+      r: 640,
+    },
+    illumination: {
+      // Centre floating cross / dot — refine in Admin Scopes if needed.
+      region: { shape: "circleMils", rMils: 1.2 },
+    },
+    hiRes: {
+      src: "/range/reticles/p5fl_max.png",
+      nativeWidth: 1880,
+      nativeHeight: 1330,
+      centerTo1MilPx: 50.5,
+      opticalCenterX: 934.5,
+      opticalCenterY: 675,
+      fadeFromZoomFrac: 0.3,
+      fadeToZoomFrac: 0.8,
+    },
+    maxZoom: {
+      src: "/range/reticles/p5fl_max.png",
+      nativeWidth: 1880,
+      nativeHeight: 1330,
+      centerTo1MilPx: 50.5,
+      opticalCenterX: 934.5,
+      opticalCenterY: 675,
+    },
   },
 
 };

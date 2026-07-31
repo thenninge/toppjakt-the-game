@@ -22,7 +22,6 @@ import {
   ElRangeBallisticsApp,
   isSwarovskiElRange,
 } from "@/components/hunt/ElRangeBallisticsApp";
-import { ZeissVictoryEnviroPanel } from "@/components/hunt/lrf/ZeissVictoryEnviroPanel";
 import { isZeissVictoryLrf } from "@/components/hunt/lrf/ZeissVictoryLrfHud";
 import { POWDER_TEMP_REFERENCE_C } from "@/lib/ballistics/powderTemp";
 import type { ScopeClickUnit } from "@/lib/optics/spec";
@@ -56,11 +55,11 @@ type HuntShotConditionsProps = {
   dopeDialDisabled?: boolean;
   /** Equipped scope click unit for DOPE / app readouts. */
   clickUnit?: ScopeClickUnit;
-  /** Equipped LRF — Zeiss Victory / Sig BDX replace Lapua with device UI. */
+  /** Equipped LRF — Sig BDX / EL Range replace Lapua; Zeiss uses Lapua (same solver as LRF). */
   lrfId?: string | null;
   lrfBrand?: string | null;
   lrfLabel?: string | null;
-  /** Absolute elev clicks for current range (Victory display). */
+  /** @deprecated Zeiss Enviro now shows Lapua — kept for callers. */
   lrfElevClicks?: number | null;
   /**
    * Shooting range: always Lapua in App-tab (LRF device UIs stay for hunt).
@@ -95,7 +94,7 @@ export function HuntShotConditions({
   lrfId = null,
   lrfBrand = null,
   lrfLabel = null,
-  lrfElevClicks = null,
+  lrfElevClicks: _lrfElevClicks = null,
   forceLapuaApp = false,
   realDropTable = null,
 }: HuntShotConditionsProps) {
@@ -109,15 +108,18 @@ export function HuntShotConditions({
   const windFrom = ((Math.round(windFromDeg) % 360) + 360) % 360;
   const shotCompass = compassLabelFromDeg(bearing);
   const windCompass = formatWindCompass(windFrom);
-  const useZeissLrf =
+  /** Zeiss Victory RF: Lapua app (same exactBallisticHold as LRF elev). */
+  const useZeissLapua =
     !forceLapuaApp && isZeissVictoryLrf({ id: lrfId, brand: lrfBrand });
   const useSigBdx =
-    !forceLapuaApp && !useZeissLrf && isSigKilo3000Bdx({ id: lrfId });
+    !forceLapuaApp && !useZeissLapua && isSigKilo3000Bdx({ id: lrfId });
   const useElRange =
     !forceLapuaApp &&
-    !useZeissLrf &&
+    !useZeissLapua &&
     !useSigBdx &&
     isSwarovskiElRange({ id: lrfId });
+  /** Prefill Lapua when Kestrel OR Zeiss LRF (match onboard elev clicks). */
+  const lapuaAutoPrefill = hasKestrel || useZeissLapua;
 
   const nearest =
     rifleId && ammoId
@@ -201,8 +203,8 @@ export function HuntShotConditions({
           <p className="hunt-shot-cond-hint">
             {forceLapuaApp
               ? "Uten Kestrel: App starter blank — knote range/vind/temp selv. Skriv DOPE fra skudd."
-              : useZeissLrf
-              ? "Zeiss Victory RF: avstand → elev-klikk i LRF-displayet."
+              : useZeissLapua
+              ? `Zeiss Victory RF${lrfLabel ? ` (${lrfLabel})` : ""}: elev-klikk i LRF-displayet. App = Lapua med samme beregning — range fra LRF, still vind/temp for å matche.`
               : useSigBdx
                 ? "Sig BDX: range fra LRF (trykk Range for manuell). Mål enviro med Kestrel i Aware for auto vind/temp, eller still manuelt (huskes). Tid går ×5 her; fuglen blir nervøs."
                 : useElRange
@@ -212,6 +214,10 @@ export function HuntShotConditions({
         ) : forceLapuaApp ? (
           <p className="hunt-shot-cond-hint">
             Kestrel: App prefyller live. Nøyaktig dropp i hold-kortet over.
+          </p>
+        ) : useZeissLapua ? (
+          <p className="hunt-shot-cond-hint">
+            Zeiss + Kestrel: Lapua prefyller live enviro. Samme klikk som LRF-displayet.
           </p>
         ) : useSigBdx ? (
           <p className="hunt-shot-cond-hint">
@@ -286,13 +292,7 @@ export function HuntShotConditions({
       </aside>
 
       <div className="hunt-enviro-app-col" aria-label="Ballistics App">
-        {useZeissLrf ? (
-          <ZeissVictoryEnviroPanel
-            rangeM={rangeM}
-            elevClicks={lrfElevClicks}
-            label={lrfLabel ?? "Zeiss Victory RF"}
-          />
-        ) : useSigBdx && ammo ? (
+        {useSigBdx && ammo ? (
           <SigBdxBallisticsApp
             ammo={ammo}
             ammoLabel={ammoLabel}
@@ -321,9 +321,15 @@ export function HuntShotConditions({
             liveWindFromDeg={windFromDeg}
             liveTemperatureC={tempC}
             shotBearingDeg={shotBearingDeg}
-            autoPrefill={hasKestrel}
+            autoPrefill={lapuaAutoPrefill}
+            syncRangeFromLrf={useZeissLapua || forceLapuaApp}
             clickUnit={clickUnit}
             realDropTable={realDropTable}
+            subtitle={
+              useZeissLapua
+                ? "Lapua · Zeiss Victory RF"
+                : undefined
+            }
           />
         ) : (
           <p className="hunt-dope-empty">Velg ammo for å bruke appen.</p>

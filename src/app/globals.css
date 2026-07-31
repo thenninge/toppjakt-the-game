@@ -1342,6 +1342,235 @@ body {
   margin: 0 auto;
 }
 
+/* --- Admin → Custom Scope --- */
+.admin-custom-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.admin-custom-scope-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-custom-scope-grid {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .admin-custom-scope-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-custom-scope-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.admin-custom-scope-row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.admin-custom-scope-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin-custom-scope-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.admin-custom-scope-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: flex-end;
+}
+
+.admin-custom-scope-inline {
+  margin: 0;
+  min-width: 5.5rem;
+}
+
+.admin-custom-scope-canvases {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(12rem, 0.8fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .admin-custom-scope-canvases {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-custom-scope-editor-wrap,
+.admin-custom-scope-glass-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.admin-custom-scope-editor {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: min(70vh, 36rem);
+  background: #c8c4b8;
+  border: 1px solid rgba(40, 32, 24, 0.35);
+  border-radius: 0.25rem;
+  touch-action: none;
+}
+
+.admin-custom-scope-glass {
+  width: 100%;
+  max-width: 22rem;
+  margin-inline: auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 35% 30%, #3a3a38 0%, #1a1a18 55%, #0c0c0b 100%);
+  border: 0.35rem solid #2a241c;
+  box-shadow: inset 0 0 1.2rem rgba(0, 0, 0, 0.55);
+  position: relative;
+}
+
+.admin-custom-scope-glass.is-live {
+  max-width: min(28rem, 100%);
+  width: min(70vh, 28rem);
+}
+
+.admin-custom-scope-glass-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.admin-custom-scope-optic-fit {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.admin-custom-scope-scene,
+.admin-custom-scope-scene-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-custom-scope-scene-empty {
+  background:
+    radial-gradient(circle at 40% 35%, #4a463c 0%, #1c1a16 70%);
+}
+
+.admin-custom-scope-scene img {
+  pointer-events: none;
+  user-select: none;
+}
+
+.admin-custom-scope-glass.is-live .scope-reticle,
+.admin-custom-scope-glass.is-live .scope-reticle-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.admin-custom-scope-vector-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  background: transparent;
+}
+
+.admin-custom-scope-vector {
+  margin-top: 0.75rem;
+}
+
+.admin-custom-scope-vector > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-bottom: 0.45rem;
+}
+
+.admin-custom-scope-glass-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: transparent;
+}
+
+.admin-custom-scope-props {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(40, 32, 24, 0.28);
+  border-radius: 0.3rem;
+  background: rgba(255, 250, 240, 0.35);
+}
+
+.admin-custom-scope-list {
+  font-size: 0.78rem;
+}
+
+.admin-custom-scope-list ul {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  max-height: 10rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-custom-scope-el {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 0.2rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-custom-scope-el:hover,
+.admin-custom-scope-el.is-active {
+  border-color: rgba(40, 32, 24, 0.35);
+  background: rgba(255, 250, 240, 0.5);
+}
+
 /** Tube layout: elevation above, parallax left, windage right of glass. */
 .scope-tube-layout,
 .admin-scope-tube-layout {
@@ -5057,9 +5286,10 @@ body {
 
 .lapua-app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.35rem 0.5rem;
 }
 
 .lapua-app-brand {
@@ -5069,6 +5299,14 @@ body {
   text-transform: uppercase;
   color: #f04545;
   font-weight: 700;
+}
+
+.lapua-app-subtitle {
+  flex-basis: 100%;
+  order: 3;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: #7a8fa8;
 }
 
 .lapua-app-ammo {

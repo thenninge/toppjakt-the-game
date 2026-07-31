@@ -42,6 +42,7 @@ const SECTIONS: GuideSection[] = [
       "Clas Ohlson vindmåler: fane «Vindmåler» viser bare ustabil vindstyrke fra der det blåser — ingen sidevindvinkel. Windage må du regne i Enviro/App.",
       "LRF med Applied Ballistics / BDX uten Kestrel bruker ofte prognose og «full-value» vind (antar 90°) — større feil.",
       "LRF med onboard ballistics (BDX) + Kestrel Elite → nøyaktig fasit (Kestrel/LRF); du skrur tårnene selv.",
+      "Zeiss Victory RF: elev-klikk i LRF-displayet (innebygd Lapua-ballistikk). Enviro/App viser Lapua med samme klikk.",
       "Habrok (termisk binokular med LRF) + Kestrel Elite → samme fasit; manuell dial.",
       "Budsjett-LRF uten ballistikk: sett hold selv (Enviro / DOPE / øyemål).",
       "Vind i spillet er 0–5 m/s. Retning: vind fra venstre blåser kula til høyre → hold LEFT.",

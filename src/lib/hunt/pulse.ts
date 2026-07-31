@@ -43,7 +43,7 @@ export const PULSE_SPOT_TIUR_BPM = 30;
 export const PULSE_PER_FULL_MIND_BPM = 50;
 
 /** Vertical heartbeat kick amp at 100 m when intensity is full (mm of POA). */
-export const PULSE_SHAKE_AMP_MM_AT_100M = 22;
+export const PULSE_SHAKE_AMP_MM_AT_100M = 44;
 /** Bipod / backpack rest dampens pulse kick (not eliminate). */
 export const PULSE_SHAKE_REST_MULT = 0.5;
 /**
@@ -400,17 +400,25 @@ export function pulseVerticalAmpMm(
 }
 
 /**
- * Signed vertical kick offset (−ish…1) for the current time.
+ * Signed vertical kick (−ish…1) for an integrated beat phase.
  * Multiply by {@link pulseVerticalAmpMm} and add to wobble Y.
+ *
+ * Advance phase with {@link advancePulsePhase} each frame — do **not** use
+ * `tSec * bpm/60` (absolute time × changing Hz skews the beat rate).
  */
-export function pulseKickOffset(
+export function pulseKickOffset(phase: number): number {
+  return pulseKickShape01(phase);
+}
+
+/** Integrate beat phase so instantaneous rate matches the pulse meter (BPM/60). */
+export function advancePulsePhase(
+  phase: number,
   heartRateBpm: number,
-  tSec: number,
+  dtSec: number,
 ): number {
   const hz = pulseHz(heartRateBpm);
-  if (!(hz > 0)) return 0;
-  const phase = tSec * hz;
-  return pulseKickShape01(phase);
+  if (!(hz > 0) || !(dtSec > 0)) return phase;
+  return phase + dtSec * hz;
 }
 
 export function pulseHz(heartRateBpm: number): number {

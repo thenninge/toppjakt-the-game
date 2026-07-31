@@ -16,6 +16,10 @@ import {
   type StarterKitSelection,
 } from "@/lib/reloading/starterKit";
 import { SCOPE_FOV_DIAMETER_PREMIUM } from "@/lib/optics/spec";
+import {
+  SCOPE_FOV_CAL_HALF_MRAD,
+  SCOPE_FOV_CAL_ZOOM,
+} from "@/lib/range/precision";
 import { getReticleDef } from "@/lib/range/reticles";
 
 /**
@@ -641,6 +645,34 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       clickErrorPercent: 0,
       zeroRetentionInaccuracy: 0.03,
       fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
+      focusZoomEnabled: true,
+      focusZoomMultiplier: 1.2,
+      focusViewportScale: 1.2,
+    },
+  },
+  {
+    id: "scope-sb-pmii-6-36-p5fl",
+    category: "scope",
+    brand: "Schmidt & Bender",
+    name: "PM II High Performance 6-36x56 P5FL",
+    priceNok: 54990,
+    note: "FFP · P5FL · 0.1 mil klikk · 34 mm rør · FOV 7.3→1.3 m/100 m.",
+    scope: {
+      tubeDiameterMm: 34,
+      minZoom: 6,
+      maxZoom: 36,
+      focalPlane: "FFP",
+      reticleId: "p5fl",
+      clickUnit: "MRAD",
+      elevationClicksPerRev: 100,
+      windageClicksPerRev: 100,
+      clickErrorPercent: 0,
+      zeroRetentionInaccuracy: 0.03,
+      fovDiameterScale: SCOPE_FOV_DIAMETER_PREMIUM,
+      /** ±6.5 mrad @ 36× vs ZCO cal ±7.2 @ 27× → (7.2×27)/(6.5×36). */
+      zoomMagCal: (SCOPE_FOV_CAL_HALF_MRAD * SCOPE_FOV_CAL_ZOOM) / (6.5 * 36),
+      /** ±36.5 mrad @ 6×. */
+      minZoomMagCal: (SCOPE_FOV_CAL_HALF_MRAD * SCOPE_FOV_CAL_ZOOM) / (36.5 * 6),
       focusZoomEnabled: true,
       focusZoomMultiplier: 1.2,
       focusViewportScale: 1.2,

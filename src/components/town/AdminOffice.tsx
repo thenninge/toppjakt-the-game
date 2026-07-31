@@ -7,6 +7,7 @@ import { AdminHitZonesPanel } from "@/components/town/AdminHitZonesPanel";
 import { AdminJaktfeltPanel } from "@/components/town/AdminJaktfeltPanel";
 import { AdminSceneCreationPanel } from "@/components/town/AdminSceneCreationPanel";
 import { AdminRealismControlsPanel } from "@/components/town/AdminRealismControlsPanel";
+import { AdminCustomScopePanel } from "@/components/town/AdminCustomScopePanel";
 import { AdminScopeTestPanel } from "@/components/town/AdminScopeTestPanel";
 import { AdminTargetsPanel } from "@/components/town/AdminTargetsPanel";
 import { adminPlacementsForSpotImage } from "@/lib/hunt/birds";
@@ -66,6 +67,7 @@ type AdminTab =
   | "jaktfelt"
   | "treff"
   | "scopes"
+  | "custom-scope"
   | "targets"
   | "realism";
 
@@ -320,6 +322,15 @@ export function AdminOffice({ onLeave }: AdminOfficeProps) {
     );
   }
 
+  if (tab === "custom-scope") {
+    return (
+      <div className="admin-office-shell">
+        <AdminTabBar tab={tab} onTab={setTab} onLeave={onLeave} />
+        <AdminCustomScopePanel onLeave={onLeave} />
+      </div>
+    );
+  }
+
   if (tab === "realism") {
     return (
       <div className="admin-office-shell">
@@ -448,6 +459,19 @@ function AdminTabBar({
         onClick={() => onTab("scopes")}
       >
         Scopes
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "custom-scope"}
+        className={
+          tab === "custom-scope"
+            ? "intro-button admin-tab is-active"
+            : "intro-button admin-tab"
+        }
+        onClick={() => onTab("custom-scope")}
+      >
+        Custom Scope
       </button>
       <button
         type="button"
