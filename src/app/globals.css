@@ -4468,6 +4468,51 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* High-realism optic focus — vertical rail on the right of the glass. */
+.spot-focus-slider-wrap {
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  right: 0.35rem;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.35rem 0.2rem;
+  border: 1px solid rgba(196, 165, 116, 0.4);
+  border-radius: 2px;
+  background: rgba(10, 8, 6, 0.72);
+  pointer-events: auto;
+  backdrop-filter: blur(2px);
+}
+
+.spot-focus-slider-cap {
+  color: rgba(196, 165, 116, 0.85);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  user-select: none;
+}
+
+.spot-focus-slider {
+  flex: 1 1 auto;
+  width: 1.35rem;
+  margin: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  appearance: slider-vertical;
+  accent-color: var(--accent-gold, #c4a574);
+  cursor: pointer;
+}
+
+.spot-optic-focus-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
 .spot-eyes-img {
   display: block;
   width: 100%;

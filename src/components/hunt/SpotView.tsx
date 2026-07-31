@@ -48,6 +48,17 @@ import {
 } from "@/components/hunt/ThermalCanvas";
 import { clientDeltaToLocalCssPx } from "@/lib/range/scopePointerAim";
 import {
+  getRealismFeatures,
+  getRealismParams,
+} from "@/lib/range/realismControls";
+import {
+  clampSpotFocusDial,
+  ensureSpotFocusMemory,
+  nudgeSpotFocusDial,
+  spotFocusBlurPx,
+  writeSpotFocusDial,
+} from "@/lib/hunt/spotOpticFocus";
+import {
   ZeissVictoryLrfHud,
   ZEISS_VICTORY_ACQUIRE_MS,
   ZEISS_VICTORY_PHASE_MS,
@@ -480,8 +491,65 @@ export function SpotView({
       Math.max(habrokMin, thermalMagnification || habrokMin),
     ),
   );
+  /** High-realism optic focus dials (remembered per imageSrc). */
+  const [spotFocusTarget, setSpotFocusTarget] = useState(() =>
+    ensureSpotFocusMemory(imageSrc).target,
+  );
+  const [binosFocusDial, setBinosFocusDial] = useState(() =>
+    ensureSpotFocusMemory(imageSrc).binos,
+  );
+  const [thermalFocusDial, setThermalFocusDial] = useState(() =>
+    ensureSpotFocusMemory(imageSrc).thermal,
+  );
   /** Birds only after landscape — otherwise sprites pop in first and spoil the spot. */
   const [landscapeReady, setLandscapeReady] = useState(false);
+
+  useEffect(() => {
+    const mem = ensureSpotFocusMemory(imageSrc);
+    setSpotFocusTarget(mem.target);
+    setBinosFocusDial(mem.binos);
+    setThermalFocusDial(mem.thermal);
+  }, [imageSrc]);
+
+  const spotFocusEnabled =
+    realism === "high" && getRealismFeatures(realism).parallaxBlur;
+  const activeFocusDial =
+    mode === "thermal" ? thermalFocusDial : binosFocusDial;
+  const spotBlurPx = spotFocusEnabled
+    ? spotFocusBlurPx(activeFocusDial, spotFocusTarget) *
+      getRealismParams().parallaxBlurMult
+    : 0;
+  const opticFocusFilter =
+    spotBlurPx > 0.04 ? `blur(${spotBlurPx.toFixed(2)}px)` : undefined;
+
+  function setActiveFocusDial(next: number) {
+    const clamped = clampSpotFocusDial(next);
+    const m = modeRef.current;
+    if (m === "thermal") {
+      setThermalFocusDial(clamped);
+      writeSpotFocusDial(imageSrc, "thermal", clamped);
+    } else {
+      setBinosFocusDial(clamped);
+      writeSpotFocusDial(imageSrc, "binos", clamped);
+    }
+  }
+
+  function nudgeActiveFocus(dir: -1 | 1) {
+    if (!spotFocusEnabled) return;
+    const m = modeRef.current;
+    if (m !== "binos" && m !== "thermal") return;
+    const mem = ensureSpotFocusMemory(imageSrc);
+    const from = m === "thermal" ? mem.thermal : mem.binos;
+    const next = nudgeSpotFocusDial(from, dir);
+    if (m === "thermal") {
+      setThermalFocusDial(next);
+      writeSpotFocusDial(imageSrc, "thermal", next);
+    } else {
+      setBinosFocusDial(next);
+      writeSpotFocusDial(imageSrc, "binos", next);
+    }
+  }
+
   /**
    * Solid black veil while optic raise transition runs; cleared when the new view opens.
    */
@@ -868,6 +936,30 @@ export function SpotView({
         return;
       }
 
+      const typing =
+        e.target instanceof HTMLElement &&
+        (e.target.tagName === "INPUT" ||
+          e.target.tagName === "TEXTAREA" ||
+          e.target.tagName === "SELECT" ||
+          e.target.isContentEditable);
+      if (
+        !typing &&
+        spotFocusEnabled &&
+        (modeRef.current === "binos" || modeRef.current === "thermal") &&
+        !e.repeat
+      ) {
+        if (e.key === "i" || e.key === "I") {
+          e.preventDefault();
+          nudgeActiveFocus(-1);
+          return;
+        }
+        if (e.key === "o" || e.key === "O") {
+          e.preventDefault();
+          nudgeActiveFocus(1);
+          return;
+        }
+      }
+
       const optic =
         modeRef.current === "binos" || modeRef.current === "thermal";
       const lrfKey =
@@ -932,7 +1024,7 @@ export function SpotView({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [onDone]);
+  }, [onDone, spotFocusEnabled, imageSrc]);
 
   useEffect(() => {
     let raf = 0;
@@ -1426,6 +1518,20 @@ export function SpotView({
     observeBird(placement, activeLrf);
   }
 
+  // Native non-passive wheel so trackpad/mouse scroll can prevent page scroll.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || !spotFocusEnabled) return;
+    function onWheel(e: globalThis.WheelEvent) {
+      if (modeRef.current !== "binos" && modeRef.current !== "thermal") return;
+      e.preventDefault();
+      const dir: -1 | 1 = e.deltaY < 0 ? -1 : 1;
+      nudgeActiveFocus(dir);
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [spotFocusEnabled, imageSrc]);
+
   function onFrameClick(e: MouseEvent<HTMLDivElement>) {
     if (onPlacePoint && mode === "eyes") {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -1495,7 +1601,10 @@ export function SpotView({
     height: `${zoom * 100}%`,
     left: `${(1 - zoom) * paintPan.x}%`,
     top: `${(1 - zoom) * paintPan.y}%`,
-  } as const;
+    ...(mode === "binos" && opticFocusFilter
+      ? { filter: opticFocusFilter }
+      : {}),
+  } as CSSProperties;
 
   /** Eyes = zoom 1, pan irrelevant; still same world box as optics. */
   const eyesWorldStyle = {
@@ -1504,6 +1613,12 @@ export function SpotView({
     left: "0%",
     top: "0%",
   } as const;
+
+  const thermalFocusLayerStyle = (
+    opticFocusFilter
+      ? { filter: opticFocusFilter, width: "100%", height: "100%" }
+      : { width: "100%", height: "100%" }
+  ) as CSSProperties;
 
   const battMin = Math.max(
     0,
@@ -1854,6 +1969,31 @@ export function SpotView({
           <span className="spot-compass-dir">{lookCompass}</span>
           <span className="spot-compass-deg">{lookBearing}°</span>
         </div>
+        {spotFocusEnabled && isOpticMode ? (
+          <label
+            className="spot-focus-slider-wrap"
+            title="Fokus — I inn · O ut · scroll"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="spot-focus-slider-cap" aria-hidden>
+              ∞
+            </span>
+            <input
+              type="range"
+              className="spot-focus-slider"
+              min={0}
+              max={1}
+              step={0.01}
+              value={activeFocusDial}
+              aria-label="Optikk-fokus"
+              onChange={(e) => setActiveFocusDial(Number(e.target.value))}
+            />
+            <span className="spot-focus-slider-cap" aria-hidden>
+              N
+            </span>
+          </label>
+        ) : null}
         {mode === "eyes" ? (
           <>
             <div className="spot-binos-world" style={eyesWorldStyle}>
@@ -1943,58 +2083,65 @@ export function SpotView({
           </>
         ) : (
           <>
-            {thermalPolarity === "fusion" ? (
-              <div
-                ref={binosWorldRef}
-                className="spot-binos-world"
-                style={worldStyle}
-              >
-                <img
-                  src={imageSrc}
-                  alt=""
-                  className="spot-binos-world-img"
-                  draggable={false}
-                  onLoad={() => setLandscapeReady(true)}
-                />
-                {birdsOnFrame.map((p) => (
-                  <BirdOverlay
-                    key={p.birdId}
-                    placement={p}
-                    visualScale={birdVisualScale}
-                    showPerchLabel={showPerchLabels}
-                    onSelect={undefined}
+            <div
+              className="spot-optic-focus-layer"
+              style={thermalFocusLayerStyle}
+            >
+              {thermalPolarity === "fusion" ? (
+                <div
+                  ref={binosWorldRef}
+                  className="spot-binos-world"
+                  style={worldStyle}
+                >
+                  <img
+                    src={imageSrc}
+                    alt=""
+                    className="spot-binos-world-img"
+                    draggable={false}
+                    onLoad={() => setLandscapeReady(true)}
                   />
-                ))}
-                {worldOverlay}
-              </div>
-            ) : null}
-            <ThermalCanvas
-              ref={thermalCanvasRef}
-              imageSrc={imageSrc}
-              birdPlacements={
-                thermalPolarity === "fusion" ? fusionOutlineBirds : birdsOnFrame
-              }
-              birdVisualScale={birdVisualScale}
-              pan={pan}
-              zoom={zoom}
-              pixelFactor={thermalPixelFactor}
-              polarity={
-                isThermalBinocular
-                  ? thermalPolarity
-                  : thermalPolarity === "bh"
-                    ? "bh"
-                    : "wh"
-              }
-              className={
-                thermalPolarity === "fusion"
-                  ? "spot-thermal-canvas spot-thermal-canvas--fusion"
-                  : "spot-thermal-canvas"
-              }
-              onLandscapeReady={() => setLandscapeReady(true)}
-            />
-            {thermalPolarity !== "fusion" ? (
-              <div className="spot-thermal-scanlines" aria-hidden />
-            ) : null}
+                  {birdsOnFrame.map((p) => (
+                    <BirdOverlay
+                      key={p.birdId}
+                      placement={p}
+                      visualScale={birdVisualScale}
+                      showPerchLabel={showPerchLabels}
+                      onSelect={undefined}
+                    />
+                  ))}
+                  {worldOverlay}
+                </div>
+              ) : null}
+              <ThermalCanvas
+                ref={thermalCanvasRef}
+                imageSrc={imageSrc}
+                birdPlacements={
+                  thermalPolarity === "fusion"
+                    ? fusionOutlineBirds
+                    : birdsOnFrame
+                }
+                birdVisualScale={birdVisualScale}
+                pan={pan}
+                zoom={zoom}
+                pixelFactor={thermalPixelFactor}
+                polarity={
+                  isThermalBinocular
+                    ? thermalPolarity
+                    : thermalPolarity === "bh"
+                      ? "bh"
+                      : "wh"
+                }
+                className={
+                  thermalPolarity === "fusion"
+                    ? "spot-thermal-canvas spot-thermal-canvas--fusion"
+                    : "spot-thermal-canvas"
+                }
+                onLandscapeReady={() => setLandscapeReady(true)}
+              />
+              {thermalPolarity !== "fusion" ? (
+                <div className="spot-thermal-scanlines" aria-hidden />
+              ) : null}
+            </div>
             <div className="spot-optic-vignette" aria-hidden />
             {showZeissHud ? (
               <ZeissVictoryLrfHud
@@ -2057,6 +2204,7 @@ export function SpotView({
             : showLrf
               ? "Sirkulært syn · piltaster / dra · LRF på fugl → Engage (E) · F / Space / LRF"
               : "Sirkulært syn · piltaster / dra · klikk på fuglen for å låse (ingen LRF)"}
+          {spotFocusEnabled ? " · fokus: I/O · scroll · slider" : ""}
           {isThermalBinocular
             ? habrokBatteryDead
               ? " · T/B = lukk"
@@ -2078,6 +2226,7 @@ export function SpotView({
               : thermalPolarity === "outline"
                 ? "Outline: termisk + rød kant"
                 : "Fusion: alle fugler som kikkert · rød outline først ved zoom (grønn >10× / gul >15×)"}
+          {spotFocusEnabled ? " · fokus: I/O · scroll · slider" : ""}
           {showLrf ? " · LRF integrert" : ""}
           {" · T/B = av"}
           {hasBinos && !isThermalBinocular ? " · B = kikkert" : ""}
