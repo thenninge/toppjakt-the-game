@@ -17,9 +17,8 @@ type ScopeTubeLayoutProps = {
   /** Optional short trigger bar — sits above the windage turret. */
   triggerRail?: ReactNode;
   /**
-   * Classic HUD (medium): focus/trigger rails in the same High grid
-   * cells, with invisible elev/para/wind spacers so focus-zoom does
-   * not cover the bars.
+   * Classic HUD (medium): focus/trigger rails above the glass in a
+   * width-centered layout (no tube turrets).
    */
   railsOnly?: boolean;
   children: ReactNode;
@@ -62,42 +61,21 @@ export function ScopeTubeLayout({
           {focusRail}
         </div>
       ) : null}
-      <div
-        className={
-          railsOnly
-            ? "scope-tube-elev scope-tube-cell--spacer"
-            : "scope-tube-elev"
-        }
-        aria-hidden={railsOnly || undefined}
-      >
-        {railsOnly ? null : elevation}
-      </div>
+      {!railsOnly ? (
+        <div className="scope-tube-elev">{elevation}</div>
+      ) : null}
       {triggerRail ? (
         <div className="scope-tube-rail scope-tube-rail--trigger">
           {triggerRail}
         </div>
       ) : null}
-      <div
-        className={
-          railsOnly
-            ? "scope-tube-para scope-tube-cell--spacer"
-            : "scope-tube-para"
-        }
-        aria-hidden={railsOnly || undefined}
-      >
-        {railsOnly ? null : parallax}
-      </div>
+      {!railsOnly ? (
+        <div className="scope-tube-para">{parallax}</div>
+      ) : null}
       <div className="scope-tube-optic">{children}</div>
-      <div
-        className={
-          railsOnly
-            ? "scope-tube-wind scope-tube-cell--spacer"
-            : "scope-tube-wind"
-        }
-        aria-hidden={railsOnly || undefined}
-      >
-        {railsOnly ? null : windage}
-      </div>
+      {!railsOnly ? (
+        <div className="scope-tube-wind">{windage}</div>
+      ) : null}
     </div>
   );
 }

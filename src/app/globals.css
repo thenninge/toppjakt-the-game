@@ -1602,30 +1602,40 @@ body {
 }
 
 /**
- * Medium rails-only: keep the High grid (same focus/trigger cells).
- * Invisible elev/para/wind spacers reserve turret footprint so bars
- * sit where High places them — clear of focus-immersion glass.
+ * Medium rails-only: scope + focus/trigger centered in width.
+ * Equal 1fr side columns keep bars and glass symmetric; bars stay in
+ * the row above the glass so focus immersion does not cover them.
  */
-.scope-tube-layout[data-rails-only="true"] .scope-tube-cell--spacer {
-  visibility: hidden;
-  pointer-events: none;
+.scope-tube-layout[data-rails-only="true"] {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas:
+    "focus . trigger"
+    ". optic .";
+  justify-items: center;
 }
 
-.scope-tube-layout[data-rails-only="true"] .scope-tube-para.scope-tube-cell--spacer,
-.scope-tube-layout[data-rails-only="true"] .scope-tube-wind.scope-tube-cell--spacer {
-  min-width: var(--admin-tube-turret-span);
-  min-height: var(--admin-tube-turret-span);
-  width: var(--admin-tube-turret-span);
-  height: var(--admin-tube-turret-span);
+.scope-tube-layout[data-rails-only="true"] .scope-tube-rail--focus {
+  justify-self: end;
+  margin-right: 0.35rem;
+  margin-left: 0;
+  padding-right: 0;
+  padding-left: 0;
 }
 
-.scope-tube-layout[data-rails-only="true"] .scope-tube-elev.scope-tube-cell--spacer {
-  min-width: var(--admin-tube-turret-span);
-  width: var(--admin-tube-turret-span);
-  min-height: 0;
-  height: 0;
-  margin: 0;
-  padding: 0;
+.scope-tube-layout[data-rails-only="true"] .scope-tube-rail--trigger {
+  justify-self: start;
+  margin-left: 0.35rem;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.scope-tube-layout[data-rails-only="true"] .scope-tube-optic {
+  justify-self: center;
+  width: max-content;
 }
 
 .scope-tube-elev,
@@ -9061,6 +9071,12 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 0.55rem;
+}
+
+/* Medium rails-only needs full stage width so 1fr side columns center the glass. */
+.scope-stage > .scope-tube-layout[data-rails-only="true"] {
+  align-self: stretch;
+  width: 100%;
 }
 
 /**
