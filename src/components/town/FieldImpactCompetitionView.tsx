@@ -1162,6 +1162,7 @@ export function FieldImpactCompetitionView({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: birdNativePxPerMm(g),
+      invert: aimControlRef.current === "reticle",
       viewportEl: e.currentTarget,
     });
     const seat = birdSeatRef.current;

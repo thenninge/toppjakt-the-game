@@ -4,6 +4,9 @@
  *
  * Scope paint: panPx = aimMm * pxPerMm * scale
  * Finger +dx → world +dx → panPx −dx → aimMm decreases.
+ *
+ * With {@link invert} (Move reticle mode): finger +dx increases aimMm so
+ * the reticle follows the drag; keyboard aim is unchanged by this helper.
  */
 
 /**
@@ -37,6 +40,11 @@ export function aimMmDeltaFromPointerDrag(opts: {
   /** 1 = normal; use focus slow-mult for fine drag. */
   sensitivity?: number;
   /**
+   * When true, drag moves the reticle (opposite sign of world-pan aim).
+   * Arrow keys are not routed through this helper.
+   */
+  invert?: boolean;
+  /**
    * Viewport (or any scaled element). When set, client deltas are converted
    * to local CSS px before aim math (ScopeOpticFit uniform scale).
    */
@@ -58,9 +66,10 @@ export function aimMmDeltaFromPointerDrag(opts: {
     1e-6,
     opts.scale * (opts.pxPerMmY ?? opts.pxPerMm),
   );
+  const sign = opts.invert ? 1 : -1;
   return {
-    x: (-dx * sens) / denomX,
-    y: (-dy * sens) / denomY,
+    x: (sign * dx * sens) / denomX,
+    y: (sign * dy * sens) / denomY,
   };
 }
 

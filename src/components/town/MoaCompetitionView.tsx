@@ -812,6 +812,7 @@ export function MoaCompetitionView({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: moaCompMmToPx(1),
+      invert: aimControlRef.current === "reticle",
       viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(

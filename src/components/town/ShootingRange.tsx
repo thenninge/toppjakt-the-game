@@ -1213,6 +1213,7 @@ export function ShootingRange({
       pxPerMm: targetPxPerMmRef.current,
       pxPerMmY: targetPxPerMmYRef.current,
       sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
+      invert: aimControlRef.current === "reticle",
       viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
