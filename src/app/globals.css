@@ -9080,6 +9080,24 @@ body {
   box-sizing: border-box;
 }
 
+/**
+ * Classic HUD (realism low/medium): short focus / trigger bars —
+ * same ~40% height as High tube rails above para/wind.
+ */
+.scope-stage-optic-row > .range-side-rail {
+  align-self: center;
+  height: calc(var(--scope-tube-turret-span, 11.5rem) * 0.4);
+  max-height: calc(var(--scope-tube-turret-span, 11.5rem) * 0.4);
+  padding-block: 0;
+}
+
+.scope-stage-optic-row > .range-side-rail .range-focus-bar,
+.scope-stage-optic-row > .range-side-rail .range-trigger-bar {
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
 .range-side-rail-label {
   margin: 0;
   font-size: 0.72rem;
@@ -10455,6 +10473,11 @@ body {
   .range-trigger-bar {
     width: 0.45rem;
     min-height: 8rem;
+  }
+
+  .scope-stage-optic-row > .range-side-rail .range-focus-bar,
+  .scope-stage-optic-row > .range-side-rail .range-trigger-bar {
+    min-height: 0;
   }
 
   .range-scope-10x-slot {

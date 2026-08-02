@@ -2,8 +2,8 @@
  * Per-realism-level feature toggles + shared parameters.
  * Admin «Realism controls» edits localStorage; gameplay reads live.
  *
- * Defaults match historical behaviour: medium = classic HUD; high = tube
- * turrets + parallax blur + illumination + cant (with bubble level in kit).
+ * Defaults: low/medium = classic HUD with short focus/trigger bars;
+ * high = tube turrets + parallax blur + illumination + cant (bubble in kit).
  */
 
 import type { GameRealism } from "@/lib/optics/turretStyle";
