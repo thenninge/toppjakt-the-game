@@ -98,6 +98,16 @@ export const FLUSH_PROBABILITY: Record<HuntPaceId, number> = {
   speedy: 1,
 };
 
+/**
+ * Soft multiplier for birds on intermediate path cells (not the destination).
+ * Full pace chance applies only where you stop — long walks used to queue a
+ * flush theatre for every occupied rute along the Manhattan path.
+ */
+export const FLUSH_PASS_BY_PROBABILITY_MULT = 0.2;
+
+/** Hard cap on «Fuglen flyr!» events from one cell (rute). */
+export const MAX_CELL_FLUSH_EVENTS = 2;
+
 export const TIUR_SPAWN_COUNT = 20;
 
 export const FLUKT_IMAGES = ["/images/birds/flukt/flukt1.png"] as const;
@@ -972,8 +982,9 @@ export function spookBird(
 }
 
 /**
- * For each cell entered (path), birds there may flush based on pace.
- * Direction + relocate are from that cell (intermediate or destination).
+ * Birds may flush when you walk onto their cell.
+ * Destination uses full pace chance; pass-by cells use a soft multiplier.
+ * At most MAX_CELL_FLUSH_EVENTS per rute (no cap on the whole path).
  * 1st spook: relocate 1–2 cells. 2nd spook: gone for good.
  */
 export function resolveFlushesOnPath(
@@ -995,16 +1006,43 @@ export function resolveFlushesOnPath(
   const events: FlushEvent[] = [];
   const flushedIds = new Set<string>();
 
-  for (const cell of path) {
+  const destination = path[path.length - 1]!;
+  const destKey = cellKey(destination);
+
+  // Destination first (full chance), then softer pass-by on earlier cells.
+  const orderedCells = [
+    destination,
+    ...path.slice(0, -1).filter((c) => cellKey(c) !== destKey),
+  ];
+
+  for (const cell of orderedCells) {
+    const isDestination = cellKey(cell) === destKey;
+    const p =
+      pFlush * (isDestination ? 1 : FLUSH_PASS_BY_PROBABILITY_MULT);
+    if (p <= 0) continue;
+
     const here = next.filter(
       (b) => !flushedIds.has(b.id) && cellKey(b.cell) === cellKey(cell),
     );
+    // Shuffle so per-cell cap does not always prefer spawn order.
+    for (let i = here.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      const tmp = here[i]!;
+      here[i] = here[j]!;
+      here[j] = tmp;
+    }
+
+    let cellFlushes = 0;
     for (const bird of here) {
-      if (random() >= pFlush) continue;
+      if (cellFlushes >= MAX_CELL_FLUSH_EVENTS) break;
+      if (random() >= p) continue;
       flushedIds.add(bird.id);
       const result = spookBird(next, bird.id, map, random);
       next = result.birds;
-      if (result.event) events.push(result.event);
+      if (result.event) {
+        events.push(result.event);
+        cellFlushes += 1;
+      }
     }
   }
 
