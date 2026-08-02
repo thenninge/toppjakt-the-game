@@ -80,6 +80,7 @@ import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   DEFAULT_SCOPE_AIM_CONTROL,
   scopeAimPaintMm,
+  scopeMoveReticleActive,
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
@@ -1099,6 +1100,12 @@ export function FieldImpactCompetitionView({
     focusRef.current = { held: true, startedAtMs: nowMs };
     focusShotSpentRef.current = false;
     setFocusHeld(true);
+    if (aimControlRef.current === "reticle") {
+      frozenBaseAimRef.current = {
+        x: aimRef.current.x,
+        y: aimRef.current.y,
+      };
+    }
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -1164,7 +1171,10 @@ export function FieldImpactCompetitionView({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: birdNativePxPerMm(g),
-      invert: aimControlRef.current === "reticle",
+      invert: scopeMoveReticleActive(
+        aimControlRef.current,
+        focusRef.current.held,
+      ),
       viewportEl: e.currentTarget,
     });
     const seat = birdSeatRef.current;
@@ -1323,6 +1333,7 @@ export function FieldImpactCompetitionView({
       if (!el || !g) return;
       const paint = scopeAimPaintMm({
         aimControl: aimControlRef.current,
+        focusHeld: focusRef.current.held,
         aim: aimRef.current,
         wobble: wobbleRef.current,
         frozenBase: frozenBaseAimRef.current,
@@ -1506,14 +1517,6 @@ export function FieldImpactCompetitionView({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [phase, ready, scopeAimControl]);
-
-  useEffect(() => {
-    if (scopeAimControl !== "reticle") return;
-    frozenBaseAimRef.current = {
-      x: aimRef.current.x,
-      y: aimRef.current.y,
-    };
-  }, [scopeAimControl]);
 
   /** Same truth as hunt / admin: bird FOV scale + zoom-only FFP reticle. */
   const focusZoomBoost = scope

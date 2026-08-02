@@ -80,6 +80,7 @@ import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
   DEFAULT_SCOPE_AIM_CONTROL,
   scopeAimPaintMm,
+  scopeMoveReticleActive,
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
@@ -751,6 +752,12 @@ export function MoaCompetitionView({
     focusRef.current = { held: true, startedAtMs: nowMs };
     focusShotSpentRef.current = false;
     setFocusHeld(true);
+    if (aimControlRef.current === "reticle") {
+      frozenBaseAimRef.current = {
+        x: aimRef.current.x,
+        y: aimRef.current.y,
+      };
+    }
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -814,7 +821,10 @@ export function MoaCompetitionView({
       dyClientPx: e.clientY - drag.startY,
       scale: targetScaleRef.current,
       pxPerMm: moaCompMmToPx(1),
-      invert: aimControlRef.current === "reticle",
+      invert: scopeMoveReticleActive(
+        aimControlRef.current,
+        focusRef.current.held,
+      ),
       viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
@@ -950,6 +960,7 @@ export function MoaCompetitionView({
       if (!el) return;
       const paint = scopeAimPaintMm({
         aimControl: aimControlRef.current,
+        focusHeld: focusRef.current.held,
         aim: aimRef.current,
         wobble: wobbleRef.current,
         frozenBase: frozenBaseAimRef.current,
@@ -1084,14 +1095,6 @@ export function MoaCompetitionView({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [phase, ready, scopeAimControl]);
-
-  useEffect(() => {
-    if (scopeAimControl !== "reticle") return;
-    frozenBaseAimRef.current = {
-      x: aimRef.current.x,
-      y: aimRef.current.y,
-    };
-  }, [scopeAimControl]);
 
   // FFP reticle: optic zoom only (paper scale is separate).
   const focusZoomBoost = scope

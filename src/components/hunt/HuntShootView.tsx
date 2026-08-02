@@ -190,6 +190,7 @@ import {
 import {
   DEFAULT_SCOPE_AIM_CONTROL,
   scopeAimPaintMm,
+  scopeMoveReticleActive,
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
@@ -1445,6 +1446,12 @@ export function HuntShootView({
     focusRef.current = { held: true, startedAtMs: nowMs };
     focusShotSpentRef.current = false;
     setFocusHeld(true);
+    if (aimControlRef.current === "reticle") {
+      frozenBaseAimRef.current = {
+        x: aimRef.current.x,
+        y: aimRef.current.y,
+      };
+    }
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -1534,7 +1541,10 @@ export function HuntShootView({
       scale: targetScaleRef.current,
       pxPerMm,
       sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
-      invert: aimControlRef.current === "reticle",
+      invert: scopeMoveReticleActive(
+        aimControlRef.current,
+        focusRef.current.held,
+      ),
       viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
@@ -1793,6 +1803,7 @@ export function HuntShootView({
       if (!el) return;
       const paint = scopeAimPaintMm({
         aimControl: aimControlRef.current,
+        focusHeld: focusRef.current.held,
         aim: aimRef.current,
         wobble: wobbleRef.current,
         frozenBase: frozenBaseAimRef.current,
@@ -1998,15 +2009,6 @@ export function HuntShootView({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [ready, fired, landscapeSrc, scopeAimControl]);
-
-  // Freeze world framing when switching to reticle-move mode.
-  useEffect(() => {
-    if (scopeAimControl !== "reticle") return;
-    frozenBaseAimRef.current = {
-      x: aimRef.current.x,
-      y: aimRef.current.y,
-    };
-  }, [scopeAimControl]);
 
   // Start with landscape centre in the glass — player must find the bird.
   useEffect(() => {

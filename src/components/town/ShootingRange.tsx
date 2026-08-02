@@ -101,6 +101,7 @@ import {
 import {
   DEFAULT_SCOPE_AIM_CONTROL,
   scopeAimPaintMm,
+  scopeMoveReticleActive,
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
@@ -1115,6 +1116,12 @@ export function ShootingRange({
     };
     focusShotSpentRef.current = false;
     setFocusHeld(true);
+    if (aimControlRef.current === "reticle") {
+      frozenBaseAimRef.current = {
+        x: aimRef.current.x,
+        y: aimRef.current.y,
+      };
+    }
     const markMs = rollTriggerTargetMs();
     triggerMarkRef.current = markMs;
     resetTriggerProgress();
@@ -1215,7 +1222,10 @@ export function ShootingRange({
       pxPerMm: targetPxPerMmRef.current,
       pxPerMmY: targetPxPerMmYRef.current,
       sensitivity: focusRef.current.held ? FOCUS_AIM_SPEED_MULT : 1,
-      invert: aimControlRef.current === "reticle",
+      invert: scopeMoveReticleActive(
+        aimControlRef.current,
+        focusRef.current.held,
+      ),
       viewportEl: e.currentTarget,
     });
     aimRef.current = clampAimMm(
@@ -1445,6 +1455,7 @@ export function ShootingRange({
           }
         : scopeAimPaintMm({
             aimControl: aimControlRef.current,
+            focusHeld: focusRef.current.held,
             aim: aimRef.current,
             wobble: wobbleRef.current,
             frozenBase: frozenBaseAimRef.current,
@@ -1665,14 +1676,6 @@ export function ShootingRange({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [ready, measurement, scopeAimControl]);
-
-  useEffect(() => {
-    if (scopeAimControl !== "reticle") return;
-    frozenBaseAimRef.current = {
-      x: aimRef.current.x,
-      y: aimRef.current.y,
-    };
-  }, [scopeAimControl]);
 
   /** Target shrinks with distance (angular size). Per-skive visualScale fixes
    * board size. Zeroing/load: ×0.1 so physical mm match true mils.
