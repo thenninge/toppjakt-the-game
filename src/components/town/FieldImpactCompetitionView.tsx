@@ -312,6 +312,8 @@ export function FieldImpactCompetitionView({
   const features = realismControls.features[realismLevel];
   const isRealismLow = realismLevel === "low";
   const tubeMode = features.tubeTurrets;
+  const railsOnly =
+    !tubeMode && (features.focusHold || features.triggerTiming);
   const illumOn = features.illumination;
   const params = realismControls.params;
   const bubbleLevel = useMemo(
@@ -1846,6 +1848,7 @@ export function FieldImpactCompetitionView({
         />
         <MaybeScopeTube
           enabled={tubeMode}
+          railsOnly={railsOnly}
           scopeId={scope!.id}
           elevation={
             <ScopeElevationDial
@@ -1887,7 +1890,7 @@ export function FieldImpactCompetitionView({
             />
           }
           focusRail={
-            tubeMode ? (
+            (tubeMode || railsOnly) && features.focusHold ? (
               <div className="range-side-rail range-side-rail--focus">
                 <span
                   className={
@@ -1912,7 +1915,7 @@ export function FieldImpactCompetitionView({
             ) : null
           }
           triggerRail={
-            tubeMode ? (
+            (tubeMode || railsOnly) && features.triggerTiming ? (
               <div className="range-side-rail range-side-rail--trigger">
                 <span
                   className={
@@ -1941,30 +1944,6 @@ export function FieldImpactCompetitionView({
         >
         <ScopeOpticFit>
         <div className="scope-stage-optic-row">
-          {!tubeMode ? (
-          <div className="range-side-rail range-side-rail--focus">
-            <span
-              className={
-                focusUi.phase === "focused"
-                  ? "range-side-rail-label is-focused"
-                  : focusUi.phase === "settling" ||
-                      focusUi.phase === "fatigued"
-                    ? "range-side-rail-label is-fatigued"
-                    : "range-side-rail-label"
-              }
-            >
-              {focusLabel}
-            </span>
-            <div
-              ref={focusBarRef}
-              className="range-focus-bar"
-              aria-hidden
-            >
-              <div ref={focusFillRef} className="range-focus-fill" />
-            </div>
-          </div>
-          ) : null}
-
           <div
             className={[
               "scope-optic",
@@ -2145,32 +2124,6 @@ export function FieldImpactCompetitionView({
               />
             ) : null}
           </div>
-
-          {!tubeMode ? (
-          <div className="range-side-rail range-side-rail--trigger">
-            <span
-              className={
-                triggerUi.pending
-                  ? "range-side-rail-label is-pending"
-                  : "range-side-rail-label"
-              }
-            >
-              Avtrekk
-            </span>
-            <div
-              className="range-trigger-bar"
-              style={{
-                ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-              }}
-              aria-hidden
-            >
-              <div ref={triggerFillRef} className="range-trigger-fill" />
-              {triggerUi.targetPct > 0 ? (
-                <span className="range-trigger-mark" />
-              ) : null}
-            </div>
-          </div>
-          ) : null}
         </div>
         </ScopeOpticFit>
         </MaybeScopeTube>

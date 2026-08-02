@@ -601,6 +601,8 @@ export function HuntShootView({
   const isRealismLow = realismLevel === "low";
   const params = realismControls.params;
   const tubeMode = features.tubeTurrets;
+  const railsOnly =
+    !tubeMode && (features.focusHold || features.triggerTiming);
   const blurPx = features.parallaxBlur
     ? focusBlurPx(trueDistanceM, parallaxFocusM) * params.parallaxBlurMult
     : 0;
@@ -2423,6 +2425,7 @@ export function HuntShootView({
         ) : null}
         <MaybeScopeTube
           enabled={tubeMode}
+          railsOnly={railsOnly && !gunPrepOnly}
           scopeId={scope.id}
           elevation={
             <ScopeElevationDial
@@ -2468,7 +2471,7 @@ export function HuntShootView({
             />
           }
           focusRail={
-            tubeMode && !gunPrepOnly && features.focusHold ? (
+            (tubeMode || railsOnly) && !gunPrepOnly && features.focusHold ? (
               <div className="range-side-rail range-side-rail--focus">
                 <span
                   className={
@@ -2499,7 +2502,7 @@ export function HuntShootView({
             ) : null
           }
           triggerRail={
-            tubeMode && !gunPrepOnly && features.triggerTiming ? (
+            (tubeMode || railsOnly) && !gunPrepOnly && features.triggerTiming ? (
               <div className="range-side-rail range-side-rail--trigger">
                 <span
                   className={
@@ -2564,36 +2567,6 @@ export function HuntShootView({
         >
           <ScopeOpticFit>
             <div className="scope-stage-optic-row">
-              {!tubeMode && !gunPrepOnly && features.focusHold ? (
-                <div className="range-side-rail range-side-rail--focus">
-                  <span
-                    className={
-                      focusUi.phase === "focused"
-                        ? "range-side-rail-label is-focused"
-                        : focusUi.phase === "settling" ||
-                            focusUi.phase === "fatigued"
-                          ? "range-side-rail-label is-fatigued"
-                          : "range-side-rail-label"
-                    }
-                  >
-                    {focusUi.phase === "focused"
-                      ? `Stabil ${(focusUi.remainingMs / 1000).toFixed(1)}s`
-                      : focusUi.phase === "settling"
-                        ? "Settler…"
-                        : focusUi.phase === "fatigued"
-                          ? "Ustabil"
-                          : "Fokus"}
-                  </span>
-                  <div
-                    ref={focusBarRef}
-                    className="range-focus-bar"
-                    aria-hidden
-                  >
-                    <div ref={focusFillRef} className="range-focus-fill" />
-                  </div>
-                </div>
-              ) : null}
-
               <div
                 className={[
                   "scope-optic",
@@ -2805,74 +2778,6 @@ export function HuntShootView({
             ) : null}
           </div>
 
-              {!tubeMode && !gunPrepOnly && features.triggerTiming ? (
-                <div className="range-side-rail range-side-rail--trigger">
-                  <span
-                    className={
-                      triggerUi.pending
-                        ? "range-side-rail-label is-trigger"
-                        : "range-side-rail-label"
-                    }
-                  >
-                    Avtrekk
-                  </span>
-                  <div
-                    className="range-trigger-bar"
-                    style={
-                      {
-                        ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-                      } as CSSProperties
-                    }
-                  >
-                    <div ref={triggerFillRef} className="range-trigger-fill" />
-                    {triggerUi.targetPct > 0 ? (
-                      isRealismLow ? (
-                        <>
-                          {(() => {
-                            const barMs = Math.max(1, triggerBarMsRef.current);
-                            const halfPct =
-                              (TRIGGER_PERFECT_BAND_MS * 2) / barMs * 100;
-                            const targetPct =
-                              triggerUi.targetPct * 100;
-                            const lo = Math.max(
-                              0,
-                              Math.min(100, targetPct - halfPct),
-                            );
-                            const hi = Math.max(
-                              0,
-                              Math.min(100, targetPct + halfPct),
-                            );
-                            return (
-                              <>
-                                <span
-                                  className="range-trigger-mark"
-                                  aria-hidden
-                                  style={
-                                    {
-                                      ["--trigger-mark-pct" as string]: `${lo}%`,
-                                    } as CSSProperties
-                                  }
-                                />
-                                <span
-                                  className="range-trigger-mark"
-                                  aria-hidden
-                                  style={
-                                    {
-                                      ["--trigger-mark-pct" as string]: `${hi}%`,
-                                    } as CSSProperties
-                                  }
-                                />
-                              </>
-                            );
-                          })()}
-                        </>
-                      ) : (
-                        <span className="range-trigger-mark" aria-hidden />
-                      )
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </ScopeOpticFit>
         </MaybeScopeTube>

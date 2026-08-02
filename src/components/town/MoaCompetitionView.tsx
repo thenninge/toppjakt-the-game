@@ -282,6 +282,8 @@ export function MoaCompetitionView({
   const features = realismControls.features[realismLevel];
   const isRealismLow = realismLevel === "low";
   const tubeMode = features.tubeTurrets;
+  const railsOnly =
+    !tubeMode && (features.focusHold || features.triggerTiming);
   const rifle = useMemo(() => kitItems.find(isRifleItem) ?? null, [kitItems]);
   const barrelWearScale = useMemo(
     () =>
@@ -1325,6 +1327,7 @@ export function MoaCompetitionView({
         />
         <MaybeScopeTube
           enabled={tubeMode}
+          railsOnly={railsOnly}
           scopeId={scope!.id}
           elevation={
             <ScopeElevationDial
@@ -1352,7 +1355,7 @@ export function MoaCompetitionView({
             />
           }
           focusRail={
-            tubeMode ? (
+            (tubeMode || railsOnly) && features.focusHold ? (
               <div className="range-side-rail range-side-rail--focus">
                 <span
                   className={
@@ -1377,7 +1380,7 @@ export function MoaCompetitionView({
             ) : null
           }
           triggerRail={
-            tubeMode ? (
+            (tubeMode || railsOnly) && features.triggerTiming ? (
               <div className="range-side-rail range-side-rail--trigger">
                 <span
                   className={
@@ -1406,30 +1409,6 @@ export function MoaCompetitionView({
         >
         <ScopeOpticFit>
         <div className="scope-stage-optic-row">
-          {!tubeMode ? (
-          <div className="range-side-rail range-side-rail--focus">
-            <span
-              className={
-                focusUi.phase === "focused"
-                  ? "range-side-rail-label is-focused"
-                  : focusUi.phase === "settling" ||
-                      focusUi.phase === "fatigued"
-                    ? "range-side-rail-label is-fatigued"
-                    : "range-side-rail-label"
-              }
-            >
-              {focusLabel}
-            </span>
-            <div
-              ref={focusBarRef}
-              className="range-focus-bar"
-              aria-hidden
-            >
-              <div ref={focusFillRef} className="range-focus-fill" />
-            </div>
-          </div>
-          ) : null}
-
           <div
             className={[
               "scope-optic",
@@ -1560,32 +1539,6 @@ export function MoaCompetitionView({
               onChange={(z) => setZoom(clampScopeZoom(z, zoomRange))}
             />
           </div>
-
-          {!tubeMode ? (
-          <div className="range-side-rail range-side-rail--trigger">
-            <span
-              className={
-                triggerUi.pending
-                  ? "range-side-rail-label is-trigger"
-                  : "range-side-rail-label"
-              }
-            >
-              {triggerUi.pending ? "Avtrekk…" : "Avtrekk"}
-            </span>
-            <div
-              className="range-trigger-bar"
-              aria-hidden
-              style={{
-                ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-              }}
-            >
-              <div ref={triggerFillRef} className="range-trigger-fill" />
-              {triggerUi.targetPct > 0 ? (
-                <span className="range-trigger-mark" />
-              ) : null}
-            </div>
-          </div>
-          ) : null}
         </div>
         </ScopeOpticFit>
         </MaybeScopeTube>

@@ -558,6 +558,8 @@ export function ShootingRange({
   const isRealismLow = realismLevel === "low";
   const params = realismControls.params;
   const tubeMode = features.tubeTurrets;
+  const railsOnly =
+    !tubeMode && (features.focusHold || features.triggerTiming);
   const blurPx = features.parallaxBlur
     ? focusBlurPx(distanceM, parallaxFocusM) * params.parallaxBlurMult
     : 0;
@@ -2940,6 +2942,7 @@ export function ShootingRange({
           />
           <MaybeScopeTube
             enabled={tubeMode}
+            railsOnly={railsOnly}
             scopeId={scope.id}
             elevation={
               <ScopeElevationDial
@@ -2981,7 +2984,7 @@ export function ShootingRange({
               />
             }
             focusRail={
-              tubeMode && features.focusHold ? (
+              (tubeMode || railsOnly) && features.focusHold ? (
                 <div className="range-side-rail range-side-rail--focus">
                   <span
                     className={
@@ -3020,7 +3023,7 @@ export function ShootingRange({
               ) : null
             }
             triggerRail={
-              tubeMode && features.triggerTiming ? (
+              (tubeMode || railsOnly) && features.triggerTiming ? (
                 <div className="range-side-rail range-side-rail--trigger">
                   <span
                     className={
@@ -3094,44 +3097,6 @@ export function ShootingRange({
           >
             <ScopeOpticFit>
               <div className="scope-stage-optic-row">
-                {!tubeMode && features.focusHold ? (
-                  <div className="range-side-rail range-side-rail--focus">
-                    <span
-                      className={
-                        focusUi.phase === "focused"
-                          ? "range-side-rail-label is-focused"
-                          : focusUi.phase === "settling" ||
-                              focusUi.phase === "fatigued"
-                            ? "range-side-rail-label is-fatigued"
-                            : "range-side-rail-label"
-                      }
-                    >
-                      {focusLabel}
-                    </span>
-                    <div
-                      ref={focusBarRef}
-                      className="range-focus-bar"
-                      aria-hidden
-                    >
-                      <div ref={focusFillRef} className="range-focus-fill" />
-                    </div>
-                    {lane === "tracking-test" ? (
-                      <button
-                        type="button"
-                        className={
-                          trackingLocked
-                            ? "intro-button range-tracking-lock is-active"
-                            : "intro-button sheriff-secondary range-tracking-lock"
-                        }
-                        aria-pressed={trackingLocked}
-                        onClick={() => setTrackingLock(!trackingLocked)}
-                      >
-                        {trackingLocked ? "Unlock" : "Lock"}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-
                 <div
                   className={[
                     "scope-optic",
@@ -3325,77 +3290,6 @@ export function ShootingRange({
                 </button>
               </div>
             ) : null}
-
-                {!tubeMode && features.triggerTiming ? (
-                  <div className="range-side-rail range-side-rail--trigger">
-                    <span
-                      className={
-                        triggerUi.pending
-                          ? "range-side-rail-label is-trigger"
-                          : "range-side-rail-label"
-                      }
-                    >
-                      {lane === "tracking-test"
-                        ? "—"
-                        : triggerUi.pending
-                          ? "Avtrekk…"
-                          : "Avtrekk"}
-                    </span>
-                    <div
-                      className="range-trigger-bar"
-                      aria-hidden
-                      style={{
-                        ["--trigger-mark-pct" as string]: `${triggerUi.targetPct * 100}%`,
-                      }}
-                    >
-                      <div ref={triggerFillRef} className="range-trigger-fill" />
-                      {triggerUi.targetPct > 0 ? (
-                        isRealismLow ? (
-                          <>
-                            {(() => {
-                              const barMs = Math.max(1, triggerBarMsRef.current);
-                              const halfPct =
-                                (TRIGGER_PERFECT_BAND_MS * 2) / barMs * 100;
-                              const targetPct = triggerUi.targetPct * 100;
-                              const lo = Math.max(
-                                0,
-                                Math.min(100, targetPct - halfPct),
-                              );
-                              const hi = Math.max(
-                                0,
-                                Math.min(100, targetPct + halfPct),
-                              );
-                              return (
-                                <>
-                                  <span
-                                    className="range-trigger-mark"
-                                    aria-hidden
-                                    style={
-                                      {
-                                        ["--trigger-mark-pct" as string]: `${lo}%`,
-                                      } as CSSProperties
-                                    }
-                                  />
-                                  <span
-                                    className="range-trigger-mark"
-                                    aria-hidden
-                                    style={
-                                      {
-                                        ["--trigger-mark-pct" as string]: `${hi}%`,
-                                      } as CSSProperties
-                                    }
-                                  />
-                                </>
-                              );
-                            })()}
-                          </>
-                        ) : (
-                          <span className="range-trigger-mark" />
-                        )
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </ScopeOpticFit>
           </MaybeScopeTube>

@@ -1601,6 +1601,13 @@ body {
     "para optic wind";
 }
 
+/* Medium / classic HUD: same focus+trigger cells, no tube turrets. */
+.scope-tube-layout[data-rails-only="true"] {
+  grid-template-areas:
+    "focus . trigger"
+    ". optic .";
+}
+
 .scope-tube-elev,
 .admin-scope-tube-elev {
   grid-area: elev;
@@ -1697,7 +1704,13 @@ body {
   box-sizing: border-box;
   align-self: end;
   margin-bottom: 0.28rem;
+  position: relative;
   z-index: 2;
+}
+
+/* Stay above focus-immersion glass (optic column jumps to z-index 30). */
+.scope-tube-layout:has(.scope-optic.is-focus-immersive) .scope-tube-rail {
+  z-index: 40;
 }
 
 .scope-tube-rail--focus {
