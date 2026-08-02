@@ -1601,11 +1601,31 @@ body {
     "para optic wind";
 }
 
-/* Medium / classic HUD: same focus+trigger cells, no tube turrets. */
-.scope-tube-layout[data-rails-only="true"] {
-  grid-template-areas:
-    "focus . trigger"
-    ". optic .";
+/**
+ * Medium rails-only: keep the High grid (same focus/trigger cells).
+ * Invisible elev/para/wind spacers reserve turret footprint so bars
+ * sit where High places them — clear of focus-immersion glass.
+ */
+.scope-tube-layout[data-rails-only="true"] .scope-tube-cell--spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.scope-tube-layout[data-rails-only="true"] .scope-tube-para.scope-tube-cell--spacer,
+.scope-tube-layout[data-rails-only="true"] .scope-tube-wind.scope-tube-cell--spacer {
+  min-width: var(--admin-tube-turret-span);
+  min-height: var(--admin-tube-turret-span);
+  width: var(--admin-tube-turret-span);
+  height: var(--admin-tube-turret-span);
+}
+
+.scope-tube-layout[data-rails-only="true"] .scope-tube-elev.scope-tube-cell--spacer {
+  min-width: var(--admin-tube-turret-span);
+  width: var(--admin-tube-turret-span);
+  min-height: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
 }
 
 .scope-tube-elev,
