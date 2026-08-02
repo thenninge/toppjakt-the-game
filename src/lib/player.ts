@@ -15,6 +15,10 @@ import {
 import type { ScopeClickUnit, ScopeSpec } from "@/lib/optics/spec";
 import { applyScopeClickError } from "@/lib/optics/spec";
 import type { GameRealism } from "@/lib/optics/turretStyle";
+import {
+  DEFAULT_SCOPE_AIM_CONTROL,
+  type ScopeAimControl,
+} from "@/lib/range/scopeAimControl";
 import { isPackableFoodKind } from "@/lib/food/spec";
 import { spentBrassItemIdForAmmo, isSpentBrassItemId, spentBrassKeyForCaliber } from "@/lib/reloading/brass";
 import {
@@ -310,6 +314,11 @@ export type PlayerStats = {
    * high = tube-mounted realistic turrets (per-scope chrome via turretStyleForScope).
    */
   realism: GameRealism;
+  /**
+   * Scope aim: move target/landscape under a fixed reticle, or move the
+   * reticle over a stationary target (hamburger → Move reticle/target).
+   */
+  scopeAimControl: ScopeAimControl;
   /**
    * Open hunt Aware skuddpar — synced so unfinished recoveries survive
    * across devices for the same terrain/jaktkort day.
@@ -1228,6 +1237,7 @@ export function createInitialStats(): PlayerStats {
     realLoadProfiles: [],
     useRealDataInSimulation: false,
     realism: "medium",
+    scopeAimControl: DEFAULT_SCOPE_AIM_CONTROL,
     awareHunt: null,
     jegerprovePassed: false,
     lang: "nb",

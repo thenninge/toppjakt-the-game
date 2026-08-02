@@ -5,6 +5,11 @@ import type { PlayerStats } from "@/lib/player";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import { GAME_REALISM_LEVELS } from "@/lib/optics/turretStyle";
 import {
+  DEFAULT_SCOPE_AIM_CONTROL,
+  SCOPE_AIM_CONTROLS,
+  type ScopeAimControl,
+} from "@/lib/range/scopeAimControl";
+import {
   readMusicVolume,
   readSfxVolume,
   writeMusicVolume,
@@ -40,6 +45,9 @@ const MENU_COPY: Record<
     realismLow: string;
     realismMedium: string;
     realismHigh: string;
+    moveAim: string;
+    moveAimTarget: string;
+    moveAimReticle: string;
     rename: string;
     deleteHunter: string;
     advanced: string;
@@ -64,6 +72,9 @@ const MENU_COPY: Record<
     realismLow: "Low",
     realismMedium: "Medium",
     realismHigh: "High",
+    moveAim: "Move reticle/target",
+    moveAimTarget: "Target",
+    moveAimReticle: "Reticle",
     rename: "Endre navn",
     deleteHunter: "Slett jeger",
     advanced: "Avansert",
@@ -87,6 +98,9 @@ const MENU_COPY: Record<
     realismLow: "Low",
     realismMedium: "Medium",
     realismHigh: "High",
+    moveAim: "Move reticle/target",
+    moveAimTarget: "Target",
+    moveAimReticle: "Reticle",
     rename: "Change name",
     deleteHunter: "Delete hunter",
     advanced: "Advanced",
@@ -110,6 +124,9 @@ const MENU_COPY: Record<
     realismLow: "Low",
     realismMedium: "Medium",
     realismHigh: "High",
+    moveAim: "Move reticle/target",
+    moveAimTarget: "Target",
+    moveAimReticle: "Reticle",
     rename: "名前を変更",
     deleteHunter: "ハンターを削除",
     advanced: "詳細",
@@ -126,6 +143,7 @@ type StatsFrameProps = {
   onDeleteUser?: () => void;
   onLangChange?: (lang: GameLang) => void;
   onRealismChange?: (realism: GameRealism) => void;
+  onScopeAimControlChange?: (mode: ScopeAimControl) => void;
   /** Open Jegerprøven (retake / certificate). */
   onOpenJegerprove?: () => void;
   /** Google / CBAware account status. */
@@ -152,6 +170,7 @@ export function StatsFrame({
   onDeleteUser,
   onLangChange,
   onRealismChange,
+  onScopeAimControlChange,
   onOpenJegerprove,
   authEmail,
   onGoogleLogin,
@@ -173,10 +192,14 @@ export function StatsFrame({
     !!onRename ||
     !!onDeleteUser ||
     !!onLangChange ||
+    !!onRealismChange ||
+    !!onScopeAimControlChange ||
     !!onOpenJegerprove ||
     !!onGoogleLogin ||
     !!onGoogleLogout ||
     !!onAdminUnlock;
+  const aimControl =
+    stats.scopeAimControl ?? DEFAULT_SCOPE_AIM_CONTROL;
 
   useEffect(() => {
     setMusicVol(readMusicVolume());
@@ -378,6 +401,35 @@ export function StatsFrame({
                             : level === "medium"
                               ? copy.realismMedium
                               : copy.realismHigh}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {onScopeAimControlChange ? (
+                  <section
+                    className="stats-settings-section"
+                    aria-label={copy.moveAim}
+                  >
+                    <p className="stats-menu-heading">{copy.moveAim}</p>
+                    <div className="stats-menu-lang-row">
+                      {SCOPE_AIM_CONTROLS.map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={
+                            aimControl === mode
+                              ? "stats-menu-item is-active"
+                              : "stats-menu-item"
+                          }
+                          role="radio"
+                          aria-checked={aimControl === mode}
+                          onClick={() => onScopeAimControlChange(mode)}
+                        >
+                          {mode === "target"
+                            ? copy.moveAimTarget
+                            : copy.moveAimReticle}
                         </button>
                       ))}
                     </div>

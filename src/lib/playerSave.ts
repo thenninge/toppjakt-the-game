@@ -5,6 +5,7 @@
 import { createInitialStats, type PlayerStats, type ZeroingProfile } from "@/lib/player";
 import { normalizeGameRealism } from "@/lib/optics/turretStyle";
 import { normalizeGameLang } from "@/lib/i18n/lang";
+import { normalizeScopeAimControl } from "@/lib/range/scopeAimControl";
 import { normalizeLoadBenchRecipe } from "@/lib/reloading/recipe";
 import { normalizeArmedLoadPlan } from "@/lib/reloading/loadPhysics";
 import { normalizeLoadDevTable } from "@/lib/reloading/loadDevTable";
@@ -234,6 +235,10 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
     realLoadProfiles: normalizeRealLoadProfiles(raw.realLoadProfiles),
     useRealDataInSimulation: raw.useRealDataInSimulation === true,
     realism: normalizeGameRealism(raw.realism, base.realism),
+    scopeAimControl: normalizeScopeAimControl(
+      raw.scopeAimControl,
+      base.scopeAimControl,
+    ),
     awareHunt: normalizeAwareHuntState(raw.awareHunt),
     jegerprovePassed: (() => {
       if (raw.jegerprovePassed === true) return true;

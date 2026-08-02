@@ -78,6 +78,11 @@ import {
 } from "@/lib/range/realismGameplay";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
+  DEFAULT_SCOPE_AIM_CONTROL,
+  scopeAimPaintMm,
+  type ScopeAimControl,
+} from "@/lib/range/scopeAimControl";
+import {
   angularMmAtDistance,
   clampElevationTurretMm,
   clampTurretMm,
@@ -162,6 +167,8 @@ type MoaCompetitionViewProps = {
   onBack: () => void;
   /** medium = HUD dials; high = tube-mounted realistic turrets. */
   realism?: GameRealism;
+  /** Move target under reticle, or reticle over a fixed target. */
+  scopeAimControl?: ScopeAimControl;
 };
 
 type Keys = {
@@ -264,6 +271,7 @@ export function MoaCompetitionView({
   onAwardPayout,
   onBack,
   realism = "medium",
+  scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
 }: MoaCompetitionViewProps) {
   const realismControls = useSyncExternalStore(
     subscribeRealismControls,
@@ -492,6 +500,10 @@ export function MoaCompetitionView({
   const consumeAmmoRef = useRef(onConsumeAmmo);
   const recoilClearRef = useRef<number | null>(null);
   const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const scopeReticleOffsetRef = useRef<HTMLDivElement>(null);
+  const frozenBaseAimRef = useRef({ x: 0, y: 0 });
+  const aimControlRef = useRef<ScopeAimControl>(scopeAimControl);
+  aimControlRef.current = scopeAimControl;
   const scopeStageRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const shotsLenRef = useRef(0);
@@ -933,13 +945,27 @@ export function MoaCompetitionView({
     function paintScopeWorld() {
       const el = scopeWorldRef.current;
       if (!el) return;
-      const ax = aimRef.current.x + wobbleRef.current.x;
-      const ay = aimRef.current.y + wobbleRef.current.y;
+      const paint = scopeAimPaintMm({
+        aimControl: aimControlRef.current,
+        aim: aimRef.current,
+        wobble: wobbleRef.current,
+        frozenBase: frozenBaseAimRef.current,
+      });
       const scale = targetScaleRef.current;
       // aimMm is sheet position from image centre — pan so POA sits under reticle.
-      const panPxX = moaCompMmToPx(ax) * scale;
-      const panPxY = moaCompMmToPx(ay) * scale;
+      const panPxX = moaCompMmToPx(paint.worldX) * scale;
+      const panPxY = moaCompMmToPx(paint.worldY) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+
+      const reticleEl = scopeReticleOffsetRef.current;
+      if (reticleEl) {
+        const rx = moaCompMmToPx(paint.reticleX) * scale;
+        const ry = moaCompMmToPx(paint.reticleY) * scale;
+        reticleEl.style.transform =
+          Math.abs(rx) > 0.01 || Math.abs(ry) > 0.01
+            ? `translate(${rx}px, ${ry}px)`
+            : "";
+      }
     }
 
     function tick(now: number) {
@@ -1054,7 +1080,15 @@ export function MoaCompetitionView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [phase, ready]);
+  }, [phase, ready, scopeAimControl]);
+
+  useEffect(() => {
+    if (scopeAimControl !== "reticle") return;
+    frozenBaseAimRef.current = {
+      x: aimRef.current.x,
+      y: aimRef.current.y,
+    };
+  }, [scopeAimControl]);
 
   // FFP reticle: optic zoom only (paper scale is separate).
   const focusZoomBoost = scope
@@ -1506,11 +1540,16 @@ export function MoaCompetitionView({
                   </filter>
                 </defs>
               </svg>
-              <ScopeReticle
-                scope={scope!.scope}
-                zoom={zoom}
-                imgScale={reticleImgScale}
-              />
+              <div
+                ref={scopeReticleOffsetRef}
+                className="scope-reticle-offset"
+              >
+                <ScopeReticle
+                  scope={scope!.scope}
+                  zoom={zoom}
+                  imgScale={reticleImgScale}
+                />
+              </div>
               </ScopeFocusZoom>
               <div className="scope-vignette" aria-hidden />
             </div>

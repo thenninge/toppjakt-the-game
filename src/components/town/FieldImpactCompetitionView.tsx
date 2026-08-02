@@ -78,6 +78,11 @@ import {
 } from "@/lib/range/realismGameplay";
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import {
+  DEFAULT_SCOPE_AIM_CONTROL,
+  scopeAimPaintMm,
+  type ScopeAimControl,
+} from "@/lib/range/scopeAimControl";
+import {
   angularMmAtDistance,
   clampElevationTurretMm,
   clampTurretMm,
@@ -185,6 +190,8 @@ type FieldImpactCompetitionViewProps = {
   onBack: () => void;
   /** medium = HUD dials; high = tube-mounted realistic turrets. */
   realism?: GameRealism;
+  /** Move target under reticle, or reticle over a fixed target. */
+  scopeAimControl?: ScopeAimControl;
 };
 
 type Keys = {
@@ -294,6 +301,7 @@ export function FieldImpactCompetitionView({
   onAwardPayout,
   onBack,
   realism = "medium",
+  scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
 }: FieldImpactCompetitionViewProps) {
   const realismControls = useSyncExternalStore(
     subscribeRealismControls,
@@ -620,6 +628,10 @@ export function FieldImpactCompetitionView({
   const recoilClearRef = useRef<number | null>(null);
   const impactFlashClearRef = useRef<number | null>(null);
   const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const scopeReticleOffsetRef = useRef<HTMLDivElement>(null);
+  const frozenBaseAimRef = useRef({ x: 0, y: 0 });
+  const aimControlRef = useRef<ScopeAimControl>(scopeAimControl);
+  aimControlRef.current = scopeAimControl;
   const scopeStageRef = useRef<HTMLDivElement>(null);
   const targetScaleRef = useRef(1);
   const birdSeatRef = useRef({
@@ -788,6 +800,7 @@ export function FieldImpactCompetitionView({
     const aim0 = aimForStageLayout(stage, landAspect);
     setAimMm(aim0);
     aimRef.current = aim0;
+    frozenBaseAimRef.current = { ...aim0 };
   }, [phase, stage, landAspect]);
 
   function startRound() {
@@ -821,6 +834,7 @@ export function FieldImpactCompetitionView({
     setImpactFlash(false);
     setAimMm(aim0);
     aimRef.current = aim0;
+    frozenBaseAimRef.current = { ...aim0 };
     advancingRef.current = false;
     setSessionZeroXMm(0);
     setSessionZeroYMm(0);
@@ -1058,6 +1072,7 @@ export function FieldImpactCompetitionView({
         hasPannedRef.current = true;
         setAimMm(aimNext);
         aimRef.current = aimNext;
+        frozenBaseAimRef.current = { ...aimNext };
         setStatus(
           `Hold ${nextStage + 1}/${FIELD_IMPACT_STAGE_COUNT} · ${speciesLabelNb(next.species)} @ ${next.distanceM} m — dial etter kortet.`,
         );
@@ -1303,8 +1318,14 @@ export function FieldImpactCompetitionView({
       const el = scopeWorldRef.current;
       const g = geomRef.current;
       if (!el || !g) return;
-      const ax = aimRef.current.x + wobbleRef.current.x;
-      const ay = aimRef.current.y + wobbleRef.current.y;
+      const paint = scopeAimPaintMm({
+        aimControl: aimControlRef.current,
+        aim: aimRef.current,
+        wobble: wobbleRef.current,
+        frozenBase: frozenBaseAimRef.current,
+      });
+      const ax = paint.worldX;
+      const ay = paint.worldY;
       const scale = targetScaleRef.current;
       const pxPerMm = birdNativePxPerMm(g);
       const vo = birdVitalOffsetFromImageCenterPx(g);
@@ -1320,6 +1341,20 @@ export function FieldImpactCompetitionView({
       const panPxX = (ox + vo.x + aimPxX) * scale;
       const panPxY = (oy + vo.y + aimPxY) * scale;
       el.style.transform = `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) scale(${scale})`;
+
+      const reticleEl = scopeReticleOffsetRef.current;
+      if (reticleEl) {
+        const cant = cantActiveRef.current ? cantDegRef.current : 0;
+        const cantRot =
+          Math.abs(cant) > 0.02 ? `rotate(${cant.toFixed(3)}deg)` : "";
+        const rx = paint.reticleX * pxPerMm * scale;
+        const ry = paint.reticleY * pxPerMm * scale;
+        const move =
+          Math.abs(rx) > 0.01 || Math.abs(ry) > 0.01
+            ? `translate(${rx}px, ${ry}px)`
+            : "";
+        reticleEl.style.transform = [move, cantRot].filter(Boolean).join(" ");
+      }
     }
 
     function tick(now: number) {
@@ -1467,7 +1502,15 @@ export function FieldImpactCompetitionView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [phase, ready]);
+  }, [phase, ready, scopeAimControl]);
+
+  useEffect(() => {
+    if (scopeAimControl !== "reticle") return;
+    frozenBaseAimRef.current = {
+      x: aimRef.current.x,
+      y: aimRef.current.y,
+    };
+  }, [scopeAimControl]);
 
   /** Same truth as hunt / admin: bird FOV scale + zoom-only FFP reticle. */
   const focusZoomBoost = scope
@@ -2068,12 +2111,8 @@ export function FieldImpactCompetitionView({
                 </defs>
               </svg>
               <div
+                ref={scopeReticleOffsetRef}
                 className="scope-reticle-offset"
-                style={
-                  Math.abs(cantDeg) > 0.02
-                    ? { transform: `rotate(${cantDeg.toFixed(3)}deg)` }
-                    : undefined
-                }
               >
                 <ScopeReticle
                   scope={scope!.scope}

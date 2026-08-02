@@ -1446,6 +1446,13 @@ export function IntroScreen() {
                   prev.realism === realism ? prev : { ...prev, realism },
                 )
               }
+              onScopeAimControlChange={(scopeAimControl) =>
+                setStats((prev) =>
+                  prev.scopeAimControl === scopeAimControl
+                    ? prev
+                    : { ...prev, scopeAimControl },
+                )
+              }
               authEmail={signedIn ? session?.user?.email ?? "Google" : null}
               onGoogleLogin={signedIn ? undefined : loginWithGoogle}
               onGoogleLogout={signedIn ? () => void logoutGoogle() : undefined}
@@ -1853,6 +1860,7 @@ export function IntroScreen() {
             realLoadProfiles={stats.realLoadProfiles}
             useRealDataInSimulation={stats.useRealDataInSimulation}
             realism={stats.realism ?? "medium"}
+            scopeAimControl={stats.scopeAimControl ?? "target"}
             customsMods={stats.customsMods}
             weather={weather}
             onAffinitiesChange={(next) =>
@@ -1963,6 +1971,7 @@ export function IntroScreen() {
             realLoadProfiles={stats.realLoadProfiles}
             useRealDataInSimulation={stats.useRealDataInSimulation}
             realism={stats.realism ?? "medium"}
+            scopeAimControl={stats.scopeAimControl ?? "target"}
             loadBenchRecipe={stats.loadBenchRecipe}
             homeLoadedLots={stats.homeLoadedLots}
             armedLoadPlan={stats.armedLoadPlan}

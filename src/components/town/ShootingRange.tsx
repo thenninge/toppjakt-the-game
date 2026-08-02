@@ -99,6 +99,11 @@ import {
   scopeAimHoldMult,
 } from "@/lib/range/scopePointerAim";
 import {
+  DEFAULT_SCOPE_AIM_CONTROL,
+  scopeAimPaintMm,
+  type ScopeAimControl,
+} from "@/lib/range/scopeAimControl";
+import {
   MOA_RANGE_TARGET_SCALE,
   mmAt100ToScopeClicks,
 } from "@/lib/optics/clicks";
@@ -276,6 +281,8 @@ type ShootingRangeProps = {
   useRealDataInSimulation?: boolean;
   /** medium = classic HUD dials; high = tube-mounted realistic turrets. */
   realism?: GameRealism;
+  /** Move target under reticle, or reticle over a fixed target. */
+  scopeAimControl?: ScopeAimControl;
   /** Laderommet — load-test lane. */
   loadBenchRecipe?: LoadBenchRecipe | null;
   homeLoadedLots?: HomeLoadedLot[];
@@ -344,6 +351,7 @@ export function ShootingRange({
   realLoadProfiles = [],
   useRealDataInSimulation = false,
   realism = "medium",
+  scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
   loadBenchRecipe = null,
   homeLoadedLots = [],
   armedLoadPlan = null,
@@ -593,6 +601,9 @@ export function ShootingRange({
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
   const scopeReticleOffsetRef = useRef<HTMLDivElement>(null);
+  const frozenBaseAimRef = useRef({ x: 0, y: 0 });
+  const aimControlRef = useRef<ScopeAimControl>(scopeAimControl);
+  aimControlRef.current = scopeAimControl;
   const mirageSceneRef = useRef<HTMLDivElement>(null);
   const mirageDisplaceRef = useRef<SVGFEDisplacementMapElement>(null);
   const targetScaleRef = useRef(1);
@@ -1422,8 +1433,21 @@ export function ShootingRange({
       const el = scopeWorldRef.current;
       if (!el) return;
       const tracking = laneRef.current === "tracking-test";
-      const ax = tracking ? 0 : aimRef.current.x + wobbleRef.current.x;
-      const ay = tracking ? 0 : aimRef.current.y + wobbleRef.current.y;
+      const paint = tracking
+        ? {
+            worldX: 0,
+            worldY: 0,
+            reticleX: 0,
+            reticleY: 0,
+          }
+        : scopeAimPaintMm({
+            aimControl: aimControlRef.current,
+            aim: aimRef.current,
+            wobble: wobbleRef.current,
+            frozenBase: frozenBaseAimRef.current,
+          });
+      const ax = paint.worldX;
+      const ay = paint.worldY;
       const scale = targetScaleRef.current;
       const off = bullseyeOffRef.current;
       const pxPerMm = targetPxPerMmRef.current;
@@ -1439,9 +1463,7 @@ export function ShootingRange({
         const cant = cantActiveRef.current ? cantDegRef.current : 0;
         const cantRot =
           Math.abs(cant) > 0.02 ? `rotate(${cant.toFixed(3)}deg)` : "";
-        if (!tracking) {
-          reticleEl.style.transform = cantRot;
-        } else {
+        if (tracking) {
           const dist = distanceRef.current;
           const sx = trackingClickScaleRef.current.x;
           const sy = trackingClickScaleRef.current.y;
@@ -1454,18 +1476,26 @@ export function ShootingRange({
             sessionZeroYRef.current * sy,
             dist,
           );
-          const ppmX = targetPxPerMmRef.current;
-          const ppmY = targetPxPerMmYRef.current;
           // Invert: Up dial (neg Y) → reticle down; Left dial (neg X) → reticle right.
-          let ox = -zeroXmm * ppmX * scale;
-          let oy = -zeroYmm * ppmY * scale;
+          let ox = -zeroXmm * pxPerMm * scale;
+          let oy = -zeroYmm * pxPerMmY * scale;
           if (!trackingLockedRef.current) {
-            ox -= wobbleRef.current.x * ppmX * scale;
-            oy -= wobbleRef.current.y * ppmY * scale;
+            ox -= wobbleRef.current.x * pxPerMm * scale;
+            oy -= wobbleRef.current.y * pxPerMmY * scale;
           }
           reticleEl.style.transform = cantRot
             ? `translate(${ox}px, ${oy}px) ${cantRot}`
             : `translate(${ox}px, ${oy}px)`;
+        } else {
+          const rx = paint.reticleX * pxPerMm * scale;
+          const ry = paint.reticleY * pxPerMmY * scale;
+          const move =
+            Math.abs(rx) > 0.01 || Math.abs(ry) > 0.01
+              ? `translate(${rx}px, ${ry}px)`
+              : "";
+          reticleEl.style.transform = [move, cantRot]
+            .filter(Boolean)
+            .join(" ");
         }
       }
     }
@@ -1631,7 +1661,15 @@ export function ShootingRange({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [ready, measurement]);
+  }, [ready, measurement, scopeAimControl]);
+
+  useEffect(() => {
+    if (scopeAimControl !== "reticle") return;
+    frozenBaseAimRef.current = {
+      x: aimRef.current.x,
+      y: aimRef.current.y,
+    };
+  }, [scopeAimControl]);
 
   /** Target shrinks with distance (angular size). Per-skive visualScale fixes
    * board size. Zeroing/load: ×0.1 so physical mm match true mils.
@@ -1876,6 +1914,7 @@ export function ShootingRange({
     setTargetId(defaultTargetIdForDistanceM(next));
     setAimMm({ x: 0, y: 0 });
     aimRef.current = { x: 0, y: 0 };
+    frozenBaseAimRef.current = { x: 0, y: 0 };
     wobbleRef.current = { x: 0, y: 0 };
     setShots([]);
     setMeasurement(null);
@@ -1894,6 +1933,7 @@ export function ShootingRange({
     setTargetId(next);
     setAimMm({ x: 0, y: 0 });
     aimRef.current = { x: 0, y: 0 };
+    frozenBaseAimRef.current = { x: 0, y: 0 };
     wobbleRef.current = { x: 0, y: 0 };
     setShots([]);
     setMeasurement(null);
@@ -1911,6 +1951,7 @@ export function ShootingRange({
     setPaperUnit(next);
     setAimMm({ x: 0, y: 0 });
     aimRef.current = { x: 0, y: 0 };
+    frozenBaseAimRef.current = { x: 0, y: 0 };
     wobbleRef.current = { x: 0, y: 0 };
     setShots([]);
     setMeasurement(null);
@@ -2092,6 +2133,7 @@ export function ShootingRange({
     setSessionZeroYMm(0);
     setAimMm({ x: 0, y: 0 });
     aimRef.current = { x: 0, y: 0 };
+    frozenBaseAimRef.current = { x: 0, y: 0 };
     wobbleRef.current = { x: 0, y: 0 };
     setShots([]);
     setMeasurement(null);
@@ -2138,6 +2180,7 @@ export function ShootingRange({
             onAwardPayout={onAwardCompetitionPayout}
             onBack={() => setCompId("lobby")}
             realism={realism}
+            scopeAimControl={scopeAimControl}
           />
         </div>
       );
@@ -2172,6 +2215,7 @@ export function ShootingRange({
             onAwardPayout={onAwardCompetitionPayout}
             onBack={() => setCompId("lobby")}
             realism={realism}
+            scopeAimControl={scopeAimControl}
           />
         </div>
       );

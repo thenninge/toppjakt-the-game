@@ -228,6 +228,7 @@ import {
   type RealLoadProfile,
 } from "@/lib/ballistics/realLoad";
 import type { GameRealism } from "@/lib/optics/turretStyle";
+import type { ScopeAimControl } from "@/lib/range/scopeAimControl";
 import {
   realismAutoSkuddpar,
   realismEttersokFindMult,
@@ -304,6 +305,8 @@ type HuntMapViewProps = {
   useRealDataInSimulation?: boolean;
   /** medium = classic HUD dials; high = tube-mounted realistic turrets. */
   realism?: GameRealism;
+  /** Move target under reticle, or reticle over a fixed target. */
+  scopeAimControl?: ScopeAimControl;
   customsMods?: CustomsMods;
   weather: DayWeather;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -622,6 +625,7 @@ export function HuntMapView({
   realLoadProfiles = [],
   useRealDataInSimulation = false,
   realism = "medium",
+  scopeAimControl = "target",
   customsMods = EMPTY_CUSTOMS_MODS,
   weather,
   onAffinitiesChange,
@@ -5390,6 +5394,7 @@ export function HuntMapView({
         realLoadProfiles={realLoadProfiles}
         useRealDataInSimulation={useRealDataInSimulation}
         realism={realism}
+        scopeAimControl={scopeAimControl}
         customsMoaDelta={customsMoaDelta}
         customsCalmMult={customsCalmMult}
         recoilDamping={computeRecoilDamping({

@@ -188,6 +188,11 @@ import {
   scopeAimHoldMult,
 } from "@/lib/range/scopePointerAim";
 import {
+  DEFAULT_SCOPE_AIM_CONTROL,
+  scopeAimPaintMm,
+  type ScopeAimControl,
+} from "@/lib/range/scopeAimControl";
+import {
   ENCOUNTER_NERVE,
   ENVIRO_TIME_FACTOR,
   tickEncounterNerve,
@@ -353,6 +358,8 @@ type HuntShootViewProps = {
    * medium = classic HUD dials; high = tube-mounted realistic turrets.
    */
   realism?: GameRealism;
+  /** Move target under reticle, or reticle over a fixed target. */
+  scopeAimControl?: ScopeAimControl;
 };
 
 type AimKeys = {
@@ -499,6 +506,7 @@ export function HuntShootView({
   initialSideDrums = null,
   onSideDrumsChange,
   realism = "medium",
+  scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
 }: HuntShootViewProps) {
   const [nerveUi, setNerveUi] = useState(() =>
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
@@ -654,6 +662,10 @@ export function HuntShootView({
     resetFocusProgress,
   } = useFocusBarPaint();
   const scopeWorldRef = useRef<HTMLDivElement>(null);
+  const scopeReticleOffsetRef = useRef<HTMLDivElement>(null);
+  const frozenBaseAimRef = useRef({ x: 0, y: 0 });
+  const aimControlRef = useRef<ScopeAimControl>(scopeAimControl);
+  aimControlRef.current = scopeAimControl;
   const targetScaleRef = useRef(1);
   const focusZoomBoostRef = useRef(1);
   const vitalOffRef = useRef({ x: 0, y: 0 });
@@ -1776,8 +1788,14 @@ export function HuntShootView({
     function paintScopeWorld() {
       const el = scopeWorldRef.current;
       if (!el) return;
-      const ax = aimRef.current.x + wobbleRef.current.x;
-      const ay = aimRef.current.y + wobbleRef.current.y;
+      const paint = scopeAimPaintMm({
+        aimControl: aimControlRef.current,
+        aim: aimRef.current,
+        wobble: wobbleRef.current,
+        frozenBase: frozenBaseAimRef.current,
+      });
+      const ax = paint.worldX;
+      const ay = paint.worldY;
       const scale = targetScaleRef.current;
       const vo = vitalOffRef.current;
       const g = geomRef.current;
@@ -1804,6 +1822,20 @@ export function HuntShootView({
         el.style.transform =
           `translate(calc(-50% - ${panPxX}px), calc(-50% - ${panPxY}px)) ` +
           `scale(${scale})`;
+      }
+
+      const reticleEl = scopeReticleOffsetRef.current;
+      if (reticleEl) {
+        const cant = cantActiveRef.current ? cantDegRef.current : 0;
+        const cantRot =
+          Math.abs(cant) > 0.02 ? `rotate(${cant.toFixed(3)}deg)` : "";
+        const rx = birdMmToNativePx(paint.reticleX, g) * scale;
+        const ry = birdMmToNativePx(paint.reticleY, g) * scale;
+        const move =
+          Math.abs(rx) > 0.01 || Math.abs(ry) > 0.01
+            ? `translate(${rx}px, ${ry}px)`
+            : "";
+        reticleEl.style.transform = [move, cantRot].filter(Boolean).join(" ");
       }
     }
 
@@ -1962,12 +1994,22 @@ export function HuntShootView({
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [ready, fired, landscapeSrc]);
+  }, [ready, fired, landscapeSrc, scopeAimControl]);
+
+  // Freeze world framing when switching to reticle-move mode.
+  useEffect(() => {
+    if (scopeAimControl !== "reticle") return;
+    frozenBaseAimRef.current = {
+      x: aimRef.current.x,
+      y: aimRef.current.y,
+    };
+  }, [scopeAimControl]);
 
   // Start with landscape centre in the glass — player must find the bird.
   useEffect(() => {
     if (!landscapeSrc) {
       aimRef.current = { x: 0, y: 0 };
+      frozenBaseAimRef.current = { x: 0, y: 0 };
       hasPannedRef.current = false;
       return;
     }
@@ -1981,7 +2023,7 @@ export function HuntShootView({
           ? { x: -vitalBase.x, y: vitalBase.y }
           : vitalBase;
     const widthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
-    aimRef.current = aimMmForLandscapeCenter({
+    const center = aimMmForLandscapeCenter({
       nativeW: g.nativeW,
       nativeH: g.nativeH,
       spriteHeightMm: g.spriteHeightMm,
@@ -1991,6 +2033,8 @@ export function HuntShootView({
       birdYPct: landscapeFocusY,
       vitalOff,
     });
+    aimRef.current = center;
+    frozenBaseAimRef.current = { ...center };
   }, [
     landscapeSrc,
     landscapeBirdWidthPct,
@@ -2731,12 +2775,8 @@ export function HuntShootView({
               </div>
               </div>
               <div
+                ref={scopeReticleOffsetRef}
                 className="scope-reticle-offset"
-                style={
-                  Math.abs(cantDeg) > 0.02
-                    ? { transform: `rotate(${cantDeg.toFixed(3)}deg)` }
-                    : undefined
-                }
               >
                 <ScopeReticle
                   scope={scope.scope}
