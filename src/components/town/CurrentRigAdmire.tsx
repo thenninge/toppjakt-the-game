@@ -12,6 +12,11 @@ import {
 } from "@/lib/shop/types";
 import { resolveWeightGrams } from "@/lib/shop/weights";
 import { isSuppressorCoverMisc } from "@/lib/misc/spec";
+import {
+  resolveShotCamKind,
+  shotCamLabel,
+  type ShotCamKind,
+} from "@/lib/hunt/shoot";
 import type { CustomsMods } from "@/lib/customs/spec";
 
 export type CurrentRigAdmireProps = {
@@ -24,8 +29,8 @@ type PartState = "present" | "missing-must";
 /**
  * Detailed side-view of the packed weapon rig (Amiga window chrome).
  * Must-haves (rifle / scope / mount) render red when missing.
- * Optionals (suppressor + wrap, bipod, stock, bagrider, snow camo, bolt knob)
- * render when present.
+ * Optionals (suppressor + wrap, bipod, stock, bagrider, snow camo, bolt knob,
+ * triggercam / scopemate) render when present.
  */
 export function CurrentRigAdmire({
   kitItems,
@@ -40,6 +45,7 @@ export function CurrentRigAdmire({
   const wrap =
     kitItems.find((i) => isMiscItem(i) && isSuppressorCoverMisc(i.misc)) ??
     null;
+  const shotCamKind = resolveShotCamKind(kitItems.map((i) => i.id));
   const bagrider = customsMods.bagrider;
   const snowCamo = customsMods.customCamo;
   const customKnob = customsMods.customBoltKnob;
@@ -77,7 +83,7 @@ export function CurrentRigAdmire({
       <div className="rig-admire-window">
         <div className="rig-admire-titlebar">
           <span className="rig-admire-gadget" />
-          <span className="rig-admire-titlebar-text">CURRENT RIG · 2.1</span>
+          <span className="rig-admire-titlebar-text">CURRENT RIG · 2.2</span>
           <span className="rig-admire-gadget rig-admire-gadget-depth" />
         </div>
         <div className="rig-admire-stage">
@@ -290,9 +296,9 @@ export function CurrentRigAdmire({
                   d="M300 84h90v3H300z"
                   opacity="0.55"
                 />
-                {/* Ejection port */}
+                {/* Ejection port — bolt closed (body fills the port) */}
                 <rect
-                  className="rig-fill-void"
+                  className="rig-fill-metal-dark"
                   x="318"
                   y="88"
                   width="42"
@@ -300,11 +306,20 @@ export function CurrentRigAdmire({
                   rx="1"
                 />
                 <rect
-                  className="rig-fill-metal-dark"
+                  className="rig-fill-metal"
                   x="320"
-                  y="90"
+                  y="89"
                   width="38"
+                  height="5"
+                  rx="0.5"
+                />
+                <rect
+                  className="rig-fill-metal-light"
+                  x="322"
+                  y="90"
+                  width="20"
                   height="2"
+                  opacity="0.45"
                 />
                 {/* Picatinny rail on receiver */}
                 <rect
@@ -326,43 +341,11 @@ export function CurrentRigAdmire({
                   />
                 ))}
 
-                {/* Bolt shroud + handle */}
+                {/* Bolt shroud (hevarm + knob tegnes etter stokk/kikkert) */}
                 <path
                   className="rig-fill-metal-dark"
                   d="M372 80h18v8h-18z"
                 />
-                <path
-                  className="rig-fill-metal"
-                  d="M384 72l12-10 4 3-10 12z"
-                />
-                {customKnob && rifleState === "present" ? (
-                  <>
-                    <circle cx="400" cy="60" r="7" fill={knobColor} />
-                    <circle cx="400" cy="60" r="3.6" fill={knobShade} />
-                    <circle
-                      cx="398.2"
-                      cy="58.2"
-                      r="1.6"
-                      fill="#ffffff"
-                      opacity="0.4"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <circle
-                      className="rig-fill-metal-light"
-                      cx="400"
-                      cy="60"
-                      r="5.5"
-                    />
-                    <circle
-                      className="rig-fill-metal-dark"
-                      cx="400"
-                      cy="60"
-                      r="3"
-                    />
-                  </>
-                )}
 
                 {/* Magazine / floorplate */}
                 <path
@@ -626,6 +609,84 @@ export function CurrentRigAdmire({
                 />
               </g>
 
+              {shotCamKind ? (
+                <ShotCamOnScope kind={shotCamKind} />
+              ) : null}
+
+              {/* Closed bolt: hevarm + knob in nedre posisjon (above trigger, clear of scope) */}
+              {rifleState === "present" ? (
+                <g
+                  className="rig-detail-ok"
+                  aria-label={customKnob ? `Bolt knob ${knobColor}` : "Bolt knob"}
+                >
+                  <path
+                    className="rig-fill-metal"
+                    d="M384 88l4 2 6 18-5 2-7-18z"
+                  />
+                  <path
+                    className="rig-fill-metal-dark"
+                    d="M386 90l3 1.5 5 15-3.5 1.2z"
+                    opacity="0.55"
+                  />
+                  {customKnob ? (
+                    <>
+                      <circle
+                        cx="396"
+                        cy="114"
+                        r="8"
+                        fill={knobColor}
+                        stroke="#0a0c10"
+                        strokeWidth="1.5"
+                      />
+                      <circle cx="396" cy="114" r="4" fill={knobShade} />
+                      <circle
+                        cx="393.8"
+                        cy="111.8"
+                        r="1.8"
+                        fill="#ffffff"
+                        opacity="0.45"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <circle
+                        className="rig-fill-metal-light"
+                        cx="396"
+                        cy="114"
+                        r="6.5"
+                        stroke="#0a0c10"
+                        strokeWidth="1"
+                      />
+                      <circle
+                        className="rig-fill-metal-dark"
+                        cx="396"
+                        cy="114"
+                        r="3.2"
+                      />
+                    </>
+                  )}
+                </g>
+              ) : rifleState === "missing-must" ? (
+                <g className="rig-detail-miss" aria-label="Bolt knob">
+                  <path
+                    className="rig-fill-metal"
+                    d="M384 88l4 2 6 18-5 2-7-18z"
+                  />
+                  <circle
+                    className="rig-fill-metal-light"
+                    cx="396"
+                    cy="114"
+                    r="6.5"
+                  />
+                  <circle
+                    className="rig-fill-metal-dark"
+                    cx="396"
+                    cy="114"
+                    r="3.2"
+                  />
+                </g>
+              ) : null}
+
               {/* --- Suppressor --- */}
               {suppressor ? (
                 <g
@@ -740,13 +801,15 @@ export function CurrentRigAdmire({
           <>
             Rødt = must-have mangler (
             {missingMust.join(", ")}). Valgfritt tegnes når det er med
-            (lyddemper, wrap, tofot, stokk, bagrider, snøkamo, bolt knob).
+            (lyddemper, wrap, tofot, stokk, bagrider, snøkamo, bolt knob,
+            triggercam/scopemate).
           </>
         ) : (
           <>
             Must-have på plass.
             {snowCamo ? " Snøkamo (CB) på stokk/forend." : ""}
             {wrap && suppressor ? " Wrap rundt lyddemper." : ""}
+            {shotCamKind ? ` ${shotCamLabel(shotCamKind)} på okular.` : ""}
             {customKnob ? ` Bolt knob ${knobColor}.` : ""}
             {" "}
             Store dempere ser litt større ut.
@@ -754,6 +817,57 @@ export function CurrentRigAdmire({
         )}
       </p>
     </div>
+  );
+}
+
+/** Phone-cam clip on the ocular — Triggercam sleeker, ScopeMate chunkier. */
+function ShotCamOnScope({ kind }: { kind: ShotCamKind }) {
+  const isMate = kind === "scopemate";
+  const body = isMate ? "#4a5540" : "#1a1c20";
+  const bodyDark = isMate ? "#2e3628" : "#0a0c10";
+  const bodyLight = isMate ? "#6a7860" : "#3a3e48";
+  const led = isMate ? "#44aaff" : "#e02020";
+  const phone = isMate ? "#2a3028" : "#111318";
+
+  return (
+    <g className="rig-detail-ok" aria-label={shotCamLabel(kind)}>
+      {/* Clamp onto eyepiece */}
+      <path
+        className="rig-fill-metal-dark"
+        d="M404 42h18v6H404z"
+      />
+      <path d={`M408 38h10v6H408z`} fill={bodyDark} />
+      {/* Arm up to phone */}
+      <path d="M412 28h6v12h-6z" fill={body} />
+      <path d="M410 26h10v4H410z" fill={bodyLight} />
+      {/* Phone / cam body */}
+      {isMate ? (
+        <>
+          <rect x="402" y="8" width="26" height="20" rx="2" fill={phone} />
+          <rect x="405" y="11" width="20" height="14" rx="1" fill={body} />
+          <rect x="407" y="13" width="12" height="8" rx="0.5" fill="#1a2830" />
+          <circle cx="423" cy="17" r="2.2" fill={bodyLight} />
+          <circle cx="423" cy="17" r="1.1" fill="#0a1018" />
+        </>
+      ) : (
+        <>
+          <rect x="404" y="10" width="22" height="18" rx="2" fill={phone} />
+          <rect x="406" y="12" width="18" height="14" rx="1" fill={body} />
+          <rect x="408" y="14" width="10" height="7" rx="0.5" fill="#152028" />
+          <circle cx="422" cy="17" r="1.8" fill={bodyLight} />
+          <circle cx="422" cy="17" r="0.9" fill="#080c12" />
+        </>
+      )}
+      {/* Rec / status LED */}
+      <circle cx={isMate ? 407 : 408} cy={isMate ? 12 : 13} r="1.3" fill={led} />
+      <circle
+        cx={isMate ? 407 : 408}
+        cy={isMate ? 12 : 13}
+        r="0.6"
+        fill="#ffffff"
+        opacity="0.55"
+      />
+    </g>
   );
 }
 
@@ -804,6 +918,7 @@ export function currentRigAdmireSummary(input: {
     customsMods.bagrider,
     customsMods.customCamo,
     customsMods.customBoltKnob,
+    resolveShotCamKind(kitItems.map((i) => i.id)) != null,
   ].filter(Boolean).length;
   if (missing > 0) return `${missing} must-have mangler · ${extras} ekstra`;
   return `komplett silhuett · ${extras} ekstra`;
