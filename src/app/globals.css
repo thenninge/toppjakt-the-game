@@ -4360,6 +4360,32 @@ body {
   stroke: #5e4428;
 }
 
+/* CB custom camo — frosty metal + snow stock accents */
+.rig-detail-ok.rig-snowcamo .rig-fill-metal {
+  fill: #d2d8de;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-metal-dark {
+  fill: #8a949e;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-metal-light {
+  fill: #f2f5f8;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-wood {
+  fill: #e8eef2;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-wood-dark {
+  fill: #9aa8b0;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-wood-light {
+  fill: #ffffff;
+}
+.rig-detail-ok.rig-snowcamo .rig-stroke-metal {
+  stroke: #8a949e;
+}
+.rig-detail-ok.rig-snowcamo .rig-stroke-wood {
+  stroke: #9aa8b0;
+}
+
 /* Missing must-haves: red variants of the same layers */
 .rig-detail-miss .rig-fill-metal {
   fill: #ef5555;

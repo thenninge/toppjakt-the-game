@@ -2,6 +2,7 @@
 
 import {
   isBipodItem,
+  isMiscItem,
   isMountItem,
   isRifleItem,
   isScopeItem,
@@ -10,6 +11,7 @@ import {
   type ShopItem,
 } from "@/lib/shop/types";
 import { resolveWeightGrams } from "@/lib/shop/weights";
+import { isSuppressorCoverMisc } from "@/lib/misc/spec";
 import type { CustomsMods } from "@/lib/customs/spec";
 
 export type CurrentRigAdmireProps = {
@@ -22,7 +24,8 @@ type PartState = "present" | "missing-must";
 /**
  * Detailed side-view of the packed weapon rig (Amiga window chrome).
  * Must-haves (rifle / scope / mount) render red when missing.
- * Optionals (suppressor, bipod, stock upgrade, bagrider) are omitted when absent.
+ * Optionals (suppressor + wrap, bipod, stock, bagrider, snow camo, bolt knob)
+ * render when present.
  */
 export function CurrentRigAdmire({
   kitItems,
@@ -34,7 +37,11 @@ export function CurrentRigAdmire({
   const suppressor = kitItems.find(isSuppressorItem) ?? null;
   const bipod = kitItems.find(isBipodItem) ?? null;
   const stock = kitItems.find(isStockItem) ?? null;
+  const wrap =
+    kitItems.find((i) => isMiscItem(i) && isSuppressorCoverMisc(i.misc)) ??
+    null;
   const bagrider = customsMods.bagrider;
+  const snowCamo = customsMods.customCamo;
   const customKnob = customsMods.customBoltKnob;
   const knobColor = customsMods.boltKnobColor;
   const knobShade = darkenHex(knobColor, 0.55);
@@ -53,12 +60,24 @@ export function CurrentRigAdmire({
     mountState === "missing-must" ? "montasje" : null,
   ].filter(Boolean) as string[];
 
+  const rifleTone =
+    rifleState === "missing-must"
+      ? "rig-detail-miss"
+      : snowCamo
+        ? "rig-detail-ok rig-snowcamo"
+        : "rig-detail-ok";
+
+  const snowFill =
+    snowCamo && rifleState === "present"
+      ? ({ fill: "url(#rigSnowCamo)" } as const)
+      : {};
+
   return (
     <div className="rig-admire">
       <div className="rig-admire-window">
         <div className="rig-admire-titlebar">
           <span className="rig-admire-gadget" />
-          <span className="rig-admire-titlebar-text">CURRENT RIG · 2.0</span>
+          <span className="rig-admire-titlebar-text">CURRENT RIG · 2.1</span>
           <span className="rig-admire-gadget rig-admire-gadget-depth" />
         </div>
         <div className="rig-admire-stage">
@@ -84,6 +103,39 @@ export function CurrentRigAdmire({
                   floodOpacity="0.45"
                 />
               </filter>
+              <pattern
+                id="rigSnowCamo"
+                patternUnits="userSpaceOnUse"
+                width="28"
+                height="20"
+              >
+                <rect width="28" height="20" fill="#eef2f6" />
+                <ellipse cx="6" cy="5" rx="7" ry="4" fill="#c5ced6" />
+                <ellipse cx="20" cy="12" rx="8" ry="5" fill="#a8b4bc" />
+                <ellipse cx="14" cy="16" rx="5" ry="3" fill="#ffffff" />
+                <ellipse cx="24" cy="3" rx="4" ry="3" fill="#8a9aa4" />
+                <ellipse cx="3" cy="15" rx="4" ry="2.5" fill="#d8e0e6" />
+              </pattern>
+              <pattern
+                id="rigWrapWeave"
+                patternUnits="userSpaceOnUse"
+                width="6"
+                height="6"
+              >
+                <rect width="6" height="6" fill="#5a4a32" />
+                <path
+                  d="M0 3h6M3 0v6"
+                  stroke="#6e5a3e"
+                  strokeWidth="0.8"
+                  opacity="0.85"
+                />
+                <path
+                  d="M0 0h6M0 6h6"
+                  stroke="#3e3220"
+                  strokeWidth="0.5"
+                  opacity="0.5"
+                />
+              </pattern>
             </defs>
 
             <rect x="0" y="0" width="640" height="200" fill="#0055aa" />
@@ -173,13 +225,7 @@ export function CurrentRigAdmire({
               ) : null}
 
               {/* --- Rifle --- */}
-              <g
-                className={
-                  rifleState === "missing-must"
-                    ? "rig-detail-miss"
-                    : "rig-detail-ok"
-                }
-              >
+              <g className={rifleTone}>
                 {/* Barrel taper */}
                 <path
                   className="rig-fill-metal"
@@ -216,11 +262,13 @@ export function CurrentRigAdmire({
                   <path
                     className="rig-fill-wood"
                     d="M200 99h95c4 0 7 2 8 5l1 6c0 3-2 5-5 5H198c-3 0-5-2-5-5v-4c0-4 3-7 7-7z"
+                    {...snowFill}
                   />
                 ) : (
                   <path
                     className="rig-fill-wood"
                     d="M205 100h88c3 0 5 2 5 4v5c0 2-2 4-4 4H204c-3 0-5-2-5-4v-3c0-3 2-6 6-6z"
+                    {...snowFill}
                   />
                 )}
                 <path
@@ -289,14 +337,14 @@ export function CurrentRigAdmire({
                 />
                 {customKnob && rifleState === "present" ? (
                   <>
-                    <circle cx="400" cy="60" r="6" fill={knobColor} />
-                    <circle cx="400" cy="60" r="3.2" fill={knobShade} />
+                    <circle cx="400" cy="60" r="7" fill={knobColor} />
+                    <circle cx="400" cy="60" r="3.6" fill={knobShade} />
                     <circle
-                      cx="398.5"
-                      cy="58.5"
-                      r="1.4"
+                      cx="398.2"
+                      cy="58.2"
+                      r="1.6"
                       fill="#ffffff"
-                      opacity="0.35"
+                      opacity="0.4"
                     />
                   </>
                 ) : (
@@ -348,6 +396,7 @@ export function CurrentRigAdmire({
                     <path
                       className="rig-fill-wood"
                       d="M394 86h95c6 0 12 4 14 10l8 22c1 4-1 8-5 9h-28c-3 0-5-2-6-4l-4-10H400c-4 0-6-3-6-6V92c0-3 2-6 6-6z"
+                      {...snowFill}
                     />
                     <path
                       className="rig-fill-wood-dark"
@@ -357,6 +406,7 @@ export function CurrentRigAdmire({
                     <path
                       className="rig-fill-wood-light"
                       d="M430 78h48c3 0 5 2 5 4v6H428v-5c0-3 1-5 2-5z"
+                      {...snowFill}
                     />
                     {/* Grip texture lines */}
                     <g className="rig-stroke-wood" fill="none" strokeWidth="0.8" opacity="0.5">
@@ -380,6 +430,7 @@ export function CurrentRigAdmire({
                     <path
                       className="rig-fill-wood"
                       d="M394 88h78c8 0 18 6 22 14l12 24c2 4 0 8-4 9h-20c-3 0-5-2-6-4l-6-12H404c-5 0-8-3-8-7V94c0-3 2-6 6-6z"
+                      {...snowFill}
                     />
                     <path
                       className="rig-fill-wood-dark"
@@ -586,40 +637,82 @@ export function CurrentRigAdmire({
                     className="rig-fill-metal"
                     d="M48 86h76c3 0 5 2 5 5v12c0 3-2 5-5 5H48c-3 0-5-2-5-5V91c0-3 2-5 5-5z"
                   />
-                  <path
-                    className="rig-fill-metal-light"
-                    d="M52 88h68v3H52z"
-                    opacity="0.45"
-                  />
-                  {/* Step / baffle bands */}
-                  <rect
-                    className="rig-fill-metal-dark"
-                    x="62"
-                    y="86"
-                    width="3"
-                    height="22"
-                  />
-                  <rect
-                    className="rig-fill-metal-dark"
-                    x="78"
-                    y="86"
-                    width="3"
-                    height="22"
-                  />
-                  <rect
-                    className="rig-fill-metal-dark"
-                    x="94"
-                    y="86"
-                    width="3"
-                    height="22"
-                  />
-                  <rect
-                    className="rig-fill-metal-dark"
-                    x="110"
-                    y="86"
-                    width="3"
-                    height="22"
-                  />
+                  {!wrap ? (
+                    <>
+                      <path
+                        className="rig-fill-metal-light"
+                        d="M52 88h68v3H52z"
+                        opacity="0.45"
+                      />
+                      {/* Step / baffle bands */}
+                      <rect
+                        className="rig-fill-metal-dark"
+                        x="62"
+                        y="86"
+                        width="3"
+                        height="22"
+                      />
+                      <rect
+                        className="rig-fill-metal-dark"
+                        x="78"
+                        y="86"
+                        width="3"
+                        height="22"
+                      />
+                      <rect
+                        className="rig-fill-metal-dark"
+                        x="94"
+                        y="86"
+                        width="3"
+                        height="22"
+                      />
+                      <rect
+                        className="rig-fill-metal-dark"
+                        x="110"
+                        y="86"
+                        width="3"
+                        height="22"
+                      />
+                    </>
+                  ) : (
+                    <g aria-label="Lyddemper-wrap">
+                      <path
+                        d="M54 83h64c4 0 7 2 7 6v16c0 4-3 6-7 6H54c-4 0-7-2-7-6V89c0-4 3-6 7-6z"
+                        fill="url(#rigWrapWeave)"
+                      />
+                      <path
+                        d="M54 83h64c4 0 7 2 7 6v3H47v-3c0-4 3-6 7-6z"
+                        fill="#6e5a3e"
+                        opacity="0.55"
+                      />
+                      <rect
+                        x="54"
+                        y="84"
+                        width="3"
+                        height="24"
+                        fill="#3e3220"
+                        opacity="0.55"
+                      />
+                      <rect
+                        x="115"
+                        y="84"
+                        width="3"
+                        height="24"
+                        fill="#3e3220"
+                        opacity="0.55"
+                      />
+                      {Array.from({ length: 5 }, (_, i) => (
+                        <path
+                          key={`wrapStitch${i}`}
+                          d={`M58 ${88 + i * 4}h56`}
+                          stroke="#2a2218"
+                          strokeWidth="0.6"
+                          opacity="0.35"
+                          fill="none"
+                        />
+                      ))}
+                    </g>
+                  )}
                   {/* End cap */}
                   <path
                     className="rig-fill-metal-dark"
@@ -646,14 +739,17 @@ export function CurrentRigAdmire({
         {missingMust.length > 0 ? (
           <>
             Rødt = must-have mangler (
-            {missingMust.join(", ")}). Valgfritt (lyddemper, tofot, stokk,
-            bagrider) tegnes bare når det er med.
+            {missingMust.join(", ")}). Valgfritt tegnes når det er med
+            (lyddemper, wrap, tofot, stokk, bagrider, snøkamo, bolt knob).
           </>
         ) : (
           <>
-            Must-have på plass. Valgfritt (lyddemper, tofot, stokk, bagrider,
-            bolt knob) tegnes / farges når det er med — store dempere ser litt
-            større ut.
+            Must-have på plass.
+            {snowCamo ? " Snøkamo (CB) på stokk/forend." : ""}
+            {wrap && suppressor ? " Wrap rundt lyddemper." : ""}
+            {customKnob ? ` Bolt knob ${knobColor}.` : ""}
+            {" "}
+            Store dempere ser litt større ut.
           </>
         )}
       </p>
@@ -695,13 +791,18 @@ export function currentRigAdmireSummary(input: {
   const hasRifle = kitItems.some(isRifleItem);
   const hasScope = kitItems.some(isScopeItem);
   const hasMount = kitItems.some(isMountItem);
+  const hasWrap = kitItems.some(
+    (i) => isMiscItem(i) && isSuppressorCoverMisc(i.misc),
+  );
   const missing =
     (hasRifle ? 0 : 1) + (hasScope ? 0 : 1) + (hasMount ? 0 : 1);
   const extras = [
     kitItems.some(isSuppressorItem),
+    hasWrap,
     kitItems.some(isBipodItem),
     kitItems.some(isStockItem),
     customsMods.bagrider,
+    customsMods.customCamo,
     customsMods.customBoltKnob,
   ].filter(Boolean).length;
   if (missing > 0) return `${missing} must-have mangler · ${extras} ekstra`;
