@@ -1661,58 +1661,67 @@ export function SpotView({
               : ""}
           </p>
         </div>
-        <div className="spot-view-actions">
-          {mode === "eyes" && hasThermal ? (
-            <button
-              type="button"
-              className="intro-button"
-              onClick={toggleThermal}
-              disabled={thermalBatteryGameSec <= 0 && !isThermalBinocular}
-              title={
-                thermalBatteryGameSec <= 0
-                  ? isThermalBinocular
-                    ? "Batteri tomt — kun dagoptikk (vanlig kikkert)"
-                    : "Batteri tomt"
-                  : `Batteri ${battMin} min igjen`
-              }
-            >
-              {isThermalBinocular
-                ? thermalBatteryGameSec <= 0
-                  ? "Habrok dagoptikk (B/T)"
-                  : "Habrok Fusion (B/T)"
-                : "Termisk (T)"}
-            </button>
-          ) : null}
-          {mode === "eyes" && hasBinos && !isThermalBinocular ? (
-            <button type="button" className="intro-button" onClick={toggleBinos}>
-              Kikkert (B)
-            </button>
-          ) : null}
-          {mode === "eyes" ? (
-            <>
-              {onOpenAware ? (
-                <button
-                  type="button"
-                  className="intro-button"
-                  onClick={() => onOpenAware()}
-                  title="Aware — skuddmarkør og siste stand"
-                >
-                  Aware
-                </button>
-              ) : null}
+      </header>
+
+      {mode === "eyes" ? (
+        <div className="spot-optic-bar">
+          <div
+            className="spot-optic-toolbar"
+            role="toolbar"
+            aria-label="Spotting-valg"
+          >
+            {hasThermal ? (
               <button
                 type="button"
                 className="intro-button"
-                onClick={() =>
-                  onDone({ mode, gameSeconds: lookedRef.current })
+                onClick={toggleThermal}
+                disabled={thermalBatteryGameSec <= 0 && !isThermalBinocular}
+                title={
+                  thermalBatteryGameSec <= 0
+                    ? isThermalBinocular
+                      ? "Batteri tomt — kun dagoptikk (vanlig kikkert)"
+                      : "Batteri tomt"
+                    : `Batteri ${battMin} min igjen`
                 }
               >
-                Done
+                {isThermalBinocular
+                  ? thermalBatteryGameSec <= 0
+                    ? "Habrok dagoptikk (B/T)"
+                    : "Habrok Fusion (B/T)"
+                  : "Termisk (T)"}
               </button>
-            </>
-          ) : null}
+            ) : null}
+            {hasBinos && !isThermalBinocular ? (
+              <button
+                type="button"
+                className="intro-button"
+                onClick={toggleBinos}
+              >
+                Kikkert (B)
+              </button>
+            ) : null}
+            {onOpenAware ? (
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => onOpenAware()}
+                title="Aware — skuddmarkør og siste stand"
+              >
+                Aware
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="intro-button"
+              onClick={() =>
+                onDone({ mode, gameSeconds: lookedRef.current })
+              }
+            >
+              Done
+            </button>
+          </div>
         </div>
-      </header>
+      ) : null}
 
       {isOpticMode ? (
         <div className="spot-optic-bar">

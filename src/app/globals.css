@@ -4963,6 +4963,10 @@ body {
   align-content: flex-start;
 }
 
+.spot-view-actions:empty {
+  display: none;
+}
+
 .spot-optic-bar {
   display: flex;
   flex-direction: column;
@@ -4974,12 +4978,12 @@ body {
 
 .spot-optic-toolbar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.3rem;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  /* Prefer 1–2 rows over a tall stack; allow light horizontal scroll if needed */
+  max-height: none;
 }
 
 .spot-optic-toolbar .intro-button {
@@ -4988,6 +4992,32 @@ body {
   font-size: 0.78rem;
   letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .spot-view-hud {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .spot-view-hud-text {
+    max-width: 100%;
+  }
+
+  .spot-optic-bar {
+    width: 100%;
+    padding: 0;
+    margin-bottom: 0.25rem;
+  }
+
+  .spot-optic-toolbar {
+    gap: 0.28rem;
+  }
+
+  .spot-optic-toolbar .intro-button {
+    padding: 0.32rem 0.5rem;
+    font-size: 0.75rem;
+  }
 }
 
 .spot-eyes-frame {
