@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import {
+  BOLT_KNOB_COLOR_PRESETS,
   CUSTOMS_SERVICES,
+  DEFAULT_BOLT_KNOB_COLOR,
   HOME_LOAD_AMMO_BY_CALIBER,
   HOME_LOAD_ORDER_ROUNDS,
   HOME_LOAD_PER_ROUND_NOK,
   customsBeddingMoaDelta,
   customsWeightReductionGrams,
+  normalizeBoltKnobColor,
   serviceOwned,
   type CustomsMods,
   type CustomsServiceId,
@@ -79,7 +82,12 @@ type CbCustomsProps = {
   rifleRoundCounts?: Record<string, number>;
   customBarrels?: Record<string, InstalledCustomBarrel>;
   spareBarrels?: StoredCustomBarrel[];
-  onBuyService: (id: CustomsServiceId) => void;
+  onBuyService: (
+    id: CustomsServiceId,
+    opts?: { boltKnobColor?: string },
+  ) => void;
+  /** Recolor custom bolt knob after purchase (free). */
+  onSetBoltKnobColor?: (color: string) => void;
   onOrderHomeLoads: (ammoId: string, rounds: number) => void;
   /** Standard factory-style rebarrel — stashes custom blank in inventory. */
   onReplaceBarrel: (rifleId: string) => void;
@@ -103,6 +111,7 @@ export function CbCustoms({
   customBarrels = {},
   spareBarrels = [],
   onBuyService,
+  onSetBoltKnobColor,
   onOrderHomeLoads,
   onReplaceBarrel,
   onInstallCustomBarrel,
@@ -111,6 +120,12 @@ export function CbCustoms({
   onLeave,
 }: CbCustomsProps) {
   const [status, setStatus] = useState("");
+  const [boltKnobPick, setBoltKnobPick] = useState(
+    () =>
+      customsMods.customBoltKnob
+        ? customsMods.boltKnobColor
+        : DEFAULT_BOLT_KNOB_COLOR,
+  );
   const [homeLoadAmmoId, setHomeLoadAmmoId] = useState(
     () => Object.values(HOME_LOAD_AMMO_BY_CALIBER)[0] ?? "",
   );
@@ -241,6 +256,12 @@ export function CbCustoms({
     });
   }
 
+  useEffect(() => {
+    if (customsMods.customBoltKnob) {
+      setBoltKnobPick(customsMods.boltKnobColor);
+    }
+  }, [customsMods.customBoltKnob, customsMods.boltKnobColor]);
+
   function buy(id: CustomsServiceId) {
     const svc = CUSTOMS_SERVICES.find((s) => s.id === id);
     if (!svc || svc.comingSoon) return;
@@ -256,8 +277,22 @@ export function CbCustoms({
       setStatus("Ikke nok penger.");
       return;
     }
-    onBuyService(id);
+    if (id === "custom_bolt_knob") {
+      onBuyService(id, {
+        boltKnobColor: normalizeBoltKnobColor(boltKnobPick),
+      });
+    } else {
+      onBuyService(id);
+    }
     setStatus(`${svc.name} bestilt — ${formatPermitFee(svc.priceNok)}`);
+  }
+
+  function applyBoltKnobColor(color: string) {
+    const next = normalizeBoltKnobColor(color);
+    setBoltKnobPick(next);
+    if (customsMods.customBoltKnob && onSetBoltKnobColor) {
+      onSetBoltKnobColor(next);
+    }
   }
 
   function orderLoads() {
@@ -344,6 +379,9 @@ export function CbCustoms({
         {customsMods.cheekRiser ? " · cheek riser" : ""}
         {customsMods.buttpad ? " · soft buttpad" : ""}
         {customsMods.barrelCrown ? " · barrel crown" : ""}
+        {customsMods.customBoltKnob
+          ? ` · bolt knob ${customsMods.boltKnobColor}`
+          : ""}
       </p>
 
       <div className="cb-customs-card cb-customs-barrel">
@@ -425,6 +463,7 @@ export function CbCustoms({
             !owned &&
             !(svc.id === "bedding" && customsMods.pillarBedding) &&
             balance >= svc.priceNok;
+          const isBoltKnob = svc.id === "custom_bolt_knob";
           return (
             <li key={svc.id} className="cb-customs-card">
               <div className="cb-customs-card-head">
@@ -438,6 +477,41 @@ export function CbCustoms({
                 </span>
               </div>
               <p className="shop-row-note">{svc.effect}</p>
+              {isBoltKnob ? (
+                <div className="cb-bolt-knob-picker" role="group" aria-label="Bolt knob-farge">
+                  <div className="cb-bolt-knob-swatches">
+                    {BOLT_KNOB_COLOR_PRESETS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={
+                          boltKnobPick.toLowerCase() === c.toLowerCase()
+                            ? "cb-bolt-knob-swatch is-active"
+                            : "cb-bolt-knob-swatch"
+                        }
+                        style={{ background: c }}
+                        title={c}
+                        aria-label={`Velg ${c}`}
+                        onClick={() => applyBoltKnobColor(c)}
+                      />
+                    ))}
+                  </div>
+                  <label className="cb-bolt-knob-custom">
+                    <span>Egen</span>
+                    <input
+                      type="color"
+                      value={normalizeBoltKnobColor(boltKnobPick)}
+                      aria-label="Egen bolt knob-farge"
+                      onChange={(e) => applyBoltKnobColor(e.target.value)}
+                    />
+                  </label>
+                  <span
+                    className="cb-bolt-knob-preview"
+                    style={{ background: normalizeBoltKnobColor(boltKnobPick) }}
+                    title="Forhåndsvisning"
+                  />
+                </div>
+              ) : null}
               {svc.comingSoon ? (
                 <button type="button" className="intro-button" disabled>
                   Kommer snart

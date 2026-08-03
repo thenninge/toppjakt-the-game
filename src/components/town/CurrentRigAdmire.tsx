@@ -35,6 +35,9 @@ export function CurrentRigAdmire({
   const bipod = kitItems.find(isBipodItem) ?? null;
   const stock = kitItems.find(isStockItem) ?? null;
   const bagrider = customsMods.bagrider;
+  const customKnob = customsMods.customBoltKnob;
+  const knobColor = customsMods.boltKnobColor;
+  const knobShade = darkenHex(knobColor, 0.55);
 
   const rifleState: PartState = rifle ? "present" : "missing-must";
   const scopeState: PartState = scope ? "present" : "missing-must";
@@ -107,7 +110,7 @@ export function CurrentRigAdmire({
               ))}
             </g>
 
-            <g filter="url(#rigSoft)">
+            <g filter="url(#rigSoft)" transform="translate(640 0) scale(-1 1)">
               {/* --- Bagrider (optional, under butt) --- */}
               {bagrider ? (
                 <g className="rig-detail-ok">
@@ -284,8 +287,34 @@ export function CurrentRigAdmire({
                   className="rig-fill-metal"
                   d="M384 72l12-10 4 3-10 12z"
                 />
-                <circle className="rig-fill-metal-light" cx="400" cy="60" r="5.5" />
-                <circle className="rig-fill-metal-dark" cx="400" cy="60" r="3" />
+                {customKnob && rifleState === "present" ? (
+                  <>
+                    <circle cx="400" cy="60" r="6" fill={knobColor} />
+                    <circle cx="400" cy="60" r="3.2" fill={knobShade} />
+                    <circle
+                      cx="398.5"
+                      cy="58.5"
+                      r="1.4"
+                      fill="#ffffff"
+                      opacity="0.35"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <circle
+                      className="rig-fill-metal-light"
+                      cx="400"
+                      cy="60"
+                      r="5.5"
+                    />
+                    <circle
+                      className="rig-fill-metal-dark"
+                      cx="400"
+                      cy="60"
+                      r="3"
+                    />
+                  </>
+                )}
 
                 {/* Magazine / floorplate */}
                 <path
@@ -622,8 +651,9 @@ export function CurrentRigAdmire({
           </>
         ) : (
           <>
-            Must-have på plass. Valgfritt (lyddemper, tofot, stokk, bagrider)
-            tegnes bare når det er med — store dempere ser litt større ut.
+            Must-have på plass. Valgfritt (lyddemper, tofot, stokk, bagrider,
+            bolt knob) tegnes / farges når det er med — store dempere ser litt
+            større ut.
           </>
         )}
       </p>
@@ -646,6 +676,17 @@ function suppressorVisualScale(item: ShopItem): number {
   return Math.min(1.45, Math.max(0.75, scale));
 }
 
+/** Darken a #rrggbb color for knob shading. */
+function darkenHex(hex: string, factor: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#6d7580";
+  const n = parseInt(m[1]!, 16);
+  const r = Math.round(((n >> 16) & 255) * factor);
+  const g = Math.round(((n >> 8) & 255) * factor);
+  const b = Math.round((n & 255) * factor);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
 export function currentRigAdmireSummary(input: {
   kitItems: ShopItem[];
   customsMods: CustomsMods;
@@ -661,6 +702,7 @@ export function currentRigAdmireSummary(input: {
     kitItems.some(isBipodItem),
     kitItems.some(isStockItem),
     customsMods.bagrider,
+    customsMods.customBoltKnob,
   ].filter(Boolean).length;
   if (missing > 0) return `${missing} must-have mangler · ${extras} ekstra`;
   return `komplett silhuett · ${extras} ekstra`;

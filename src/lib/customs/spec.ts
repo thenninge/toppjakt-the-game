@@ -26,7 +26,40 @@ export type CustomsMods = {
   buttpad: boolean;
   /** Barrel crown job — small MOA improvement. */
   barrelCrown: boolean;
+  /** Cosmetic custom bolt knob — no performance effect. */
+  customBoltKnob: boolean;
+  /** Hex color for the custom bolt knob (e.g. #ff6600). */
+  boltKnobColor: string;
 };
+
+/** Default knob tint when the service is first bought. */
+export const DEFAULT_BOLT_KNOB_COLOR = "#e02020";
+
+/** Preset swatches in CB Customs color picker. */
+export const BOLT_KNOB_COLOR_PRESETS = [
+  "#e02020",
+  "#ff6600",
+  "#ffcc00",
+  "#22aa44",
+  "#2266cc",
+  "#cc44aa",
+  "#111111",
+  "#c5ccd4",
+  "#ffffff",
+] as const;
+
+export function normalizeBoltKnobColor(raw: unknown): string {
+  if (typeof raw !== "string") return DEFAULT_BOLT_KNOB_COLOR;
+  const s = raw.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+    const r = s[1]!;
+    const g = s[2]!;
+    const b = s[3]!;
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return DEFAULT_BOLT_KNOB_COLOR;
+}
 
 export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   bedding: false,
@@ -41,6 +74,8 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   cheekRiser: false,
   buttpad: false,
   barrelCrown: false,
+  customBoltKnob: false,
+  boltKnobColor: DEFAULT_BOLT_KNOB_COLOR,
 };
 
 export type CustomsServiceId =
@@ -55,7 +90,8 @@ export type CustomsServiceId =
   | "action_trueing"
   | "cheek_riser"
   | "buttpad"
-  | "barrel_crown";
+  | "barrel_crown"
+  | "custom_bolt_knob";
 
 export type CustomsService = {
   id: CustomsServiceId;
@@ -205,6 +241,13 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     priceNok: 3500,
     effect: `Ny crown på pipa — −${BARREL_CROWN_MOA.toFixed(2)} MOA.`,
   },
+  {
+    id: "custom_bolt_knob",
+    name: "Custom bolt knob",
+    priceNok: 1000,
+    effect:
+      "Kosmetikk — velg farge på bolt knob. Ingen effekt på MOA, calm eller rekyl. Vises i Admire current rig.",
+  },
 ];
 
 export function normalizeCustomsMods(raw: unknown): CustomsMods {
@@ -223,6 +266,8 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     cheekRiser: o.cheekRiser === true,
     buttpad: o.buttpad === true,
     barrelCrown: o.barrelCrown === true,
+    customBoltKnob: o.customBoltKnob === true,
+    boltKnobColor: normalizeBoltKnobColor(o.boltKnobColor),
   };
 }
 
@@ -318,6 +363,7 @@ export function serviceOwned(
   if (id === "cheek_riser") return mods.cheekRiser;
   if (id === "buttpad") return mods.buttpad;
   if (id === "barrel_crown") return mods.barrelCrown;
+  if (id === "custom_bolt_knob") return mods.customBoltKnob;
   return false;
 }
 

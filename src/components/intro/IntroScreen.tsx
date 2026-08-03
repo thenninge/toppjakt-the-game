@@ -130,6 +130,7 @@ import {
   customsBeddingMoaDelta,
   customsCalmMultiplier,
   customsTriggerPullScale,
+  normalizeBoltKnobColor,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
 import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isThermalItem } from "@/lib/shop/types";
@@ -811,7 +812,10 @@ export function IntroScreen() {
     });
   }
 
-  function buyCustomsService(id: CustomsServiceId) {
+  function buyCustomsService(
+    id: CustomsServiceId,
+    opts?: { boltKnobColor?: string },
+  ) {
     const svc = CUSTOMS_SERVICES.find((s) => s.id === id);
     if (!svc || svc.comingSoon) return;
     setStats((prev) => {
@@ -854,6 +858,12 @@ export function IntroScreen() {
       } else if (id === "barrel_crown") {
         if (mods.barrelCrown) return prev;
         mods.barrelCrown = true;
+      } else if (id === "custom_bolt_knob") {
+        if (mods.customBoltKnob) return prev;
+        mods.customBoltKnob = true;
+        mods.boltKnobColor = normalizeBoltKnobColor(
+          opts?.boltKnobColor ?? mods.boltKnobColor,
+        );
       } else {
         return prev;
       }
@@ -861,6 +871,19 @@ export function IntroScreen() {
         ...prev,
         balance: prev.balance - svc.priceNok,
         customsMods: mods,
+      };
+    });
+  }
+
+  function setBoltKnobColor(color: string) {
+    setStats((prev) => {
+      if (!prev.customsMods.customBoltKnob) return prev;
+      return {
+        ...prev,
+        customsMods: {
+          ...prev.customsMods,
+          boltKnobColor: normalizeBoltKnobColor(color),
+        },
       };
     });
   }
@@ -1722,6 +1745,7 @@ export function IntroScreen() {
             customBarrels={stats.customBarrels}
             spareBarrels={spareForKit}
             onBuyService={buyCustomsService}
+            onSetBoltKnobColor={setBoltKnobColor}
             onOrderHomeLoads={orderCustomsHomeLoads}
             onReplaceBarrel={replaceCustomsBarrel}
             onInstallCustomBarrel={installCustomsCustomBarrel}
