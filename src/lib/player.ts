@@ -789,7 +789,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Einar / Eirik / Konrad / Dyre / Mona — e.g. "Jørn Nilsson"),
+ * (Jørn / Ivar / Tomas / Einar / Eirik / Konrad / Stahl / Dyre / Mona — e.g. "Jørn Nilsson"),
  * or the name contains «Hoftun» (family VIP).
  */
 export function isVipPlayerName(name: string): boolean {
@@ -808,7 +808,7 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
   if (words.includes("tomas")) return "tomas";
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
-  // Konrad / Hoftun / Eirik share Einar’s Sauer 200 + ZCO 527 + High realism.
+  // Konrad / Hoftun / Eirik / Stahl share Einar’s Sauer 200 + ZCO 527 + High realism.
   // Dyre gets the same stack with Tikka T3x Lite. Mona = Einar + CB work/loads.
   if (words.includes("dyre")) return "dyre";
   if (words.includes("mona")) return "mona";
@@ -816,6 +816,7 @@ export function vipKitProfileIdForName(name: string): KitProfileId | null {
     words.includes("einar") ||
     words.includes("eirik") ||
     words.includes("konrad") ||
+    words.includes("stahl") ||
     normalized.includes("hoftun")
   ) {
     return "einar";

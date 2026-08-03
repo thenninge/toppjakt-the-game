@@ -286,7 +286,7 @@ export function InaturNo({
                 ) : null}
                 {terrain.access === "vip" ? (
                   <span className="shop-row-note">
-                    VIP-package — Ivar / Tomas / Jørn / Einar / Eirik / Konrad / Dyre /
+                    VIP-package — Ivar / Tomas / Jørn / Einar / Eirik / Konrad / Stahl / Dyre /
                     Mona / Hoftun · admin
                   </span>
                 ) : null}
