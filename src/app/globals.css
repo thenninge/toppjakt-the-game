@@ -4354,6 +4354,54 @@ body {
   shape-rendering: geometricPrecision;
 }
 
+.rig-part-hot {
+  cursor: help;
+}
+
+.rig-admire-tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 11rem;
+  max-width: 16rem;
+  padding: 0.45rem 0.55rem 0.5rem;
+  pointer-events: none;
+  color: #1a1208;
+  background: linear-gradient(180deg, #f4e8c8 0%, #e8d4a8 100%);
+  border: 2px solid #2a1c0a;
+  box-shadow:
+    3px 3px 0 rgba(0, 0, 0, 0.35),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.55);
+  font-family: var(--font-display), "Courier New", monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.rig-admire-tip.is-missing {
+  background: linear-gradient(180deg, #f0c8c0 0%, #e0a898 100%);
+  border-color: #6a2018;
+}
+
+.rig-admire-tip-title {
+  margin: 0 0 0.28rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0a1828;
+}
+
+.rig-admire-tip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  color: #2a2418;
+}
+
+.rig-admire-tip-list li {
+  margin: 0;
+}
+
 /* Present parts: metal / wood / cloth palette */
 .rig-detail-ok .rig-fill-metal {
   fill: #c5ccd4;
@@ -8349,6 +8397,189 @@ body {
   .field-impact-card-list li {
     grid-template-columns: 1fr;
     gap: 0.1rem;
+  }
+}
+
+.blackjack-comp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.blackjack-comp--live {
+  gap: 0.65rem;
+}
+
+.blackjack-lobby-range {
+  position: relative;
+  width: 100%;
+  border: 2px solid #6b5238;
+  overflow: hidden;
+  background: #1a1814;
+}
+
+.blackjack-lobby-range-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.blackjack-rack {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.blackjack-yards-label {
+  position: absolute;
+  left: 49.5%;
+  top: 33.5%;
+  transform: translate(-50%, -100%);
+  color: #f5f5f0;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Georgia, serif;
+  font-size: clamp(0.7rem, 2.4vw, 1.15rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 0 2px #000,
+    0 1px 0 #000,
+    1px 0 0 #000,
+    -1px 0 0 #000,
+    0 -1px 0 #000;
+  white-space: nowrap;
+}
+
+.blackjack-plate {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  overflow: visible;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.blackjack-plate-face {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  transform-origin: 50% 0%;
+  background: linear-gradient(160deg, #f7f7f2 0%, #e8e8e0 55%, #d4d4cc 100%);
+  border: 1px solid rgba(40, 40, 36, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.blackjack-plate.is-needed .blackjack-plate-face {
+  outline: 2px solid rgba(212, 160, 23, 0.85);
+  outline-offset: 1px;
+}
+
+.blackjack-plate.is-hit:not(.is-needed) .blackjack-plate-face {
+  opacity: 0.72;
+  filter: saturate(0.85);
+}
+
+.blackjack-plate.is-swinging .blackjack-plate-face {
+  animation: blackjack-plate-swing 0.65s ease-out both;
+}
+
+@keyframes blackjack-plate-swing {
+  0% {
+    transform: rotate(0deg);
+  }
+  18% {
+    transform: rotate(14deg);
+  }
+  40% {
+    transform: rotate(-11deg);
+  }
+  62% {
+    transform: rotate(6deg);
+  }
+  82% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Steel paint flake — jagged star edge, bare metal under white paint. */
+.blackjack-paint-chip {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  box-sizing: border-box;
+  background: radial-gradient(
+    circle at 40% 34%,
+    #6a6a64 0%,
+    #3a3a36 28%,
+    #1c1c1a 58%,
+    #080808 100%
+  );
+  clip-path: polygon(
+    50% 0%,
+    57% 14%,
+    74% 4%,
+    69% 20%,
+    90% 16%,
+    78% 32%,
+    100% 40%,
+    80% 46%,
+    92% 64%,
+    70% 58%,
+    74% 80%,
+    56% 68%,
+    50% 100%,
+    44% 68%,
+    26% 80%,
+    30% 58%,
+    8% 64%,
+    20% 46%,
+    0% 40%,
+    22% 32%,
+    10% 16%,
+    31% 20%,
+    26% 4%,
+    43% 14%
+  );
+  filter: drop-shadow(0 0 0.6px rgba(248, 248, 240, 0.95))
+    drop-shadow(0 0 1.2px rgba(200, 200, 190, 0.55));
+}
+
+.blackjack-comp .scope-viewport {
+  touch-action: none;
+}
+
+.blackjack-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: #fff8e0;
+  font-size: clamp(1.4rem, 5vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+  animation: field-impact-flash-in 0.9s ease-out both;
+}
+
+.blackjack-hold-slip {
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .blackjack-yards-label {
+    font-size: 0.75rem;
   }
 }
 

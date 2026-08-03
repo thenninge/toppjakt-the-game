@@ -1,6 +1,13 @@
 "use client";
 
 import {
+  useCallback,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
+import {
   isBipodItem,
   isMiscItem,
   isMountItem,
@@ -10,14 +17,23 @@ import {
   isSuppressorItem,
   type ShopItem,
 } from "@/lib/shop/types";
-import { resolveWeightGrams } from "@/lib/shop/weights";
+import { formatWeightKg, resolveWeightGrams } from "@/lib/shop/weights";
 import { isSuppressorCoverMisc } from "@/lib/misc/spec";
 import {
+  isShotCamItemId,
   resolveShotCamKind,
   shotCamLabel,
   type ShotCamKind,
 } from "@/lib/hunt/shoot";
-import type { CustomsMods } from "@/lib/customs/spec";
+import {
+  CUSTOMS_SERVICES,
+  type CustomsMods,
+  type CustomsService,
+} from "@/lib/customs/spec";
+import {
+  formatTubeDiameterMm,
+  mountTierLabelNb,
+} from "@/lib/mount/spec";
 
 export type CurrentRigAdmireProps = {
   kitItems: ShopItem[];
@@ -26,16 +42,49 @@ export type CurrentRigAdmireProps = {
 
 type PartState = "present" | "missing-must";
 
+type RigTipContent = {
+  title: string;
+  lines: string[];
+  missing?: boolean;
+};
+
+type RigHoverTip = RigTipContent & {
+  x: number;
+  y: number;
+};
+
 /**
  * Detailed side-view of the packed weapon rig (Amiga window chrome).
  * Must-haves (rifle / scope / mount) render red when missing.
  * Optionals (suppressor + wrap, bipod, stock, bagrider, snow camo, bolt knob,
  * triggercam / scopemate) render when present.
+ * Hover a part for name, weight, price and specs.
  */
 export function CurrentRigAdmire({
   kitItems,
   customsMods,
 }: CurrentRigAdmireProps) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [hoverTip, setHoverTip] = useState<RigHoverTip | null>(null);
+
+  const showTip = useCallback(
+    (e: ReactMouseEvent, content: RigTipContent) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const r = stage.getBoundingClientRect();
+      const pad = 10;
+      const tipW = 220;
+      const tipH = 120;
+      let x = e.clientX - r.left + 14;
+      let y = e.clientY - r.top + 14;
+      if (x + tipW > r.width - pad) x = Math.max(pad, e.clientX - r.left - tipW - 8);
+      if (y + tipH > r.height - pad) y = Math.max(pad, e.clientY - r.top - tipH - 8);
+      setHoverTip({ ...content, x, y });
+    },
+    [],
+  );
+  const clearTip = useCallback(() => setHoverTip(null), []);
+
   const rifle = kitItems.find(isRifleItem) ?? null;
   const scope = kitItems.find(isScopeItem) ?? null;
   const mount = kitItems.find(isMountItem) ?? null;
@@ -45,12 +94,56 @@ export function CurrentRigAdmire({
   const wrap =
     kitItems.find((i) => isMiscItem(i) && isSuppressorCoverMisc(i.misc)) ??
     null;
+  const shotCamItem =
+    kitItems.find((i) => isMiscItem(i) && isShotCamItemId(i.id)) ?? null;
   const shotCamKind = resolveShotCamKind(kitItems.map((i) => i.id));
   const bagrider = customsMods.bagrider;
   const snowCamo = customsMods.customCamo;
   const customKnob = customsMods.customBoltKnob;
   const knobColor = customsMods.boltKnobColor;
   const knobShade = darkenHex(knobColor, 0.55);
+
+  const bagriderSvc = customsService("bagrider");
+  const camoSvc = customsService("custom_camo");
+  const knobSvc = customsService("custom_bolt_knob");
+
+  const rifleTip: RigTipContent = rifle
+    ? tipFromShopItem(rifle, snowCamo ? [`Snøkamo (CB) — ${camoSvc?.effect ?? "+15 % sneak"}`] : undefined)
+    : missingTip("Våpen", "Must-have — pakk rifle i kit.");
+  const scopeTip: RigTipContent = scope
+    ? tipFromShopItem(scope)
+    : missingTip("Kikkert", "Must-have — pakk scope i kit.");
+  const mountTip: RigTipContent = mount
+    ? tipFromShopItem(mount)
+    : missingTip("Montasje", "Must-have — må matche kikkertens rørdiameter.");
+  const bipodTip = bipod ? tipFromShopItem(bipod) : null;
+  const stockTip = stock
+    ? tipFromShopItem(
+        stock,
+        snowCamo ? [`Snøkamo (CB) på stokk/forend`] : undefined,
+      )
+    : null;
+  const suppressorTip = suppressor ? tipFromShopItem(suppressor) : null;
+  const wrapTip = wrap ? tipFromShopItem(wrap) : null;
+  const shotCamTip = shotCamItem
+    ? tipFromShopItem(shotCamItem)
+    : shotCamKind
+      ? { title: shotCamLabel(shotCamKind), lines: ["Kamera på okular"] }
+      : null;
+  const bagriderTip = bagrider && bagriderSvc ? tipFromCustoms(bagriderSvc) : null;
+  const knobTip = customKnob
+    ? tipFromCustoms(knobSvc ?? {
+        id: "custom_bolt_knob",
+        name: "Custom bolt knob",
+        priceNok: 1000,
+        effect: "Kosmetikk — ingen effekt på MOA/calm/rekyl.",
+      }, [`Farge ${knobColor}`])
+    : rifle
+      ? {
+          title: "Bolt knob (fabrikk)",
+          lines: ["Standard knott på våpenet"],
+        }
+      : missingTip("Bolt knob", "Tegnes med våpenet når rifle er i kit.");
 
   const rifleState: PartState = rifle ? "present" : "missing-must";
   const scopeState: PartState = scope ? "present" : "missing-must";
@@ -86,14 +179,14 @@ export function CurrentRigAdmire({
           <span className="rig-admire-titlebar-text">CURRENT RIG · 2.2</span>
           <span className="rig-admire-gadget rig-admire-gadget-depth" />
         </div>
-        <div className="rig-admire-stage">
+        <div className="rig-admire-stage" ref={stageRef}>
           <svg
             className="rig-admire-svg"
             viewBox="0 0 640 200"
             width="100%"
             height="100%"
             role="img"
-            aria-label="Detaljert silhuett av current rig"
+            aria-label="Detaljert silhuett av current rig — hover del for detaljer"
           >
             <defs>
               <linearGradient id="rigFloor" x1="0" y1="0" x2="0" y2="1">
@@ -170,8 +263,13 @@ export function CurrentRigAdmire({
 
             <g filter="url(#rigSoft)" transform="translate(640 0) scale(-1 1)">
               {/* --- Bagrider (optional, under butt) --- */}
-              {bagrider ? (
-                <g className="rig-detail-ok">
+              {bagrider && bagriderTip ? (
+                <RigHotspot
+                  tip={bagriderTip}
+                  onShow={showTip}
+                  onClear={clearTip}
+                  className="rig-detail-ok"
+                >
                   <ellipse
                     className="rig-fill-cloth"
                     cx="520"
@@ -190,12 +288,17 @@ export function CurrentRigAdmire({
                     className="rig-fill-cloth-light"
                     d="M492 142c8-6 48-6 56 0c-6 4-18 6-28 6s-22-2-28-6z"
                   />
-                </g>
+                </RigHotspot>
               ) : null}
 
               {/* --- Bipod (optional) --- */}
-              {bipod ? (
-                <g className="rig-detail-ok">
+              {bipod && bipodTip ? (
+                <RigHotspot
+                  tip={bipodTip}
+                  onShow={showTip}
+                  onClear={clearTip}
+                  className="rig-detail-ok"
+                >
                   <rect
                     className="rig-fill-metal"
                     x="218"
@@ -227,11 +330,16 @@ export function CurrentRigAdmire({
                     ry="3"
                   />
                   <circle className="rig-fill-metal-light" cx="227" cy="110" r="2.5" />
-                </g>
+                </RigHotspot>
               ) : null}
 
-              {/* --- Rifle --- */}
-              <g className={rifleTone}>
+              {/* --- Rifle (body; stock nested when aftermarket) --- */}
+              <RigHotspot
+                tip={rifleTip}
+                onShow={showTip}
+                onClear={clearTip}
+                className={rifleTone}
+              >
                 {/* Barrel taper */}
                 <path
                   className="rig-fill-metal"
@@ -373,8 +481,13 @@ export function CurrentRigAdmire({
                 />
 
                 {/* Stock */}
-                {stock ? (
-                  <>
+                {stock && stockTip ? (
+                  <RigHotspot
+                    tip={stockTip}
+                    onShow={showTip}
+                    onClear={clearTip}
+                    stopPropagation
+                  >
                     {/* Chassis / aftermarket */}
                     <path
                       className="rig-fill-wood"
@@ -406,7 +519,7 @@ export function CurrentRigAdmire({
                       className="rig-fill-cloth-dark"
                       d="M520 96h4v28h-4z"
                     />
-                  </>
+                  </RigHotspot>
                 ) : (
                   <>
                     {/* Factory hunting stock */}
@@ -430,10 +543,13 @@ export function CurrentRigAdmire({
                     />
                   </>
                 )}
-              </g>
+              </RigHotspot>
 
               {/* --- Mount rings --- */}
-              <g
+              <RigHotspot
+                tip={mountTip}
+                onShow={showTip}
+                onClear={clearTip}
                 className={
                   mountState === "missing-must"
                     ? "rig-detail-miss"
@@ -487,10 +603,13 @@ export function CurrentRigAdmire({
                   height="3"
                   rx="0.5"
                 />
-              </g>
+              </RigHotspot>
 
               {/* --- Scope --- */}
-              <g
+              <RigHotspot
+                tip={scopeTip}
+                onShow={showTip}
+                onClear={clearTip}
                 className={
                   scopeState === "missing-must"
                     ? "rig-detail-miss"
@@ -607,17 +726,25 @@ export function CurrentRigAdmire({
                   height="20"
                   rx="1"
                 />
-              </g>
+              </RigHotspot>
 
-              {shotCamKind ? (
-                <ShotCamOnScope kind={shotCamKind} />
+              {shotCamKind && shotCamTip ? (
+                <RigHotspot
+                  tip={shotCamTip}
+                  onShow={showTip}
+                  onClear={clearTip}
+                >
+                  <ShotCamOnScope kind={shotCamKind} />
+                </RigHotspot>
               ) : null}
 
               {/* Closed bolt: hevarm + knob in nedre posisjon (above trigger, clear of scope) */}
               {rifleState === "present" ? (
-                <g
+                <RigHotspot
+                  tip={knobTip}
+                  onShow={showTip}
+                  onClear={clearTip}
                   className="rig-detail-ok"
-                  aria-label={customKnob ? `Bolt knob ${knobColor}` : "Bolt knob"}
                 >
                   <path
                     className="rig-fill-metal"
@@ -665,9 +792,14 @@ export function CurrentRigAdmire({
                       />
                     </>
                   )}
-                </g>
+                </RigHotspot>
               ) : rifleState === "missing-must" ? (
-                <g className="rig-detail-miss" aria-label="Bolt knob">
+                <RigHotspot
+                  tip={knobTip}
+                  onShow={showTip}
+                  onClear={clearTip}
+                  className="rig-detail-miss"
+                >
                   <path
                     className="rig-fill-metal"
                     d="M384 88l4 2 6 18-5 2-7-18z"
@@ -684,12 +816,15 @@ export function CurrentRigAdmire({
                     cy="114"
                     r="3.2"
                   />
-                </g>
+                </RigHotspot>
               ) : null}
 
               {/* --- Suppressor --- */}
-              {suppressor ? (
-                <g
+              {suppressor && suppressorTip ? (
+                <RigHotspot
+                  tip={suppressorTip}
+                  onShow={showTip}
+                  onClear={clearTip}
                   className="rig-detail-ok"
                   transform={`translate(126 96) scale(${suppressorScale}) translate(-126 -96)`}
                 >
@@ -735,8 +870,13 @@ export function CurrentRigAdmire({
                         height="22"
                       />
                     </>
-                  ) : (
-                    <g aria-label="Lyddemper-wrap">
+                  ) : wrap && wrapTip ? (
+                    <RigHotspot
+                      tip={wrapTip}
+                      onShow={showTip}
+                      onClear={clearTip}
+                      stopPropagation
+                    >
                       <path
                         d="M54 83h64c4 0 7 2 7 6v16c0 4-3 6-7 6H54c-4 0-7-2-7-6V89c0-4 3-6 7-6z"
                         fill="url(#rigWrapWeave)"
@@ -772,8 +912,8 @@ export function CurrentRigAdmire({
                           fill="none"
                         />
                       ))}
-                    </g>
-                  )}
+                    </RigHotspot>
+                  ) : null}
                   {/* End cap */}
                   <path
                     className="rig-fill-metal-dark"
@@ -789,24 +929,42 @@ export function CurrentRigAdmire({
                     height="14"
                     rx="1"
                   />
-                </g>
+                </RigHotspot>
               ) : null}
             </g>
           </svg>
-          <div className="rig-admire-scanlines" />
+          <div className="rig-admire-scanlines" aria-hidden />
+          {hoverTip ? (
+            <div
+              className={
+                hoverTip.missing
+                  ? "rig-admire-tip is-missing"
+                  : "rig-admire-tip"
+              }
+              style={{ left: hoverTip.x, top: hoverTip.y }}
+              role="tooltip"
+            >
+              <p className="rig-admire-tip-title">{hoverTip.title}</p>
+              <ul className="rig-admire-tip-list">
+                {hoverTip.lines.map((line, i) => (
+                  <li key={`${i}-${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       </div>
       <p className="shop-row-note rig-admire-legend">
         {missingMust.length > 0 ? (
           <>
             Rødt = must-have mangler (
-            {missingMust.join(", ")}). Valgfritt tegnes når det er med
-            (lyddemper, wrap, tofot, stokk, bagrider, snøkamo, bolt knob,
-            triggercam/scopemate).
+            {missingMust.join(", ")}). Hover en del for navn, vekt, pris og
+            specs. Valgfritt tegnes når det er med (lyddemper, wrap, tofot,
+            stokk, bagrider, snøkamo, bolt knob, triggercam/scopemate).
           </>
         ) : (
           <>
-            Must-have på plass.
+            Must-have på plass. Hover en del for detaljer.
             {snowCamo ? " Snøkamo (CB) på stokk/forend." : ""}
             {wrap && suppressor ? " Wrap rundt lyddemper." : ""}
             {shotCamKind ? ` ${shotCamLabel(shotCamKind)} på okular.` : ""}
@@ -818,6 +976,147 @@ export function CurrentRigAdmire({
       </p>
     </div>
   );
+}
+
+function RigHotspot({
+  tip,
+  onShow,
+  onClear,
+  className,
+  transform,
+  stopPropagation = false,
+  children,
+}: {
+  tip: RigTipContent;
+  onShow: (e: ReactMouseEvent, tip: RigTipContent) => void;
+  onClear: () => void;
+  className?: string;
+  transform?: string;
+  stopPropagation?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <g
+      className={[className, "rig-part-hot"].filter(Boolean).join(" ")}
+      transform={transform}
+      onMouseEnter={(e) => {
+        if (stopPropagation) e.stopPropagation();
+        onShow(e, tip);
+      }}
+      onMouseMove={(e) => {
+        if (stopPropagation) e.stopPropagation();
+        onShow(e, tip);
+      }}
+      onMouseLeave={(e) => {
+        if (stopPropagation) e.stopPropagation();
+        onClear();
+      }}
+    >
+      {children}
+    </g>
+  );
+}
+
+function formatPriceNok(nok: number): string {
+  return `${Math.max(0, Math.round(nok)).toLocaleString("nb-NO")} kr`;
+}
+
+function customsService(id: string): CustomsService | undefined {
+  return CUSTOMS_SERVICES.find((s) => s.id === id);
+}
+
+function missingTip(title: string, detail: string): RigTipContent {
+  return { title: `Mangler: ${title}`, lines: [detail], missing: true };
+}
+
+function tipFromCustoms(
+  svc: CustomsService,
+  extra?: string[],
+): RigTipContent {
+  return {
+    title: svc.name,
+    lines: [
+      `Pris ${formatPriceNok(svc.priceNok)}`,
+      "Customs (CB)",
+      svc.effect,
+      ...(extra ?? []),
+    ],
+  };
+}
+
+function tipFromShopItem(
+  item: ShopItem,
+  extra?: string[],
+): RigTipContent {
+  const grams = resolveWeightGrams(
+    item.id,
+    item.category,
+    item.weightGrams,
+  );
+  const lines = [
+    `Pris ${formatPriceNok(item.priceNok)}`,
+    `Vekt ${formatWeightKg(grams)}`,
+    ...shopSpecLines(item),
+    ...(item.note ? [item.note] : []),
+    ...(extra ?? []),
+  ];
+  const title = item.caliber
+    ? `${item.brand} ${item.name} · ${item.caliber}`
+    : `${item.brand} ${item.name}`;
+  return { title, lines };
+}
+
+function shopSpecLines(item: ShopItem): string[] {
+  if (isRifleItem(item)) {
+    return [
+      `Best accuracy ~${item.rifle.averageBestAccuracyMoa.toFixed(2)} MOA`,
+    ];
+  }
+  if (isScopeItem(item)) {
+    const s = item.scope;
+    const lines = [
+      `${s.minZoom}–${s.maxZoom}× · ${s.clickUnit}`,
+      `Rør ${formatTubeDiameterMm(s.tubeDiameterMm)}`,
+    ];
+    if (s.focalPlane) lines.push(s.focalPlane);
+    if (s.reticleId) lines.push(`Retikkel ${s.reticleId}`);
+    return lines;
+  }
+  if (isMountItem(item)) {
+    return [
+      `Rør ${formatTubeDiameterMm(item.mount.tubeDiameterMm)}`,
+      mountTierLabelNb(item.mount.tier),
+    ];
+  }
+  if (isSuppressorItem(item)) {
+    const db = item.suppressor.soundReductionDb;
+    return [`Lydemping ${db} dB`];
+  }
+  if (isBipodItem(item)) {
+    const b = item.bipod;
+    return [
+      `Calm ${b.weaponCalm}/10 · Deploy ${b.deploySpeed}/10 · Tracking ${b.tracking}/10`,
+    ];
+  }
+  if (isStockItem(item)) {
+    const d = item.stock.moaDelta;
+    const sign = d > 0 ? "+" : "";
+    return [`MOA ${sign}${d.toFixed(2)}`];
+  }
+  if (isMiscItem(item)) {
+    const lines: string[] = [];
+    if (item.misc.enduranceGrams > 0) {
+      lines.push(`Endurance ${item.misc.enduranceGrams} g-ekv`);
+    }
+    if (isSuppressorCoverMisc(item.misc)) {
+      lines.push("Wrap til lyddemper");
+    }
+    if (isShotCamItemId(item.id)) {
+      lines.push("Kamera på okular");
+    }
+    return lines;
+  }
+  return [];
 }
 
 /** Phone-cam clip on the ocular — Triggercam sleeker, ScopeMate chunkier. */

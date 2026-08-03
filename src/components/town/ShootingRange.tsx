@@ -136,6 +136,7 @@ import { ShotLogView } from "@/components/town/ShotLogView";
 import { DopeCardView } from "@/components/town/DopeCardView";
 import { MoaCompetitionView } from "@/components/town/MoaCompetitionView";
 import { FieldImpactCompetitionView } from "@/components/town/FieldImpactCompetitionView";
+import { BlackjackCompetitionView } from "@/components/town/BlackjackCompetitionView";
 import { ScopeReticle } from "@/components/range/ScopeReticle";
 import { ScopeOpticFit } from "@/components/range/ScopeOpticFit";
 import { ScopeFocusZoom } from "@/components/range/ScopeFocusZoom";
@@ -380,8 +381,9 @@ export function ShootingRange({
   >("zeroing");
   const laneRef = useRef(lane);
   laneRef.current = lane;
-  const [compId, setCompId] = useState<"lobby" | "moa-std" | "field-impact">(
-    "lobby",
+  const [compId, setCompId] = useState<
+    "lobby" | "moa-std" | "field-impact" | "blackjack"
+  >(    "lobby",
   );
   const rifle = useMemo(
     () => kitItems.find(isRifleItem) ?? null,
@@ -2242,6 +2244,43 @@ export function ShootingRange({
       );
     }
 
+    if (compId === "blackjack") {
+      return (
+        <div className="shooting-range">
+          <LocationNav
+            onBackToTown={onLeave}
+            hint="BlackJack Challenge — KYL-rack ~500 yd, 2 min"
+          />
+          {laneTabs}
+          <BlackjackCompetitionView
+            balance={balance}
+            kitItems={kitItems}
+            inventory={inventory}
+            ammoAffinities={ammoAffinities}
+            zeroingProfiles={zeroingProfiles}
+            dopeCard={dopeCard}
+            rifleRoundCounts={rifleRoundCounts}
+            customBarrels={customBarrels}
+            kestrelProfiles={kestrelProfiles}
+            weather={weather}
+            customsMoaDelta={customsMoaDelta}
+            customsCalmMult={customsCalmMult}
+            customsTriggerPullScale={customsTriggerPullScale}
+            onAffinitiesChange={onAffinitiesChange}
+            onConsumeAmmo={onConsumeAmmo}
+            onEnsureZeroing={onEnsureZeroing}
+            onPayEntryFee={onPayCompetitionFee}
+            onAwardPayout={onAwardCompetitionPayout}
+            onBack={() => setCompId("lobby")}
+            realism={realism}
+            scopeAimControl={scopeAimControl}
+            scopeZoomOnFocus={scopeZoomOnFocus}
+            focusTriggerBarLength={focusTriggerBarLength}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="shooting-range">
         <LocationNav
@@ -2286,6 +2325,22 @@ export function ShootingRange({
               className="intro-button"
               disabled={!ready || !hasAmmo}
               onClick={() => setCompId("field-impact")}
+            >
+              Entre
+            </button>
+          </li>
+          <li className="moa-comp-event">
+            <div className="moa-comp-event-main">
+              <span className="moa-comp-event-title">BlackJack Challenge</span>
+              <span className="moa-comp-event-meta">
+                ~500 yd · KYL 12″→2″ · 2 min · BlackJack 21 · charity 1000 kr
+              </span>
+            </div>
+            <button
+              type="button"
+              className="intro-button"
+              disabled={!ready || !hasAmmo}
+              onClick={() => setCompId("blackjack")}
             >
               Entre
             </button>
