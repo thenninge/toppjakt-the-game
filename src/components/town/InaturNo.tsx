@@ -29,7 +29,7 @@ type InaturNoProps = {
   selectedTerrainId: string | null;
   jaktkort: JaktkortBook;
   unlockedTerrainIds: string[];
-  /** VIP name package (ivar / tomas / jørn / einar / konrad / dyre / mona / hoftun). */
+  /** VIP name package (ivar / tomas / jørn / einar / konrad / stahl / dyre / mona / hoftun). */
   isVip?: boolean;
   /** Admin PIN session — same VIP Inatur listings. */
   isAdmin?: boolean;

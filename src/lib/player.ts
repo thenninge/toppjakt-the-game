@@ -368,6 +368,7 @@ export const VIP_NAME_TOKENS = [
   "einar",
   "eirik",
   "konrad",
+  "stahl",
   "dyre",
   "mona",
   "hoftun",
@@ -558,7 +559,7 @@ export const KIT_PROFILE_JORN: KitProfile = {
 };
 
 /**
- * Einar / Eirik / Konrad / Hoftun — Sauer 200 STR + ZCO 527 (ingen
+ * Einar / Eirik / Konrad / Stahl / Hoftun — Sauer 200 STR + ZCO 527 (ingen
  * Triggercam-zoom-lås) + Recknagel 36 + Svemko Hunter + Spartan Javelin +
  * Lynx + Sig KILO3000 + support-kit. VIP-start: 100 000 kr.
  */
