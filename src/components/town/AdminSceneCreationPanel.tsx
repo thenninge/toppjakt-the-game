@@ -622,9 +622,14 @@ export function AdminSceneCreationPanel({ onLeave }: AdminSceneCreationPanelProp
   const thermalLrfSpec =
     thermalItem?.thermal.hasIntegratedLrf
       ? {
-          rangeErrorPercent: thermalItem.thermal.rangeErrorPercent ?? 1,
           id: thermalItem.id,
           brand: thermalItem.brand,
+          rangeErrorPercent: thermalItem.thermal.rangeErrorPercent ?? 1,
+          hasOnboardBallistics:
+            thermalItem.thermal.integratedLrfHasBallistics === false
+              ? false
+              : (thermalItem.thermal.integratedLrfHasBallistics ??
+                !!thermalItem.thermal.isThermalBinocular),
         }
       : null;
   const binoZoom = binoItem

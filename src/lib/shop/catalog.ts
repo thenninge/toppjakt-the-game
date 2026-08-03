@@ -288,13 +288,15 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Hikmicro",
     name: "Condor CQ35 LRF",
     priceNok: 29900,
-    note: "Termisk kikkert m/integrert avstandsmåler. 384×288 sensor.",
+    note:
+      "Termisk kikkert m/integrert LRF — viser kun avstand (ingen drop/klikk). 384×288 sensor.",
     thermal: {
       pixelFactor: 3,
       magnification: 3.5,
       timeFactor: 15,
       hasIntegratedLrf: true,
       rangeErrorPercent: 1.5,
+      integratedLrfHasBallistics: false,
     },
   },
   {
@@ -315,6 +317,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
       timeFactor: 12,
       hasIntegratedLrf: true,
       rangeErrorPercent: 1.2,
+      integratedLrfHasBallistics: true,
       isThermalBinocular: true,
       hasOutlineMode: true,
       hasFusionMode: true,

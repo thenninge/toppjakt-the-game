@@ -333,7 +333,9 @@ export function scopeFocusViewportScale(
 
 /**
  * Effective view scale boost while holding F.
- * 1 when disabled, not focusing, or multiplier is 1×.
+ * Player Settings → Scope zoom on focus is the master for range + hunt:
+ * off = never; on = zoom while F (catalog multiplier / default).
+ * Admin scope lab passes its own enabled flag as {@link playerEnabled}.
  */
 export function scopeFocusZoomBoost(
   scope:
@@ -341,14 +343,16 @@ export function scopeFocusZoomBoost(
     | null
     | undefined,
   focusHeld: boolean,
+  /** Player Settings (or Admin lab toggle). Default true. */
+  playerEnabled = true,
 ): number {
-  if (!focusHeld || !scopeFocusZoomEnabled(scope)) return 1;
+  if (!playerEnabled || !focusHeld) return 1;
   return scopeFocusZoomMultiplier(scope);
 }
 
 /**
  * Glass diameter CSS scale while focus immersion is active.
- * 1 when disabled / not focusing.
+ * Same master switch as {@link scopeFocusZoomBoost} (range + hunt).
  */
 export function scopeFocusViewportBoost(
   scope:
@@ -359,8 +363,10 @@ export function scopeFocusViewportBoost(
     | null
     | undefined,
   focusHeld: boolean,
+  /** Player Settings (or Admin lab toggle). Default true. */
+  playerEnabled = true,
 ): number {
-  if (!focusHeld || !scopeFocusZoomEnabled(scope)) return 1;
+  if (!playerEnabled || !focusHeld) return 1;
   return scopeFocusViewportScale(scope);
 }
 
@@ -501,6 +507,11 @@ export type ThermalSpec = {
   hasIntegratedLrf?: boolean;
   /** Symmetric LRF error band when {@link hasIntegratedLrf}. */
   rangeErrorPercent?: number;
+  /**
+   * Integrated LRF shows elev/wind holds (Habrok). Omit/false = range only
+   * (Condor CQ35 LRF) — even with Kestrel in kit.
+   */
+  integratedLrfHasBallistics?: boolean;
   /**
    * Thermal binocular (Habrok): replaces separate binos + thermal in kit.
    * Variable zoom + outline / fusion display modes.

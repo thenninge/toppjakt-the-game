@@ -194,6 +194,12 @@ import {
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
+  DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  DEFAULT_ZEN_MODE,
+  type FocusTriggerBarLength,
+} from "@/lib/range/playerScopeSettings";
+import {
   ENCOUNTER_NERVE,
   ENVIRO_TIME_FACTOR,
   tickEncounterNerve,
@@ -361,6 +367,12 @@ type HuntShootViewProps = {
   realism?: GameRealism;
   /** Move target under reticle, or reticle over a fixed target. */
   scopeAimControl?: ScopeAimControl;
+  /** Player Settings: focus immersion zoom. */
+  scopeZoomOnFocus?: boolean;
+  /** Player Settings: short vs long focus/trigger bars. */
+  focusTriggerBarLength?: FocusTriggerBarLength;
+  /** Player Settings: Zen — freeze still / app wait nerve. */
+  zenMode?: boolean;
 };
 
 type AimKeys = {
@@ -508,6 +520,9 @@ export function HuntShootView({
   onSideDrumsChange,
   realism = "medium",
   scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
+  scopeZoomOnFocus = DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  focusTriggerBarLength = DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  zenMode = DEFAULT_ZEN_MODE,
 }: HuntShootViewProps) {
   const [nerveUi, setNerveUi] = useState(() =>
     Math.min(ENCOUNTER_NERVE.nerveCap, Math.max(0, birdNerve)),
@@ -747,6 +762,7 @@ export function HuntShootView({
         moveHoldSec: 0,
         camoSneakPct: camoSneakPctRef.current,
         nerveRateMult: realismNerveRateMult(realism),
+        zenMode,
       });
       birdNerveRef.current = tick.nerve;
       setNerveUi(tick.nerve);
@@ -756,7 +772,7 @@ export function HuntShootView({
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [fired, gunPrepOnly, realism]);
+  }, [fired, gunPrepOnly, realism, zenMode]);
 
   function leaveToAware() {
     if (firedRef.current) return;
@@ -2075,8 +2091,16 @@ export function HuntShootView({
   }
 
   const birdWidthPct = Math.max(0.05, landscapeBirdWidthPct ?? 2);
-  const focusZoomBoost = scopeFocusZoomBoost(scope.scope, focusHeld);
-  const focusViewportBoost = scopeFocusViewportBoost(scope.scope, focusHeld);
+  const focusZoomBoost = scopeFocusZoomBoost(
+    scope.scope,
+    focusHeld,
+    scopeZoomOnFocus,
+  );
+  const focusViewportBoost = scopeFocusViewportBoost(
+    scope.scope,
+    focusHeld,
+    scopeZoomOnFocus,
+  );
   const targetScale = birdScopeImageScale(
       zoom,
       scope.scope,
@@ -2425,9 +2449,11 @@ export function HuntShootView({
             threshold={ENCOUNTER_NERVE.flushThreshold}
           />
         ) : null}
+        <ScopeOpticFit>
         <MaybeScopeTube
           enabled={tubeMode}
           railsOnly={railsOnly && !gunPrepOnly}
+          barLength={focusTriggerBarLength}
           scopeId={scope.id}
           elevation={
             <ScopeElevationDial
@@ -2474,7 +2500,19 @@ export function HuntShootView({
           }
           focusRail={
             (tubeMode || railsOnly) && !gunPrepOnly && features.focusHold ? (
-              <div className="range-side-rail range-side-rail--focus">
+              <button
+                type="button"
+                className="range-side-rail range-side-rail--focus is-hold-control"
+                disabled={fired}
+                aria-label="Hold for fokus (F)"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  beginFocus(performance.now());
+                }}
+                onPointerUp={endFocus}
+                onPointerCancel={endFocus}
+              >
                 <span
                   className={
                     focusUi.phase === "focused"
@@ -2500,12 +2538,32 @@ export function HuntShootView({
                 >
                   <div ref={focusFillRef} className="range-focus-fill" />
                 </div>
-              </div>
+              </button>
             ) : null
           }
           triggerRail={
             (tubeMode || railsOnly) && !gunPrepOnly && features.triggerTiming ? (
-              <div className="range-side-rail range-side-rail--trigger">
+              <button
+                type="button"
+                className="range-side-rail range-side-rail--trigger is-hold-control"
+                disabled={fired}
+                aria-label="Hold for avtrekk (Space)"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  beginTrigger(performance.now());
+                }}
+                onPointerUp={() => {
+                  if (triggerRef.current.held) {
+                    releaseTrigger(performance.now());
+                  }
+                }}
+                onPointerCancel={() => {
+                  if (triggerRef.current.held) {
+                    abortTrigger("Avtrekk avbrutt.");
+                  }
+                }}
+              >
                 <span
                   className={
                     triggerUi.pending
@@ -2563,11 +2621,10 @@ export function HuntShootView({
                     )
                   ) : null}
                 </div>
-              </div>
+              </button>
             ) : null
           }
         >
-          <ScopeOpticFit>
             <div className="scope-stage-optic-row">
               <div
                 className={[
@@ -2781,8 +2838,8 @@ export function HuntShootView({
           </div>
 
             </div>
-          </ScopeOpticFit>
         </MaybeScopeTube>
+        </ScopeOpticFit>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button

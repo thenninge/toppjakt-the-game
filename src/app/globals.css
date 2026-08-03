@@ -1638,6 +1638,71 @@ body {
   width: max-content;
 }
 
+/**
+ * Long focus/trigger bars (Settings): classic tall bars beside the glass
+ * instead of short rails above para/wind.
+ */
+.scope-tube-layout[data-bar-length="long"] .scope-tube-rail {
+  height: var(--admin-tube-turret-span, var(--scope-tube-turret-span, 11.5rem));
+  max-height: none;
+  align-self: stretch;
+  margin-bottom: 0;
+}
+
+.scope-tube-layout[data-rails-only="true"][data-bar-length="long"] {
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas: "focus optic trigger";
+  align-items: stretch;
+}
+
+.scope-tube-layout[data-rails-only="true"][data-bar-length="long"] .scope-tube-rail {
+  height: auto;
+  max-height: none;
+  align-self: stretch;
+  margin-bottom: 0;
+}
+
+.scope-tube-layout[data-rails-only="true"][data-bar-length="long"] .scope-tube-rail--focus {
+  justify-self: end;
+  align-self: stretch;
+}
+
+.scope-tube-layout[data-rails-only="true"][data-bar-length="long"] .scope-tube-rail--trigger {
+  justify-self: start;
+  align-self: stretch;
+}
+
+/* Hold Focus / Trigger via the bar itself (mobile + mouse). */
+.range-side-rail.is-hold-control {
+  display: flex;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.range-side-rail.is-hold-control:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.range-side-rail.is-hold-control:focus-visible {
+  outline: 2px solid var(--accent-gold);
+  outline-offset: 2px;
+}
+
+.range-side-rail.is-hold-control .range-focus-bar,
+.range-side-rail.is-hold-control .range-trigger-bar {
+  width: 0.7rem;
+}
+
 .scope-tube-elev,
 .admin-scope-tube-elev {
   grid-area: elev;
@@ -9071,9 +9136,21 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 0.55rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
-/* Medium rails-only needs full stage width so 1fr side columns center the glass. */
+/* Inside ScopeOpticFit: size to content so the fit can scale on narrow screens. */
+.scope-stage > .scope-optic-fit .scope-tube-layout[data-rails-only="true"] {
+  width: max-content;
+  max-width: none;
+  align-self: center;
+  margin-inline: auto;
+}
+
+/* Legacy: tube as direct child of stage (no outer fit). */
 .scope-stage > .scope-tube-layout[data-rails-only="true"] {
   align-self: stretch;
   width: 100%;
@@ -9082,7 +9159,7 @@ body {
 /**
  * One viewport truth: glass diameter = --scope-viewport-ref-px (448).
  * Premium FOV expands the circle by --scope-fov-premium (1.15).
- * Narrow layouts scale the whole optic row via .scope-optic-fit (uniform).
+ * Narrow layouts scale the whole optic / tube via .scope-optic-fit (uniform).
  */
 :root {
   --scope-viewport-ref-px: 448;
@@ -9093,17 +9170,33 @@ body {
 .scope-optic-fit {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   display: flex;
   justify-content: center;
-  /* Height set inline when scaled so layout collapses with the glass. */
+  align-items: flex-start;
+  overflow: visible;
+  box-sizing: border-box;
+}
+
+/** Layout box sized to the *visual* scaled optic — keeps stage centered. */
+.scope-optic-fit-scale {
+  flex: 0 0 auto;
+  max-width: 100%;
+  position: relative;
   overflow: visible;
 }
 
 .scope-optic-fit-inner {
   width: max-content;
   max-width: none;
-  transform-origin: top center;
+  transform-origin: top left;
   will-change: transform;
+}
+
+@media (max-width: 720px) {
+  .scope-stage {
+    overflow-x: clip;
+  }
 }
 
 .scope-stage-optic-row {

@@ -84,6 +84,11 @@ import {
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
+  DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  type FocusTriggerBarLength,
+} from "@/lib/range/playerScopeSettings";
+import {
   angularMmAtDistance,
   clampElevationTurretMm,
   clampTurretMm,
@@ -170,6 +175,8 @@ type MoaCompetitionViewProps = {
   realism?: GameRealism;
   /** Move target under reticle, or reticle over a fixed target. */
   scopeAimControl?: ScopeAimControl;
+  scopeZoomOnFocus?: boolean;
+  focusTriggerBarLength?: FocusTriggerBarLength;
 };
 
 type Keys = {
@@ -273,6 +280,8 @@ export function MoaCompetitionView({
   onBack,
   realism = "medium",
   scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
+  scopeZoomOnFocus = DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  focusTriggerBarLength = DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
 }: MoaCompetitionViewProps) {
   const realismControls = useSyncExternalStore(
     subscribeRealismControls,
@@ -1098,10 +1107,10 @@ export function MoaCompetitionView({
 
   // FFP reticle: optic zoom only (paper scale is separate).
   const focusZoomBoost = scope
-    ? scopeFocusZoomBoost(scope.scope, focusHeld)
+    ? scopeFocusZoomBoost(scope.scope, focusHeld, scopeZoomOnFocus)
     : 1;
   const focusViewportBoost = scope
-    ? scopeFocusViewportBoost(scope.scope, focusHeld)
+    ? scopeFocusViewportBoost(scope.scope, focusHeld, scopeZoomOnFocus)
     : 1;
   const targetScale = scope
     ? moaCompScopeImageScale(zoom, scope.scope, MOA_COMP_DISTANCE_M)
@@ -1328,9 +1337,11 @@ export function MoaCompetitionView({
           className="range-barrel-heat"
           heat01={barrelHeat01}
         />
+        <ScopeOpticFit>
         <MaybeScopeTube
           enabled={tubeMode}
           railsOnly={railsOnly}
+          barLength={focusTriggerBarLength}
           scopeId={scope!.id}
           elevation={
             <ScopeElevationDial
@@ -1359,7 +1370,18 @@ export function MoaCompetitionView({
           }
           focusRail={
             (tubeMode || railsOnly) && features.focusHold ? (
-              <div className="range-side-rail range-side-rail--focus">
+              <button
+                type="button"
+                className="range-side-rail range-side-rail--focus is-hold-control"
+                aria-label="Hold for fokus (F)"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  beginFocus(performance.now());
+                }}
+                onPointerUp={() => endFocus("")}
+                onPointerCancel={() => endFocus("")}
+              >
                 <span
                   className={
                     focusUi.phase === "focused"
@@ -1379,12 +1401,31 @@ export function MoaCompetitionView({
                 >
                   <div ref={focusFillRef} className="range-focus-fill" />
                 </div>
-              </div>
+              </button>
             ) : null
           }
           triggerRail={
             (tubeMode || railsOnly) && features.triggerTiming ? (
-              <div className="range-side-rail range-side-rail--trigger">
+              <button
+                type="button"
+                className="range-side-rail range-side-rail--trigger is-hold-control"
+                aria-label="Hold for avtrekk (Space)"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  beginTrigger(performance.now());
+                }}
+                onPointerUp={() => {
+                  if (triggerRef.current.held) {
+                    releaseTrigger(performance.now());
+                  }
+                }}
+                onPointerCancel={() => {
+                  if (triggerRef.current.held) {
+                    abortTrigger("Avtrekk avbrutt.");
+                  }
+                }}
+              >
                 <span
                   className={
                     triggerUi.pending
@@ -1406,11 +1447,10 @@ export function MoaCompetitionView({
                     <span className="range-trigger-mark" />
                   ) : null}
                 </div>
-              </div>
+              </button>
             ) : null
           }
         >
-        <ScopeOpticFit>
         <div className="scope-stage-optic-row">
           <div
             className={[
@@ -1543,8 +1583,8 @@ export function MoaCompetitionView({
             />
           </div>
         </div>
-        </ScopeOpticFit>
         </MaybeScopeTube>
+        </ScopeOpticFit>
 
         <div className="range-touch-controls" aria-label="Mobilkontroller">
           <button

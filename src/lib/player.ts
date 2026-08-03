@@ -19,6 +19,12 @@ import {
   DEFAULT_SCOPE_AIM_CONTROL,
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
+import {
+  DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  DEFAULT_ZEN_MODE,
+  type FocusTriggerBarLength,
+} from "@/lib/range/playerScopeSettings";
 import { isPackableFoodKind } from "@/lib/food/spec";
 import { spentBrassItemIdForAmmo, isSpentBrassItemId, spentBrassKeyForCaliber } from "@/lib/reloading/brass";
 import {
@@ -319,6 +325,21 @@ export type PlayerStats = {
    * reticle over a stationary target (hamburger → Move reticle/target).
    */
   scopeAimControl: ScopeAimControl;
+  /**
+   * When true, holding focus applies catalog focus-zoom (premium scopes).
+   * Town → Settings.
+   */
+  scopeZoomOnFocus: boolean;
+  /**
+   * Short (~40% High/medium rails) or long (classic tall) focus/trigger bars.
+   * Town → Settings.
+   */
+  focusTriggerBarLength: FocusTriggerBarLength;
+  /**
+   * Zen: no bird-nerve over time / Deploy / anlegg / Aware gear menus.
+   * Movement on the Aware map still raises nerve.
+   */
+  zenMode: boolean;
   /**
    * Open hunt Aware skuddpar — synced so unfinished recoveries survive
    * across devices for the same terrain/jaktkort day.
@@ -1238,6 +1259,9 @@ export function createInitialStats(): PlayerStats {
     useRealDataInSimulation: false,
     realism: "medium",
     scopeAimControl: DEFAULT_SCOPE_AIM_CONTROL,
+    scopeZoomOnFocus: DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+    focusTriggerBarLength: DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+    zenMode: DEFAULT_ZEN_MODE,
     awareHunt: null,
     jegerprovePassed: false,
     lang: "nb",

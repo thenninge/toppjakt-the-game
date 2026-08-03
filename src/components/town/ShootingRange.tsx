@@ -105,6 +105,11 @@ import {
   type ScopeAimControl,
 } from "@/lib/range/scopeAimControl";
 import {
+  DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  type FocusTriggerBarLength,
+} from "@/lib/range/playerScopeSettings";
+import {
   MOA_RANGE_TARGET_SCALE,
   mmAt100ToScopeClicks,
 } from "@/lib/optics/clicks";
@@ -284,6 +289,10 @@ type ShootingRangeProps = {
   realism?: GameRealism;
   /** Move target under reticle, or reticle over a fixed target. */
   scopeAimControl?: ScopeAimControl;
+  /** Player Settings: focus immersion zoom. */
+  scopeZoomOnFocus?: boolean;
+  /** Player Settings: short vs long focus/trigger bars. */
+  focusTriggerBarLength?: FocusTriggerBarLength;
   /** Laderommet — load-test lane. */
   loadBenchRecipe?: LoadBenchRecipe | null;
   homeLoadedLots?: HomeLoadedLot[];
@@ -353,6 +362,8 @@ export function ShootingRange({
   useRealDataInSimulation = false,
   realism = "medium",
   scopeAimControl = DEFAULT_SCOPE_AIM_CONTROL,
+  scopeZoomOnFocus = DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  focusTriggerBarLength = DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
   loadBenchRecipe = null,
   homeLoadedLots = [],
   armedLoadPlan = null,
@@ -1697,10 +1708,10 @@ export function ShootingRange({
     ? scopeFovDiameterScale(scope.scope)
     : 1;
   const focusZoomBoost = scope
-    ? scopeFocusZoomBoost(scope.scope, focusHeld)
+    ? scopeFocusZoomBoost(scope.scope, focusHeld, scopeZoomOnFocus)
     : 1;
   const focusViewportBoost = scope
-    ? scopeFocusViewportBoost(scope.scope, focusHeld)
+    ? scopeFocusViewportBoost(scope.scope, focusHeld, scopeZoomOnFocus)
     : 1;
   bullseyeOffRef.current = bullseyeOff;
   imgNaturalWRef.current = target.nativeWidth;
@@ -2187,6 +2198,8 @@ export function ShootingRange({
             onBack={() => setCompId("lobby")}
             realism={realism}
             scopeAimControl={scopeAimControl}
+            scopeZoomOnFocus={scopeZoomOnFocus}
+            focusTriggerBarLength={focusTriggerBarLength}
           />
         </div>
       );
@@ -2222,6 +2235,8 @@ export function ShootingRange({
             onBack={() => setCompId("lobby")}
             realism={realism}
             scopeAimControl={scopeAimControl}
+            scopeZoomOnFocus={scopeZoomOnFocus}
+            focusTriggerBarLength={focusTriggerBarLength}
           />
         </div>
       );
@@ -2943,9 +2958,11 @@ export function ShootingRange({
             className="range-barrel-heat"
             heat01={barrelHeat01}
           />
+          <ScopeOpticFit>
           <MaybeScopeTube
             enabled={tubeMode}
             railsOnly={railsOnly}
+            barLength={focusTriggerBarLength}
             scopeId={scope.id}
             elevation={
               <ScopeElevationDial
@@ -2988,7 +3005,37 @@ export function ShootingRange({
             }
             focusRail={
               (tubeMode || railsOnly) && features.focusHold ? (
-                <div className="range-side-rail range-side-rail--focus">
+                <div
+                  className="range-side-rail range-side-rail--focus is-hold-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Hold for fokus (F)"
+                  onPointerDown={(e) => {
+                    if (
+                      (e.target as HTMLElement).closest(
+                        ".range-tracking-lock",
+                      )
+                    ) {
+                      return;
+                    }
+                    e.preventDefault();
+                    (e.currentTarget as HTMLElement).setPointerCapture(
+                      e.pointerId,
+                    );
+                    beginFocus(performance.now());
+                  }}
+                  onPointerUp={(e) => {
+                    if (
+                      (e.target as HTMLElement).closest(
+                        ".range-tracking-lock",
+                      )
+                    ) {
+                      return;
+                    }
+                    endFocus("");
+                  }}
+                  onPointerCancel={() => endFocus("")}
+                >
                   <span
                     className={
                       focusUi.phase === "focused"
@@ -3017,7 +3064,11 @@ export function ShootingRange({
                           : "intro-button sheriff-secondary range-tracking-lock"
                       }
                       aria-pressed={trackingLocked}
-                      onClick={() => setTrackingLock(!trackingLocked)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTrackingLock(!trackingLocked);
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
                     >
                       {trackingLocked ? "Unlock" : "Lock"}
                     </button>
@@ -3027,7 +3078,27 @@ export function ShootingRange({
             }
             triggerRail={
               (tubeMode || railsOnly) && features.triggerTiming ? (
-                <div className="range-side-rail range-side-rail--trigger">
+                <div
+                  className="range-side-rail range-side-rail--trigger is-hold-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Hold for avtrekk (Space)"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    beginTrigger(performance.now());
+                  }}
+                  onPointerUp={() => {
+                    if (triggerRef.current.held) {
+                      releaseTrigger(performance.now());
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    if (triggerRef.current.held) {
+                      abortTrigger("Avtrekk avbrutt.");
+                    }
+                  }}
+                >
                   <span
                     className={
                       triggerUi.pending
@@ -3098,7 +3169,6 @@ export function ShootingRange({
               ) : null
             }
           >
-            <ScopeOpticFit>
               <div className="scope-stage-optic-row">
                 <div
                   className={[
@@ -3294,8 +3364,8 @@ export function ShootingRange({
               </div>
             ) : null}
               </div>
-            </ScopeOpticFit>
           </MaybeScopeTube>
+          </ScopeOpticFit>
 
           <div className="range-touch-controls" aria-label="Mobilkontroller">
             <button

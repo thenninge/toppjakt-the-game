@@ -623,7 +623,14 @@ export function XxlShop({
                       ? ` · tid ×${thermal.timeFactor}`
                       : ""}
                     {thermal.hasIntegratedLrf
-                      ? ` · LRF ±${thermal.rangeErrorPercent ?? "?"}%`
+                      ? ` · LRF ±${thermal.rangeErrorPercent ?? "?"}%${
+                          thermal.integratedLrfHasBallistics === false
+                            ? " (kun avstand)"
+                            : thermal.integratedLrfHasBallistics ||
+                                thermal.isThermalBinocular
+                              ? " · ballistikk"
+                              : ""
+                        }`
                       : " · kun termisk"}
                     {thermal.isThermalBinocular
                       ? " · binokular (erstatter bino)"

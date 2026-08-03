@@ -13,15 +13,15 @@ type ScopeOpticFitProps = {
 };
 
 /**
- * Keeps scope glass at design size ({@code SCOPE_VIEWPORT_REF_PX}); when the
- * slot is narrower, scales the whole optic row uniformly so mil FOV stays
- * identical to admin / hunt / range.
+ * Fits {@link children} to the slot width with uniform scale (mil FOV stays
+ * true). Layout box matches the *visual* size so the stage stays centered on
+ * narrow screens instead of overflowing off to one side.
  */
 export function ScopeOpticFit({ children, className }: ScopeOpticFitProps) {
   const slotRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [innerH, setInnerH] = useState(0);
+  const [natural, setNatural] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
     const slot = slotRef.current;
@@ -29,12 +29,14 @@ export function ScopeOpticFit({ children, className }: ScopeOpticFitProps) {
     if (!slot || !inner) return;
 
     const measure = () => {
-      const need = inner.offsetWidth;
+      // offset* = pre-transform layout size (transform does not affect it).
+      const needW = inner.offsetWidth;
+      const needH = inner.offsetHeight;
       const avail = slot.clientWidth;
       const next =
-        need > 0 && avail > 0 ? Math.min(1, avail / need) : 1;
+        needW > 0 && avail > 0 ? Math.min(1, avail / needW) : 1;
+      setNatural({ w: needW, h: needH });
       setScale(next);
-      setInnerH(inner.offsetHeight);
     };
 
     measure();
@@ -44,26 +46,34 @@ export function ScopeOpticFit({ children, className }: ScopeOpticFitProps) {
     return () => ro.disconnect();
   }, []);
 
+  const scaled = scale < 0.999;
+  const boxW = scaled && natural.w > 0 ? natural.w * scale : undefined;
+  const boxH = scaled && natural.h > 0 ? natural.h * scale : undefined;
+
   return (
     <div
       ref={slotRef}
       className={
         className ? `scope-optic-fit ${className}` : "scope-optic-fit"
       }
-      style={
-        innerH > 0 && scale < 1
-          ? { height: innerH * scale }
-          : undefined
-      }
     >
       <div
-        ref={innerRef}
-        className="scope-optic-fit-inner"
-        style={{
-          transform: scale < 0.999 ? `scale(${scale})` : undefined,
-        }}
+        className="scope-optic-fit-scale"
+        style={
+          boxW != null && boxH != null
+            ? { width: boxW, height: boxH }
+            : undefined
+        }
       >
-        {children}
+        <div
+          ref={innerRef}
+          className="scope-optic-fit-inner"
+          style={{
+            transform: scaled ? `scale(${scale})` : undefined,
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

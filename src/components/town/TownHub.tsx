@@ -6,6 +6,7 @@ export type TownLocationId =
   | "home"
   | "shooting-range"
   | "how-to-play"
+  | "settings"
   | "admin-office"
   | "meat-market"
   | "rulles"
@@ -60,6 +61,12 @@ const LOCATIONS: TownLocation[] = [
     name: "How to play",
     blurb:
       "Realism, BODY/MIND, Kestrel, Track/ettersøk, zero, DOPE — det som betyr noe.",
+  },
+  {
+    id: "settings",
+    name: "Settings",
+    blurb:
+      "Scope zoom, short/long barer, Zen mode, realism og move reticle.",
   },
   {
     id: "jegerprove",

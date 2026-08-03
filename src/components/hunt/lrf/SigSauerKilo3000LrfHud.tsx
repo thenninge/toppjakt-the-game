@@ -67,6 +67,7 @@ export function usesSigStyleBallisticLrfHud(
   if (!meta) return false;
   if (isZeissVictoryLrf(meta)) return false;
   if (isSigKilo3000Lrf(meta)) return true;
+  if (meta.hasOnboardBallistics === false) return false;
   if (meta.hasOnboardBallistics) return true;
   return !!opts?.hasKestrel;
 }

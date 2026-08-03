@@ -101,6 +101,7 @@ import { TownHub, type TownLocationId } from "@/components/town/TownHub";
 import { JegerproveView } from "@/components/town/JegerproveView";
 import { isJegerproveCleared } from "@/lib/jegerprove/exam";
 import { HowToPlayView } from "@/components/town/HowToPlayView";
+import { PlayerSettingsView } from "@/components/town/PlayerSettingsView";
 import { AdminOffice } from "@/components/town/AdminOffice";
 import {
   SheriffOffice,
@@ -1861,6 +1862,9 @@ export function IntroScreen() {
             useRealDataInSimulation={stats.useRealDataInSimulation}
             realism={stats.realism ?? "medium"}
             scopeAimControl={stats.scopeAimControl ?? "target"}
+            scopeZoomOnFocus={stats.scopeZoomOnFocus ?? true}
+            focusTriggerBarLength={stats.focusTriggerBarLength ?? "short"}
+            zenMode={stats.zenMode ?? false}
             customsMods={stats.customsMods}
             weather={weather}
             onAffinitiesChange={(next) =>
@@ -1972,6 +1976,8 @@ export function IntroScreen() {
             useRealDataInSimulation={stats.useRealDataInSimulation}
             realism={stats.realism ?? "medium"}
             scopeAimControl={stats.scopeAimControl ?? "target"}
+            scopeZoomOnFocus={stats.scopeZoomOnFocus ?? true}
+            focusTriggerBarLength={stats.focusTriggerBarLength ?? "short"}
             loadBenchRecipe={stats.loadBenchRecipe}
             homeLoadedLots={stats.homeLoadedLots}
             armedLoadPlan={stats.armedLoadPlan}
@@ -1990,6 +1996,48 @@ export function IntroScreen() {
 
         {phase === "location" && location === "how-to-play" && (
           <HowToPlayView onLeave={backToTown} />
+        )}
+
+        {phase === "location" && location === "settings" && (
+          <PlayerSettingsView
+            onLeave={backToTown}
+            realism={stats.realism ?? "medium"}
+            onRealismChange={(realism) =>
+              setStats((prev) =>
+                prev.realism === realism ? prev : { ...prev, realism },
+              )
+            }
+            scopeAimControl={stats.scopeAimControl ?? "target"}
+            onScopeAimControlChange={(scopeAimControl) =>
+              setStats((prev) =>
+                prev.scopeAimControl === scopeAimControl
+                  ? prev
+                  : { ...prev, scopeAimControl },
+              )
+            }
+            scopeZoomOnFocus={stats.scopeZoomOnFocus ?? true}
+            onScopeZoomOnFocusChange={(scopeZoomOnFocus) =>
+              setStats((prev) =>
+                prev.scopeZoomOnFocus === scopeZoomOnFocus
+                  ? prev
+                  : { ...prev, scopeZoomOnFocus },
+              )
+            }
+            focusTriggerBarLength={stats.focusTriggerBarLength ?? "short"}
+            onFocusTriggerBarLengthChange={(focusTriggerBarLength) =>
+              setStats((prev) =>
+                prev.focusTriggerBarLength === focusTriggerBarLength
+                  ? prev
+                  : { ...prev, focusTriggerBarLength },
+              )
+            }
+            zenMode={stats.zenMode ?? false}
+            onZenModeChange={(zenMode) =>
+              setStats((prev) =>
+                prev.zenMode === zenMode ? prev : { ...prev, zenMode },
+              )
+            }
+          />
         )}
 
         {phase === "location" &&
@@ -2043,6 +2091,7 @@ export function IntroScreen() {
           location !== "rulles" &&
           location !== "shooting-range" &&
           location !== "how-to-play" &&
+          location !== "settings" &&
           location !== "admin-office" &&
           location !== "jegerprove" && (
           <div className="intro-dialogue">

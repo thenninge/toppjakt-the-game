@@ -230,6 +230,12 @@ import {
 import type { GameRealism } from "@/lib/optics/turretStyle";
 import type { ScopeAimControl } from "@/lib/range/scopeAimControl";
 import {
+  DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  DEFAULT_ZEN_MODE,
+  type FocusTriggerBarLength,
+} from "@/lib/range/playerScopeSettings";
+import {
   realismAutoSkuddpar,
   realismEttersokFindMult,
   realismNerveRateMult,
@@ -307,6 +313,12 @@ type HuntMapViewProps = {
   realism?: GameRealism;
   /** Move target under reticle, or reticle over a fixed target. */
   scopeAimControl?: ScopeAimControl;
+  /** Player Settings: focus immersion zoom. */
+  scopeZoomOnFocus?: boolean;
+  /** Player Settings: short vs long focus/trigger bars. */
+  focusTriggerBarLength?: FocusTriggerBarLength;
+  /** Player Settings: Zen — no passive / Deploy / anlegg nerve. */
+  zenMode?: boolean;
   customsMods?: CustomsMods;
   weather: DayWeather;
   onAffinitiesChange: (next: Record<string, number>) => void;
@@ -626,6 +638,9 @@ export function HuntMapView({
   useRealDataInSimulation = false,
   realism = "medium",
   scopeAimControl = "target",
+  scopeZoomOnFocus = DEFAULT_SCOPE_ZOOM_ON_FOCUS,
+  focusTriggerBarLength = DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
+  zenMode = DEFAULT_ZEN_MODE,
   customsMods = EMPTY_CUSTOMS_MODS,
   weather,
   onAffinitiesChange,
@@ -880,8 +895,20 @@ export function HuntMapView({
   })();
   const thermalLrfSpec = useMemo(() => {
     if (!thermalItem?.thermal.hasIntegratedLrf) return null;
+    const t = thermalItem.thermal;
+    /**
+     * Condor: explicit false → range only (blocks Kestrel elev/wind HUD).
+     * Habrok: true when catalog says so, else thermal-bino default.
+     */
+    const hasBallistics =
+      t.integratedLrfHasBallistics === false
+        ? false
+        : (t.integratedLrfHasBallistics ?? !!t.isThermalBinocular);
     return {
-      rangeErrorPercent: thermalItem.thermal.rangeErrorPercent ?? 2,
+      id: thermalItem.id,
+      brand: thermalItem.brand,
+      rangeErrorPercent: t.rangeErrorPercent ?? 2,
+      hasOnboardBallistics: hasBallistics,
     };
   }, [thermalItem]);
   const kestrelItem = useMemo(
@@ -940,7 +967,7 @@ export function HuntMapView({
         brand: binoItem.brand,
       };
     }
-    // Habrok integrated LRF (no separate binos).
+                // Habrok integrated LRF (no separate binos).
     if (thermalLrfSpec) {
       return {
         hasOnboardBallistics: hasExactBallistics,
@@ -1013,8 +1040,15 @@ export function HuntMapView({
       if (!primaryAmmo) return null;
       const onboard =
         !!binoItem?.lrf.hasOnboardBallistics ||
-        !!thermalItem?.thermal.isThermalBinocular;
-      const kestrelLink = !!kestrelItem && (!!binoItem?.lrf || !!thermalLrfSpec);
+        !!(
+          thermalItem?.thermal.isThermalBinocular ||
+          thermalItem?.thermal.integratedLrfHasBallistics
+        );
+      /** Condor LRF is range-only — never pairs Kestrel for holds. */
+      const thermalPairsKestrel =
+        !!thermalLrfSpec?.hasOnboardBallistics;
+      const kestrelLink =
+        !!kestrelItem && (!!binoItem?.lrf || thermalPairsKestrel);
       if (!onboard && !kestrelLink) return null;
       if (!Number.isFinite(distanceM) || distanceM < 1) return null;
 
@@ -1714,6 +1748,7 @@ export function HuntMapView({
           moveHoldSec: 0,
           camoSneakPct,
           nerveRateMult: realismNerveRateMult(realism),
+          zenMode,
         });
         if (!tick.flushes) return { nerve: tick.nerve, flushed: false as const };
         const result = spookBird(birdsRef.current, birdId, map);
@@ -1785,7 +1820,7 @@ export function HuntMapView({
       setBirdEncounter(next);
     }, 200);
     return () => window.clearInterval(id);
-  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoSneakPct, skuddlysOpen, pos]);
+  }, [inAwareOrShoot, spotOpen, discoveredActive, map, camoSneakPct, skuddlysOpen, pos, realism, zenMode]);
 
   if (!terrain || !map) {
     return (
@@ -5395,6 +5430,9 @@ export function HuntMapView({
         useRealDataInSimulation={useRealDataInSimulation}
         realism={realism}
         scopeAimControl={scopeAimControl}
+        scopeZoomOnFocus={scopeZoomOnFocus}
+        focusTriggerBarLength={focusTriggerBarLength}
+        zenMode={zenMode}
         customsMoaDelta={customsMoaDelta}
         customsCalmMult={customsCalmMult}
         recoilDamping={computeRecoilDamping({
@@ -5549,6 +5587,7 @@ export function HuntMapView({
         }}
         clockMinutes={clockMinutes}
         realism={realism}
+        zenMode={zenMode}
         shotPairs={shotPairs}
         focusPairId={awareSession.ettersokPairId ?? null}
         onShotPairsChange={setShotPairs}

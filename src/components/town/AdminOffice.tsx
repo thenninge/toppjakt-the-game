@@ -760,7 +760,14 @@ function AdminSpottingPanel({ onLeave }: { onLeave: () => void }) {
       : null;
   const thermalLrfSpec = thermalItem?.thermal.hasIntegratedLrf
     ? {
+        id: thermalItem.id,
+        brand: thermalItem.brand,
         rangeErrorPercent: thermalItem.thermal.rangeErrorPercent ?? 2,
+        hasOnboardBallistics:
+          thermalItem.thermal.integratedLrfHasBallistics === false
+            ? false
+            : (thermalItem.thermal.integratedLrfHasBallistics ??
+              !!thermalItem.thermal.isThermalBinocular),
       }
     : null;
 

@@ -6,6 +6,11 @@ import { createInitialStats, type PlayerStats, type ZeroingProfile } from "@/lib
 import { normalizeGameRealism } from "@/lib/optics/turretStyle";
 import { normalizeGameLang } from "@/lib/i18n/lang";
 import { normalizeScopeAimControl } from "@/lib/range/scopeAimControl";
+import {
+  normalizeFocusTriggerBarLength,
+  normalizeScopeZoomOnFocus,
+  normalizeZenMode,
+} from "@/lib/range/playerScopeSettings";
 import { normalizeLoadBenchRecipe } from "@/lib/reloading/recipe";
 import { normalizeArmedLoadPlan } from "@/lib/reloading/loadPhysics";
 import { normalizeLoadDevTable } from "@/lib/reloading/loadDevTable";
@@ -239,6 +244,15 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       raw.scopeAimControl,
       base.scopeAimControl,
     ),
+    scopeZoomOnFocus: normalizeScopeZoomOnFocus(
+      raw.scopeZoomOnFocus,
+      base.scopeZoomOnFocus,
+    ),
+    focusTriggerBarLength: normalizeFocusTriggerBarLength(
+      raw.focusTriggerBarLength,
+      base.focusTriggerBarLength,
+    ),
+    zenMode: normalizeZenMode(raw.zenMode, base.zenMode),
     awareHunt: normalizeAwareHuntState(raw.awareHunt),
     jegerprovePassed: (() => {
       if (raw.jegerprovePassed === true) return true;

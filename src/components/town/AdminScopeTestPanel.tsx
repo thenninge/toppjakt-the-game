@@ -1048,10 +1048,10 @@ export function AdminScopeTestPanel(_props: AdminScopeTestPanelProps) {
     !!spotImageSrc &&
     !!liveScope;
   const focusZoomBoost = liveScope
-    ? scopeFocusZoomBoost(liveScope, previewFocusZoom)
+    ? scopeFocusZoomBoost(liveScope, previewFocusZoom, focusZoomEnabled)
     : 1;
   const focusViewportBoost = liveScope
-    ? scopeFocusViewportBoost(liveScope, previewFocusZoom)
+    ? scopeFocusViewportBoost(liveScope, previewFocusZoom, focusZoomEnabled)
     : 1;
 
   if (liveScope && subjectKind === "range") {

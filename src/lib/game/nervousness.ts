@@ -91,6 +91,11 @@ export type EncounterNerveContext = {
    * Realism nerve-rate multiplier (Low → 0.5). Default 1.
    */
   nerveRateMult?: number;
+  /**
+   * Zen mode: freeze passive / still nerve. Moving still raises nerve
+   * (Aware map stalk). Deploy / anlegg bumps are gated separately.
+   */
+  zenMode?: boolean;
   /** Optional LOS / cover hooks for future tuning. */
   birdSeesPlayer?: number;
   coverFactor?: number;
@@ -109,7 +114,8 @@ export type EncounterNerveTickResult = {
     | "moving_far"
     | "still_close"
     | "moving_close"
-    | "always_flush";
+    | "always_flush"
+    | "zen_still";
 };
 
 export function distancePressure(
@@ -158,6 +164,11 @@ export function encounterNerveRatePerSec(
 
   if (distanceM <= ENCOUNTER_NERVE.alwaysFlushDistanceM) {
     return { rate: 99, reason: "always_flush" };
+  }
+
+  /** Zen: only movement raises nerve — idle apps / dialing stay calm. */
+  if (ctx.zenMode && !isMoving) {
+    return { rate: 0, reason: "zen_still" };
   }
 
   const movingPastGrace =

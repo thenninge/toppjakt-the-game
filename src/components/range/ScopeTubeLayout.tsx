@@ -21,6 +21,11 @@ type ScopeTubeLayoutProps = {
    * width-centered layout (no tube turrets).
    */
   railsOnly?: boolean;
+  /**
+   * short — ~40% turret-span rails (default / Realism High style).
+   * long — classic tall bars (beside glass when rails-only).
+   */
+  barLength?: "short" | "long";
   children: ReactNode;
   className?: string;
 };
@@ -30,6 +35,7 @@ type ScopeTubeLayoutProps = {
  * (elevation / parallax / windage) — used by Admin → Scopes and
  * hunt/shoot when Realism = High. With {@link railsOnly}, only the
  * short focus/trigger rails wrap the glass (medium).
+ * {@link barLength} `long` restores classic tall bars beside the glass.
  */
 export function ScopeTubeLayout({
   scopeId,
@@ -39,6 +45,7 @@ export function ScopeTubeLayout({
   focusRail,
   triggerRail,
   railsOnly = false,
+  barLength = "short",
   children,
   className,
 }: ScopeTubeLayoutProps) {
@@ -55,6 +62,7 @@ export function ScopeTubeLayout({
       data-turret-style={style.id}
       data-has-rails={focusRail || triggerRail ? "true" : undefined}
       data-rails-only={railsOnly ? "true" : undefined}
+      data-bar-length={barLength}
     >
       {focusRail ? (
         <div className="scope-tube-rail scope-tube-rail--focus">

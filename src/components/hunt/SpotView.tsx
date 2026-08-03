@@ -1365,6 +1365,8 @@ export function SpotView({
 
     function resolveHold(distanceM: number): SpotLrfHoldSolution | null {
       if (!activeLrf) return null;
+      /** Condor etc.: hasOnboardBallistics === false → range only. */
+      if (activeLrf.hasOnboardBallistics === false) return null;
       const canSolve =
         !!activeLrf.hasOnboardBallistics || hasKestrel;
       if (!canSolve) return null;

@@ -273,6 +273,11 @@ type AwareAppViewProps = {
   clockMinutes: number;
   /** Hunt realism — Low eases nerve + ettersøk find chance. */
   realism?: GameRealism;
+  /**
+   * Zen: no passive nerve / Deploy / anlegg / gear-menu costs.
+   * Aware-map movement still raises nerve.
+   */
+  zenMode?: boolean;
   shotPairs: ShotPair[];
   focusPairId?: string | null;
   onShotPairsChange: (pairs: ShotPair[]) => void;
@@ -542,6 +547,7 @@ export function AwareAppView({
   onMountGun,
   clockMinutes,
   realism = "medium",
+  zenMode = false,
   shotPairs,
   focusPairId = null,
   onShotPairsChange,
@@ -938,6 +944,7 @@ export function AwareAppView({
             camoSneakPct: camoRef.current,
             coverFactor,
             nerveRateMult: realismNerveRateMult(realism),
+            zenMode,
           });
           nerveRef.current = result.nerve;
           setNerve(result.nerve);
@@ -962,7 +969,7 @@ export function AwareAppView({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode, gunPrepOnly, realism]);
+  }, [stalking, birdWorld, coverFactor, shootWizardActive, postShotSkuddparMode, gunPrepOnly, realism, zenMode]);
 
   const activePair = shotPairs.find((p) => p.id === activePairId) ?? null;
 
@@ -1647,7 +1654,9 @@ export function AwareAppView({
     // for the engagement, or redeploy just to dial turrets.
     const trackReview = !!focusPairId;
     const cost =
-      gunPrepOnly || trackReview ? 0 : Math.max(0, gunDeployNerve);
+      zenMode || gunPrepOnly || trackReview
+        ? 0
+        : Math.max(0, gunDeployNerve);
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
       nerveRef.current + cost,
@@ -1661,13 +1670,15 @@ export function AwareAppView({
     onGunDeployed?.();
     const pct = Math.round(cost * 100);
     setStatus(
-      gunPrepOnly || trackReview
-        ? "Gun deployed — klar for tårn / scope."
-        : next >= ENCOUNTER_NERVE.flushThreshold
-          ? `Gun deployed — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `Gun deployed (+${pct}% nervøsitet). Sekk-anlegg / bipod / tårn er tilgjengelig.`,
+      zenMode
+        ? "Gun deployed (Zen) — ingen nerve-kost. Sekk-anlegg / bipod / tårn er tilgjengelig."
+        : gunPrepOnly || trackReview
+          ? "Gun deployed — klar for tårn / scope."
+          : next >= ENCOUNTER_NERVE.flushThreshold
+            ? `Gun deployed — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+            : `Gun deployed (+${pct}% nervøsitet). Sekk-anlegg / bipod / tårn er tilgjengelig.`,
     );
-    if (!gunPrepOnly && !trackReview && next >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && !gunPrepOnly && !trackReview && next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(next);
     }
@@ -1684,9 +1695,13 @@ export function AwareAppView({
      * put the rifle back in the pack regardless of flushedRef.
      */
     const trackReview = !!focusPairId;
-    const restRefund = shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
+    const restRefund = zenMode
+      ? 0
+      : shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
     const deployRefund =
-      gunPrepOnly || trackReview ? 0 : Math.max(0, gunDeployNerve);
+      zenMode || gunPrepOnly || trackReview
+        ? 0
+        : Math.max(0, gunDeployNerve);
     const cleared = Math.max(
       0,
       nerveRef.current - restRefund - deployRefund,
@@ -1728,7 +1743,9 @@ export function AwareAppView({
     if (next === rest) {
       // Toggle off → none (revert nerve from front rest + bagrider).
       if (rest === "none") return;
-      const revert = shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
+      const revert = zenMode
+        ? 0
+        : shootRestTotalNerve(rest, bagriderOn, bipodWeaponCalm);
       const cleared = Math.max(0, nerveRef.current - revert);
       nerveRef.current = cleared;
       flushSync(() => {
@@ -1740,7 +1757,7 @@ export function AwareAppView({
       setStatus("Anlegg fjernet — skyter uten sekk/bipod/bagrider-calm.");
       return;
     }
-    const nextCost = shootRestNerve(next, bipodWeaponCalm);
+    const nextCost = zenMode ? 0 : shootRestNerve(next, bipodWeaponCalm);
     const switching = rest !== "none";
     // First pick: pay nextCost. Switch sekk↔bipod: pay full nextCost again
     // (faffing). Bagrider stays on and is not re-charged.
@@ -1758,22 +1775,26 @@ export function AwareAppView({
     const verb = switching ? "Byttet til" : "Valgt";
     if (next === "backpack") {
       setStatus(
-        nextNerve >= ENCOUNTER_NERVE.flushThreshold
-          ? `${verb} sekk-anlegg — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `${verb} sekk-anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.${
-              bagriderOn ? " Bagrider fortsatt aktiv." : ""
-            }`,
+        zenMode
+          ? `${verb} sekk-anlegg (Zen) — ingen nerve-kost.`
+          : nextNerve >= ENCOUNTER_NERVE.flushThreshold
+            ? `${verb} sekk-anlegg — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+            : `${verb} sekk-anlegg (+${pct}% nervøsitet). Svært stabilt, men mer synlig/lyd.${
+                bagriderOn ? " Bagrider fortsatt aktiv." : ""
+              }`,
       );
     } else if (next === "bipod") {
       setStatus(
-        nextNerve >= ENCOUNTER_NERVE.flushThreshold
-          ? `${verb} bipod — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-          : `${verb} bipod (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.${
-              bagriderOn ? " Bagrider fortsatt aktiv." : ""
-            }`,
+        zenMode
+          ? `${verb} bipod (Zen) — ingen nerve-kost.`
+          : nextNerve >= ENCOUNTER_NERVE.flushThreshold
+            ? `${verb} bipod — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+            : `${verb} bipod (+${pct}% nervøsitet). Calm fra tofot aktiv i skuddet.${
+                bagriderOn ? " Bagrider fortsatt aktiv." : ""
+              }`,
       );
     }
-    if (nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(nextNerve);
     }
@@ -1792,7 +1813,10 @@ export function AwareAppView({
       return;
     }
     if (bagriderOn) {
-      const cleared = Math.max(0, nerveRef.current - BAGRIDER_REST_NERVE);
+      const cleared = Math.max(
+        0,
+        nerveRef.current - (zenMode ? 0 : BAGRIDER_REST_NERVE),
+      );
       nerveRef.current = cleared;
       flushSync(() => {
         setNerve(cleared);
@@ -1802,9 +1826,10 @@ export function AwareAppView({
       setStatus("Bagrider av — bare sekk/bipod-calm.");
       return;
     }
+    const bagCost = zenMode ? 0 : BAGRIDER_REST_NERVE;
     const nextNerve = Math.min(
       ENCOUNTER_NERVE.nerveCap,
-      nerveRef.current + BAGRIDER_REST_NERVE,
+      nerveRef.current + bagCost,
     );
     nerveRef.current = nextNerve;
     flushSync(() => {
@@ -1812,14 +1837,16 @@ export function AwareAppView({
       setBagriderOn(true);
     });
     onNerveChangeRef.current?.(nextNerve);
-    const pct = Math.round(BAGRIDER_REST_NERVE * 100);
+    const pct = Math.round(bagCost * 100);
     const base = rest === "backpack" ? "sekk" : "bipod";
     setStatus(
-      nextNerve >= ENCOUNTER_NERVE.flushThreshold
-        ? `Bagrider på ${base} — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-        : `Bagrider aktiv med ${base} (+${pct}% nervøsitet). +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm.`,
+      zenMode
+        ? `Bagrider aktiv med ${base} (Zen) — ingen nerve-kost.`
+        : nextNerve >= ENCOUNTER_NERVE.flushThreshold
+          ? `Bagrider på ${base} — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `Bagrider aktiv med ${base} (+${pct}% nervøsitet). +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm.`,
     );
-    if (nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && nextNerve >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(nextNerve);
     }
@@ -1827,7 +1854,7 @@ export function AwareAppView({
 
   function deployCamcorder() {
     if (!hasCamcorder || camcorderReady || flushedRef.current) return;
-    const setupNerve = camcorderSetupNerve;
+    const setupNerve = zenMode ? 0 : camcorderSetupNerve;
     const pct = Math.round(setupNerve * 100);
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
@@ -1841,11 +1868,13 @@ export function AwareAppView({
     });
     onNerveChangeRef.current?.(next);
     setStatus(
-      next >= ENCOUNTER_NERVE.flushThreshold
-        ? `Camcorder oppe — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-        : `Camcorder satt opp mot standplass (+${pct}% nervøsitet). Bedre ettersøk-oversikt etter skudd.`,
+      zenMode
+        ? "Camcorder satt opp (Zen) — ingen nerve-kost."
+        : next >= ENCOUNTER_NERVE.flushThreshold
+          ? `Camcorder oppe — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `Camcorder satt opp mot standplass (+${pct}% nervøsitet). Bedre ettersøk-oversikt etter skudd.`,
     );
-    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(next);
     }
@@ -1853,9 +1882,10 @@ export function AwareAppView({
 
   function deployChrono() {
     if (!hasChronograph || chronoReady || flushedRef.current) return;
+    const cost = zenMode ? 0 : CHRONO_SETUP_NERVE;
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
-      nerveRef.current + CHRONO_SETUP_NERVE,
+      nerveRef.current + cost,
     );
     nerveRef.current = next;
     flushSync(() => {
@@ -1864,11 +1894,13 @@ export function AwareAppView({
     });
     onNerveChangeRef.current?.(next);
     setStatus(
-      next >= ENCOUNTER_NERVE.flushThreshold
-        ? "Chrono oppe — men fuglen er svært urolig (+5% nervøsitet)!"
-        : "Chrono satt opp foran stand (+5% nervøsitet). Jakt-skudd logges i shotlog med v0 + temperatur.",
+      zenMode
+        ? "Chrono satt opp (Zen) — ingen nerve-kost."
+        : next >= ENCOUNTER_NERVE.flushThreshold
+          ? "Chrono oppe — men fuglen er svært urolig (+5% nervøsitet)!"
+          : "Chrono satt opp foran stand (+5% nervøsitet). Jakt-skudd logges i shotlog med v0 + temperatur.",
     );
-    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(next);
     }
@@ -1876,9 +1908,10 @@ export function AwareAppView({
 
   function measureKestrelEnviro() {
     if (!hasKestrel || kestrelEnviroReady || flushedRef.current) return;
+    const cost = zenMode ? 0 : KESTREL_MEASURE_NERVE;
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
-      nerveRef.current + KESTREL_MEASURE_NERVE,
+      nerveRef.current + cost,
     );
     nerveRef.current = next;
     flushSync(() => {
@@ -1888,11 +1921,13 @@ export function AwareAppView({
     onNerveChangeRef.current?.(next);
     const live = weather.live;
     setStatus(
-      next >= ENCOUNTER_NERVE.flushThreshold
-        ? `Kestrel målt — men fuglen er svært urolig (+5% nervøsitet)! ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}.`
-        : `Enviro målt med Kestrel (+5% nervøsitet): ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}. App prefyller vind/temp.`,
+      zenMode
+        ? `Enviro målt med Kestrel (Zen): ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}.`
+        : next >= ENCOUNTER_NERVE.flushThreshold
+          ? `Kestrel målt — men fuglen er svært urolig (+5% nervøsitet)! ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}.`
+          : `Enviro målt med Kestrel (+5% nervøsitet): ${live.temperatureC.toFixed(1)}°C · ${formatWindSpeed(live.windSpeedMs)} fra ${formatWindCompass(live.windFromDeg)}. App prefyller vind/temp.`,
     );
-    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(next);
     }
@@ -1900,7 +1935,7 @@ export function AwareAppView({
 
   function startTriggercam() {
     if (!activeShotCam || triggercamReady || flushedRef.current) return;
-    const nerveCost = shotCamSetupNerve(activeShotCam);
+    const nerveCost = zenMode ? 0 : shotCamSetupNerve(activeShotCam);
     const next = Math.min(
       ENCOUNTER_NERVE.nerveCap,
       nerveRef.current + nerveCost,
@@ -1913,18 +1948,23 @@ export function AwareAppView({
     onNerveChangeRef.current?.(next);
     const pct = Math.round(nerveCost * 100);
     setStatus(
-      next >= ENCOUNTER_NERVE.flushThreshold
-        ? `${shotCamName} startet — men fuglen er svært urolig (+${pct}% nervøsitet)!`
-        : `${shotCamName} startet (+${pct}% nervøsitet) — filmer skuddet (AAR) og hjelper skuddmarkør-autofill.`,
+      zenMode
+        ? `${shotCamName} startet (Zen) — ingen nerve-kost.`
+        : next >= ENCOUNTER_NERVE.flushThreshold
+          ? `${shotCamName} startet — men fuglen er svært urolig (+${pct}% nervøsitet)!`
+          : `${shotCamName} startet (+${pct}% nervøsitet) — filmer skuddet (AAR) og hjelper skuddmarkør-autofill.`,
     );
-    if (next >= ENCOUNTER_NERVE.flushThreshold) {
+    if (!zenMode && next >= ENCOUNTER_NERVE.flushThreshold) {
       flushedRef.current = true;
       onBirdFlushedRef.current(next);
     }
   }
 
-  const nerveHint =
-    liveDistanceM > ENCOUNTER_NERVE.stillSafeDistanceM
+  const nerveHint = zenMode
+    ? moveHoldSec > 0
+      ? "Zen: bevegelse øker fortsatt nerve"
+      : "Zen: stille = ingen nerve over tid / Deploy / anlegg"
+    : liveDistanceM > ENCOUNTER_NERVE.stillSafeDistanceM
       ? moveHoldSec >= ENCOUNTER_NERVE.moveGraceSec
         ? "Bevegelse — fuglen merker deg selv på lang hold"
         : "Ro: >350 m, stå stille = rolig fugl"

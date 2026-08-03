@@ -40,6 +40,8 @@ export function usesGenericSigStyleLrfHud(
   if (!meta) return false;
   if (isZeissVictoryLrf(meta)) return false;
   if (opts?.isSigKilo3000) return false;
+  /** Explicit range-only LRF (e.g. Condor) — never elev/wind theatre. */
+  if (meta.hasOnboardBallistics === false) return false;
   if (meta.hasOnboardBallistics) return true;
   return !!opts?.hasKestrel;
 }
