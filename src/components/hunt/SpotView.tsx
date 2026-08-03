@@ -1679,16 +1679,18 @@ export function SpotView({
                 title={
                   thermalBatteryGameSec <= 0
                     ? isThermalBinocular
-                      ? "Batteri tomt — kun dagoptikk (vanlig kikkert)"
+                      ? "Habrok dagoptikk (B/T) — batteri tomt"
                       : "Batteri tomt"
-                    : `Batteri ${battMin} min igjen`
+                    : isThermalBinocular
+                      ? `Habrok Fusion (B/T) · batteri ${battMin} min`
+                      : `Termisk (T) · batteri ${battMin} min`
                 }
               >
                 {isThermalBinocular
                   ? thermalBatteryGameSec <= 0
-                    ? "Habrok dagoptikk (B/T)"
-                    : "Habrok Fusion (B/T)"
-                  : "Termisk (T)"}
+                    ? "Dag"
+                    : "Habrok"
+                  : "Termisk"}
               </button>
             ) : null}
             {hasBinos && !isThermalBinocular ? (
@@ -1696,8 +1698,9 @@ export function SpotView({
                 type="button"
                 className="intro-button"
                 onClick={toggleBinos}
+                title="Kikkert (B)"
               >
-                Kikkert (B)
+                Kikkert
               </button>
             ) : null}
             {onOpenAware ? (

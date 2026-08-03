@@ -698,7 +698,7 @@ export function StatsFrame({
               {formatLifetimeDistance(stats.lifetimeDistanceM)}
             </dd>
           </div>
-          <div className="stats-metric">
+          <div className="stats-metric stats-metric-birds-km">
             <dt>Fugl/km</dt>
             <dd title="Lifetime tiur + orrhane per km gått">
               {formatBirdsPerKm(birdsPerKm(stats))}

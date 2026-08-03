@@ -2476,7 +2476,7 @@ export function AwareAppView({
                     onClick={deployGun}
                     title="Ta rifla frem for å se scope / skru tårn"
                   >
-                    Deploy gun
+                    Deploy
                   </button>
                 ) : (
                   <button
@@ -2485,7 +2485,7 @@ export function AwareAppView({
                     onClick={openGunScopeReview}
                     title="Se scope — skuddavstand, tårn. Track beholdes."
                   >
-                    Use gun scope
+                    Scope
                   </button>
                 )}
               </div>
@@ -2553,7 +2553,7 @@ export function AwareAppView({
                   onClick={deployGun}
                   title="Ta rifla frem for å se scope / skru tårn"
                 >
-                  Deploy gun
+                  Deploy
                 </button>
               ) : (
                 <button
@@ -2562,7 +2562,7 @@ export function AwareAppView({
                   onClick={openGunScopeReview}
                   title="Se scope — skuddavstand, tårn. Track beholdes."
                 >
-                  Use gun scope
+                  Scope
                 </button>
               )}
             </>
@@ -2574,7 +2574,7 @@ export function AwareAppView({
                 onClick={deployGun}
                 title="Ta rifla frem for å se scope / skru tårn"
               >
-                Deploy gun
+                Deploy
               </button>
             ) : (
               <button
@@ -2583,7 +2583,7 @@ export function AwareAppView({
                 onClick={openGunScopeReview}
                 title="Se scope — skuddavstand, tårn. Track beholdes."
               >
-                Use gun scope
+                Scope
               </button>
             )
           ) : (
@@ -2611,13 +2611,13 @@ export function AwareAppView({
               onClick={!gunDeployed ? deployGun : proceed}
             >
               {!gunDeployed
-                ? "Deploy gun"
+                ? "Deploy"
                 : hasActiveBird && !birdOnMap
-                  ? "Fugl utenfor kart"
+                  ? "Utenfor kart"
                   : hasActiveBird && !liveBakgrunnOk
-                    ? "Farlig bakgrunn"
+                    ? "Farlig"
                     : gunPrepOnly
-                      ? "Use gun scope"
+                      ? "Scope"
                       : "Skuddklar"}
             </button>
           )}
@@ -2716,7 +2716,7 @@ export function AwareAppView({
           </p>
 
           {mode === "aware" ? (
-            <div className="aware-actions">
+            <div className="aware-actions ui-compact-actions">
               <button
                 type="button"
                 className={
@@ -2729,10 +2729,10 @@ export function AwareAppView({
                 title={
                   gunPrepOnly
                     ? "Ta rifla frem for tårn-prep"
-                    : `Backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → 0 %, 1 QR → +10 %)`
+                    : `Deploy gun — backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → 0 %, 1 QR → +10 %)`
                 }
               >
-                {gunDeployed ? "Gun deployed" : "Deploy gun"}
+                {gunDeployed ? "Deployed" : "Deploy"}
               </button>
               {gunDeployed ? (
                 <button
@@ -2741,7 +2741,7 @@ export function AwareAppView({
                   onClick={mountGun}
                   title="Sett rifla tilbake i sekken. Uspottede fugler i feltet +30% bird nerve."
                 >
-                  Mount gun
+                  Mount
                 </button>
               ) : null}
               {hasBackpack ? (
@@ -2757,17 +2757,23 @@ export function AwareAppView({
                   onClick={() => applyRestChoice("backpack")}
                   title={
                     gunDeployed
-                      ? "Dobbelt calm vs beste bipod — +25% bird nerve"
+                      ? rest === "backpack"
+                        ? bagriderOn
+                          ? "Sekk-anlegg + bagrider aktiv"
+                          : "Sekk-anlegg aktiv — dobbelt calm vs beste bipod (+25% bird nerve)"
+                        : rest === "bipod"
+                          ? `Bytt til sekk (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`
+                          : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`
                       : "Deploy gun først"
                   }
                 >
                   {rest === "backpack"
                     ? bagriderOn
-                      ? "Sekk-anlegg + bagrider"
-                      : "Sekk-anlegg aktiv"
+                      ? "Sekk + bag"
+                      : "Sekk på"
                     : rest === "bipod"
-                      ? `Bytt til Sekk (+${Math.round(BAG_REST_NERVE * 100)}%)`
-                      : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`}
+                      ? "→ Sekk"
+                      : "Sekk"}
                 </button>
               ) : null}
               {hasBipod ? (
@@ -2783,17 +2789,23 @@ export function AwareAppView({
                   onClick={() => applyRestChoice("bipod")}
                   title={
                     gunDeployed
-                      ? "Calm fra tofot bare når den er deployet"
+                      ? rest === "bipod"
+                        ? bagriderOn
+                          ? "Bipod + bagrider aktiv"
+                          : "Bipod deployet — calm fra tofot"
+                        : rest === "backpack"
+                          ? `Bytt til bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`
+                          : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`
                       : "Deploy gun først"
                   }
                 >
                   {rest === "bipod"
                     ? bagriderOn
-                      ? "Bipod + bagrider"
-                      : "Bipod deployet"
+                      ? "Bipod + bag"
+                      : "Bipod på"
                     : rest === "backpack"
-                      ? `Bytt til Bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}%)`
-                      : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`}
+                      ? "→ Bipod"
+                      : "Bipod"}
                 </button>
               ) : null}
               {hasBagrider && (hasBackpack || hasBipod) ? (
@@ -2814,16 +2826,14 @@ export function AwareAppView({
                       ? "Deploy gun først"
                       : rest !== "backpack" && rest !== "bipod"
                         ? "Aktiver sekk eller bipod først — bagrider brukes sammen med anlegg"
-                        : `+${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm oppå ${rest === "backpack" ? "sekk" : "bipod"} — +10% bird nerve`
+                        : `+${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm oppå ${rest === "backpack" ? "sekk" : "bipod"} — +${Math.round(BAGRIDER_REST_NERVE * 100)}% bird nerve`
                   }
                 >
-                  {bagriderOn
-                    ? "Bagrider aktiv"
-                    : `Use bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}% nervøsitet)`}
+                  {bagriderOn ? "Bagrider på" : "Bagrider"}
                 </button>
               ) : null}
               {hasBackpack || hasBipod || hasBagrider ? (
-                <p className="shop-row-note">
+                <p className="shop-row-note ui-hide-sm">
                   Anlegg krever Deploy gun. Sekk = maks calm (+25% nerve). Bipod
                   = tofot-calm (nerve 5–15% etter kvalitet). Bagrider = +
                   {Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm{" "}
@@ -2838,10 +2848,13 @@ export function AwareAppView({
                   className="intro-button sheriff-secondary"
                   disabled={kestrelEnviroReady}
                   onClick={measureKestrelEnviro}
+                  title={
+                    kestrelEnviroReady
+                      ? "Kestrel enviro målt"
+                      : "Mål enviro med Kestrel (+5% nervøsitet)"
+                  }
                 >
-                  {kestrelEnviroReady
-                    ? "Kestrel enviro målt"
-                    : "Mål enviro med Kestrel (+5% nervøsitet)"}
+                  {kestrelEnviroReady ? "Kestrel OK" : "Kestrel"}
                 </button>
               ) : null}
               {hasTriggercam ? (
@@ -2850,10 +2863,13 @@ export function AwareAppView({
                   className="intro-button sheriff-secondary"
                   disabled={triggercamReady}
                   onClick={startTriggercam}
+                  title={
+                    triggercamReady
+                      ? `${shotCamName} aktiv`
+                      : `Start ${shotCamName} (+${shotCamNervePct}% nervøsitet)`
+                  }
                 >
-                  {triggercamReady
-                    ? `${shotCamName} aktiv`
-                    : `Start ${shotCamName} (+${shotCamNervePct}% nervøsitet)`}
+                  {triggercamReady ? `${shotCamName} på` : shotCamName}
                 </button>
               ) : null}
               {hasCamcorder ? (
@@ -2862,10 +2878,13 @@ export function AwareAppView({
                   className="intro-button sheriff-secondary"
                   disabled={camcorderReady}
                   onClick={deployCamcorder}
+                  title={
+                    camcorderReady
+                      ? "Camcorder klar"
+                      : `Sett opp camcorder (+${Math.round(camcorderSetupNerve * 100)}% nervøsitet)`
+                  }
                 >
-                  {camcorderReady
-                    ? "Camcorder klar"
-                    : `Sett opp camcorder (+${Math.round(camcorderSetupNerve * 100)}% nervøsitet)`}
+                  {camcorderReady ? "Cam klar" : "Camcorder"}
                 </button>
               ) : null}
               {hasChronograph ? (
@@ -2874,13 +2893,16 @@ export function AwareAppView({
                   className="intro-button sheriff-secondary"
                   disabled={chronoReady}
                   onClick={deployChrono}
+                  title={
+                    chronoReady
+                      ? "Chrono klar"
+                      : "Sett opp Chrono (+5% nervøsitet)"
+                  }
                 >
-                  {chronoReady
-                    ? "Chrono klar"
-                    : "Sett opp Chrono (+5% nervøsitet)"}
+                  {chronoReady ? "Chrono OK" : "Chrono"}
                 </button>
               ) : null}
-              <p className="shop-row-note">
+              <p className="shop-row-note ui-hide-sm">
                 Trykk kart → planleggingsmål (kakene flytter apex hit, samme
                 retning/bredde · skuddlinje følger).
                 Hold piltaster for å gå. Grønn linje = klar sektor; rød = fare.

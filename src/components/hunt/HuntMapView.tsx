@@ -5757,38 +5757,48 @@ export function HuntMapView({
   return (
     <div className="hunt-map">
       <header className="hunt-map-hud">
-        <div>
+        <div className="hunt-map-hud-text">
           <p className="intro-line intro-gift">
             Jakt — {terrain.name} ({terrain.region})
           </p>
-          <p className="shop-row-note">
+          <p className="shop-row-note hunt-map-hud-meta">
             <span className={dark ? "hunt-clock is-dark" : "hunt-clock"}>
               Kl {formatHuntClock(clockMinutes)}
             </span>
-            {dark ? " · mørkt (skuddlys slutt 17:00)" : " · skuddlys til 17:00"}
+            <span className="hunt-hud-secondary">
+              {dark ? " · mørkt (skuddlys slutt 17:00)" : " · skuddlys til 17:00"}
+            </span>
             {" · "}
-            Rute {cellLabel(pos)} · Effort {hereEffort}/5
+            Rute {cellLabel(pos)}
+            <span className="hunt-hud-secondary">
+              {" · "}
+              Effort {hereEffort}/5
+            </span>
             {" · "}
             Mental {pct(staminaLeft(effectiveMentalFatigue))}
-            {redBullActive ? ` (Red Bull crash ${redBullMinutesLeft} min)` : ""} ·
-            Fysisk{" "}
-            {pct(staminaLeft(physicalFatigue))}
-            {physicalFatigue >= 1 ? " (på null!)" : ""}
+            <span className="hunt-hud-secondary">
+              {redBullActive ? ` (Red Bull crash ${redBullMinutesLeft} min)` : ""}
+            </span>
             {" · "}
-            Sekk {formatWeightKg(packLoad.totalGrams)}
-            {packLoad.carcassGrams > 0
-              ? ` (${formatCarcassWeightKg(packLoad.carcassGrams / 1000)} vilt${
-                  packLoad.fatigueLoadFactor > 1.02
-                    ? ` · +${Math.round((packLoad.fatigueLoadFactor - 1) * 100)}% fatigue`
-                    : ""
-                })`
-              : ""}
+            Fysisk {pct(staminaLeft(physicalFatigue))}
+            {physicalFatigue >= 1 ? " (på null!)" : ""}
+            <span className="hunt-hud-secondary">
+              {" · "}
+              Sekk {formatWeightKg(packLoad.totalGrams)}
+              {packLoad.carcassGrams > 0
+                ? ` (${formatCarcassWeightKg(packLoad.carcassGrams / 1000)} vilt${
+                    packLoad.fatigueLoadFactor > 1.02
+                      ? ` · +${Math.round((packLoad.fatigueLoadFactor - 1) * 100)}% fatigue`
+                      : ""
+                  })`
+                : ""}
+            </span>
           </p>
-          <p className="shop-row-note">{log}</p>
+          <p className="shop-row-note hunt-map-hud-log">{log}</p>
         </div>
         <button
           type="button"
-          className="intro-button"
+          className="intro-button hunt-map-leave"
           disabled={!atParking}
           title={
             atParking
@@ -5959,7 +5969,7 @@ export function HuntMapView({
                 </p>
               ) : null}
 
-              <div className="hunt-side-actions">
+              <div className="hunt-side-actions ui-compact-actions">
                 <button
                   type="button"
                   className="intro-button"
@@ -6014,7 +6024,7 @@ export function HuntMapView({
                 normal her
               </p>
               {pendingPostShot ? (
-                <div className="hunt-side-actions hunt-side-actions-stack">
+                <div className="hunt-side-actions hunt-side-actions-stack ui-compact-actions">
                   <p className="shop-row-note">
                     {postShotGhost
                       ? `Fugleposisjon synlig i Aware i ${postShotGhostSecLeft} s — registrer skuddmarkør (Shoot) før tiden går ut.`
@@ -6051,7 +6061,7 @@ export function HuntMapView({
                 </div>
               ) : (
                 <>
-                  <div className="hunt-side-actions hunt-side-actions-stack">
+                  <div className="hunt-side-actions hunt-side-actions-stack ui-compact-actions">
                     <button
                       type="button"
                       className="intro-button"
@@ -6093,7 +6103,7 @@ export function HuntMapView({
                     </button>
                   </div>
                   {unfinishedShotPairs.length > 0 ? (
-                    <div className="hunt-side-actions hunt-side-actions-stack">
+                    <div className="hunt-side-actions hunt-side-actions-stack ui-compact-actions">
                       <p className="shop-row-note">
                         {unfinishedShotPairs.length === 1
                           ? "1 skuddmarkør venter på Hent/søk:"
@@ -6121,7 +6131,7 @@ export function HuntMapView({
                     {hasHeadlamp ? " · hodelykt i kit" : " · ingen hodelykt"}
                   </p>
                   {dark && !atParking ? (
-                    <div className="hunt-side-actions hunt-side-actions-stack">
+                    <div className="hunt-side-actions hunt-side-actions-stack ui-compact-actions">
                       <button
                         type="button"
                         className="intro-button"
@@ -6213,7 +6223,7 @@ export function HuntMapView({
                     </p>
                   ) : null}
 
-                  <div className="hunt-side-actions">
+                  <div className="hunt-side-actions ui-compact-actions">
                     <button
                       type="button"
                       className="intro-button"

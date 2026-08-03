@@ -2209,11 +2209,13 @@ export function HuntShootView({
             <>
               {" "}
               · Still tårn manuelt
-              {scopeMarkedBirdId
-                ? " · Fugl merket"
-                : scanBirdPlacements.length > 0
-                  ? " · Finn fugl i glasset — F for å markere (aktiverer fokus/avtrekk)"
-                  : " · Aware lagrer dial (ingen skudd uten mål)"}
+              <span className="ui-hide-sm">
+                {scopeMarkedBirdId
+                  ? " · Fugl merket"
+                  : scanBirdPlacements.length > 0
+                    ? " · Finn fugl i glasset — F for å markere (aktiverer fokus/avtrekk)"
+                    : " · Aware lagrer dial (ingen skudd uten mål)"}
+              </span>
             </>
           ) : (
             <>
@@ -2229,26 +2231,28 @@ export function HuntShootView({
               )}
               {" · "}
               Puls {formatPulseBpm(heartRateBpm)}
-              {" · "}
-              vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
-              {shotGeom.vitalDiameterMm} mm
-              {abFasitHold
-                ? " · Kestrel AB fasit (skru tårn)"
-                : hasKestrelInKit
-                  ? " · Kestrel i kit (fane)"
-                  : hasWindMeterInKit
-                    ? " · Vindmåler i kit (fane)"
-                    : null}
+              <span className="ui-hide-sm">
+                {" · "}
+                vital grønn Ø{shotGeom.instantDiameterMm} mm / rød Ø
+                {shotGeom.vitalDiameterMm} mm
+                {abFasitHold
+                  ? " · Kestrel AB fasit (skru tårn)"
+                  : hasKestrelInKit
+                    ? " · Kestrel i kit (fane)"
+                    : hasWindMeterInKit
+                      ? " · Vindmåler i kit (fane)"
+                      : null}
+              </span>
             </>
           )}
         </p>
-        <p className="shop-row-note">
+        <p className="shop-row-note ui-hide-sm">
           {rifle.brand} {rifle.name} · {scope.brand} {scope.name} (
           {zoom.toFixed(1)}×) · {status}
         </p>
       </header>
 
-      <div className="range-toolbar">
+      <div className="range-toolbar ui-compact-actions">
         <label className="shop-filter">
           Ammo
           <select
@@ -2269,7 +2273,7 @@ export function HuntShootView({
           </select>
         </label>
         <span className="range-shot-count">Patroner {ammoRemaining}</span>
-        <span className="shop-row-note">
+        <span className="shop-row-note ui-hide-sm">
           Zoom {zoom.toFixed(1)}× — dra i glasset for å sikte · dra ringen (kl. 8→12→4)
         </span>
       </div>

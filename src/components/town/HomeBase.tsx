@@ -800,7 +800,7 @@ export function HomeBase({
         )}
       </header>
 
-      <div className="home-actions">
+      <div className="home-actions ui-compact-actions">
         <button
           type="button"
           className="intro-button home-inatur-btn"
@@ -811,12 +811,13 @@ export function HomeBase({
         <button
           type="button"
           className="intro-button sheriff-secondary"
+          title={`Shotlog ${shotLog.length} · Dope ${dopeCard.length}`}
           onClick={() => {
             setShotlogDopeTab("shotlog");
             setView("shotlog-dope");
           }}
         >
-          Shotlog ({shotLog.length}/{dopeCard.length})
+          Shotlog
         </button>
         <button
           type="button"
