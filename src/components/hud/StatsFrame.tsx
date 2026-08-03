@@ -25,6 +25,7 @@ import {
   formatBirdsPerKm,
   formatLifetimeDistance,
 } from "@/lib/playerSave";
+import { HunterSelfie } from "@/components/hud/HunterSelfie";
 
 const ADMIN_PIN = "9898";
 
@@ -55,6 +56,8 @@ const MENU_COPY: Record<
     cancel: string;
     save: string;
     hunterExam: string;
+    selfie: string;
+    back: string;
   }
 > = {
   nb: {
@@ -82,6 +85,8 @@ const MENU_COPY: Record<
     cancel: "Avbryt",
     save: "Lagre",
     hunterExam: "Jegerprøven",
+    selfie: "Selfie",
+    back: "Tilbake",
   },
   en: {
     settings: "Settings",
@@ -108,6 +113,8 @@ const MENU_COPY: Record<
     cancel: "Cancel",
     save: "Save",
     hunterExam: "Hunter exam",
+    selfie: "Selfie",
+    back: "Back",
   },
   ja: {
     settings: "Settings",
@@ -134,6 +141,8 @@ const MENU_COPY: Record<
     cancel: "キャンセル",
     save: "保存",
     hunterExam: "猟銃試験",
+    selfie: "セルフィー",
+    back: "戻る",
   },
 };
 
@@ -161,7 +170,7 @@ function formatRange(meters: number): string {
   return `${meters} m`;
 }
 
-type MenuView = "closed" | "settings" | "rename" | "admin-pin";
+type MenuView = "closed" | "settings" | "rename" | "admin-pin" | "selfie";
 
 /** Compact sticky hunter strip — keeps main content visible. */
 export function StatsFrame({
@@ -188,16 +197,8 @@ export function StatsFrame({
   const [sfxVol, setSfxVol] = useState(1);
   const menuRef = useRef<HTMLDivElement>(null);
   const copy = MENU_COPY[stats.lang] ?? MENU_COPY.nb;
-  const hasMenu =
-    !!onRename ||
-    !!onDeleteUser ||
-    !!onLangChange ||
-    !!onRealismChange ||
-    !!onScopeAimControlChange ||
-    !!onOpenJegerprove ||
-    !!onGoogleLogin ||
-    !!onGoogleLogout ||
-    !!onAdminUnlock;
+  /** Selfie is always available; other items need handlers. */
+  const hasMenu = true;
   const aimControl =
     stats.scopeAimControl ?? DEFAULT_SCOPE_AIM_CONTROL;
 
@@ -318,6 +319,13 @@ export function StatsFrame({
                 <section className="stats-settings-section" aria-label={copy.name}>
                   <p className="stats-menu-heading">{copy.name}</p>
                   <p className="stats-settings-value">{stats.name || "—"}</p>
+                  <button
+                    type="button"
+                    className="stats-menu-item"
+                    onClick={() => setMenu("selfie")}
+                  >
+                    {copy.selfie}
+                  </button>
                   {onRename ? (
                     <button
                       type="button"
@@ -632,6 +640,27 @@ export function StatsFrame({
                     </button>
                   </div>
                 </form>
+              </div>
+            ) : null}
+            {menu === "selfie" ? (
+              <div
+                className="stats-menu-panel stats-menu-selfie"
+                role="dialog"
+                aria-label={copy.selfie}
+              >
+                <div className="stats-settings-head">
+                  <p className="stats-menu-heading stats-settings-title">
+                    {copy.selfie}
+                  </p>
+                  <button
+                    type="button"
+                    className="stats-menu-item is-muted stats-settings-close"
+                    onClick={() => setMenu("settings")}
+                  >
+                    {copy.back}
+                  </button>
+                </div>
+                <HunterSelfie name={stats.name} nickname={stats.nickname} />
               </div>
             ) : null}
           </div>

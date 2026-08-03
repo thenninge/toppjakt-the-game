@@ -4195,6 +4195,172 @@ body {
   margin: 0 0 0.45rem;
 }
 
+/* --- Admire current rig (Amiga pixel silhouette) --- */
+.rig-admire {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.rig-admire-window {
+  background: #aaaaaa;
+  border: 2px solid #ffffff;
+  box-shadow:
+    inset -2px -2px 0 #555555,
+    inset 2px 2px 0 #eeeeee;
+}
+
+.rig-admire-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.28rem 0.5rem;
+  background: linear-gradient(90deg, #0055aa 0%, #0077cc 55%, #0055aa 100%);
+  border-bottom: 2px solid #000000;
+  color: #ffffff;
+  font-family: var(--font-display), "Courier New", monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.rig-admire-gadget {
+  flex: 0 0 auto;
+  width: 0.95rem;
+  height: 0.95rem;
+  background: #aaaaaa;
+  border: 1px solid #ffffff;
+  box-shadow:
+    inset -1px -1px 0 #555555,
+    inset 1px 1px 0 #eeeeee;
+}
+
+.rig-admire-gadget-depth {
+  margin-left: auto;
+}
+
+.rig-admire-titlebar-text {
+  flex: 1 1 auto;
+  text-align: center;
+  text-shadow: 1px 1px 0 #003366;
+}
+
+.rig-admire-stage {
+  position: relative;
+  padding: 0.75rem 0.55rem 0.5rem;
+  background: #0055aa;
+  overflow: hidden;
+}
+
+.rig-admire-svg {
+  display: block;
+  width: 100%;
+  max-height: 14rem;
+  /* Fine vector detail — not chunky pixels */
+  shape-rendering: geometricPrecision;
+}
+
+/* Present parts: metal / wood / cloth palette */
+.rig-detail-ok .rig-fill-metal {
+  fill: #c5ccd4;
+}
+.rig-detail-ok .rig-fill-metal-dark {
+  fill: #6d7580;
+}
+.rig-detail-ok .rig-fill-metal-light {
+  fill: #e8eef4;
+}
+.rig-detail-ok .rig-fill-wood {
+  fill: #8b6a42;
+}
+.rig-detail-ok .rig-fill-wood-dark {
+  fill: #5e4428;
+}
+.rig-detail-ok .rig-fill-wood-light {
+  fill: #b08958;
+}
+.rig-detail-ok .rig-fill-cloth {
+  fill: #4a5a38;
+}
+.rig-detail-ok .rig-fill-cloth-dark {
+  fill: #2e3a24;
+}
+.rig-detail-ok .rig-fill-cloth-light {
+  fill: #6a7a52;
+}
+.rig-detail-ok .rig-fill-void {
+  fill: #1a2030;
+}
+.rig-detail-ok .rig-fill-lens {
+  fill: #3a6a88;
+}
+.rig-detail-ok .rig-stroke-metal {
+  stroke: #6d7580;
+}
+.rig-detail-ok .rig-stroke-wood {
+  stroke: #5e4428;
+}
+
+/* Missing must-haves: red variants of the same layers */
+.rig-detail-miss .rig-fill-metal {
+  fill: #ef5555;
+}
+.rig-detail-miss .rig-fill-metal-dark {
+  fill: #b02020;
+}
+.rig-detail-miss .rig-fill-metal-light {
+  fill: #ff8888;
+}
+.rig-detail-miss .rig-fill-wood {
+  fill: #d84840;
+}
+.rig-detail-miss .rig-fill-wood-dark {
+  fill: #9a2018;
+}
+.rig-detail-miss .rig-fill-wood-light {
+  fill: #f07068;
+}
+.rig-detail-miss .rig-fill-cloth {
+  fill: #c83830;
+}
+.rig-detail-miss .rig-fill-cloth-dark {
+  fill: #8a1810;
+}
+.rig-detail-miss .rig-fill-cloth-light {
+  fill: #e06058;
+}
+.rig-detail-miss .rig-fill-void {
+  fill: #5a1010;
+}
+.rig-detail-miss .rig-fill-lens {
+  fill: #c04040;
+}
+.rig-detail-miss .rig-stroke-metal {
+  stroke: #b02020;
+}
+.rig-detail-miss .rig-stroke-wood {
+  stroke: #9a2018;
+}
+
+.rig-admire-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.1) 3px,
+    rgba(0, 0, 0, 0.1) 4px
+  );
+}
+
+.rig-admire-legend {
+  margin: 0;
+}
+
 .inatur-no {
   display: flex;
   flex-direction: column;
@@ -7074,6 +7240,124 @@ body {
   max-height: min(70vh, 36rem);
   overflow-y: auto;
   padding: 0.45rem 0.4rem 0.55rem;
+}
+
+.stats-menu-selfie {
+  width: min(18rem, calc(100vw - 1.5rem));
+  max-height: min(80vh, 40rem);
+  overflow-y: auto;
+  padding: 0.45rem 0.4rem 0.55rem;
+}
+
+/* --- Hunter selfie (Amiga pixel portrait) --- */
+.hunter-selfie {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.15rem 0.1rem 0.25rem;
+}
+
+.hunter-selfie-window {
+  background: #aaaaaa;
+  border: 2px solid #ffffff;
+  box-shadow:
+    inset -2px -2px 0 #555555,
+    inset 2px 2px 0 #eeeeee;
+}
+
+.hunter-selfie-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.22rem 0.4rem;
+  background: linear-gradient(90deg, #0055aa 0%, #0077cc 55%, #0055aa 100%);
+  border-bottom: 2px solid #000000;
+  color: #ffffff;
+  font-family: var(--font-display), "Courier New", monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hunter-selfie-gadget {
+  flex: 0 0 auto;
+  width: 0.8rem;
+  height: 0.8rem;
+  background: #aaaaaa;
+  border: 1px solid #ffffff;
+  box-shadow:
+    inset -1px -1px 0 #555555,
+    inset 1px 1px 0 #eeeeee;
+}
+
+.hunter-selfie-gadget-depth {
+  margin-left: auto;
+}
+
+.hunter-selfie-titlebar-text {
+  flex: 1 1 auto;
+  text-align: center;
+  text-shadow: 1px 1px 0 #003366;
+}
+
+.hunter-selfie-stage {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: #0055aa;
+}
+
+.hunter-selfie-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  shape-rendering: crispEdges;
+}
+
+.hunter-selfie-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.18) 2px,
+    rgba(0, 0, 0, 0.18) 3px
+  );
+}
+
+.hunter-selfie-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.45rem 0.4rem;
+  background: #0055aa;
+  border-top: 2px solid #000000;
+  color: #ffffff;
+  font-family: var(--font-display), "Courier New", monospace;
+  text-align: center;
+}
+
+.hunter-selfie-name {
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-shadow: 1px 1px 0 #003366;
+}
+
+.hunter-selfie-nick {
+  font-size: 0.78rem;
+  opacity: 0.9;
+  color: #ffcc66;
+  text-shadow: 1px 1px 0 #003366;
+}
+
+.hunter-selfie-note {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.85;
 }
 
 .stats-settings-head {

@@ -66,6 +66,10 @@ import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import { BARREL_MAKERS } from "@/lib/customs/customBarrel";
 import { isBubbleLevelMisc, isSuppressorCoverMisc } from "@/lib/misc/spec";
 import { LocationNav } from "@/components/town/LocationNav";
+import {
+  CurrentRigAdmire,
+  currentRigAdmireSummary,
+} from "@/components/town/CurrentRigAdmire";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
@@ -533,6 +537,11 @@ export function HomeBase({
     [weaponRigRows],
   );
 
+  const admireSummary = useMemo(
+    () => currentRigAdmireSummary({ kitItems, customsMods }),
+    [kitItems, customsMods],
+  );
+
   const rigFilledCount = weaponRigRows.filter((r) => !r.value.startsWith("—"))
     .length;
 
@@ -903,6 +912,17 @@ export function HomeBase({
               </span>
             </li>
           </ul>
+
+          <ExpandableSection
+            title="Admire current rig"
+            summary={admireSummary}
+            scrollOnExpand={false}
+          >
+            <CurrentRigAdmire
+              kitItems={kitItems}
+              customsMods={customsMods}
+            />
+          </ExpandableSection>
 
           <div
             className="current-rig-factors"
