@@ -4647,6 +4647,22 @@ body {
   margin: 0;
 }
 
+.field-kit-admire-svg {
+  max-height: 13rem;
+}
+
+.field-kit-label {
+  fill: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-display), "Courier New", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+.rig-detail-miss .field-kit-label {
+  fill: rgba(255, 200, 200, 0.95);
+}
+
 .inatur-no {
   display: flex;
   flex-direction: column;

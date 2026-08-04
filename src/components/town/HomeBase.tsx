@@ -70,6 +70,10 @@ import {
   CurrentRigAdmire,
   currentRigAdmireSummary,
 } from "@/components/town/CurrentRigAdmire";
+import {
+  FieldKitAdmire,
+  fieldKitAdmireSummary,
+} from "@/components/town/FieldKitAdmire";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
@@ -542,6 +546,11 @@ export function HomeBase({
     [kitItems, customsMods],
   );
 
+  const fieldKitSummary = useMemo(
+    () => fieldKitAdmireSummary(kitItems),
+    [kitItems],
+  );
+
   const rigFilledCount = weaponRigRows.filter((r) => !r.value.startsWith("—"))
     .length;
 
@@ -848,6 +857,17 @@ export function HomeBase({
 
       <ExpandableSection title="Current rig" summary={rigSummary}>
         <section className="current-rig" aria-label="Current rig">
+          <ExpandableSection
+            title="Admire current rig"
+            summary={admireSummary}
+            scrollOnExpand={false}
+          >
+            <CurrentRigAdmire
+              kitItems={kitItems}
+              customsMods={customsMods}
+            />
+          </ExpandableSection>
+
           <p className="shop-row-note current-rig-inline-note">
             Bare det som sitter på våpenet: våpen, pipe, lyddemper, kikkert,
             montasje, wrap, bubble level, stokk og triggercam. Vekt etter CB-tuning der det
@@ -913,17 +933,6 @@ export function HomeBase({
               </span>
             </li>
           </ul>
-
-          <ExpandableSection
-            title="Admire current rig"
-            summary={admireSummary}
-            scrollOnExpand={false}
-          >
-            <CurrentRigAdmire
-              kitItems={kitItems}
-              customsMods={customsMods}
-            />
-          </ExpandableSection>
 
           <div
             className="current-rig-factors"
@@ -1041,6 +1050,14 @@ export function HomeBase({
         summary={kitOverview.summary}
       >
         <section className="kit-overview" aria-label="Active kit overview">
+          <ExpandableSection
+            title="Admire field kit"
+            summary={fieldKitSummary}
+            scrollOnExpand={false}
+          >
+            <FieldKitAdmire kitItems={kitItems} />
+          </ExpandableSection>
+
           <p className="shop-row-note current-rig-inline-note">
             Live analyse av det du har i kit — hva som holder deg tilbake, og
             hva som lønner seg å oppgradere.
