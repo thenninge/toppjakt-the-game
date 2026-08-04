@@ -1733,20 +1733,21 @@ export function SpotView({
             role="toolbar"
             aria-label="Optikk-kontroller"
           >
-            {hasThermal && !habrokBatteryDead ? (
+            {hasThermal && !habrokBatteryDead && mode === "thermal" ? (
               <>
                 <button
                   type="button"
                   className={
-                    mode === "thermal" &&
-                    (thermalPolarity === "wh" || thermalPolarity === "bh")
+                    thermalPolarity === "wh" || thermalPolarity === "bh"
                       ? "intro-button"
                       : "intro-button sheriff-secondary"
                   }
                   title={
                     thermalPolarity === "bh"
-                      ? "Black-hot — trykk for white-hot"
-                      : "White-hot — trykk for black-hot"
+                      ? "WH (black-hot) — trykk for BH / white-hot"
+                      : thermalPolarity === "wh"
+                        ? "BH (white-hot) — trykk for WH / black-hot"
+                        : "BH / WH — termisk polaritet"
                   }
                   onClick={() => {
                     if (mode === "thermal" && thermalPolarity === "wh") {
@@ -1761,12 +1762,11 @@ export function SpotView({
                     }
                   }}
                 >
-                  {mode === "thermal" &&
-                  (thermalPolarity === "wh" || thermalPolarity === "bh")
+                  {thermalPolarity === "wh" || thermalPolarity === "bh"
                     ? thermalPolarity === "bh"
-                      ? "BH"
-                      : "WH"
-                    : "WH/BH"}
+                      ? "WH"
+                      : "BH"
+                    : "BH/WH"}
                 </button>
                 {isThermalBinocular && hasThermalOutline ? (
                   <button
@@ -1820,11 +1820,7 @@ export function SpotView({
                 ) : null}
                 <button
                   type="button"
-                  className={
-                    mode !== "thermal"
-                      ? "intro-button"
-                      : "intro-button sheriff-secondary"
-                  }
+                  className="intro-button sheriff-secondary"
                   title="Slå av termisk — sparer batteri (dagoptikk)"
                   onClick={() => {
                     playSpotThermalClick();
@@ -1911,11 +1907,10 @@ export function SpotView({
             <button
               type="button"
               className="intro-button"
-              onClick={() =>
-                onDone({ mode, gameSeconds: lookedRef.current })
-              }
+              onClick={() => leaveToEyes()}
+              title="Tilbake til øyne (uten kikkert/termisk)"
             >
-              Done
+              Eyes
             </button>
           </div>
 
@@ -2244,9 +2239,9 @@ export function SpotView({
         <p className="spot-binos-hint">
           Sirkulært termisk syn · piltaster / dra ·{" "}
           {thermalPolarity === "wh"
-            ? "WH: varm = hvit"
+            ? "BH: varm = hvit"
             : thermalPolarity === "bh"
-              ? "BH: varm = svart"
+              ? "WH: varm = svart"
               : thermalPolarity === "outline"
                 ? "Outline: termisk + rød kant"
                 : "Fusion: alle fugler som kikkert · rød outline først ved zoom (grønn >10× / gul >15×)"}

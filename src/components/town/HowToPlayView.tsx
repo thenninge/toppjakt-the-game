@@ -68,7 +68,7 @@ const SECTIONS: GuideSection[] = [
     bullets: [
       "Spotting: øyne ser til ~230 m. Kikkert/termisk ser lengre. Habrok termisk/outline: grønn fugl over ~10×, gul over ~15×.",
       "LRF har feilmargin (±%). Dyrere glass treffer nærmere sann avstand.",
-      "Habrok: B/T åpner Fusion. WH/BH/Outline/Fusion på verktøylinjen. OFF = dagoptikk og sparer batteri.",
+      "Habrok: B/T åpner Fusion. BH/WH/Outline/Fusion på verktøylinjen (kun termisk). OFF = dagoptikk. Eyes = tilbake til øyne.",
       "Tomt Habrok-batteri → kun dagoptikk (ingen termisk).",
       "I Habrok termisk/outline: Fusion viser alle, outline følger zoom.",
       "FFP-retikkel skalerer med zoom — 1 mil på glass ≈ distanceM mm på fugl/skive (når kalibrert). Hold-over matcher dial.",

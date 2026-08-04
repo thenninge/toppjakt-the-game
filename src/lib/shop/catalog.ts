@@ -1437,7 +1437,7 @@ const CATALOG_DRAFT: CatalogDraft[] = [
     brand: "Sauer",
     name: "200 STR",
     priceNok: 45990,
-    caliber: "flere (NLS-favoritt)",
+    caliber: "flere",
     note: "Norsk konkurranseklassiker.",
     rifle: {
       averageBestAccuracyMoa: 0.28,

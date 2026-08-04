@@ -4443,6 +4443,42 @@ body {
   stroke: #5e4428;
 }
 
+/* Kit-selfie stock materials (carbon / polymer / chassis) */
+.rig-detail-ok .rig-fill-carbon {
+  fill: url(#rigCarbonWeave);
+}
+.rig-detail-ok .rig-fill-carbon-dark {
+  fill: #1a1c22;
+}
+.rig-detail-ok .rig-fill-carbon-light {
+  fill: #3a3e48;
+}
+.rig-detail-ok .rig-fill-synthetic {
+  fill: #2a2e34;
+}
+.rig-detail-ok .rig-fill-synthetic-dark {
+  fill: #14161a;
+}
+.rig-detail-ok .rig-fill-synthetic-light {
+  fill: #4a5058;
+}
+.rig-detail-ok .rig-fill-chassis {
+  fill: #6a727c;
+}
+.rig-detail-ok .rig-fill-chassis-dark {
+  fill: #3e464e;
+}
+.rig-detail-ok .rig-fill-chassis-light {
+  fill: #9aa2aa;
+}
+.rig-detail-ok .rig-stroke-carbon,
+.rig-detail-ok .rig-stroke-synthetic {
+  stroke: #1a1c22;
+}
+.rig-detail-ok .rig-stroke-chassis {
+  stroke: #3e464e;
+}
+
 /* CB custom camo — frosty metal + snow stock accents */
 .rig-detail-ok.rig-snowcamo .rig-fill-metal {
   fill: #d2d8de;
@@ -4462,10 +4498,28 @@ body {
 .rig-detail-ok.rig-snowcamo .rig-fill-wood-light {
   fill: #ffffff;
 }
+.rig-detail-ok.rig-snowcamo .rig-fill-carbon,
+.rig-detail-ok.rig-snowcamo .rig-fill-synthetic,
+.rig-detail-ok.rig-snowcamo .rig-fill-chassis {
+  fill: #e8eef2;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-carbon-dark,
+.rig-detail-ok.rig-snowcamo .rig-fill-synthetic-dark,
+.rig-detail-ok.rig-snowcamo .rig-fill-chassis-dark {
+  fill: #9aa8b0;
+}
+.rig-detail-ok.rig-snowcamo .rig-fill-carbon-light,
+.rig-detail-ok.rig-snowcamo .rig-fill-synthetic-light,
+.rig-detail-ok.rig-snowcamo .rig-fill-chassis-light {
+  fill: #ffffff;
+}
 .rig-detail-ok.rig-snowcamo .rig-stroke-metal {
   stroke: #8a949e;
 }
-.rig-detail-ok.rig-snowcamo .rig-stroke-wood {
+.rig-detail-ok.rig-snowcamo .rig-stroke-wood,
+.rig-detail-ok.rig-snowcamo .rig-stroke-carbon,
+.rig-detail-ok.rig-snowcamo .rig-stroke-synthetic,
+.rig-detail-ok.rig-snowcamo .rig-stroke-chassis {
   stroke: #9aa8b0;
 }
 
@@ -4488,6 +4542,21 @@ body {
 .rig-detail-miss .rig-fill-wood-light {
   fill: #f07068;
 }
+.rig-detail-miss .rig-fill-carbon,
+.rig-detail-miss .rig-fill-synthetic,
+.rig-detail-miss .rig-fill-chassis {
+  fill: #d84840;
+}
+.rig-detail-miss .rig-fill-carbon-dark,
+.rig-detail-miss .rig-fill-synthetic-dark,
+.rig-detail-miss .rig-fill-chassis-dark {
+  fill: #9a2018;
+}
+.rig-detail-miss .rig-fill-carbon-light,
+.rig-detail-miss .rig-fill-synthetic-light,
+.rig-detail-miss .rig-fill-chassis-light {
+  fill: #f07068;
+}
 .rig-detail-miss .rig-fill-cloth {
   fill: #c83830;
 }
@@ -4506,7 +4575,10 @@ body {
 .rig-detail-miss .rig-stroke-metal {
   stroke: #b02020;
 }
-.rig-detail-miss .rig-stroke-wood {
+.rig-detail-miss .rig-stroke-wood,
+.rig-detail-miss .rig-stroke-carbon,
+.rig-detail-miss .rig-stroke-synthetic,
+.rig-detail-miss .rig-stroke-chassis {
   stroke: #9a2018;
 }
 
