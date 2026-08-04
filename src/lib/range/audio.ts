@@ -61,10 +61,19 @@ export type RangeShotAudioOptions = {
   afterShot?: boolean;
 };
 
+/** Ignore a second crack if React re-ran a setState updater (or double-fire). */
+const SHOT_DEBOUNCE_MS = 80;
+let lastShotStartedAtMs = 0;
+
 /** Shot crack → optional after-shot tail (suppressor picks the shot clip). */
 export function playRangeShotSequence(
   hasSuppressorOrOptions: boolean | RangeShotAudioOptions,
 ): void {
+  const now =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  if (now - lastShotStartedAtMs < SHOT_DEBOUNCE_MS) return;
+  lastShotStartedAtMs = now;
+
   const opts: RangeShotAudioOptions =
     typeof hasSuppressorOrOptions === "boolean"
       ? { hasSuppressor: hasSuppressorOrOptions }

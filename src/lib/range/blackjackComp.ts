@@ -303,7 +303,7 @@ function maskCount(mask: number): number {
   return n;
 }
 
-/** First unscored plate in forward (0→5) or reverse (5→0) order. */
+/** First unscored plate in forward (0→5) or reverse larger plates; extras → 2″. */
 export function blackjackHintPlateIndex(p: BlackjackProgress): number {
   if (p.runPhase === "extras") return 5;
   if (p.runPhase === "forward") {
@@ -312,24 +312,34 @@ export function blackjackHintPlateIndex(p: BlackjackProgress): number {
     }
     return 5;
   }
-  for (let i = BLACKJACK_PLATES.length - 1; i >= 0; i--) {
+  // reverse: prefer remaining larger plates, else 2″ for extras
+  for (let i = BLACKJACK_PLATES.length - 2; i >= 0; i--) {
     if (!maskHas(p.reverseHitMask, i)) return i;
   }
   return 5;
 }
 
-/** Plates still needed for points in the current phase. */
+/**
+ * Plates still awarding points.
+ * After the forward row is filled, the 2″ stays needed for extra BlackJacks
+ * while unscored reverse plates (12″–4″) remain available toward 42.
+ */
 export function blackjackNeededPlateIndices(
   p: BlackjackProgress,
 ): ReadonlySet<number> {
   const s = new Set<number>();
-  if (p.runPhase === "extras") {
-    s.add(5);
+  if (p.runPhase === "forward") {
+    for (let i = 0; i < BLACKJACK_PLATES.length; i++) {
+      if (!maskHas(p.forwardHitMask, i)) s.add(i);
+    }
     return s;
   }
-  const mask = p.runPhase === "forward" ? p.forwardHitMask : p.reverseHitMask;
-  for (let i = 0; i < BLACKJACK_PLATES.length; i++) {
-    if (!maskHas(mask, i)) s.add(i);
+  // extras / reverse — 2″ always active for +21 after forward clear
+  s.add(5);
+  if (!p.completedReverse) {
+    for (let i = 0; i <= 4; i++) {
+      if (!maskHas(p.reverseHitMask, i)) s.add(i);
+    }
   }
   return s;
 }
@@ -356,7 +366,12 @@ export type BlackjackHitApply = {
 
 /**
  * Freefire scoring: any unscored plate in the current pass awards its points
- * (order free). After forward + reverse clears, every 2″ hit is +21.
+ * (order free).
+ *
+ * After the forward row (BlackJack 21), the 2″ stays live for +21 per hit
+ * (“additional BlackJacks”). Reverse of 12″–4″ still scores plate points;
+ * clearing those five awards the reverse 2″ (6 pts) so a full reverse rack
+ * totals 42 without requiring a separate 6-pt hit on the 2″.
  */
 export function applyBlackjackPlateHit(
   prev: BlackjackProgress,
@@ -364,22 +379,6 @@ export function applyBlackjackPlateHit(
 ): BlackjackHitApply | null {
   const plate = BLACKJACK_PLATES[plateIndex];
   if (!plate) return null;
-
-  if (prev.runPhase === "extras") {
-    if (plateIndex !== 5) {
-      return { next: prev, pointsAwarded: 0, scored: false };
-    }
-    return {
-      pointsAwarded: BLACKJACK_EXTRA_POINTS,
-      scored: true,
-      next: {
-        ...prev,
-        score: prev.score + BLACKJACK_EXTRA_POINTS,
-        blackjacks: prev.blackjacks + 1,
-        nextPlateIndex: 5,
-      },
-    };
-  }
 
   if (prev.runPhase === "forward") {
     if (maskHas(prev.forwardHitMask, plateIndex)) {
@@ -395,38 +394,64 @@ export function applyBlackjackPlateHit(
     if (maskCount(forwardHitMask) >= BLACKJACK_PLATES.length) {
       next.completedForward = true;
       next.blackjacks += 1;
-      next.runPhase = "reverse";
-      next.nextPlateIndex = blackjackHintPlateIndex({
-        ...next,
-        runPhase: "reverse",
-        reverseHitMask: 0,
-      });
+      // 2″ stays active immediately for extra BlackJacks; reverse is parallel.
+      next.runPhase = "extras";
+      next.nextPlateIndex = 5;
     } else {
       next.nextPlateIndex = blackjackHintPlateIndex(next);
     }
     return { next, pointsAwarded: plate.points, scored: true };
   }
 
-  // reverse
-  if (maskHas(prev.reverseHitMask, plateIndex)) {
+  // Post-forward: extras (+21 on 2″) and optional reverse on 12″–4″.
+  if (plateIndex === 5) {
+    return {
+      pointsAwarded: BLACKJACK_EXTRA_POINTS,
+      scored: true,
+      next: {
+        ...prev,
+        runPhase: "extras",
+        score: prev.score + BLACKJACK_EXTRA_POINTS,
+        blackjacks: prev.blackjacks + 1,
+        nextPlateIndex: 5,
+      },
+    };
+  }
+
+  if (prev.completedReverse || maskHas(prev.reverseHitMask, plateIndex)) {
     return { next: prev, pointsAwarded: 0, scored: false };
   }
+
+  // Reverse freefire on larger plates (0–4).
   const reverseHitMask = maskWith(prev.reverseHitMask, plateIndex);
+  let score = prev.score + plate.points;
+  let pointsAwarded = plate.points;
+  let blackjacks = prev.blackjacks;
+  let completedReverse = false;
+  const largerDone = [0, 1, 2, 3, 4].every((i) => maskHas(reverseHitMask, i));
+  if (largerDone) {
+    // Reverse 2″ credit — 2″ itself only scores extras after forward clear.
+    const twoInch = BLACKJACK_PLATES[5]!;
+    score += twoInch.points;
+    pointsAwarded += twoInch.points;
+    blackjacks += 1;
+    completedReverse = true;
+  }
   const next: BlackjackProgress = {
     ...prev,
+    runPhase: "extras",
     reverseHitMask,
-    score: prev.score + plate.points,
-    nextPlateIndex: 0,
+    score,
+    blackjacks,
+    completedReverse,
+    nextPlateIndex: blackjackHintPlateIndex({
+      ...prev,
+      runPhase: "extras",
+      reverseHitMask,
+      completedReverse,
+    }),
   };
-  if (maskCount(reverseHitMask) >= BLACKJACK_PLATES.length) {
-    next.completedReverse = true;
-    next.blackjacks += 1;
-    next.runPhase = "extras";
-    next.nextPlateIndex = 5;
-  } else {
-    next.nextPlateIndex = blackjackHintPlateIndex(next);
-  }
-  return { next, pointsAwarded: plate.points, scored: true };
+  return { next, pointsAwarded, scored: true };
 }
 
 function formatElevNb(scopeClicks: number): string {
@@ -556,8 +581,11 @@ export function blackjackPlateGeom(sizeMm: number): {
   };
 }
 
-export function blackjackRunPhaseLabelNb(phase: BlackjackRunPhase): string {
+export function blackjackRunPhaseLabelNb(
+  phase: BlackjackRunPhase,
+  opts?: { completedReverse?: boolean },
+): string {
   if (phase === "forward") return "Frem (12″→2″)";
-  if (phase === "reverse") return "Revers (2″→12″)";
-  return "Ekstra BlackJack (2″)";
+  if (opts?.completedReverse) return "Ekstra BlackJack (2″)";
+  return "2″ ekstra (+21) · revers valgfri";
 }

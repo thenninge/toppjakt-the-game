@@ -591,11 +591,11 @@ export function BlackjackCompetitionView({
     const mask =
       progress.runPhase === "forward"
         ? progress.forwardHitMask
-        : progress.runPhase === "reverse"
-          ? progress.reverseHitMask
-          : 0;
+        : progress.reverseHitMask;
     const s = new Set<number>();
     for (let i = 0; i < 6; i++) {
+      // 2″ stays live for extras after forward — never mark it “done”.
+      if (i === 5 && progress.completedForward) continue;
       if (mask & (1 << i)) s.add(i);
     }
     return s;
@@ -1220,7 +1220,7 @@ export function BlackjackCompetitionView({
 
       if (!applied.scored) {
         setStatus(
-          `Treff ${hitPlate.label} — ingen poeng (${blackjackRunPhaseLabelNb(prev.runPhase)})`,
+          `Treff ${hitPlate.label} — ingen poeng (${blackjackRunPhaseLabelNb(prev.runPhase, { completedReverse: prev.completedReverse })})`,
         );
         advancingRef.current = false;
         return;
@@ -1262,8 +1262,8 @@ export function BlackjackCompetitionView({
         }
         setStatus(
           hintPlate
-            ? `Hint: ${hintPlate.label} · ${blackjackRunPhaseLabelNb(applied.next.runPhase)} · ${applied.next.score} poeng`
-            : `${blackjackRunPhaseLabelNb(applied.next.runPhase)} · ${applied.next.score} poeng`,
+            ? `Hint: ${hintPlate.label} · ${blackjackRunPhaseLabelNb(applied.next.runPhase, { completedReverse: applied.next.completedReverse })} · ${applied.next.score} poeng`
+            : `${blackjackRunPhaseLabelNb(applied.next.runPhase, { completedReverse: applied.next.completedReverse })} · ${applied.next.score} poeng`,
         );
         advancingRef.current = false;
       }, HIT_FLASH_MS);
@@ -1729,8 +1729,10 @@ export function BlackjackCompetitionView({
   const remainingMs = Math.max(0, BLACKJACK_TIME_LIMIT_MS - elapsedUiMs);
   const nextPlateLabel = activePlate?.label ?? "—";
   const hudHint =
-    progress.runPhase === "extras"
-      ? `Ekstra BlackJack på 2″`
+    progress.completedForward
+      ? progress.completedReverse
+        ? `Ekstra BlackJack på 2″ (+21)`
+        : `2″ aktiv (+21) · revers 12″–4″ mot 42`
       : `Hint ${nextPlateLabel} (valgfri rekkefølge)`;
 
   const focusLabel =
@@ -1788,8 +1790,9 @@ export function BlackjackCompetitionView({
           <p className="intro-line intro-gift">BlackJack Challenge</p>
           <p className="shop-row-note">
             2 minutter · ~{BLACKJACK_DISTANCE_YD} yd ({BLACKJACK_DISTANCE_M} m)
-            · alle blinker aktive, valgfri rekkefølge. Hver blink 1× i frem-pass
-            (1–6 = 21), så revers (42), deretter +21 per treff på 2″. Kortest tid
+            · alle blinker aktive, valgfri rekkefølge. Fyll raden (1–6 = 21
+            BlackJack) — deretter er 2″ aktiv hele tiden for ekstra BlackJack
+            (+21 per treff). Revers på 12″–4″ gir dobbel rack (42). Kortest tid
             ved poenglikhet.
           </p>
           <p className="shop-row-note">
@@ -1930,7 +1933,10 @@ export function BlackjackCompetitionView({
             {result.hitLog.map((h, i) => (
               <li key={`${h.plateIndex}-${i}`}>
                 #{i + 1} · {h.sizeInch}″ · +{h.pointsAwarded} ·{" "}
-                {blackjackRunPhaseLabelNb(h.runPhase)} ·{" "}
+                {blackjackRunPhaseLabelNb(h.runPhase, {
+                  completedReverse: h.runPhase === "extras",
+                })}{" "}
+                ·{" "}
                 {h.xMm.toFixed(0)}/{h.yMm.toFixed(0)} mm
               </li>
             ))}
@@ -1975,10 +1981,15 @@ export function BlackjackCompetitionView({
       <header className="shop-header">
         <p className="intro-line intro-gift">
           BlackJack · {scoreUi} poeng ·{" "}
-          {formatBlackjackClock(remainingMs)}
+          <span className="blackjack-clock">
+            {formatBlackjackClock(remainingMs)}
+          </span>
         </p>
         <p className="shop-row-note">
-          {hudHint} · {blackjackRunPhaseLabelNb(progress.runPhase)}
+          {hudHint} ·{" "}
+          {blackjackRunPhaseLabelNb(progress.runPhase, {
+            completedReverse: progress.completedReverse,
+          })}
           {" · "}
           {rifle!.brand} {rifle!.name} · {selectedAmmo?.brand}{" "}
           {selectedAmmo?.name} · {ammoRemaining} igjen · {distanceM} m

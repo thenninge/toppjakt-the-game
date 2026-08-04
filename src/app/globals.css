@@ -8530,6 +8530,11 @@ body {
   gap: 0.65rem;
 }
 
+.blackjack-clock {
+  color: #e02020;
+  font-variant-numeric: tabular-nums;
+}
+
 .blackjack-lobby-range {
   position: relative;
   width: 100%;

@@ -681,6 +681,7 @@ export function ShootingRange({
   const wobbleRef = useRef({ x: 0, y: 0 });
   const measurementRef = useRef(measurement);
   const shotsLenRef = useRef(0);
+  const shotsRef = useRef<ShotImpact[]>([]);
   const distanceRef = useRef(distanceM);
   const wobblePhase = useRef({ a: Math.random() * 10, b: Math.random() * 10 });
   const weaponCalmRef = useRef(1);
@@ -844,8 +845,9 @@ export function ShootingRange({
   }, [measurement]);
 
   useEffect(() => {
+    shotsRef.current = shots;
     shotsLenRef.current = shots.length;
-  }, [shots.length]);
+  }, [shots]);
 
   useEffect(() => {
     playShotRef.current = playShot;
@@ -885,229 +887,229 @@ export function ShootingRange({
       return;
     }
 
-    setShots((prev) => {
-      if (measurementRef.current) {
-        return prev;
-      }
+    // Compute impact + SFX outside setState — React may re-run updaters
+    // (Strict Mode / concurrent), which would double-play the crack.
+    const { affinity, map, rolled } = ensureAmmoAffinity(
+      ammoAffinities,
+      rifle.id,
+      selectedAmmo.id,
+    );
+    if (rolled) onAffinitiesChange(map);
 
-      const { affinity, map, rolled } = ensureAmmoAffinity(
-        ammoAffinities,
-        rifle.id,
-        selectedAmmo.id,
-      );
-      if (rolled) onAffinitiesChange(map);
-
-      const realLoad = realLoadForRifle(realLoadProfiles, rifle.id);
-      const usingReal = isRealDataActive({
-        useRealDataInSimulation,
-        kitIds,
-        inventoryItemIds,
-        realLoad,
-        ammoId: selectedAmmo.id,
-      });
-      const sim = kestrelSolveAmmo(
-        selectedAmmo.ammo,
-        selectedAmmo.id,
-        kestrelProfiles,
-        {
-          active: usingReal,
-          profile: realLoad,
-        },
-      );
-      // Measured MV is already for this rifle — do not re-scale by barrel length.
-      const simAmmo =
-        usingReal && realLoad
-          ? applyRealLoadToAmmo(selectedAmmo.ammo, realLoad)
-          : sim.ammo;
-      const simDvDt = usingReal && realLoad ? realLoad.dvDtMpsPerC : sim.dvDtMpsPerC;
-      const dispersionInput = {
-        rifle: rifleSpecWithCustomBarrel(
-          rifle.rifle,
-          customBarrels[rifle.id],
-        ),
-        ammo: simAmmo,
-        stock: stock?.stock,
-        affinity,
-        customsMoaDelta,
-        barrelWearScale,
-        mirageFactor: usingReal ? 0 : mirageStrengthRef.current,
-        barrelV0Factor: usingReal
-          ? 1
-          : barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]),
-        envelopeMult: realismDispersionMult(realism),
-      };
-      let poa: { xMm: number; yMm: number };
-      let seriesGroupEnvelopeMoa: number | null = null;
-      if (usingReal) {
-        // Measured groups already include shooter error — no wobble/trigger on POA.
-        poa = { xMm: aimRef.current.x, yMm: aimRef.current.y };
-        const mean = simAmmo.systemGroupMoaOverride;
-        const best = simAmmo.systemGroupMoaBest;
-        if (
-          mean != null &&
-          best != null &&
-          Number.isFinite(mean) &&
-          Number.isFinite(best)
-        ) {
-          if (realSeriesEnvelopeMoaRef.current == null) {
-            realSeriesEnvelopeMoaRef.current = sampleRealSystemGroupMoa(
-              mean,
-              best,
-            );
-          }
-          seriesGroupEnvelopeMoa = realSeriesEnvelopeMoaRef.current;
-        }
-      } else {
-        const w = wobbleRef.current;
-        const envelopeMoa = combinedDispersionMoa(dispersionInput);
-        const pull = triggerPullOffsetMm(
-          triggerPullRef.current * customsTriggerPullScale,
-          envelopeMoa,
-          distanceRef.current,
-        );
-        poa = {
-          xMm: aimRef.current.x + w.x + pull.xMm,
-          yMm: aimRef.current.y + w.y + pull.yMm,
-        };
-      }
-      const shot = sampleShotFromPoa(
-        poa,
-        dispersionInput,
-        distanceRef.current,
-        Math.random,
-        {
-          densityRatio,
-          powderTempC: weather.live.temperatureC,
-          dvDtMpsPerC: simDvDt,
-          seriesGroupEnvelopeMoa,
-          skipMirage: usingReal,
-        },
-      );
-      // Drop card @ 0 °C wins over live physics when filled.
-      let dropMm = shot.dropBelowLosMm;
-      if (usingReal && realLoad) {
-        const tableCm = interpolateRealDropCm(realLoad, distanceRef.current);
-        if (tableCm != null) {
-          dropMm = tableCm * 10;
-        }
-      }
-      // Outdoor range: live wind drifts the bullet (same model as Lapua / Kestrel).
-      const cwMs = crosswindMs(
-        weather.live.windSpeedMs,
-        weather.live.windFromDeg,
-        rangeShotBearingDeg,
-      );
-      const wDrift = windDriftMm(
-        cwMs,
-        shot.timeOfFlightS,
-        distanceRef.current,
-        shot.v0,
-      );
-      const clickErr = scope.scope.clickErrorPercent ?? 0;
-      const realizedZero = zeroProfile
-        ? effectiveZeroOffsetMm(
-            zeroProfile,
-            sessionZeroXMm,
-            sessionZeroYMm,
-            distanceRef.current,
-            { clickErrorPercent: clickErr },
-          )
-        : {
-            xMm: angularMmAtDistance(
-              applyScopeClickError(sessionZeroXMm, clickErr),
-              distanceRef.current,
-            ),
-            yMm: angularMmAtDistance(
-              applyScopeClickError(sessionZeroYMm, clickErr),
-              distanceRef.current,
-            ),
-          };
-      const windageMm = shot.spinDriftMm + wDrift;
-      const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
-      const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
-      const impactBase = composeCantedImpactMm({
-        poaXMm: poa.xMm,
-        poaYMm: poa.yMm,
-        zeroXMm: realizedZero.xMm,
-        zeroYMm: realizedZero.yMm,
-        scatterXMm,
-        scatterYMm,
-        dropMm,
-        windageMm,
-        cantDeg: liveCantDeg(),
-      });
-      const impact: ShotImpact = {
-        xMm: impactBase.xMm,
-        yMm: impactBase.yMm,
-        diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
-        v0Mps: shot.v0,
-      };
-      const pullFactor = triggerPullRef.current;
-      const pullNote =
-        pullFactor <= 0
-          ? "rent avtrekk"
-          : pullFactor < 0.35
-            ? "OK avtrekk"
-            : pullFactor < 0.7
-              ? "rykk"
-              : "elendig avtrekk";
-      const chronoNote =
-        hasChronograph && chronographKind
-          ? ` · ${chronographKind === "xero" ? "Xero" : "TB"} ${shot.v0.toFixed(0)} m/s`
-          : "";
-      setStatus(
-        `Skudd ${prev.length + 1} · ${pullNote}${chronoNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
-      );
-      playShotRef.current({
-        hasSuppressor: !!suppressor,
-        silent: isSilentSuppressedShot(!!suppressor, selectedAmmo.ammo),
-      });
-      // Recoil shake
-      if (recoilClearRef.current != null) {
-        window.clearTimeout(recoilClearRef.current);
-      }
-      setRecoilActive(false);
-      window.requestAnimationFrame(() => {
-        setRecoilActive(true);
-        recoilClearRef.current = window.setTimeout(() => {
-          setRecoilActive(false);
-          recoilClearRef.current = null;
-        }, 400);
-      });
-      const nextShots = [...prev, impact];
-      barrelHeatStateRef.current = bumpBarrelHeatTarget(
-        barrelHeatStateRef.current,
-        barrelHeatProfileRef.current,
-      );
-      // Don't snap the bar — RAF catch-up paints the glide.
-      const lotId = armedLoadPlan?.homeLotId;
-      if (lane === "load-test" && lotId && onPersistHomeLotMeasure) {
-        const chrono = hasChronograph
-          ? liveChronoFromShots(nextShots.map((s) => s.v0Mps))
-          : {
-              meanV0Mps: null as number | null,
-              highV0Mps: null as number | null,
-              lowV0Mps: null as number | null,
-              stdevV0Mps: null as number | null,
-            };
-        const group =
-          nextShots.length >= 2
-            ? measureGroup(nextShots, distanceRef.current)
-            : null;
-        queueMicrotask(() => {
-          onPersistHomeLotMeasure(lotId, {
-            meanV0Mps: chrono.meanV0Mps,
-            highV0Mps: chrono.highV0Mps,
-            lowV0Mps: chrono.lowV0Mps,
-            stdevV0Mps: chrono.stdevV0Mps,
-            groupMoa: group?.groupMoa ?? null,
-            extremeSpreadMm: group?.extremeSpreadMm ?? null,
-            seriesId: `lt-${lotId}-${nextShots.length}`,
-          });
-        });
-      }
-      return nextShots;
+    const realLoad = realLoadForRifle(realLoadProfiles, rifle.id);
+    const usingReal = isRealDataActive({
+      useRealDataInSimulation,
+      kitIds,
+      inventoryItemIds,
+      realLoad,
+      ammoId: selectedAmmo.id,
     });
+    const sim = kestrelSolveAmmo(
+      selectedAmmo.ammo,
+      selectedAmmo.id,
+      kestrelProfiles,
+      {
+        active: usingReal,
+        profile: realLoad,
+      },
+    );
+    // Measured MV is already for this rifle — do not re-scale by barrel length.
+    const simAmmo =
+      usingReal && realLoad
+        ? applyRealLoadToAmmo(selectedAmmo.ammo, realLoad)
+        : sim.ammo;
+    const simDvDt =
+      usingReal && realLoad ? realLoad.dvDtMpsPerC : sim.dvDtMpsPerC;
+    const dispersionInput = {
+      rifle: rifleSpecWithCustomBarrel(
+        rifle.rifle,
+        customBarrels[rifle.id],
+      ),
+      ammo: simAmmo,
+      stock: stock?.stock,
+      affinity,
+      customsMoaDelta,
+      barrelWearScale,
+      mirageFactor: usingReal ? 0 : mirageStrengthRef.current,
+      barrelV0Factor: usingReal
+        ? 1
+        : barrelV0FactorForRifle(rifle.id, customBarrels[rifle.id]),
+      envelopeMult: realismDispersionMult(realism),
+    };
+    let poa: { xMm: number; yMm: number };
+    let seriesGroupEnvelopeMoa: number | null = null;
+    if (usingReal) {
+      // Measured groups already include shooter error — no wobble/trigger on POA.
+      poa = { xMm: aimRef.current.x, yMm: aimRef.current.y };
+      const mean = simAmmo.systemGroupMoaOverride;
+      const best = simAmmo.systemGroupMoaBest;
+      if (
+        mean != null &&
+        best != null &&
+        Number.isFinite(mean) &&
+        Number.isFinite(best)
+      ) {
+        if (realSeriesEnvelopeMoaRef.current == null) {
+          realSeriesEnvelopeMoaRef.current = sampleRealSystemGroupMoa(
+            mean,
+            best,
+          );
+        }
+        seriesGroupEnvelopeMoa = realSeriesEnvelopeMoaRef.current;
+      }
+    } else {
+      const w = wobbleRef.current;
+      const envelopeMoa = combinedDispersionMoa(dispersionInput);
+      const pull = triggerPullOffsetMm(
+        triggerPullRef.current * customsTriggerPullScale,
+        envelopeMoa,
+        distanceRef.current,
+      );
+      poa = {
+        xMm: aimRef.current.x + w.x + pull.xMm,
+        yMm: aimRef.current.y + w.y + pull.yMm,
+      };
+    }
+    const shot = sampleShotFromPoa(
+      poa,
+      dispersionInput,
+      distanceRef.current,
+      Math.random,
+      {
+        densityRatio,
+        powderTempC: weather.live.temperatureC,
+        dvDtMpsPerC: simDvDt,
+        seriesGroupEnvelopeMoa,
+        skipMirage: usingReal,
+      },
+    );
+    // Drop card @ 0 °C wins over live physics when filled.
+    let dropMm = shot.dropBelowLosMm;
+    if (usingReal && realLoad) {
+      const tableCm = interpolateRealDropCm(realLoad, distanceRef.current);
+      if (tableCm != null) {
+        dropMm = tableCm * 10;
+      }
+    }
+    // Outdoor range: live wind drifts the bullet (same model as Lapua / Kestrel).
+    const cwMs = crosswindMs(
+      weather.live.windSpeedMs,
+      weather.live.windFromDeg,
+      rangeShotBearingDeg,
+    );
+    const wDrift = windDriftMm(
+      cwMs,
+      shot.timeOfFlightS,
+      distanceRef.current,
+      shot.v0,
+    );
+    const clickErr = scope.scope.clickErrorPercent ?? 0;
+    const realizedZero = zeroProfile
+      ? effectiveZeroOffsetMm(
+          zeroProfile,
+          sessionZeroXMm,
+          sessionZeroYMm,
+          distanceRef.current,
+          { clickErrorPercent: clickErr },
+        )
+      : {
+          xMm: angularMmAtDistance(
+            applyScopeClickError(sessionZeroXMm, clickErr),
+            distanceRef.current,
+          ),
+          yMm: angularMmAtDistance(
+            applyScopeClickError(sessionZeroYMm, clickErr),
+            distanceRef.current,
+          ),
+        };
+    const windageMm = shot.spinDriftMm + wDrift;
+    const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
+    const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
+    const impactBase = composeCantedImpactMm({
+      poaXMm: poa.xMm,
+      poaYMm: poa.yMm,
+      zeroXMm: realizedZero.xMm,
+      zeroYMm: realizedZero.yMm,
+      scatterXMm,
+      scatterYMm,
+      dropMm,
+      windageMm,
+      cantDeg: liveCantDeg(),
+    });
+    const impact: ShotImpact = {
+      xMm: impactBase.xMm,
+      yMm: impactBase.yMm,
+      diameterMm: caliberBulletDiameterMm(selectedAmmo.ammo.caliber),
+      v0Mps: shot.v0,
+    };
+    const pullFactor = triggerPullRef.current;
+    const pullNote =
+      pullFactor <= 0
+        ? "rent avtrekk"
+        : pullFactor < 0.35
+          ? "OK avtrekk"
+          : pullFactor < 0.7
+            ? "rykk"
+            : "elendig avtrekk";
+    const chronoNote =
+      hasChronograph && chronographKind
+        ? ` · ${chronographKind === "xero" ? "Xero" : "TB"} ${shot.v0.toFixed(0)} m/s`
+        : "";
+    const nextShots = [...shotsRef.current, impact];
+    shotsRef.current = nextShots;
+    shotsLenRef.current = nextShots.length;
+
+    setStatus(
+      `Skudd ${nextShots.length} · ${pullNote}${chronoNote} · ${selectedAmmo.brand} ${selectedAmmo.name}`,
+    );
+    playShotRef.current({
+      hasSuppressor: !!suppressor,
+      silent: isSilentSuppressedShot(!!suppressor, selectedAmmo.ammo),
+    });
+    // Recoil shake
+    if (recoilClearRef.current != null) {
+      window.clearTimeout(recoilClearRef.current);
+    }
+    setRecoilActive(false);
+    window.requestAnimationFrame(() => {
+      setRecoilActive(true);
+      recoilClearRef.current = window.setTimeout(() => {
+        setRecoilActive(false);
+        recoilClearRef.current = null;
+      }, 400);
+    });
+    barrelHeatStateRef.current = bumpBarrelHeatTarget(
+      barrelHeatStateRef.current,
+      barrelHeatProfileRef.current,
+    );
+    // Don't snap the bar — RAF catch-up paints the glide.
+    const lotId = armedLoadPlan?.homeLotId;
+    if (lane === "load-test" && lotId && onPersistHomeLotMeasure) {
+      const chrono = hasChronograph
+        ? liveChronoFromShots(nextShots.map((s) => s.v0Mps))
+        : {
+            meanV0Mps: null as number | null,
+            highV0Mps: null as number | null,
+            lowV0Mps: null as number | null,
+            stdevV0Mps: null as number | null,
+          };
+      const group =
+        nextShots.length >= 2
+          ? measureGroup(nextShots, distanceRef.current)
+          : null;
+      queueMicrotask(() => {
+        onPersistHomeLotMeasure(lotId, {
+          meanV0Mps: chrono.meanV0Mps,
+          highV0Mps: chrono.highV0Mps,
+          lowV0Mps: chrono.lowV0Mps,
+          stdevV0Mps: chrono.stdevV0Mps,
+          groupMoa: group?.groupMoa ?? null,
+          extremeSpreadMm: group?.extremeSpreadMm ?? null,
+          seriesId: `lt-${lotId}-${nextShots.length}`,
+        });
+      });
+    }
+    setShots(nextShots);
   };
 
   function abortTrigger(reason: string) {
@@ -2333,7 +2335,7 @@ export function ShootingRange({
             <div className="moa-comp-event-main">
               <span className="moa-comp-event-title">BlackJack Challenge</span>
               <span className="moa-comp-event-meta">
-                ~500 yd · KYL 12″→2″ · 2 min · BlackJack 21 · charity 1000 kr
+                ~500 yd · KYL 12″→2″ · 2 min · BlackJack 21 · +21 på 2″ · charity 1000 kr
               </span>
             </div>
             <button
