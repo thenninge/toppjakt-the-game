@@ -22,6 +22,7 @@ import {
   type CarrySpec,
 } from "@/lib/carry/spec";
 import {
+  BOLT_FLUTING_WEIGHT_G,
   FLUTING_WEIGHT_G,
   STOCK_SLIM_FRACTION,
   estimatedFactoryBarrelGrams,
@@ -107,6 +108,9 @@ export function itemCarryWeightGrams(
       // Factory-pipe fluting only — custom blanks carry their own mass on the pipe line.
       g = Math.max(0, g - FLUTING_WEIGHT_G);
     }
+    if (mods.boltFluting) {
+      g = Math.max(0, g - BOLT_FLUTING_WEIGHT_G);
+    }
     if (mods.stockSlim && !hasStock) {
       const est = Math.round(
         estimatedFactoryStockGrams(item.weightGrams) * STOCK_SLIM_FRACTION,
@@ -141,6 +145,7 @@ export function itemCarryWeightNote(
     } else if (mods.fluting) {
       parts.push("fluting");
     }
+    if (mods.boltFluting) parts.push("bolt fluting");
     if (mods.stockSlim && !kitItems.some(isStockItem)) {
       parts.push("slank stokk (estimert)");
     }

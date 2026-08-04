@@ -31,6 +31,11 @@ export type ScopeSpec = {
    * 25.4 = 1", then 30 / 34 / 35 (Mark 5HD) / 36 (ZCO) mm.
    */
   tubeDiameterMm: ScopeTubeDiameterMm;
+  /**
+   * Objective lens outer diameter (mm), e.g. 42 / 50 / 56.
+   * Omit → parse from item name (`x50`) or zoom heuristic.
+   */
+  objectiveDiameterMm?: number;
   minZoom: number;
   maxZoom: number;
   /**
@@ -138,6 +143,36 @@ export type ScopeSpec = {
 export type ReticleIllumColor = "red" | "green";
 
 export const DEFAULT_ILLUMINATION_COLORS: ReticleIllumColor[] = ["red"];
+
+/**
+ * Objective diameter (mm) for Admire / UI.
+ * Prefers explicit spec, then `xNN` in the product name, then zoom heuristic.
+ */
+export function scopeObjectiveDiameterMm(
+  scope: Pick<ScopeSpec, "objectiveDiameterMm" | "maxZoom">,
+  itemName?: string,
+): number {
+  if (
+    typeof scope.objectiveDiameterMm === "number" &&
+    Number.isFinite(scope.objectiveDiameterMm) &&
+    scope.objectiveDiameterMm >= 20 &&
+    scope.objectiveDiameterMm <= 72
+  ) {
+    return Math.round(scope.objectiveDiameterMm);
+  }
+  if (itemName) {
+    const m = itemName.match(/x\s*(\d{2})\b/i);
+    if (m) {
+      const n = Number(m[1]);
+      if (n >= 24 && n <= 72) return n;
+    }
+  }
+  if (scope.maxZoom >= 27) return 56;
+  if (scope.maxZoom >= 20) return 50;
+  if (scope.maxZoom >= 12) return 44;
+  if (scope.maxZoom >= 8) return 42;
+  return 40;
+}
 
 export function scopeIlluminationColors(
   scope: Pick<ScopeSpec, "illuminationColors"> | null | undefined,

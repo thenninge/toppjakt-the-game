@@ -7,6 +7,7 @@ import {
   MAX_HUNTING_RIFLES,
   permitFeeForNextRifle,
 } from "@/lib/player";
+import type { GameRealism } from "@/lib/optics/turretStyle";
 
 export type WeaponApplication = {
   brand: string;
@@ -30,6 +31,8 @@ type SheriffOfficeProps = {
   licenseCount: number;
   /** Paid licenses only — fee ladder. */
   paidLicenseCount: number;
+  /** Low/medium: short form (navn + kaliber). High: full bureaucratic form. */
+  realism?: GameRealism;
   /** Charge fee and optionally grant license. */
   onPayAndFinish: (result: SheriffFinishResult) => void;
   onLeave: () => void;
@@ -75,6 +78,33 @@ const EMPTY_FORM: WeaponForm = {
   registeredHunter: "ja",
   safeNumber: "",
 };
+
+/** Prefills for low/medium — player only edits navn (merke) + kaliber. */
+const ASSISTED_FORM_DEFAULTS: Omit<WeaponForm, "brand" | "caliber"> = {
+  type: "Boltrifle",
+  length: "110 cm",
+  barrelLength: "60 cm",
+  firingPinLength: "48 mm",
+  stockLength: "35 cm",
+  sightLength: "28 cm",
+  cartridgeLength: "71 mm",
+  auto: "nei",
+  registeredHunter: "ja",
+  safeNumber: "VS-1847",
+};
+
+const FULL_FORM_FIELDS = [
+  ["brand", "Merke"],
+  ["type", "Type (f.eks. boltrifle)"],
+  ["caliber", "Kaliber"],
+  ["length", "Lengde"],
+  ["barrelLength", "Pipelengde"],
+  ["firingPinLength", "Tennstempellengde"],
+  ["stockLength", "Stokklengde"],
+  ["sightLength", "Siktelengde"],
+  ["cartridgeLength", "Patronlengde"],
+  ["safeNumber", "Våpenskapnummer"],
+] as const;
 
 const DEAD_ENDS: Record<
   string,
@@ -194,6 +224,7 @@ export function SheriffOffice({
   rifleCount,
   licenseCount,
   paidLicenseCount,
+  realism = "medium",
   onPayAndFinish,
   onLeave,
 }: SheriffOfficeProps) {
@@ -214,27 +245,48 @@ export function SheriffOffice({
   const canApprove = licenseCount < MAX_HUNTING_RIFLES;
   const expressOption =
     expressChoices.find((o) => o.id === expressId) ?? expressChoices[0];
+  const shortForm = realism === "low" || realism === "medium";
 
   function updateField<K extends keyof WeaponForm>(key: K, value: WeaponForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function openWeaponForm() {
+    setFormError("");
+    if (shortForm) {
+      setForm((prev) => ({
+        ...prev,
+        ...ASSISTED_FORM_DEFAULTS,
+        // Keep any brand/caliber already typed if they bounced back.
+        brand: prev.brand,
+        caliber: prev.caliber,
+      }));
+    }
+    setStep("weapon-form");
+  }
+
   function submitWeaponForm(e: FormEvent) {
     e.preventDefault();
-    const required: (keyof WeaponForm)[] = [
-      "brand",
-      "type",
-      "caliber",
-      "length",
-      "barrelLength",
-      "firingPinLength",
-      "stockLength",
-      "sightLength",
-      "cartridgeLength",
-      "safeNumber",
-    ];
+    const required: (keyof WeaponForm)[] = shortForm
+      ? ["brand", "caliber"]
+      : [
+          "brand",
+          "type",
+          "caliber",
+          "length",
+          "barrelLength",
+          "firingPinLength",
+          "stockLength",
+          "sightLength",
+          "cartridgeLength",
+          "safeNumber",
+        ];
     if (required.some((k) => !String(form[k]).trim())) {
-      setFormError("Alle feltene må fylles ut. Systemet liker komplette skjema.");
+      setFormError(
+        shortForm
+          ? "Fyll inn navn og kaliber."
+          : "Alle feltene må fylles ut. Systemet liker komplette skjema.",
+      );
       return;
     }
     setFormError("");
@@ -377,7 +429,7 @@ export function SheriffOffice({
           <button
             type="button"
             className="intro-button"
-            onClick={() => setStep("weapon-form")}
+            onClick={openWeaponForm}
           >
             Fylle ut skjema
           </button>
@@ -387,60 +439,82 @@ export function SheriffOffice({
       {step === "weapon-form" && (
         <form className="sheriff-form" onSubmit={submitWeaponForm}>
           <p className="intro-line intro-gift">Søknadsskjema</p>
+          {shortForm ? (
+            <p className="shop-row-note">
+              Realism {realism}: fyll inn navn og kaliber — resten er
+              ferdigutfylt.
+            </p>
+          ) : null}
           <div className="sheriff-form-grid">
-            {(
-              [
-                ["brand", "Merke"],
-                ["type", "Type (f.eks. boltrifle)"],
-                ["caliber", "Kaliber"],
-                ["length", "Lengde"],
-                ["barrelLength", "Pipelengde"],
-                ["firingPinLength", "Tennstempellengde"],
-                ["stockLength", "Stokklengde"],
-                ["sightLength", "Siktelengde"],
-                ["cartridgeLength", "Patronlengde"],
-                ["safeNumber", "Våpenskapnummer"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key} className="sheriff-field">
-                {label}
-                <input
-                  className="intro-input"
-                  value={form[key]}
-                  onChange={(e) => updateField(key, e.target.value)}
-                  autoComplete="off"
-                />
-              </label>
-            ))}
-            <label className="sheriff-field">
-              Halvauto / helauto?
-              <select
-                className="intro-input"
-                value={form.auto}
-                onChange={(e) =>
-                  updateField("auto", e.target.value as "ja" | "nei")
-                }
-              >
-                <option value="nei">Nei</option>
-                <option value="ja">Ja</option>
-              </select>
-            </label>
-            <label className="sheriff-field">
-              Registrert jeger?
-              <select
-                className="intro-input"
-                value={form.registeredHunter}
-                onChange={(e) =>
-                  updateField(
-                    "registeredHunter",
-                    e.target.value as "ja" | "nei",
-                  )
-                }
-              >
-                <option value="ja">Ja</option>
-                <option value="nei">Nei</option>
-              </select>
-            </label>
+            {shortForm ? (
+              <>
+                <label className="sheriff-field">
+                  Navn
+                  <input
+                    className="intro-input"
+                    value={form.brand}
+                    onChange={(e) => updateField("brand", e.target.value)}
+                    placeholder="f.eks. Tikka T3x Lite"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="sheriff-field">
+                  Kaliber
+                  <input
+                    className="intro-input"
+                    value={form.caliber}
+                    onChange={(e) => updateField("caliber", e.target.value)}
+                    placeholder="f.eks. 6,5 Creedmoor"
+                    autoComplete="off"
+                  />
+                </label>
+              </>
+            ) : (
+              FULL_FORM_FIELDS.map(([key, label]) => (
+                <label key={key} className="sheriff-field">
+                  {label}
+                  <input
+                    className="intro-input"
+                    value={form[key]}
+                    onChange={(e) => updateField(key, e.target.value)}
+                    autoComplete="off"
+                  />
+                </label>
+              ))
+            )}
+            {!shortForm ? (
+              <>
+                <label className="sheriff-field">
+                  Halvauto / helauto?
+                  <select
+                    className="intro-input"
+                    value={form.auto}
+                    onChange={(e) =>
+                      updateField("auto", e.target.value as "ja" | "nei")
+                    }
+                  >
+                    <option value="nei">Nei</option>
+                    <option value="ja">Ja</option>
+                  </select>
+                </label>
+                <label className="sheriff-field">
+                  Registrert jeger?
+                  <select
+                    className="intro-input"
+                    value={form.registeredHunter}
+                    onChange={(e) =>
+                      updateField(
+                        "registeredHunter",
+                        e.target.value as "ja" | "nei",
+                      )
+                    }
+                  >
+                    <option value="ja">Ja</option>
+                    <option value="nei">Nei</option>
+                  </select>
+                </label>
+              </>
+            ) : null}
           </div>
           {formError ? <p className="intro-error">{formError}</p> : null}
           <button type="submit" className="intro-button">

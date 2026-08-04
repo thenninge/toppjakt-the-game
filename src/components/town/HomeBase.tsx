@@ -5,6 +5,7 @@ import {
   FINN_BUYER_NO_SHOW_CHANCE,
   finnSalePayoutNok,
   formatInventoryQuantity,
+  isZeroVerified,
   resolvePlayerItem,
   type DopeCardEntry,
   type InventoryEntry,
@@ -13,13 +14,16 @@ import {
 } from "@/lib/player";
 import {
   isAmmoItem,
+  isBipodItem,
   isCarryItem,
   isCamoItem,
   isFoodItem,
   isMiscItem,
   isMountItem,
+  isRifleItem,
   isScopeItem,
   isSkiItem,
+  isSuppressorItem,
   isThermalItem,
   inventoryGroupForItem,
   INVENTORY_GROUPS,
@@ -58,10 +62,6 @@ import {
 } from "@/lib/hunt/carcass";
 import { kitCanBoil } from "@/lib/food/spec";
 import { camoSlot } from "@/lib/camo/spec";
-import {
-  EMPTY_CUSTOMS_MODS,
-  type CustomsMods,
-} from "@/lib/customs/spec";
 import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
 import { BARREL_MAKERS } from "@/lib/customs/customBarrel";
 import { isBubbleLevelMisc, isSuppressorCoverMisc } from "@/lib/misc/spec";
@@ -76,7 +76,9 @@ import {
 } from "@/components/town/FieldKitAdmire";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { FavoriteKitPanel } from "@/components/town/FavoriteKitPanel";
+import { GunCabinetPanel } from "@/components/town/GunCabinetPanel";
 import { GameConfirmDialog } from "@/components/ui/GameConfirmDialog";
+import type { GunKitBinding } from "@/lib/gunKit";
 import { InaturNo } from "@/components/town/InaturNo";
 import { ShotLogDopeView, type ShotLogDopeTab } from "@/components/town/ShotLogDopeView";
 import { LaderommetView } from "@/components/town/LaderommetView";
@@ -85,6 +87,11 @@ import type { ArmedLoadPlan } from "@/lib/reloading/loadPhysics";
 import type { LoadDevTable } from "@/lib/reloading/loadDevTable";
 import type { LoadBookEntry } from "@/lib/reloading/loadBook";
 import type { HomeLoadedLot } from "@/lib/reloading/homeLoadedAmmo";
+import {
+  CUSTOMS_SERVICES,
+  EMPTY_CUSTOMS_MODS,
+  type CustomsMods,
+} from "@/lib/customs/spec";
 import type { KestrelGunProfile } from "@/lib/ballistics/kestrelProfile";
 import type { RealLoadProfile } from "@/lib/ballistics/realLoad";
 import {
@@ -118,7 +125,9 @@ type RigSlotDef =
   | { kind: "pipe"; label: string }
   | { kind: "wrap"; label: string }
   | { kind: "bubble"; label: string }
-  | { kind: "shotcam"; label: string };
+  | { kind: "shotcam"; label: string }
+  | { kind: "bipod"; label: string }
+  | { kind: "customs"; key: "cheek_riser" | "bagrider" | "buttpad"; label: string };
 
 const WEAPON_RIG_SLOTS: RigSlotDef[] = [
   { kind: "shop", key: "rifle", label: "Våpen" },
@@ -129,6 +138,10 @@ const WEAPON_RIG_SLOTS: RigSlotDef[] = [
   { kind: "wrap", label: "Wrap" },
   { kind: "bubble", label: "Bubble level" },
   { kind: "shop", key: "stock", label: "Stokk" },
+  { kind: "bipod", label: "Tofot" },
+  { kind: "customs", key: "cheek_riser", label: "Cheek piece" },
+  { kind: "customs", key: "bagrider", label: "Bagrider" },
+  { kind: "customs", key: "buttpad", label: "Buttpad" },
   { kind: "shotcam", label: "Triggercam" },
 ];
 
@@ -167,6 +180,8 @@ type HomeBaseProps = {
   autoSupplyFood: boolean;
   /** Saved favorite hunt loadout. */
   favoriteKitIds: string[];
+  /** Våpenskap — rifle+scope+mount bindings. */
+  gunKits: GunKitBinding[];
   loadBenchRecipe: LoadBenchRecipe;
   loadDevTable: LoadDevTable;
   loadBook: LoadBookEntry[];
@@ -178,6 +193,10 @@ type HomeBaseProps = {
   /** Mark / unmark one inventory item as part of the favorite hunt kit. */
   onToggleFavoriteItem: (itemId: string, enabled: boolean) => void;
   onPackFavoriteKit: () => void;
+  onSaveGunKit: (slot: number) => void;
+  onActivateGunKit: (slot: number) => void;
+  onClearGunKit: (slot: number) => void;
+  onAssignGunKit: (binding: GunKitBinding) => void;
   onChangeLoadBenchRecipe: (recipe: LoadBenchRecipe) => void;
   onChangeLoadDevTable: (table: LoadDevTable) => void;
   onChangeLoadBook: (book: LoadBookEntry[]) => void;
@@ -230,6 +249,7 @@ export function HomeBase({
   zeroingProfiles,
   autoSupplyFood,
   favoriteKitIds,
+  gunKits,
   loadBenchRecipe,
   loadDevTable,
   loadBook,
@@ -240,6 +260,10 @@ export function HomeBase({
   onSetAutoSupplyFood,
   onToggleFavoriteItem,
   onPackFavoriteKit,
+  onSaveGunKit,
+  onActivateGunKit,
+  onClearGunKit,
+  onAssignGunKit,
   onChangeLoadBenchRecipe,
   onChangeLoadDevTable,
   onChangeLoadBook,
@@ -267,10 +291,14 @@ export function HomeBase({
   const [shotlogDopeTab, setShotlogDopeTab] = useState<ShotLogDopeTab>(
     "shotlog",
   );
-  /** Pending rifle/scope swap that needs re-zero warning. */
+  /** Pending scope/mount swap that needs re-zero warning. */
   const [kitSwapConfirm, setKitSwapConfirm] = useState<ShopItem | null>(null);
-  /** Pending rifle/scope unequip — clears saved zeros. */
+  /** Pending scope/mount unequip — may clear saved zeros. */
   const [kitRemoveConfirm, setKitRemoveConfirm] = useState<ShopItem | null>(
+    null,
+  );
+  /** Soft warning: suppressor on/off changes zero on an innskutt rifle. */
+  const [suppressorZeroWarn, setSuppressorZeroWarn] = useState<ShopItem | null>(
     null,
   );
   /** Scope/mount tube diameter mismatch — cannot pack. */
@@ -514,6 +542,49 @@ export function HomeBase({
           removable: !!bubble,
         };
       }
+      if (slot.kind === "bipod") {
+        const bipod = kitItems.find(isBipodItem) ?? null;
+        const carryG = bipod
+          ? itemCarryWeightGrams(bipod, customsMods, kitItems)
+          : 0;
+        return {
+          key: "bipod",
+          label: slot.label,
+          item: bipod,
+          value: bipod ? itemLabel(bipod) : "— ikke valgt",
+          weightGrams: bipod ? carryG : null,
+          note: bipod
+            ? `calm ${bipod.bipod.weaponCalm}/10`
+            : null,
+          removable: !!bipod,
+        };
+      }
+      if (slot.kind === "customs") {
+        const svc = CUSTOMS_SERVICES.find((s) => s.id === slot.key);
+        const owned =
+          slot.key === "cheek_riser"
+            ? customsMods.cheekRiser
+            : slot.key === "bagrider"
+              ? customsMods.bagrider
+              : customsMods.buttpad;
+        const shortNote =
+          slot.key === "cheek_riser"
+            ? "CB Customs · calm / rekyl"
+            : slot.key === "bagrider"
+              ? "CB Customs · bakre bag"
+              : "CB Customs · myk bakkappe";
+        return {
+          key: slot.key,
+          label: slot.label,
+          item: null,
+          value: owned
+            ? svc?.name ?? "CB Customs"
+            : "— ikke valgt",
+          weightGrams: null as number | null,
+          note: owned ? shortNote : null,
+          removable: false,
+        };
+      }
       // shotcam
       const carryG = shotCam
         ? itemCarryWeightGrams(shotCam, customsMods, kitItems)
@@ -619,8 +690,9 @@ export function HomeBase({
   }
 
   /**
-   * Rifle/scope/mount affect zero retention. Warn when a change will wipe
-   * saved zeros (mid/budget mounts, or any rifle change).
+   * Scope/mount affect zero retention. Warn when a change will wipe
+   * saved zeros (mid/budget mounts). Rifle swaps keep zeros (våpenskap).
+   * Suppressor on/off on an innskutt combo gets a soft zero warning.
    */
   function requestToggleKit(item: ShopItem) {
     const mountInKit = kitItems.find(isMountItem) ?? null;
@@ -639,16 +711,22 @@ export function HomeBase({
       }
     }
 
-    if (item.category === "rifle" && alreadyEquipped) {
-      setKitRemoveConfirm(item);
-      return;
-    }
-    if (item.category === "rifle" && !alreadyEquipped) {
-      const current = kitItems.find((i) => i.category === "rifle");
-      if (current && current.id !== item.id) {
-        setKitSwapConfirm(item);
-        return;
+    if (isSuppressorItem(item)) {
+      const rifle = kitItems.find(isRifleItem);
+      const scope = kitItems.find(isScopeItem);
+      if (rifle && scope) {
+        const prefix = `${rifle.id}::${scope.id}::`;
+        const innskutt = Object.entries(zeroingProfiles).some(
+          ([key, profile]) =>
+            key.startsWith(prefix) && isZeroVerified(profile),
+        );
+        if (innskutt) {
+          setSuppressorZeroWarn(item);
+          return;
+        }
       }
+      onToggleKit(item.id);
+      return;
     }
 
     if (item.category === "scope") {
@@ -698,6 +776,13 @@ export function HomeBase({
     if (!kitRemoveConfirm) return;
     const id = kitRemoveConfirm.id;
     setKitRemoveConfirm(null);
+    onToggleKit(id);
+  }
+
+  function confirmSuppressorZeroWarn() {
+    if (!suppressorZeroWarn) return;
+    const id = suppressorZeroWarn.id;
+    setSuppressorZeroWarn(null);
     onToggleKit(id);
   }
 
@@ -865,6 +950,7 @@ export function HomeBase({
             <CurrentRigAdmire
               kitItems={kitItems}
               customsMods={customsMods}
+              customBarrels={customBarrels}
             />
           </ExpandableSection>
 
@@ -1271,12 +1357,14 @@ export function HomeBase({
           <div className="home-inventory-groups">
             {INVENTORY_GROUPS.map((group) => {
               const rows = inventoryByGroup.get(group.id) ?? [];
-              if (rows.length === 0) return null;
+              if (rows.length === 0 && group.id !== "gun_kit") return null;
               const qtySum = rows.reduce((n, r) => n + r.qty, 0);
               const summary =
-                qtySum > rows.length
-                  ? `${rows.length} typer · ${qtySum} totalt`
-                  : `${rows.length} ${rows.length === 1 ? "vare" : "varer"}`;
+                group.id === "gun_kit" && gunKits.length > 0
+                  ? `${gunKits.length} i våpenskap · ${rows.length} varer`
+                  : qtySum > rows.length
+                    ? `${rows.length} typer · ${qtySum} totalt`
+                    : `${rows.length} ${rows.length === 1 ? "vare" : "varer"}`;
               return (
                 <ExpandableSection
                   key={group.id}
@@ -1284,7 +1372,30 @@ export function HomeBase({
                   summary={summary}
                   scrollOnExpand={false}
                 >
+                  {group.id === "gun_kit" ? (
+                    <GunCabinetPanel
+                      gunKits={gunKits}
+                      kit={kit}
+                      ownedItemIds={
+                        new Set(
+                          inventory
+                            .filter((e) => e.qty > 0)
+                            .map((e) => e.itemId),
+                        )
+                      }
+                      zeroingProfiles={zeroingProfiles}
+                      onSaveGunKit={onSaveGunKit}
+                      onActivateGunKit={onActivateGunKit}
+                      onClearGunKit={onClearGunKit}
+                      onAssignGunKit={onAssignGunKit}
+                    />
+                  ) : null}
                   <ul className="shop-list home-kit-list">
+                    {rows.length === 0 ? (
+                      <li className="shop-row">
+                        <p className="intro-line">Ingen gun-kit-varer ennå.</p>
+                      </li>
+                    ) : null}
                     {rows.map(({ item, qty }) => {
                       const equipped = kit.includes(item.id);
                       const isFavorite = favoriteKitIds.includes(item.id);
@@ -1425,9 +1536,7 @@ export function HomeBase({
           message={
             kitSwapConfirm.category === "scope"
               ? "Du bytter kikkert.\n\nMed mellomklasse/budsjett-montasje slettes lagret zero for den gamle kikkerten — skyte inn på nytt («Lagre zero»). Toppklasse (Spuhr/Recknagel) overfører zero ved samme rørdiameter."
-              : kitSwapConfirm.category === "mount"
-                ? "Du bytter montasje.\n\nMellomklasse/budsjett: lagret zero slettes — skyte inn på nytt. Toppklasse beholder zero."
-                : "Du bytter rifle.\n\nAll lagret zero for den gamle rifla slettes. Du må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+              : "Du bytter montasje.\n\nMellomklasse/budsjett: lagret zero slettes — skyte inn på nytt. Toppklasse beholder zero."
           }
           confirmLabel="Bytt"
           cancelLabel="Avbryt"
@@ -1452,21 +1561,32 @@ export function HomeBase({
           title={
             kitRemoveConfirm.category === "scope"
               ? "Fjern kikkert"
-              : kitRemoveConfirm.category === "mount"
-                ? "Fjern montasje"
-                : "Fjern rifle"
+              : "Fjern montasje"
           }
           message={
             kitRemoveConfirm.category === "scope"
               ? "Fjerner du kikkerten med mellomklasse/budsjett-montasje, slettes lagret zero.\n\nToppklasse beholder zero ved av/på."
-              : kitRemoveConfirm.category === "mount"
-                ? "Fjerner du mellomklasse/budsjett-montasje, slettes lagret zero for kikkerten.\n\nToppklasse (QD) beholder zero."
-                : "Fjerner du rifla fra kit, slettes all lagret zero for den rifla.\n\nDu må skyte inn på nytt («Lagre zero») før du kan dra på jakt."
+              : "Fjerner du mellomklasse/budsjett-montasje, slettes lagret zero for kikkerten.\n\nToppklasse (QD) beholder zero."
           }
           confirmLabel="Fjern"
           cancelLabel="Avbryt"
           onConfirm={confirmKitRemove}
           onCancel={() => setKitRemoveConfirm(null)}
+        />
+      ) : null}
+
+      {suppressorZeroWarn ? (
+        <GameConfirmDialog
+          title="Lyddemper og zero"
+          message={
+            suppressorZeroWarn && kit.includes(suppressorZeroWarn.id)
+              ? "Våpenet er innskutt. Fjerner du lyddemperen endres zero (treffpunkt)."
+              : "Våpenet er innskutt. Monterer du lyddemper endres zero (treffpunkt)."
+          }
+          confirmLabel="Fortsett"
+          cancelLabel="Avbryt"
+          onConfirm={confirmSuppressorZeroWarn}
+          onCancel={() => setSuppressorZeroWarn(null)}
         />
       ) : null}
 

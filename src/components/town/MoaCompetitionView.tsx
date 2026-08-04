@@ -145,6 +145,10 @@ import {
   barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
+import {
+  resolveMuzzleOdMm,
+  suppressorPoiDeltaMmAtDistance,
+} from "@/lib/suppressor/poiShift";
 
 type MoaCompetitionViewProps = {
   balance: number;
@@ -160,6 +164,8 @@ type MoaCompetitionViewProps = {
   customsCalmMult?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
+  /** Real-ms bolt cycle after a shot (Ti-coating / bolt knob shorten this). */
+  boltCycleMs?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -272,6 +278,7 @@ export function MoaCompetitionView({
   customsMoaDelta = 0,
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
+  boltCycleMs = 1200,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -499,6 +506,9 @@ export function MoaCompetitionView({
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   /** One shot max per F-hold / focus period. */
   const focusShotSpentRef = useRef(false);
+  const boltReadyAtRef = useRef(0);
+  const boltCycleMsRef = useRef(boltCycleMs);
+  boltCycleMsRef.current = boltCycleMs;
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -669,23 +679,39 @@ export function MoaCompetitionView({
       },
     );
     const clickErr = scope.scope.clickErrorPercent ?? 0;
+    const suppressorShift = suppressorPoiDeltaMmAtDistance(
+      {
+        zeroedWithSuppressor: zeroProfile?.zeroedWithSuppressor,
+        hasSuppressor: !!suppressor,
+        muzzleOdMm: resolveMuzzleOdMm(rifle.id, customBarrels[rifle.id]),
+      },
+      MOA_COMP_DISTANCE_M,
+    );
     const realizedZero = zeroProfile
-      ? effectiveZeroOffsetMm(
-          zeroProfile,
-          sessionZeroXMm,
-          sessionZeroYMm,
-          MOA_COMP_DISTANCE_M,
-          { clickErrorPercent: clickErr },
-        )
+      ? (() => {
+          const z = effectiveZeroOffsetMm(
+            zeroProfile,
+            sessionZeroXMm,
+            sessionZeroYMm,
+            MOA_COMP_DISTANCE_M,
+            { clickErrorPercent: clickErr },
+          );
+          return {
+            xMm: z.xMm + suppressorShift.xMm,
+            yMm: z.yMm + suppressorShift.yMm,
+          };
+        })()
       : {
-          xMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroXMm, clickErr),
-            MOA_COMP_DISTANCE_M,
-          ),
-          yMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroYMm, clickErr),
-            MOA_COMP_DISTANCE_M,
-          ),
+          xMm:
+            angularMmAtDistance(
+              applyScopeClickError(sessionZeroXMm, clickErr),
+              MOA_COMP_DISTANCE_M,
+            ) + suppressorShift.xMm,
+          yMm:
+            angularMmAtDistance(
+              applyScopeClickError(sessionZeroYMm, clickErr),
+              MOA_COMP_DISTANCE_M,
+            ) + suppressorShift.yMm,
         };
     const absImpact = {
       xMm: shot.xMm + realizedZero.xMm,
@@ -879,6 +905,7 @@ export function MoaCompetitionView({
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));
     focusShotSpentRef.current = true;
     triggerMarkRef.current = null;
+    boltReadyAtRef.current = performance.now() + boltCycleMsRef.current;
     fireShotRef.current();
   }
 
@@ -886,6 +913,10 @@ export function MoaCompetitionView({
     if (triggerRef.current.held) return;
     if (phaseRef.current !== "shooting") return;
     if (shotsLenRef.current >= MOA_COMP_SHOT_COUNT) return;
+    if (nowMs < boltReadyAtRef.current) {
+      setStatus("Lader — vent på bolt-syklus.");
+      return;
+    }
     if (focusShotSpentRef.current) {
       setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
       return;

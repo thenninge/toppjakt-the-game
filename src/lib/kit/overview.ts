@@ -432,6 +432,9 @@ export function computeKitOverview(input: {
   if (!customsMods.fluting) {
     speedTips.push("Pipe-fluting (−500 g) hos CB øker top speed uten å røre MOA.");
   }
+  if (!customsMods.boltFluting) {
+    speedTips.push("Bolt fluting (−100 g) hos CB er billig vektkutt.");
+  }
   if (!customsMods.stockSlim) {
     speedTips.push("Slanking av stokk hos CB kutter vekt uten å røre MOA.");
   }

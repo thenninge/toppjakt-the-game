@@ -133,6 +133,8 @@ import {
   barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
+import { MAG_CHANGE_EXTRA_MS } from "@/lib/customs/spec";
+import { playMagasinbytte } from "@/lib/range/magChangeAudio";
 import {
   BLACKJACK_DISTANCE_M,
   BLACKJACK_DISTANCE_YD,
@@ -191,6 +193,10 @@ type BlackjackCompetitionViewProps = {
   customsMoaDelta?: number;
   customsCalmMult?: number;
   customsTriggerPullScale?: number;
+  /** Real-ms bolt cycle after a shot (Ti-coating / bolt knob shorten this). */
+  boltCycleMs?: number;
+  /** Magazine capacity (5 default; CB 10/15). Mag change after every N shots. */
+  magCapacity?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -367,6 +373,8 @@ export function BlackjackCompetitionView({
   customsMoaDelta = 0,
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
+  boltCycleMs = 1200,
+  magCapacity = 5,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -727,6 +735,12 @@ export function BlackjackCompetitionView({
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   /** One shot max per F-hold / focus period. */
   const focusShotSpentRef = useRef(false);
+  const boltReadyAtRef = useRef(0);
+  const boltCycleMsRef = useRef(boltCycleMs);
+  boltCycleMsRef.current = boltCycleMs;
+  const magCapacityRef = useRef(magCapacity);
+  magCapacityRef.current = Math.max(1, magCapacity);
+  const magChangeUntilRef = useRef(0);
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -1408,6 +1422,17 @@ export function BlackjackCompetitionView({
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));
     focusShotSpentRef.current = true;
     triggerMarkRef.current = null;
+    const nextShots = shotsFiredRef.current + 1;
+    const mag = magCapacityRef.current;
+    const needsMagChange = nextShots > 0 && nextShots % mag === 0;
+    const waitMs = needsMagChange
+      ? boltCycleMsRef.current + MAG_CHANGE_EXTRA_MS
+      : boltCycleMsRef.current;
+    boltReadyAtRef.current = performance.now() + waitMs;
+    if (needsMagChange) {
+      magChangeUntilRef.current = boltReadyAtRef.current;
+      playMagasinbytte();
+    }
     fireShotRef.current();
   }
 
@@ -1415,6 +1440,14 @@ export function BlackjackCompetitionView({
     if (triggerRef.current.held) return;
     if (phaseRef.current !== "shooting") return;
     if (advancingRef.current || finishingRef.current) return;
+    if (nowMs < boltReadyAtRef.current) {
+      setStatus(
+        nowMs < magChangeUntilRef.current
+          ? "Magasinbytte…"
+          : "Lader — vent på bolt-syklus.",
+      );
+      return;
+    }
     if (focusShotSpentRef.current) {
       setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
       return;

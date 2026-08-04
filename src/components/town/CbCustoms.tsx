@@ -374,11 +374,18 @@ export function CbCustoms({
         {weightCut > 0 ? ` · −${formatWeightKg(weightCut)} kitvekt` : ""}
         {customsMods.triggerTuning ? " · trigger tuning" : ""}
         {customsMods.customCamo ? " · custom camo" : ""}
+        {customsMods.boltFluting ? " · bolt fluting" : ""}
         {customsMods.bagrider ? " · CB Bagrider" : ""}
         {customsMods.actionTrueing ? " · action trueing" : ""}
+        {customsMods.actionTiCoating ? " · action Ti-coating" : ""}
         {customsMods.cheekRiser ? " · cheek riser" : ""}
         {customsMods.buttpad ? " · soft buttpad" : ""}
         {customsMods.barrelCrown ? " · barrel crown" : ""}
+        {customsMods.magCapacity15
+          ? " · mag 15"
+          : customsMods.magCapacity10
+            ? " · mag 10"
+            : ""}
         {customsMods.customBoltKnob
           ? ` · bolt knob ${customsMods.boltKnobColor}`
           : ""}

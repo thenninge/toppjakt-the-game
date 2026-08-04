@@ -114,6 +114,13 @@ import { MeatMarket } from "@/components/town/MeatMarket";
 import { RullesBar } from "@/components/town/RullesBar";
 import { UGLE_TACO_NOK } from "@/lib/hunt/owlEasterEgg";
 import { HomeBase, toggleKitItem } from "@/components/town/HomeBase";
+import {
+  applyGunKitToKitIds,
+  clearGunKitSlot,
+  gunKitFromKitIds,
+  upsertGunKit,
+  type GunKitBinding,
+} from "@/lib/gunKit";
 import { ShootingRange } from "@/components/town/ShootingRange";
 import { HuntMapView, type HuntHudStatus } from "@/components/hunt/HuntMapView";
 import { HuntStaminaBars } from "@/components/hunt/HuntStaminaBars";
@@ -133,7 +140,7 @@ import {
   normalizeBoltKnobColor,
   type CustomsServiceId,
 } from "@/lib/customs/spec";
-import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isThermalItem } from "@/lib/shop/types";
+import { isAmmoItem, isCamoItem, isFoodItem, isMiscItem, isRifleItem, isSkiItem, isSuppressorItem, isThermalItem } from "@/lib/shop/types";
 import { camoSlot } from "@/lib/camo/spec";
 import { skiKitSlot } from "@/lib/ski/spec";
 import { isHeadlampMisc, isFireStarterMisc, isCamcorderMisc, isCamcorderTripodMisc, isBubbleLevelMisc } from "@/lib/misc/spec";
@@ -831,6 +838,9 @@ export function IntroScreen() {
       } else if (id === "fluting") {
         if (mods.fluting) return prev;
         mods.fluting = true;
+      } else if (id === "bolt_fluting") {
+        if (mods.boltFluting) return prev;
+        mods.boltFluting = true;
       } else if (id === "stock_slim") {
         if (mods.stockSlim) return prev;
         mods.stockSlim = true;
@@ -849,6 +859,9 @@ export function IntroScreen() {
       } else if (id === "action_trueing") {
         if (mods.actionTrueing) return prev;
         mods.actionTrueing = true;
+      } else if (id === "action_ti_coating") {
+        if (mods.actionTiCoating) return prev;
+        mods.actionTiCoating = true;
       } else if (id === "cheek_riser") {
         if (mods.cheekRiser) return prev;
         mods.cheekRiser = true;
@@ -864,6 +877,13 @@ export function IntroScreen() {
         mods.boltKnobColor = normalizeBoltKnobColor(
           opts?.boltKnobColor ?? mods.boltKnobColor,
         );
+      } else if (id === "mag_10") {
+        if (mods.magCapacity10 || mods.magCapacity15) return prev;
+        mods.magCapacity10 = true;
+      } else if (id === "mag_15") {
+        if (mods.magCapacity15) return prev;
+        mods.magCapacity15 = true;
+        mods.magCapacity10 = true;
       } else {
         return prev;
       }
@@ -976,15 +996,22 @@ export function IntroScreen() {
 
   const saveComboZero = useCallback(
     (key: string, sessionXMm: number, sessionYMm: number) => {
-      setStats((prev) => ({
-        ...prev,
-        zeroingProfiles: saveZeroing(
-          prev.zeroingProfiles,
-          key,
-          sessionXMm,
-          sessionYMm,
-        ),
-      }));
+      setStats((prev) => {
+        const hasSuppressor = prev.kit.some((id) => {
+          const item = resolvePlayerItem(id);
+          return !!(item && isSuppressorItem(item));
+        });
+        return {
+          ...prev,
+          zeroingProfiles: saveZeroing(
+            prev.zeroingProfiles,
+            key,
+            sessionXMm,
+            sessionYMm,
+            { withSuppressor: hasSuppressor },
+          ),
+        };
+      });
     },
     [],
   );
@@ -1426,6 +1453,61 @@ export function IntroScreen() {
     setStats((prev) => applyFavoriteKit(prev));
   }
 
+  function saveGunKitSlot(slot: number) {
+    setStats((prev) => {
+      const binding = gunKitFromKitIds(slot, prev.kit);
+      if (!binding) return prev;
+      return { ...prev, gunKits: upsertGunKit(prev.gunKits, binding) };
+    });
+  }
+
+  function activateGunKitSlot(slot: number) {
+    setStats((prev) => {
+      const binding = prev.gunKits.find((g) => g.slot === slot);
+      if (!binding) return prev;
+      const owned = new Set(
+        prev.inventory.filter((e) => e.qty > 0).map((e) => e.itemId),
+      );
+      if (
+        !owned.has(binding.rifleId) ||
+        !owned.has(binding.scopeId) ||
+        !owned.has(binding.mountId)
+      ) {
+        return prev;
+      }
+      if (
+        binding.suppressorId &&
+        !owned.has(binding.suppressorId)
+      ) {
+        // Activate platform without the missing can.
+        const nextKit = applyGunKitToKitIds(prev.kit, {
+          ...binding,
+          suppressorId: null,
+        });
+        return { ...prev, kit: nextKit };
+      }
+      // Complete platform swap — keep zeroing profiles (no mount wipe).
+      return {
+        ...prev,
+        kit: applyGunKitToKitIds(prev.kit, binding),
+      };
+    });
+  }
+
+  function clearGunKitSlotHandler(slot: number) {
+    setStats((prev) => ({
+      ...prev,
+      gunKits: clearGunKitSlot(prev.gunKits, slot),
+    }));
+  }
+
+  function assignGunKitBinding(binding: GunKitBinding) {
+    setStats((prev) => ({
+      ...prev,
+      gunKits: upsertGunKit(prev.gunKits, binding),
+    }));
+  }
+
   function headIntoTown() {
     setStats((prev) => {
       const balance = startingBalanceForName(prev.name);
@@ -1709,6 +1791,7 @@ export function IntroScreen() {
             rifleCount={countHuntingRifles(stats)}
             licenseCount={stats.weaponLicenses.length}
             paidLicenseCount={countPaidLicenses(stats)}
+            realism={stats.realism ?? "medium"}
             onPayAndFinish={applyForPermit}
             onLeave={backToTown}
           />
@@ -1822,6 +1905,7 @@ export function IntroScreen() {
             zeroingProfiles={stats.zeroingProfiles}
             autoSupplyFood={stats.autoSupplyFood}
             favoriteKitIds={stats.favoriteKitIds}
+            gunKits={stats.gunKits}
             loadBenchRecipe={stats.loadBenchRecipe}
             loadDevTable={stats.loadDevTable}
             loadBook={stats.loadBook}
@@ -1832,6 +1916,10 @@ export function IntroScreen() {
             onSetAutoSupplyFood={setAutoSupplyFood}
             onToggleFavoriteItem={toggleFavoriteItem}
             onPackFavoriteKit={packFavoriteKit}
+            onSaveGunKit={saveGunKitSlot}
+            onActivateGunKit={activateGunKitSlot}
+            onClearGunKit={clearGunKitSlotHandler}
+            onAssignGunKit={assignGunKitBinding}
             onChangeLoadBenchRecipe={(recipe) =>
               setStats((prev) => ({ ...prev, loadBenchRecipe: recipe }))
             }

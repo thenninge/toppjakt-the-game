@@ -27,9 +27,13 @@ import {
 } from "@/lib/hunt/shoot";
 import {
   CUSTOMS_SERVICES,
+  customsMagCapacity,
   type CustomsMods,
   type CustomsService,
 } from "@/lib/customs/spec";
+import type { InstalledCustomBarrel } from "@/lib/customs/customBarrel";
+import { resolveMuzzleOdMm } from "@/lib/suppressor/poiShift";
+import { scopeObjectiveDiameterMm } from "@/lib/optics/spec";
 import {
   formatTubeDiameterMm,
   mountTierLabelNb,
@@ -38,6 +42,8 @@ import {
 export type CurrentRigAdmireProps = {
   kitItems: ShopItem[];
   customsMods: CustomsMods;
+  /** Installed CB pipes — muzzle OD / fluting for Admire. */
+  customBarrels?: Record<string, InstalledCustomBarrel>;
 };
 
 type PartState = "present" | "missing-must";
@@ -65,6 +71,7 @@ type RigHoverTip = RigTipContent & {
 export function CurrentRigAdmire({
   kitItems,
   customsMods,
+  customBarrels = {},
 }: CurrentRigAdmireProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [hoverTip, setHoverTip] = useState<RigHoverTip | null>(null);
@@ -113,8 +120,14 @@ export function CurrentRigAdmire({
   const cheekSvc = customsService("cheek_riser");
   const buttpadSvc = customsService("buttpad");
   const rigLook = resolveRigLook(rifle, stock, scope, {
-    fluting: customsMods.fluting,
+    fluting:
+      customsMods.fluting ||
+      !!(rifle && customBarrels[rifle.id]?.fluted),
     bipod,
+    muzzleOdMm: rifle
+      ? resolveMuzzleOdMm(rifle.id, customBarrels[rifle.id])
+      : null,
+    magCapacity: customsMagCapacity(customsMods),
   });
   const stockMain = stockFillClass(rigLook.stockMaterial, "main");
   const stockDark = stockFillClass(rigLook.stockMaterial, "dark");
@@ -125,7 +138,11 @@ export function CurrentRigAdmire({
     ? tipFromShopItem(rifle, snowCamo ? [`Snøkamo (CB) — ${camoSvc?.effect ?? "+15 % sneak"}`] : undefined)
     : missingTip("Våpen", "Must-have — pakk rifle i kit.");
   const scopeTip: RigTipContent = scope
-    ? tipFromShopItem(scope)
+    ? tipFromShopItem(scope, [
+        isScopeItem(scope)
+          ? `Rør ${formatTubeDiameterMm(scope.scope.tubeDiameterMm)} · objektiv ${scopeObjectiveDiameterMm(scope.scope, scope.name)} mm`
+          : "",
+      ].filter(Boolean))
     : missingTip("Kikkert", "Must-have — pakk scope i kit.");
   const mountTip: RigTipContent = mount
     ? tipFromShopItem(mount)
@@ -154,7 +171,7 @@ export function CurrentRigAdmire({
         id: "custom_bolt_knob",
         name: "Custom bolt knob",
         priceNok: 1000,
-        effect: "Kosmetikk — ingen effekt på MOA/calm/rekyl.",
+        effect: "10% raskere omlading (kortere delay mellom skudd).",
       }, [`Farge ${knobColor}`])
     : rifle
       ? {
@@ -341,7 +358,10 @@ export function CurrentRigAdmire({
                   onClear={clearTip}
                   className="rig-detail-ok"
                 >
-                  <BipodSilhouette style={rigLook.bipodStyle} />
+                  <BipodSilhouette
+                    style={rigLook.bipodStyle}
+                    scale={rigLook.bipodScale}
+                  />
                 </RigHotspot>
               ) : null}
 
@@ -370,14 +390,21 @@ export function CurrentRigAdmire({
                     opacity="0.7"
                   />
                   {rigLook.fluted ? (
-                    <g className="rig-barrel-flutes" opacity="0.65">
-                      {[140, 158, 176, 194, 212, 230, 248, 266].map((x) => (
-                        <path
-                          key={`flute-${x}`}
-                          className="rig-fill-metal-dark"
-                          d={`M${x} 93.2h12v1.2H${x}z`}
-                        />
-                      ))}
+                    <g className="rig-barrel-flutes" opacity="0.72">
+                      {/* Longitudinal flutes along the barrel outer surface */}
+                      {[0, 1, 2, 3, 4].map((i) => {
+                        const y = 93.15 + i * 0.95;
+                        return (
+                          <path
+                            key={`flute-l-${i}`}
+                            fill="none"
+                            stroke="currentColor"
+                            className="rig-stroke-flute"
+                            strokeWidth="0.7"
+                            d={`M136 ${y.toFixed(2)} H286`}
+                          />
+                        );
+                      })}
                     </g>
                   ) : null}
                   {/* Muzzle crown / thread */}
@@ -413,11 +440,24 @@ export function CurrentRigAdmire({
                   }
                 />
                 {rigLook.stockShape === "chassis" ? (
-                  <path
-                    className="rig-fill-accent"
-                    d="M220 102h12v2H220zM250 102h12v2H250zM280 102h12v2H280z"
-                    opacity="0.55"
-                  />
+                  <g className="rig-chassis-mlok" opacity="0.7">
+                    {[218, 236, 254, 272].map((x) => (
+                      <rect
+                        key={`mlok-${x}`}
+                        className="rig-fill-void"
+                        x={x}
+                        y="103.5"
+                        width="10"
+                        height="2.2"
+                        rx="0.4"
+                      />
+                    ))}
+                    <path
+                      className="rig-fill-accent"
+                      d="M210 101.5h88v1.2H210z"
+                      opacity="0.45"
+                    />
+                  </g>
                 ) : null}
 
                 {/* Receiver */}
@@ -486,7 +526,10 @@ export function CurrentRigAdmire({
                 />
 
                 {/* Magazine / floorplate / AICS */}
-                <MagazineSilhouette style={rigLook.magStyle} />
+                <MagazineSilhouette
+                  style={rigLook.magStyle}
+                  capacity={rigLook.magCapacity}
+                />
 
                 {/* Trigger guard + trigger */}
                 <path
@@ -684,8 +727,9 @@ export function CurrentRigAdmire({
                     : "rig-detail-ok"
                 }
               >
+                {/* Tube height from tube Ø; objective bell sized separately */}
                 <g
-                  transform={`translate(350 55) scale(${rigLook.scopeTubeScale} ${rigLook.scopeObjScale}) translate(-350 -55)`}
+                  transform={`translate(350 55) scale(1 ${rigLook.scopeTubeScale}) translate(-350 -55)`}
                 >
                   {/* Main tube */}
                   <rect
@@ -704,29 +748,6 @@ export function CurrentRigAdmire({
                     height="3"
                     rx="1"
                     opacity="0.5"
-                  />
-                  {/* Objective bell — extra scale via parent Y already; widen slightly when large obj */}
-                  <path
-                    className="rig-fill-metal"
-                    d={
-                      rigLook.scopeObjScale > 1.08
-                        ? "M264 42h40c3 0 5 2 5 6v14c0 4-2 6-5 6h-40c-5 0-10-5-10-11v-4c0-6 5-11 10-11z"
-                        : "M268 44h36c2 0 4 2 4 5v12c0 3-2 5-4 5h-36c-4 0-8-4-8-9v-4c0-5 4-9 8-9z"
-                    }
-                  />
-                  <ellipse
-                    className="rig-fill-void"
-                    cx="270"
-                    cy="55"
-                    rx={rigLook.scopeObjScale > 1.08 ? 6 : 5}
-                    ry={rigLook.scopeObjScale > 1.08 ? 9 : 8}
-                  />
-                  <ellipse
-                    className="rig-fill-lens"
-                    cx="272"
-                    cy="55"
-                    rx={rigLook.scopeObjScale > 1.08 ? 4.2 : 3.5}
-                    ry={rigLook.scopeObjScale > 1.08 ? 7 : 6}
                   />
                   {/* Power ring */}
                   <rect
@@ -800,6 +821,33 @@ export function CurrentRigAdmire({
                     width="8"
                     height="20"
                     rx="1"
+                  />
+                </g>
+                {/* Objective bell — scales with objective Ø (x42 / x50 / x56…) */}
+                <g
+                  transform={`translate(270 55) scale(${rigLook.scopeObjScale}) translate(-270 -55)`}
+                >
+                  <path
+                    className="rig-fill-metal"
+                    d={
+                      rigLook.scopeObjScale > 1.12
+                        ? "M264 40h40c3.5 0 6 2.5 6 7v16c0 4.5-2.5 7-6 7h-40c-5.5 0-11-5.5-11-12v-6c0-6.5 5.5-12 11-12z"
+                        : "M268 44h36c2 0 4 2 4 5v12c0 3-2 5-4 5h-36c-4 0-8-4-8-9v-4c0-5 4-9 8-9z"
+                    }
+                  />
+                  <ellipse
+                    className="rig-fill-void"
+                    cx="270"
+                    cy="55"
+                    rx={rigLook.scopeObjScale > 1.12 ? 6.5 : 5}
+                    ry={rigLook.scopeObjScale > 1.12 ? 10 : 8}
+                  />
+                  <ellipse
+                    className="rig-fill-lens"
+                    cx="272"
+                    cy="55"
+                    rx={rigLook.scopeObjScale > 1.12 ? 4.5 : 3.5}
+                    ry={rigLook.scopeObjScale > 1.12 ? 7.5 : 6}
                   />
                 </g>
               </RigHotspot>
@@ -1196,7 +1244,11 @@ type RigLook = {
   stockShape: RigStockShape;
   metalFinish: RigMetalFinish;
   magStyle: RigMagStyle;
+  /** Rounds — drives Admire mag height. */
+  magCapacity: number;
   bipodStyle: RigBipodStyle;
+  /** Extra scale on bipod silhouette (light → skinny, heavy → stout). */
+  bipodScale: number;
   barrelScale: number;
   scopeObjScale: number;
   scopeTubeScale: number;
@@ -1217,7 +1269,12 @@ function resolveRigLook(
   rifle: ShopItem | null,
   stock: ShopItem | null,
   scope: ShopItem | null,
-  opts?: { fluting?: boolean; bipod?: ShopItem | null },
+  opts?: {
+    fluting?: boolean;
+    bipod?: ShopItem | null;
+    muzzleOdMm?: number | null;
+    magCapacity?: number;
+  },
 ): RigLook {
   // Prefer aftermarket stock material when packed; else factory rifle stock.
   const stockHay = itemHaystack(stock ?? rifle);
@@ -1282,56 +1339,74 @@ function resolveRigLook(
     magStyle = "detachable";
   }
 
-  let bipodStyle: RigBipodStyle = "classic";
-  if (/atlas|accu[- ]?tac|rrs|bt65|fc-/.test(bipodHay)) {
-    bipodStyle = "slim";
-  } else if (
-    /harris|caldwell|utg|jula|game[- ]?on|softgun/.test(bipodHay) ||
-    (opts?.bipod &&
-      isBipodItem(opts.bipod) &&
-      opts.bipod.bipod.weaponCalm <= 4)
-  ) {
-    bipodStyle = "classic";
-  } else if (
-    opts?.bipod &&
-    isBipodItem(opts.bipod) &&
-    opts.bipod.bipod.weaponCalm >= 8
-  ) {
-    bipodStyle = "heavy";
-  } else if (/magpul|spartan|really right/.test(bipodHay)) {
-    bipodStyle = "slim";
+  const magCapacity = Math.max(5, opts?.magCapacity ?? 5);
+  if (magCapacity >= 10 && magStyle === "floorplate") {
+    magStyle = "detachable";
   }
 
+  // Weight-first bipod silhouette: light = spindly, heavy = stout.
+  let bipodStyle: RigBipodStyle = "classic";
+  let bipodScale = 1;
+  if (opts?.bipod && isBipodItem(opts.bipod)) {
+    const g = opts.bipod.weightGrams;
+    if (g <= 340) {
+      bipodStyle = "slim";
+      bipodScale = 0.82 + (g / 340) * 0.14;
+    } else if (g >= 620) {
+      bipodStyle = "heavy";
+      bipodScale = 1.05 + Math.min(0.22, (g - 620) / 800);
+    } else {
+      bipodStyle = "classic";
+      bipodScale = 0.92 + ((g - 340) / 280) * 0.12;
+    }
+    // Calm still nudges extremes (plastic calm vs RRS).
+    if (opts.bipod.bipod.weaponCalm >= 9 && g >= 500) {
+      bipodStyle = "heavy";
+      bipodScale = Math.max(bipodScale, 1.12);
+    }
+  } else if (/atlas|accu[- ]?tac|rrs|bt65|fc-/.test(bipodHay)) {
+    bipodStyle = "slim";
+    bipodScale = 0.9;
+  } else if (/harris|caldwell|utg|jula|game[- ]?on|softgun/.test(bipodHay)) {
+    bipodStyle = "classic";
+  } else if (/magpul|spartan|really right/.test(bipodHay)) {
+    bipodStyle = "slim";
+    bipodScale = 0.88;
+  }
+
+  // Muzzle OD → barrel thickness (16 mm pencil → thin, 20+ → heavy).
   let barrelScale = 1;
-  if (
+  const od = opts?.muzzleOdMm;
+  if (typeof od === "number" && Number.isFinite(od) && od > 0) {
+    const t = (Math.max(14, Math.min(24, od)) - 14) / 10;
+    barrelScale = 0.78 + t * 0.5;
+  } else if (
     /carbonwolf|berillium|hnt26|finnlight|peak|\blite\b|hunter light/.test(
       rifleHay,
     )
   ) {
-    barrelScale = 0.88;
+    barrelScale = 0.86;
   } else if (/varmint|varminter|tac[-_ ]?a1|tact|200\s*str/.test(rifleHay)) {
     barrelScale = 1.18;
   } else if (/\bsps\b|american|\.22/.test(rifleHay)) {
     barrelScale = 0.95;
   }
-  barrelScale = Math.min(1.2, Math.max(0.85, barrelScale));
+  barrelScale = Math.min(1.32, Math.max(0.78, barrelScale));
 
   let scopeObjScale = 1;
   let scopeTubeScale = 1;
   if (scope && isScopeItem(scope)) {
-    const zoom = scope.scope.maxZoom;
     const tube = scope.scope.tubeDiameterMm;
-    const fromTube = 0.88 + ((tube - 25.4) / (36 - 25.4)) * 0.22;
-    const fromZoom =
-      0.9 + ((Math.min(56, Math.max(6, zoom)) - 6) / 50) * 0.26;
-    scopeObjScale = Math.min(
-      1.22,
-      Math.max(0.85, fromTube * 0.45 + fromZoom * 0.55),
-    );
-    // Longer / thicker tubes stretch X a touch independently of objective bell.
+    const objMm = scopeObjectiveDiameterMm(scope.scope, scope.name);
+    // Tube thickness (1" → 36 mm).
     scopeTubeScale = Math.min(
-      1.14,
-      Math.max(0.9, 0.92 + ((tube - 25.4) / (36 - 25.4)) * 0.2),
+      1.22,
+      Math.max(0.88, 0.88 + ((tube - 25.4) / (36 - 25.4)) * 0.32),
+    );
+    // Objective bell (32–56 mm typical).
+    scopeObjScale = Math.min(
+      1.38,
+      Math.max(0.82, 0.82 + ((objMm - 32) / (56 - 32)) * 0.5),
     );
   }
 
@@ -1340,7 +1415,9 @@ function resolveRigLook(
     stockShape,
     metalFinish,
     magStyle,
+    magCapacity,
     bipodStyle,
+    bipodScale,
     barrelScale,
     scopeObjScale,
     scopeTubeScale,
@@ -1350,9 +1427,10 @@ function resolveRigLook(
 
 function forendPath(shape: RigStockShape, aftermarket: boolean): string {
   if (shape === "chassis") {
+    // Thin skeleton rail — not a solid wood forend slab.
     return aftermarket
-      ? "M198 98h98c2 0 5 2 6 5l1 7c0 2-2 4-4 4H196c-2 0-4-2-4-4v-5c0-4 2-7 6-7z"
-      : "M205 99h88c2 0 4 2 5 4l1 5c0 2-2 4-4 4H204c-2 0-4-2-4-4v-4c0-3 2-5 5-5z";
+      ? "M198 100h100c1.5 0 3 1 3.5 2.5l0.5 4c0 1.5-1.5 2.5-3 2.5H197c-1.5 0-3-1-3-2.5v-3c0-2 1.5-3.5 4-3.5z"
+      : "M205 101h88c1.5 0 2.5 1 3 2l0.5 3.5c0 1.2-1 2-2.5 2H204c-1.5 0-2.5-0.8-2.5-2v-2.5c0-1.8 1.5-3 3.5-3z";
   }
   if (shape === "carbon-slim") {
     return aftermarket
@@ -1372,10 +1450,20 @@ function forendPath(shape: RigStockShape, aftermarket: boolean): string {
     : "M205 100h88c3 0 5 2 5 4v5c0 2-2 4-4 4H204c-3 0-5-2-5-4v-3c0-3 2-6 6-6z";
 }
 
-function MagazineSilhouette({ style }: { style: RigMagStyle }) {
+function MagazineSilhouette({
+  style,
+  capacity,
+}: {
+  style: RigMagStyle;
+  capacity: number;
+}) {
+  const tall = capacity >= 15 ? 1.55 : capacity >= 10 ? 1.28 : 1;
   if (style === "aics") {
     return (
-      <g className="rig-mag-aics">
+      <g
+        className="rig-mag-aics"
+        transform={`translate(349 118) scale(1 ${tall}) translate(-349 -118)`}
+      >
         <path
           className="rig-fill-metal-dark"
           d="M328 110h42l3 16H325z"
@@ -1397,15 +1485,18 @@ function MagazineSilhouette({ style }: { style: RigMagStyle }) {
         />
         <path
           className="rig-fill-accent"
-          d="M340 122h18v2H340z"
-          opacity="0.5"
+          d="M340 122h18v2h-18z"
+          opacity="0.4"
         />
       </g>
     );
   }
   if (style === "detachable") {
     return (
-      <g className="rig-mag-detach">
+      <g
+        className="rig-mag-detach"
+        transform={`translate(349 116) scale(1 ${tall}) translate(-349 -116)`}
+      >
         <path
           className="rig-fill-metal-dark"
           d="M332 110h34l1 12h-36z"
@@ -1430,7 +1521,10 @@ function MagazineSilhouette({ style }: { style: RigMagStyle }) {
     );
   }
   return (
-    <g className="rig-mag-floor">
+    <g
+      className="rig-mag-floor"
+      transform={`translate(349 115) scale(1 ${tall}) translate(-349 -115)`}
+    >
       <path
         className="rig-fill-metal-dark"
         d="M330 110h36l2 10h-40z"
@@ -1462,37 +1556,67 @@ function StockButtSilhouette({
   aftermarket: boolean;
 }) {
   if (shape === "chassis") {
+    // Skeleton chassis — rails + open cutouts, metallic tactical look.
     return (
       <>
+        {/* Top rail */}
         <path
           className={stockMain}
-          d={
-            aftermarket
-              ? "M394 84h98c3 0 8 2 10 8l10 28c1 3-1 6-4 6h-32l-6-12H398c-3 0-4-2-4-5V90c0-3 2-6 6-6z"
-              : "M394 86h82c6 0 14 4 18 12l14 26c1 3-1 6-4 6h-22l-6-10H404c-4 0-8-3-8-7V92c0-3 2-6 6-6z"
-          }
+          d="M396 88h100v3.5H396z"
           {...snowFill}
         />
+        {/* Bottom rail */}
         <path
           className={stockDark}
-          d={
-            aftermarket
-              ? "M408 116h74l8 14h-24l-4-8H412z"
-              : "M412 118h55l8 14h-18l-5-8H416z"
-          }
+          d="M400 116h78v3.5H400z"
+        />
+        {/* Butt riser / buffer tube area */}
+        <path
+          className={stockMain}
+          d="M486 88h14v32h-14z"
+          {...snowFill}
+        />
+        {/* Vertical webs */}
+        <path
+          className={stockLight}
+          d="M412 91.5h3.5v24.5H412zM438 91.5h3.5v24.5H438zM464 91.5h3.5v24.5H464z"
+          opacity="0.85"
+        />
+        {/* Open lightening cutouts */}
+        <path
+          className="rig-fill-void"
+          d="M418 96h16v14H418z"
+          opacity="0.55"
+        />
+        <path
+          className="rig-fill-void"
+          d="M444 96h16v14H444z"
+          opacity="0.55"
+        />
+        {/* Cheek / comb thin plate */}
+        <path
+          className={stockLight}
+          d="M404 86h48v2.5H404z"
+          opacity="0.55"
+        />
+        {/* Grip stub (angled skeleton) */}
+        <path
+          className={stockDark}
+          d="M400 119l8 14h-10l-6-10z"
+        />
+        {/* Pic / QD accents */}
+        <path
+          className="rig-fill-accent"
+          d="M420 102h6v2h-6zM446 102h6v2h-6zM472 102h6v2h-6z"
+          opacity="0.55"
         />
         {aftermarket ? (
           <path
-            className={stockLight}
-            d="M400 86h40v2.5H400z"
-            opacity="0.4"
+            className="rig-fill-metal-light"
+            d="M492 92h4v20h-4z"
+            opacity="0.45"
           />
         ) : null}
-        <path
-          className="rig-fill-accent"
-          d="M430 100h8v14h-8zM450 100h8v14h-8z"
-          opacity="0.35"
-        />
       </>
     );
   }
@@ -1588,9 +1712,16 @@ function StockButtSilhouette({
   );
 }
 
-function BipodSilhouette({ style }: { style: RigBipodStyle }) {
-  if (style === "slim") {
-    return (
+function BipodSilhouette({
+  style,
+  scale = 1,
+}: {
+  style: RigBipodStyle;
+  scale?: number;
+}) {
+  const s = Math.min(1.35, Math.max(0.75, scale));
+  const inner =
+    style === "slim" ? (
       <g className="rig-bipod-slim">
         <rect
           className="rig-fill-metal"
@@ -1624,10 +1755,7 @@ function BipodSilhouette({ style }: { style: RigBipodStyle }) {
         />
         <circle className="rig-fill-metal-light" cx="227" cy="110" r="2" />
       </g>
-    );
-  }
-  if (style === "heavy") {
-    return (
+    ) : style === "heavy" ? (
       <g className="rig-bipod-heavy">
         <rect
           className="rig-fill-metal"
@@ -1661,41 +1789,44 @@ function BipodSilhouette({ style }: { style: RigBipodStyle }) {
         />
         <circle className="rig-fill-metal-light" cx="227" cy="110" r="3" />
       </g>
+    ) : (
+      <g className="rig-bipod-classic">
+        <rect
+          className="rig-fill-metal"
+          x="218"
+          y="108"
+          width="18"
+          height="5"
+          rx="1"
+        />
+        <path
+          className="rig-fill-metal-dark"
+          d="M222 113l-14 42h5l12-36z"
+        />
+        <path
+          className="rig-fill-metal-dark"
+          d="M232 113l14 42h-5l-12-36z"
+        />
+        <ellipse
+          className="rig-fill-metal"
+          cx="210"
+          cy="156"
+          rx="9"
+          ry="3"
+        />
+        <ellipse
+          className="rig-fill-metal"
+          cx="244"
+          cy="156"
+          rx="9"
+          ry="3"
+        />
+        <circle className="rig-fill-metal-light" cx="227" cy="110" r="2.5" />
+      </g>
     );
-  }
   return (
-    <g className="rig-bipod-classic">
-      <rect
-        className="rig-fill-metal"
-        x="218"
-        y="108"
-        width="18"
-        height="5"
-        rx="1"
-      />
-      <path
-        className="rig-fill-metal-dark"
-        d="M222 113l-14 42h5l12-36z"
-      />
-      <path
-        className="rig-fill-metal-dark"
-        d="M232 113l14 42h-5l-12-36z"
-      />
-      <ellipse
-        className="rig-fill-metal"
-        cx="210"
-        cy="156"
-        rx="9"
-        ry="3"
-      />
-      <ellipse
-        className="rig-fill-metal"
-        cx="244"
-        cy="156"
-        rx="9"
-        ry="3"
-      />
-      <circle className="rig-fill-metal-light" cx="227" cy="110" r="2.5" />
+    <g transform={`translate(227 108) scale(${s}) translate(-227 -108)`}>
+      {inner}
     </g>
   );
 }

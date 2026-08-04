@@ -28,6 +28,7 @@ import { normalizeRealLoadProfiles, mergeRealLoadProfiles } from "@/lib/ballisti
 import { normalizeAwareHuntState } from "@/lib/aware/shotPairStorage";
 import { normalizeCustomBarrelsMap, normalizeSpareBarrelsMap } from "@/lib/customs/customBarrel";
 import { normalizeCustomsMods } from "@/lib/customs/spec";
+import { normalizeGunKits } from "@/lib/gunKit";
 import {
   createJaktkort,
   getJaktkortForTerrain,
@@ -83,6 +84,9 @@ function normalizeZeroingProfiles(
       savedXMm: Number(profile.savedXMm) || 0,
       savedYMm: Number(profile.savedYMm) || 0,
       ...(verifiedAtMs != null ? { verifiedAtMs } : {}),
+      ...(typeof profile.zeroedWithSuppressor === "boolean"
+        ? { zeroedWithSuppressor: profile.zeroedWithSuppressor }
+        : {}),
     };
   }
   return next;
@@ -228,6 +232,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
           (id): id is string => typeof id === "string" && id.length > 0,
         )
       : base.favoriteKitIds,
+    gunKits: normalizeGunKits(raw.gunKits),
     loadBenchRecipe:
       normalizeLoadBenchRecipe(raw.loadBenchRecipe) ?? base.loadBenchRecipe,
     armedLoadPlan: normalizeArmedLoadPlan(raw.armedLoadPlan),

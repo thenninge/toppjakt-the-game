@@ -162,6 +162,7 @@ import {
   EMPTY_CUSTOMS_MODS,
   applyCustomCamoSneakPct,
   customsBeddingMoaDelta,
+  customsBoltCycleMs,
   customsCalmMultiplier,
   customsTriggerPullScale,
   type CustomsMods,
@@ -1147,6 +1148,7 @@ export function HuntMapView({
   const customsMoaDelta = customsBeddingMoaDelta(customsMods);
   const customsCalmMult = customsCalmMultiplier(customsMods);
   const triggerPullScale = customsTriggerPullScale(customsMods);
+  const boltCycleMs = customsBoltCycleMs(customsMods);
   const huntBarrelWearScale = useMemo(() => {
     const rifle = kitItems.find(isRifleItem);
     if (!rifle) return 1;
@@ -5440,6 +5442,7 @@ export function HuntMapView({
           customsMods,
         })}
         customsTriggerPullScale={triggerPullScale}
+        boltCycleMs={boltCycleMs}
         barrelWearScale={huntBarrelWearScale}
         customBarrels={customBarrels}
         mountHuntDriftMm={mountHuntDriftMmRef.current}

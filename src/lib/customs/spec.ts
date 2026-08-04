@@ -10,6 +10,8 @@ export type CustomsMods = {
   bedding: boolean;
   pillarBedding: boolean;
   fluting: boolean;
+  /** Bolt-body fluting — light weight save (separate from pipe fluting). */
+  boltFluting: boolean;
   stockSlim: boolean;
   /** Light trigger — halves POI error from a bad break on the trigger bar. */
   triggerTuning: boolean;
@@ -20,16 +22,22 @@ export type CustomsMods = {
   bagrider: boolean;
   /** Action trueing / lapping — tighter groups. */
   actionTrueing: boolean;
+  /** Titanium nitride / TiN-style action coating — faster bolt cycle. */
+  actionTiCoating: boolean;
   /** Custom cheek riser / comb — a bit more calm. */
   cheekRiser: boolean;
   /** Soft buttpad — lower felt recoil (stay in the glass after the shot). */
   buttpad: boolean;
   /** Barrel crown job — small MOA improvement. */
   barrelCrown: boolean;
-  /** Cosmetic custom bolt knob — no performance effect. */
+  /** Custom bolt knob — cosmetic + slightly faster bolt cycle. */
   customBoltKnob: boolean;
   /** Hex color for the custom bolt knob (e.g. #ff6600). */
   boltKnobColor: string;
+  /** CB 10-round magazine (default factory = 5). */
+  magCapacity10: boolean;
+  /** CB 15-round magazine (supersedes 10). */
+  magCapacity15: boolean;
 };
 
 /** Default knob tint when the service is first bought. */
@@ -65,33 +73,41 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   bedding: false,
   pillarBedding: false,
   fluting: false,
+  boltFluting: false,
   stockSlim: false,
   triggerTuning: false,
   homeLoadsSetup: false,
   customCamo: false,
   bagrider: false,
   actionTrueing: false,
+  actionTiCoating: false,
   cheekRiser: false,
   buttpad: false,
   barrelCrown: false,
   customBoltKnob: false,
   boltKnobColor: DEFAULT_BOLT_KNOB_COLOR,
+  magCapacity10: false,
+  magCapacity15: false,
 };
 
 export type CustomsServiceId =
   | "bedding"
   | "pillar_bedding"
   | "fluting"
+  | "bolt_fluting"
   | "stock_slim"
   | "trigger_tuning"
   | "home_loads_setup"
   | "custom_camo"
   | "bagrider"
   | "action_trueing"
+  | "action_ti_coating"
   | "cheek_riser"
   | "buttpad"
   | "barrel_crown"
-  | "custom_bolt_knob";
+  | "custom_bolt_knob"
+  | "mag_10"
+  | "mag_15";
 
 export type CustomsService = {
   id: CustomsServiceId;
@@ -108,6 +124,8 @@ export const PILLAR_BEDDING_MOA = 0.06;
 /** Home-load ammo is ~0.05 MOA tighter than top factory match (wired in catalog). */
 export const HOME_LOAD_MOA = 0.05;
 export const FLUTING_WEIGHT_G = 500;
+/** Bolt-body fluting — modest mass cut. */
+export const BOLT_FLUTING_WEIGHT_G = 100;
 /** Fraction of stock (or estimated stock) mass removed by slanking. */
 export const STOCK_SLIM_FRACTION = 0.25;
 /**
@@ -162,6 +180,18 @@ export const CHEEK_RISER_RECOIL_DAMPING_MULT = 1.12;
 /** Fresh crown — small MOA improvement. */
 export const BARREL_CROWN_MOA = 0.03;
 
+/** Base real-time wait after a shot before the next break (bolt cycle). */
+export const BASE_BOLT_CYCLE_MS = 1200;
+/** Action Ti-coating — 20 % faster bolt cycle (×0.8). */
+export const ACTION_TI_RELOAD_MULT = 0.8;
+/** Custom bolt knob — 10 % faster bolt cycle (×0.9). */
+export const BOLT_KNOB_RELOAD_MULT = 0.9;
+
+/** Factory / XXL default detachable mag capacity. */
+export const DEFAULT_MAG_CAPACITY = 5;
+/** Extra real-time pause (ms) when a mag change is required mid-string. */
+export const MAG_CHANGE_EXTRA_MS = 4000;
+
 export const HOME_LOAD_SETUP_NOK = 5000;
 export const HOME_LOAD_PER_ROUND_NOK = 100;
 /** Default order size when buying home loads. */
@@ -185,6 +215,12 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     name: "Fluting av pipe",
     priceNok: 5000,
     effect: `Reduserer vekt med ${FLUTING_WEIGHT_G} g — beholder presisjon.`,
+  },
+  {
+    id: "bolt_fluting",
+    name: "Bolt fluting",
+    priceNok: 1000,
+    effect: `Fluting av bolt — sparer ${BOLT_FLUTING_WEIGHT_G} g.`,
   },
   {
     id: "stock_slim",
@@ -224,6 +260,12 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     effect: `Lapping / trueing av action — −${ACTION_TRUEING_MOA.toFixed(2)} MOA.`,
   },
   {
+    id: "action_ti_coating",
+    name: "Action Ti-coating",
+    priceNok: 1000,
+    effect: `TiN / Ti-coating på action — ${Math.round((1 - ACTION_TI_RELOAD_MULT) * 100)}% raskere omlading (kortere delay mellom skudd).`,
+  },
+  {
     id: "cheek_riser",
     name: "Cheek riser",
     priceNok: 2500,
@@ -245,8 +287,19 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     id: "custom_bolt_knob",
     name: "Custom bolt knob",
     priceNok: 1000,
-    effect:
-      "Kosmetikk — velg farge på bolt knob. Ingen effekt på MOA, calm eller rekyl. Vises i Admire current rig.",
+    effect: `Custom knott — velg farge. ${Math.round((1 - BOLT_KNOB_RELOAD_MULT) * 100)}% raskere omlading (kortere delay mellom skudd). Vises i Admire current rig.`,
+  },
+  {
+    id: "mag_10",
+    name: "Custom magasin 10 skudd",
+    priceNok: 2500,
+    effect: `10-skudds magasin (standard fra XXL er ${DEFAULT_MAG_CAPACITY}). Færre magasinbytter i konkurranse.`,
+  },
+  {
+    id: "mag_15",
+    name: "Custom magasin 15 skudd",
+    priceNok: 5000,
+    effect: `15-skudds magasin — erstatter 10-skudds. Færre magasinbytter i konkurranse.`,
   },
 ];
 
@@ -257,17 +310,21 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     bedding: o.bedding === true,
     pillarBedding: o.pillarBedding === true,
     fluting: o.fluting === true,
+    boltFluting: o.boltFluting === true,
     stockSlim: o.stockSlim === true,
     triggerTuning: o.triggerTuning === true,
     homeLoadsSetup: o.homeLoadsSetup === true,
     customCamo: o.customCamo === true,
     bagrider: o.bagrider === true,
     actionTrueing: o.actionTrueing === true,
+    actionTiCoating: o.actionTiCoating === true,
     cheekRiser: o.cheekRiser === true,
     buttpad: o.buttpad === true,
     barrelCrown: o.barrelCrown === true,
     customBoltKnob: o.customBoltKnob === true,
     boltKnobColor: normalizeBoltKnobColor(o.boltKnobColor),
+    magCapacity10: o.magCapacity10 === true || o.magCapacity15 === true,
+    magCapacity15: o.magCapacity15 === true,
   };
 }
 
@@ -319,6 +376,7 @@ export function customsWeightReductionGrams(
 ): number {
   let cut = 0;
   if (mods.fluting && !opts.hasCustomBarrel) cut += FLUTING_WEIGHT_G;
+  if (mods.boltFluting) cut += BOLT_FLUTING_WEIGHT_G;
   if (mods.stockSlim) {
     const base =
       opts.stockWeightGrams != null && opts.stockWeightGrams > 0
@@ -327,6 +385,22 @@ export function customsWeightReductionGrams(
     cut += Math.round(base * STOCK_SLIM_FRACTION);
   }
   return cut;
+}
+
+/** Multiplier on bolt-cycle wait (lower = faster reload between shots). */
+export function customsReloadTimeMult(mods: CustomsMods): number {
+  let m = 1;
+  if (mods.actionTiCoating) m *= ACTION_TI_RELOAD_MULT;
+  if (mods.customBoltKnob) m *= BOLT_KNOB_RELOAD_MULT;
+  return m;
+}
+
+/** Real-ms bolt cycle after a shot before the next break is allowed. */
+export function customsBoltCycleMs(mods: CustomsMods): number {
+  return Math.max(
+    200,
+    Math.round(BASE_BOLT_CYCLE_MS * customsReloadTimeMult(mods)),
+  );
 }
 
 /** @deprecated Prefer {@link applyCustomCamoSneakPct}. */
@@ -347,6 +421,13 @@ export function applyCustomCamoSneakPct(
   return kitSneakPct + CUSTOM_CAMO_SNEAK_BONUS_PCT;
 }
 
+/** Effective magazine capacity (5 default, 10 / 15 from CB Customs). */
+export function customsMagCapacity(mods: CustomsMods): number {
+  if (mods.magCapacity15) return 15;
+  if (mods.magCapacity10) return 10;
+  return DEFAULT_MAG_CAPACITY;
+}
+
 export function serviceOwned(
   mods: CustomsMods,
   id: CustomsServiceId,
@@ -354,16 +435,20 @@ export function serviceOwned(
   if (id === "bedding") return mods.bedding || mods.pillarBedding;
   if (id === "pillar_bedding") return mods.pillarBedding;
   if (id === "fluting") return mods.fluting;
+  if (id === "bolt_fluting") return mods.boltFluting;
   if (id === "stock_slim") return mods.stockSlim;
   if (id === "trigger_tuning") return mods.triggerTuning;
   if (id === "home_loads_setup") return mods.homeLoadsSetup;
   if (id === "custom_camo") return mods.customCamo;
   if (id === "bagrider") return mods.bagrider;
   if (id === "action_trueing") return mods.actionTrueing;
+  if (id === "action_ti_coating") return mods.actionTiCoating;
   if (id === "cheek_riser") return mods.cheekRiser;
   if (id === "buttpad") return mods.buttpad;
   if (id === "barrel_crown") return mods.barrelCrown;
   if (id === "custom_bolt_knob") return mods.customBoltKnob;
+  if (id === "mag_10") return mods.magCapacity10 || mods.magCapacity15;
+  if (id === "mag_15") return mods.magCapacity15;
   return false;
 }
 

@@ -92,6 +92,10 @@ import {
   type MountTier,
 } from "@/lib/mount/spec";
 import { isFireStarterMisc } from "@/lib/misc/spec";
+import {
+  emptyGunKits,
+  type GunKitBinding,
+} from "@/lib/gunKit";
 
 /** Live home-load lots for resolvePlayerItem (synced from save state). */
 let homeLotCache: readonly HomeLoadedLot[] = [];
@@ -123,6 +127,11 @@ export type ZeroingProfile = {
    * Required before hunt — missing means not hunt-ready for this combo.
    */
   verifiedAtMs?: number;
+  /**
+   * Whether a suppressor was mounted when «Lagre zero» was pressed.
+   * Used for hidden POI shift when can on/off does not match.
+   */
+  zeroedWithSuppressor?: boolean;
 };
 
 /** One measured series from the shooting range (shotlog row). */
@@ -284,6 +293,11 @@ export type PlayerStats = {
    * via «Pakk favorittkitt for jakt».
    */
   favoriteKitIds: string[];
+  /**
+   * Våpenskap — up to 3 rifle+scope+mount bindings.
+   * Switching kits keeps zeroing profiles.
+   */
+  gunKits: GunKitBinding[];
   /** Laderommet — selected components for the current home load. */
   loadBenchRecipe: LoadBenchRecipe;
   /**
@@ -365,6 +379,7 @@ export const VIP_NAME_TOKENS = [
   "jørn",
   "ivar",
   "tomas",
+  "nissik",
   "einar",
   "eirik",
   "konrad",
@@ -789,7 +804,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Einar / Eirik / Konrad / Stahl / Dyre / Mona — e.g. "Jørn Nilsson"),
+ * (Jørn / Ivar / Tomas / Nissik / Einar / Eirik / Konrad / Stahl / Dyre / Mona),
  * or the name contains «Hoftun» (family VIP).
  */
 export function isVipPlayerName(name: string): boolean {
@@ -805,7 +820,8 @@ export function isHoftunPlayerName(name: string): boolean {
 export function vipKitProfileIdForName(name: string): KitProfileId | null {
   const normalized = name.trim().toLowerCase().normalize("NFC");
   const words = normalized.split(/[\s\-_/.,]+/).filter(Boolean);
-  if (words.includes("tomas")) return "tomas";
+  // Nissik shares Tomas’s Sauer 200 STR + ZCO loadout.
+  if (words.includes("tomas") || words.includes("nissik")) return "tomas";
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
   // Konrad / Hoftun / Eirik / Stahl share Einar’s Sauer 200 + ZCO 527 + High realism.
@@ -1249,6 +1265,7 @@ export function createInitialStats(): PlayerStats {
     unlockedTerrainIds: [],
     autoSupplyFood: false,
     favoriteKitIds: [],
+    gunKits: emptyGunKits(),
     loadBenchRecipe: createDefaultLoadBenchRecipe(),
     armedLoadPlan: null,
     loadDevTable: createEmptyLoadDevTable(),
@@ -1591,12 +1608,8 @@ export function applyMountZeroingAfterKitChange(
     next = clearZeroingForScope(next, removedScope.id);
   }
 
-  for (const id of removed) {
-    const rem = getShopItem(id);
-    if (rem?.category === "rifle") {
-      next = clearZeroingForRifle(next, id);
-    }
-  }
+  // Rifle remove from kit does NOT wipe zeros — våpenskap / multi-platform
+  // zeros live in the profile map until the rifle is sold.
 
   if (removedMount && mountClearsZeroOnMountRemove(removedMount.mount.tier)) {
     const scopeItem =
@@ -1743,6 +1756,7 @@ export function saveZeroing(
   key: string,
   sessionXMm: number,
   sessionYMm: number,
+  opts?: { withSuppressor?: boolean },
 ): Record<string, ZeroingProfile> {
   const profile = map[key];
   if (!profile) return map;
@@ -1753,6 +1767,9 @@ export function saveZeroing(
       savedXMm: clampTurretMm(profile.savedXMm + sessionXMm),
       savedYMm: clampTurretMm(profile.savedYMm + sessionYMm),
       verifiedAtMs: Date.now(),
+      ...(opts?.withSuppressor != null
+        ? { zeroedWithSuppressor: opts.withSuppressor }
+        : {}),
     },
   };
 }

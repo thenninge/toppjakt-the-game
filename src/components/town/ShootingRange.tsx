@@ -183,6 +183,10 @@ import {
   type ZeroingProfile,
 } from "@/lib/player";
 import {
+  resolveMuzzleOdMm,
+  suppressorPoiDeltaMmAtDistance,
+} from "@/lib/suppressor/poiShift";
+import {
   densityRatioFromTempC,
   exactBallisticHold,
   windDriftMm,
@@ -218,6 +222,11 @@ import {
   barrelV0FactorForRifle,
   type InstalledCustomBarrel,
 } from "@/lib/customs/customBarrel";
+import {
+  customsBoltCycleMs,
+  customsMagCapacity,
+  EMPTY_CUSTOMS_MODS,
+} from "@/lib/customs/spec";
 import {
   RangeLoadTestBoard,
   liveChronoFromShots,
@@ -688,6 +697,8 @@ export function ShootingRange({
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   /** One shot max per F-hold / focus period. */
   const focusShotSpentRef = useRef(false);
+  /** Next shot allowed after bolt cycle (Ti-coating / bolt knob shorten this). */
+  const boltReadyAtRef = useRef(0);
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -743,16 +754,32 @@ export function ShootingRange({
       ? zeroingKey(rifle.id, scope.id, selectedAmmo.id)
       : null;
   const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
-  const effectiveZero = zeroProfile
-    ? effectiveZeroOffsetMm(
-        zeroProfile,
-        sessionZeroXMm,
-        sessionZeroYMm,
+  const suppressorPoi = rifle
+    ? suppressorPoiDeltaMmAtDistance(
+        {
+          zeroedWithSuppressor: zeroProfile?.zeroedWithSuppressor,
+          hasSuppressor: !!suppressor,
+          muzzleOdMm: resolveMuzzleOdMm(rifle.id, customBarrels[rifle.id]),
+        },
         distanceM,
       )
+    : { xMm: 0, yMm: 0 };
+  const effectiveZero = zeroProfile
+    ? (() => {
+        const z = effectiveZeroOffsetMm(
+          zeroProfile,
+          sessionZeroXMm,
+          sessionZeroYMm,
+          distanceM,
+        );
+        return {
+          xMm: z.xMm + suppressorPoi.xMm,
+          yMm: z.yMm + suppressorPoi.yMm,
+        };
+      })()
     : {
-        xMm: angularMmAtDistance(sessionZeroXMm, distanceM),
-        yMm: angularMmAtDistance(sessionZeroYMm, distanceM),
+        xMm: angularMmAtDistance(sessionZeroXMm, distanceM) + suppressorPoi.xMm,
+        yMm: angularMmAtDistance(sessionZeroYMm, distanceM) + suppressorPoi.yMm,
       };
 
   const calmFactor = useMemo(
@@ -1004,23 +1031,39 @@ export function ShootingRange({
       shot.v0,
     );
     const clickErr = scope.scope.clickErrorPercent ?? 0;
+    const suppressorShift = suppressorPoiDeltaMmAtDistance(
+      {
+        zeroedWithSuppressor: zeroProfile?.zeroedWithSuppressor,
+        hasSuppressor: !!suppressor,
+        muzzleOdMm: resolveMuzzleOdMm(rifle.id, customBarrels[rifle.id]),
+      },
+      distanceRef.current,
+    );
     const realizedZero = zeroProfile
-      ? effectiveZeroOffsetMm(
-          zeroProfile,
-          sessionZeroXMm,
-          sessionZeroYMm,
-          distanceRef.current,
-          { clickErrorPercent: clickErr },
-        )
+      ? (() => {
+          const z = effectiveZeroOffsetMm(
+            zeroProfile,
+            sessionZeroXMm,
+            sessionZeroYMm,
+            distanceRef.current,
+            { clickErrorPercent: clickErr },
+          );
+          return {
+            xMm: z.xMm + suppressorShift.xMm,
+            yMm: z.yMm + suppressorShift.yMm,
+          };
+        })()
       : {
-          xMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroXMm, clickErr),
-            distanceRef.current,
-          ),
-          yMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroYMm, clickErr),
-            distanceRef.current,
-          ),
+          xMm:
+            angularMmAtDistance(
+              applyScopeClickError(sessionZeroXMm, clickErr),
+              distanceRef.current,
+            ) + suppressorShift.xMm,
+          yMm:
+            angularMmAtDistance(
+              applyScopeClickError(sessionZeroYMm, clickErr),
+              distanceRef.current,
+            ) + suppressorShift.yMm,
         };
     const windageMm = shot.spinDriftMm + wDrift;
     const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
@@ -1297,6 +1340,9 @@ export function ShootingRange({
     }));
     focusShotSpentRef.current = true;
     triggerMarkRef.current = null;
+    boltReadyAtRef.current =
+      performance.now() +
+      customsBoltCycleMs(customsMods ?? EMPTY_CUSTOMS_MODS);
     fireShotRef.current();
   }
 
@@ -1308,6 +1354,10 @@ export function ShootingRange({
     }
     if (ammoRemaining <= 0) {
       setStatus("Tom for ammo — kjøp mer hos XXL.");
+      return;
+    }
+    if (nowMs < boltReadyAtRef.current) {
+      setStatus("Lader — vent på bolt-syklus.");
       return;
     }
     if (focusShotSpentRef.current) {
@@ -1323,6 +1373,8 @@ export function ShootingRange({
       triggerPullRef.current = 0;
       focusShotSpentRef.current = true;
       triggerMarkRef.current = null;
+      boltReadyAtRef.current =
+        nowMs + customsBoltCycleMs(customsMods ?? EMPTY_CUSTOMS_MODS);
       fireShotRef.current();
       return;
     }
@@ -2194,6 +2246,7 @@ export function ShootingRange({
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
             customsTriggerPullScale={customsTriggerPullScale}
+            boltCycleMs={customsBoltCycleMs(customsMods ?? EMPTY_CUSTOMS_MODS)}
             onAffinitiesChange={onAffinitiesChange}
             onConsumeAmmo={onConsumeAmmo}
             onEnsureZeroing={onEnsureZeroing}
@@ -2231,6 +2284,7 @@ export function ShootingRange({
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
             customsTriggerPullScale={customsTriggerPullScale}
+            boltCycleMs={customsBoltCycleMs(customsMods ?? EMPTY_CUSTOMS_MODS)}
             onAffinitiesChange={onAffinitiesChange}
             onConsumeAmmo={onConsumeAmmo}
             onEnsureZeroing={onEnsureZeroing}
@@ -2268,6 +2322,8 @@ export function ShootingRange({
             customsMoaDelta={customsMoaDelta}
             customsCalmMult={customsCalmMult}
             customsTriggerPullScale={customsTriggerPullScale}
+            boltCycleMs={customsBoltCycleMs(customsMods ?? EMPTY_CUSTOMS_MODS)}
+            magCapacity={customsMagCapacity(customsMods ?? EMPTY_CUSTOMS_MODS)}
             onAffinitiesChange={onAffinitiesChange}
             onConsumeAmmo={onConsumeAmmo}
             onEnsureZeroing={onEnsureZeroing}

@@ -184,6 +184,8 @@ type FieldImpactCompetitionViewProps = {
   customsMoaDelta?: number;
   customsCalmMult?: number;
   customsTriggerPullScale?: number;
+  /** Real-ms bolt cycle after a shot (Ti-coating / bolt knob shorten this). */
+  boltCycleMs?: number;
   onAffinitiesChange: (next: Record<string, number>) => void;
   onConsumeAmmo: (ammoId: string, rifleId?: string) => boolean;
   onEnsureZeroing: (
@@ -302,6 +304,7 @@ export function FieldImpactCompetitionView({
   customsMoaDelta = 0,
   customsCalmMult = 1,
   customsTriggerPullScale = 1,
+  boltCycleMs = 1200,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -626,6 +629,9 @@ export function FieldImpactCompetitionView({
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   /** One shot max per F-hold / focus period. */
   const focusShotSpentRef = useRef(false);
+  const boltReadyAtRef = useRef(0);
+  const boltCycleMsRef = useRef(boltCycleMs);
+  boltCycleMsRef.current = boltCycleMs;
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -1235,6 +1241,7 @@ export function FieldImpactCompetitionView({
     setTriggerUi((prev) => ({ pending: false, targetPct: prev.targetPct }));
     focusShotSpentRef.current = true;
     triggerMarkRef.current = null;
+    boltReadyAtRef.current = performance.now() + boltCycleMsRef.current;
     fireShotRef.current();
   }
 
@@ -1242,6 +1249,10 @@ export function FieldImpactCompetitionView({
     if (triggerRef.current.held) return;
     if (phaseRef.current !== "shooting") return;
     if (advancingRef.current) return;
+    if (nowMs < boltReadyAtRef.current) {
+      setStatus("Lader — vent på bolt-syklus.");
+      return;
+    }
     if (focusShotSpentRef.current) {
       setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
       return;

@@ -127,6 +127,10 @@ import {
   type ZeroingProfile,
 } from "@/lib/player";
 import {
+  resolveMuzzleOdMm,
+  suppressorPoiDeltaMmAtDistance,
+} from "@/lib/suppressor/poiShift";
+import {
   applyScopeClickError,
   decodeReticleIllumination,
   scopeEffectiveZoomRange,
@@ -300,6 +304,8 @@ type HuntShootViewProps = {
   recoilDamping?: number;
   /** CB Customs trigger tuning — scale on bad-break POI (1 = stock, 0.5 = tuned). */
   customsTriggerPullScale?: number;
+  /** Real-ms bolt cycle after a shot (Ti-coating / bolt knob shorten this). */
+  boltCycleMs?: number;
   /** Barrel wear multiplier on rifle MOA (1 = fresh … 2 = worn). */
   barrelWearScale?: number;
   /** Per-rifle CB Customs CNC blanks. */
@@ -491,6 +497,7 @@ export function HuntShootView({
   customsCalmMult = 1,
   recoilDamping = 1,
   customsTriggerPullScale = 1,
+  boltCycleMs = 1200,
   barrelWearScale = 1,
   customBarrels = {},
   onAffinitiesChange,
@@ -827,6 +834,9 @@ export function HuntShootView({
   const focusRef = useRef({ held: false, startedAtMs: 0 });
   /** One shot max per F-hold / focus period. */
   const focusShotSpentRef = useRef(false);
+  const boltReadyAtRef = useRef(0);
+  const boltCycleMsRef = useRef(boltCycleMs);
+  boltCycleMsRef.current = boltCycleMs;
   const triggerMarkRef = useRef<number | null>(null);
   const triggerRef = useRef<{
     held: boolean;
@@ -924,6 +934,16 @@ export function HuntShootView({
       ? zeroingKey(rifle.id, scope.id, selectedAmmo.id)
       : null;
   const zeroProfile = comboKey ? zeroingProfiles[comboKey] ?? null : null;
+  const suppressorPoi = rifle
+    ? suppressorPoiDeltaMmAtDistance(
+        {
+          zeroedWithSuppressor: zeroProfile?.zeroedWithSuppressor,
+          hasSuppressor: !!suppressor,
+          muzzleOdMm: resolveMuzzleOdMm(rifle.id, customBarrels[rifle.id]),
+        },
+        trueDistanceM,
+      )
+    : { xMm: 0, yMm: 0 };
   const effectiveZero = zeroProfile
     ? (() => {
         const z = effectiveZeroOffsetMm(
@@ -935,19 +955,23 @@ export function HuntShootView({
         return {
           xMm:
             z.xMm +
-            angularMmAtDistance(mountHuntDriftMm.xMm, trueDistanceM),
+            angularMmAtDistance(mountHuntDriftMm.xMm, trueDistanceM) +
+            suppressorPoi.xMm,
           yMm:
             z.yMm +
-            angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM),
+            angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM) +
+            suppressorPoi.yMm,
         };
       })()
     : {
         xMm:
           angularMmAtDistance(sessionZeroXMm, trueDistanceM) +
-          angularMmAtDistance(mountHuntDriftMm.xMm, trueDistanceM),
+          angularMmAtDistance(mountHuntDriftMm.xMm, trueDistanceM) +
+          suppressorPoi.xMm,
         yMm:
           angularMmAtDistance(sessionZeroYMm, trueDistanceM) +
-          angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM),
+          angularMmAtDistance(mountHuntDriftMm.yMm, trueDistanceM) +
+          suppressorPoi.yMm,
       };
 
   const calmFactor = useMemo(() => {
@@ -1204,23 +1228,39 @@ export function HuntShootView({
     const scatterXMm = shot.xMm - poa.xMm - shot.spinDriftMm;
     const scatterYMm = shot.yMm - poa.yMm - shot.dropBelowLosMm;
     const clickErr = scope.scope.clickErrorPercent ?? 0;
+    const suppressorShift = suppressorPoiDeltaMmAtDistance(
+      {
+        zeroedWithSuppressor: zeroProfile?.zeroedWithSuppressor,
+        hasSuppressor: !!suppressor,
+        muzzleOdMm: resolveMuzzleOdMm(rifle.id, customBarrels[rifle.id]),
+      },
+      distanceRef.current,
+    );
     const realizedZero = zeroProfile
-      ? effectiveZeroOffsetMm(
-          zeroProfile,
-          sessionZeroXMm,
-          sessionZeroYMm,
-          distanceRef.current,
-          { clickErrorPercent: clickErr },
-        )
+      ? (() => {
+          const z = effectiveZeroOffsetMm(
+            zeroProfile,
+            sessionZeroXMm,
+            sessionZeroYMm,
+            distanceRef.current,
+            { clickErrorPercent: clickErr },
+          );
+          return {
+            xMm: z.xMm + suppressorShift.xMm,
+            yMm: z.yMm + suppressorShift.yMm,
+          };
+        })()
       : {
-          xMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroXMm, clickErr),
-            distanceRef.current,
-          ),
-          yMm: angularMmAtDistance(
-            applyScopeClickError(sessionZeroYMm, clickErr),
-            distanceRef.current,
-          ),
+          xMm:
+            angularMmAtDistance(
+              applyScopeClickError(sessionZeroXMm, clickErr),
+              distanceRef.current,
+            ) + suppressorShift.xMm,
+          yMm:
+            angularMmAtDistance(
+              applyScopeClickError(sessionZeroYMm, clickErr),
+              distanceRef.current,
+            ) + suppressorShift.yMm,
         };
     const canted = composeCantedImpactMm({
       poaXMm: poa.xMm,
@@ -1584,6 +1624,10 @@ export function HuntShootView({
   function beginTrigger(nowMs: number) {
     if (firedRef.current) return;
     if (triggerRef.current.held) return;
+    if (nowMs < boltReadyAtRef.current) {
+      setStatus("Lader — vent på bolt-syklus.");
+      return;
+    }
     if (focusShotSpentRef.current) {
       setStatus("Ett skudd per fokus — slipp F og fokusér på nytt.");
       return;
@@ -1598,6 +1642,7 @@ export function HuntShootView({
       triggerPullRef.current = 0;
       focusShotSpentRef.current = true;
       triggerMarkRef.current = null;
+      boltReadyAtRef.current = nowMs + boltCycleMsRef.current;
       fireShotRef.current();
       return;
     }
@@ -1658,6 +1703,7 @@ export function HuntShootView({
     }));
     focusShotSpentRef.current = true;
     triggerMarkRef.current = null;
+    boltReadyAtRef.current = nowMs + boltCycleMsRef.current;
     fireShotRef.current();
   }
 

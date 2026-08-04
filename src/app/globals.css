@@ -4478,6 +4478,15 @@ body {
 .rig-detail-ok .rig-stroke-chassis {
   stroke: #3e464e;
 }
+.rig-detail-ok .rig-stroke-flute {
+  stroke: #3a424c;
+}
+.rig-detail-ok.rig-metal-stainless .rig-stroke-flute {
+  stroke: #7a8490;
+}
+.rig-detail-ok.rig-metal-blued .rig-stroke-flute {
+  stroke: #3a4550;
+}
 
 /* Receiver / barrel finish by brand family */
 .rig-detail-ok.rig-metal-blued .rig-fill-metal {
@@ -7233,6 +7242,86 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.gun-cabinet {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--canyon-dust) 35%, transparent);
+  border-radius: 4px;
+}
+
+.gun-cabinet-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.gun-cabinet-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  background: color-mix(in srgb, var(--canyon-night) 55%, transparent);
+  border-radius: 3px;
+}
+
+.gun-cabinet-slot.is-empty {
+  opacity: 0.85;
+}
+
+.gun-cabinet-slot.is-active {
+  outline: 1px solid color-mix(in srgb, var(--pine-moss) 55%, transparent);
+}
+
+.gun-cabinet-slot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.gun-cabinet-badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pine-moss);
+}
+
+.gun-cabinet-badge.is-zero {
+  color: var(--canyon-sand);
+}
+
+.gun-cabinet-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  font-size: 0.82rem;
+  color: var(--canyon-sand);
+}
+
+.gun-cabinet-muted {
+  color: var(--canyon-dust);
+}
+
+.gun-cabinet-warn {
+  color: var(--danger-rust);
+  font-size: 0.8rem;
+}
+
+.gun-cabinet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.gun-cabinet-actions .shop-buy {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.55rem;
 }
 
 .favorite-kit-item {
