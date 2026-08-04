@@ -284,12 +284,6 @@ export function InaturNo({
                     Via Rulles — {terrain.landownerName}
                   </span>
                 ) : null}
-                {terrain.access === "vip" ? (
-                  <span className="shop-row-note">
-                    VIP-package — Ivar / Tomas / Jørn / Einar / Eirik / Konrad / Stahl / Dyre /
-                    Mona / Hoftun · admin
-                  </span>
-                ) : null}
                 {kortHere ? (
                   <span className="shop-row-note">
                     Aktivt: {formatJaktkortStatusNb(kortHere)}
