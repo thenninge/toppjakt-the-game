@@ -58,7 +58,8 @@ type RigHoverTip = RigTipContent & {
  * Must-haves (rifle / scope / mount) render red when missing.
  * Optionals (suppressor + wrap, bipod, stock, bagrider, snow camo, bolt knob,
  * cheek riser, soft buttpad, triggercam / scopemate) render when present.
- * Silhouette varies by kit (stock material, barrel weight, scope size, can size).
+ * Silhouette varies by kit (stock shape/material, metal finish, barrel,
+ * fluting, mag, bipod style, scope tube/objective, can size).
  * Hover a part for name, weight, price and specs.
  */
 export function CurrentRigAdmire({
@@ -111,7 +112,10 @@ export function CurrentRigAdmire({
   const knobSvc = customsService("custom_bolt_knob");
   const cheekSvc = customsService("cheek_riser");
   const buttpadSvc = customsService("buttpad");
-  const rigLook = resolveRigLook(rifle, stock, scope);
+  const rigLook = resolveRigLook(rifle, stock, scope, {
+    fluting: customsMods.fluting,
+    bipod,
+  });
   const stockMain = stockFillClass(rigLook.stockMaterial, "main");
   const stockDark = stockFillClass(rigLook.stockMaterial, "dark");
   const stockLight = stockFillClass(rigLook.stockMaterial, "light");
@@ -177,8 +181,8 @@ export function CurrentRigAdmire({
     rifleState === "missing-must"
       ? "rig-detail-miss"
       : snowCamo
-        ? "rig-detail-ok rig-snowcamo"
-        : "rig-detail-ok";
+        ? `rig-detail-ok rig-snowcamo rig-metal-${rigLook.metalFinish}`
+        : `rig-detail-ok rig-metal-${rigLook.metalFinish}`;
 
   const snowFill =
     snowCamo && rifleState === "present"
@@ -190,7 +194,7 @@ export function CurrentRigAdmire({
       <div className="rig-admire-window">
         <div className="rig-admire-titlebar">
           <span className="rig-admire-gadget" />
-          <span className="rig-admire-titlebar-text">CURRENT RIG · 2.3</span>
+          <span className="rig-admire-titlebar-text">CURRENT RIG · 2.4</span>
           <span className="rig-admire-gadget rig-admire-gadget-depth" />
         </div>
         <div className="rig-admire-stage" ref={stageRef}>
@@ -337,37 +341,7 @@ export function CurrentRigAdmire({
                   onClear={clearTip}
                   className="rig-detail-ok"
                 >
-                  <rect
-                    className="rig-fill-metal"
-                    x="218"
-                    y="108"
-                    width="18"
-                    height="5"
-                    rx="1"
-                  />
-                  <path
-                    className="rig-fill-metal-dark"
-                    d="M222 113l-14 42h5l12-36z"
-                  />
-                  <path
-                    className="rig-fill-metal-dark"
-                    d="M232 113l14 42h-5l-12-36z"
-                  />
-                  <ellipse
-                    className="rig-fill-metal"
-                    cx="210"
-                    cy="156"
-                    rx="9"
-                    ry="3"
-                  />
-                  <ellipse
-                    className="rig-fill-metal"
-                    cx="244"
-                    cy="156"
-                    rx="9"
-                    ry="3"
-                  />
-                  <circle className="rig-fill-metal-light" cx="227" cy="110" r="2.5" />
+                  <BipodSilhouette style={rigLook.bipodStyle} />
                 </RigHotspot>
               ) : null}
 
@@ -395,6 +369,17 @@ export function CurrentRigAdmire({
                     d="M130 93h160v1.5H130z"
                     opacity="0.7"
                   />
+                  {rigLook.fluted ? (
+                    <g className="rig-barrel-flutes" opacity="0.65">
+                      {[140, 158, 176, 194, 212, 230, 248, 266].map((x) => (
+                        <path
+                          key={`flute-${x}`}
+                          className="rig-fill-metal-dark"
+                          d={`M${x} 93.2h12v1.2H${x}z`}
+                        />
+                      ))}
+                    </g>
+                  ) : null}
                   {/* Muzzle crown / thread */}
                   <rect
                     className="rig-fill-metal-dark"
@@ -413,28 +398,27 @@ export function CurrentRigAdmire({
                   />
                 </g>
 
-                {/* Forend */}
-                {stock ? (
-                  <path
-                    className={stockMain}
-                    d={
-                      rigLook.stockMaterial === "chassis"
-                        ? "M198 98h98c2 0 5 2 6 5l1 7c0 2-2 4-4 4H196c-2 0-4-2-4-4v-5c0-4 2-7 6-7z"
-                        : "M200 99h95c4 0 7 2 8 5l1 6c0 3-2 5-5 5H198c-3 0-5-2-5-5v-4c0-4 3-7 7-7z"
-                    }
-                    {...snowFill}
-                  />
-                ) : (
-                  <path
-                    className={stockMain}
-                    d="M205 100h88c3 0 5 2 5 4v5c0 2-2 4-4 4H204c-3 0-5-2-5-4v-3c0-3 2-6 6-6z"
-                    {...snowFill}
-                  />
-                )}
+                {/* Forend — shape follows stock family */}
+                <path
+                  className={stockMain}
+                  d={forendPath(rigLook.stockShape, Boolean(stock))}
+                  {...snowFill}
+                />
                 <path
                   className={stockDark}
-                  d="M210 112h78v2c0 1-1 2-2 2H212c-1 0-2-1-2-2z"
+                  d={
+                    rigLook.stockShape === "carbon-slim"
+                      ? "M214 111h70v1.5c0 1-1 1.5-2 1.5H216c-1 0-2-0.5-2-1.5z"
+                      : "M210 112h78v2c0 1-1 2-2 2H212c-1 0-2-1-2-2z"
+                  }
                 />
+                {rigLook.stockShape === "chassis" ? (
+                  <path
+                    className="rig-fill-accent"
+                    d="M220 102h12v2H220zM250 102h12v2H250zM280 102h12v2H280z"
+                    opacity="0.55"
+                  />
+                ) : null}
 
                 {/* Receiver */}
                 <path
@@ -501,18 +485,8 @@ export function CurrentRigAdmire({
                   d="M372 80h18v8h-18z"
                 />
 
-                {/* Magazine / floorplate */}
-                <path
-                  className="rig-fill-metal-dark"
-                  d="M330 110h36l2 10h-40z"
-                />
-                <rect
-                  className="rig-fill-metal"
-                  x="334"
-                  y="112"
-                  width="28"
-                  height="3"
-                />
+                {/* Magazine / floorplate / AICS */}
+                <MagazineSilhouette style={rigLook.magStyle} />
 
                 {/* Trigger guard + trigger */}
                 <path
@@ -534,41 +508,23 @@ export function CurrentRigAdmire({
                     onClear={clearTip}
                     stopPropagation
                   >
-                    {rigLook.stockMaterial === "chassis" ? (
-                      <>
-                        <path
-                          className={stockMain}
-                          d="M394 84h98c3 0 8 2 10 8l10 28c1 3-1 6-4 6h-32l-6-12H398c-3 0-4-2-4-5V90c0-3 2-6 6-6z"
-                          {...snowFill}
-                        />
-                        <path
-                          className={stockDark}
-                          d="M408 116h74l8 14h-24l-4-8H412z"
-                        />
-                        <path
-                          className={stockLight}
-                          d="M400 86h40v2.5H400z"
-                          opacity="0.4"
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <path
-                          className={stockMain}
-                          d="M394 86h95c6 0 12 4 14 10l8 22c1 4-1 8-5 9h-28c-3 0-5-2-6-4l-4-10H400c-4 0-6-3-6-6V92c0-3 2-6 6-6z"
-                          {...snowFill}
-                        />
-                        <path
-                          className={stockDark}
-                          d="M410 118h70l6 12h-22l-4-6H412z"
-                        />
-                      </>
-                    )}
+                    <StockButtSilhouette
+                      shape={rigLook.stockShape}
+                      stockMain={stockMain}
+                      stockDark={stockDark}
+                      stockLight={stockLight}
+                      snowFill={snowFill}
+                      aftermarket
+                    />
                     {/* Factory / stock comb — only when no custom cheek */}
                     {!cheekRiser ? (
                       <path
                         className={stockLight}
-                        d="M430 78h48c3 0 5 2 5 4v6H428v-5c0-3 1-5 2-5z"
+                        d={
+                          rigLook.stockShape === "thumbhole"
+                            ? "M432 76h44c3 0 5 2 5 4v5H430v-4c0-3 1-5 2-5z"
+                            : "M430 78h48c3 0 5 2 5 4v6H428v-5c0-3 1-5 2-5z"
+                        }
                         {...snowFill}
                       />
                     ) : null}
@@ -616,18 +572,13 @@ export function CurrentRigAdmire({
                 ) : (
                   <>
                     {/* Factory hunting stock */}
-                    <path
-                      className={stockMain}
-                      d={
-                        rigLook.stockMaterial === "chassis"
-                          ? "M394 86h82c6 0 14 4 18 12l14 26c1 3-1 6-4 6h-22l-6-10H404c-4 0-8-3-8-7V92c0-3 2-6 6-6z"
-                          : "M394 88h78c8 0 18 6 22 14l12 24c2 4 0 8-4 9h-20c-3 0-5-2-6-4l-6-12H404c-5 0-8-3-8-7V94c0-3 2-6 6-6z"
-                      }
-                      {...snowFill}
-                    />
-                    <path
-                      className={stockDark}
-                      d="M412 118h55l8 14h-18l-5-8H416z"
+                    <StockButtSilhouette
+                      shape={rigLook.stockShape}
+                      stockMain={stockMain}
+                      stockDark={stockDark}
+                      stockLight={stockLight}
+                      snowFill={snowFill}
+                      aftermarket={false}
                     />
                     {!cheekRiser ? (
                       <path
@@ -734,7 +685,7 @@ export function CurrentRigAdmire({
                 }
               >
                 <g
-                  transform={`translate(350 55) scale(${rigLook.scopeObjScale}) translate(-350 -55)`}
+                  transform={`translate(350 55) scale(${rigLook.scopeTubeScale} ${rigLook.scopeObjScale}) translate(-350 -55)`}
                 >
                   {/* Main tube */}
                   <rect
@@ -754,24 +705,28 @@ export function CurrentRigAdmire({
                     rx="1"
                     opacity="0.5"
                   />
-                  {/* Objective bell */}
+                  {/* Objective bell — extra scale via parent Y already; widen slightly when large obj */}
                   <path
                     className="rig-fill-metal"
-                    d="M268 44h36c2 0 4 2 4 5v12c0 3-2 5-4 5h-36c-4 0-8-4-8-9v-4c0-5 4-9 8-9z"
+                    d={
+                      rigLook.scopeObjScale > 1.08
+                        ? "M264 42h40c3 0 5 2 5 6v14c0 4-2 6-5 6h-40c-5 0-10-5-10-11v-4c0-6 5-11 10-11z"
+                        : "M268 44h36c2 0 4 2 4 5v12c0 3-2 5-4 5h-36c-4 0-8-4-8-9v-4c0-5 4-9 8-9z"
+                    }
                   />
                   <ellipse
                     className="rig-fill-void"
                     cx="270"
                     cy="55"
-                    rx="5"
-                    ry="8"
+                    rx={rigLook.scopeObjScale > 1.08 ? 6 : 5}
+                    ry={rigLook.scopeObjScale > 1.08 ? 9 : 8}
                   />
                   <ellipse
                     className="rig-fill-lens"
                     cx="272"
                     cy="55"
-                    rx="3.5"
-                    ry="6"
+                    rx={rigLook.scopeObjScale > 1.08 ? 4.2 : 3.5}
+                    ry={rigLook.scopeObjScale > 1.08 ? 7 : 6}
                   />
                   {/* Power ring */}
                   <rect
@@ -1080,7 +1035,8 @@ export function CurrentRigAdmire({
           <>
             Rødt = must-have mangler (
             {missingMust.join(", ")}). Silhuetten speiler pakket
-            våpen/stokk/kikkert/demper (kit-selfie). Hover en del for navn, vekt,
+            våpen/stokk/kikkert/demper (kit-selfie: finish, stokkform, mag,
+            fluting, tofot, scope). Hover en del for navn, vekt,
             pris og specs. Valgfritt tegnes når det er med (lyddemper, wrap,
             tofot, stokk, bagrider, snøkamo, bolt knob, cheek/buttpad,
             triggercam/scopemate).
@@ -1088,7 +1044,8 @@ export function CurrentRigAdmire({
         ) : (
           <>
             Must-have på plass. Silhuetten speiler pakket
-            våpen/stokk/kikkert/demper (som et kit-selfie). Hover en del for
+            våpen/stokk/kikkert/demper (kit-selfie: finish, stokkform, mag,
+            fluting, tofot, scope). Hover en del for
             detaljer.
             {snowCamo ? " Snøkamo (CB) på stokk/forend." : ""}
             {wrap && suppressor ? " Wrap rundt lyddemper." : ""}
@@ -1224,11 +1181,26 @@ function SoftButtpadHotspot({
 }
 
 type RigStockMaterial = "carbon" | "wood" | "synthetic" | "chassis";
+type RigStockShape =
+  | "hunting"
+  | "chassis"
+  | "carbon-slim"
+  | "polymer"
+  | "thumbhole";
+type RigMetalFinish = "blued" | "stainless" | "cerakote-dark" | "cerakote-fde";
+type RigMagStyle = "floorplate" | "detachable" | "aics";
+type RigBipodStyle = "slim" | "classic" | "heavy";
 
 type RigLook = {
   stockMaterial: RigStockMaterial;
+  stockShape: RigStockShape;
+  metalFinish: RigMetalFinish;
+  magStyle: RigMagStyle;
+  bipodStyle: RigBipodStyle;
   barrelScale: number;
   scopeObjScale: number;
+  scopeTubeScale: number;
+  fluted: boolean;
 };
 
 function itemHaystack(item: ShopItem | null): string {
@@ -1240,15 +1212,17 @@ function itemHaystack(item: ShopItem | null): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/** Kit-selfie look from packed rifle / stock / scope. */
+/** Kit-selfie look from packed rifle / stock / scope (+ CB fluting, bipod). */
 function resolveRigLook(
   rifle: ShopItem | null,
   stock: ShopItem | null,
   scope: ShopItem | null,
+  opts?: { fluting?: boolean; bipod?: ShopItem | null },
 ): RigLook {
   // Prefer aftermarket stock material when packed; else factory rifle stock.
   const stockHay = itemHaystack(stock ?? rifle);
   const rifleHay = itemHaystack(rifle);
+  const bipodHay = itemHaystack(opts?.bipod ?? null);
 
   let stockMaterial: RigStockMaterial = "wood";
   if (
@@ -1270,6 +1244,64 @@ function resolveRigLook(
     stockMaterial = "wood";
   }
 
+  let stockShape: RigStockShape = "hunting";
+  if (stockMaterial === "chassis") {
+    stockShape = "chassis";
+  } else if (stockMaterial === "carbon") {
+    stockShape = "carbon-slim";
+  } else if (stockMaterial === "synthetic") {
+    stockShape = "polymer";
+  } else if (/thumbhole|berserk|sporter.*hole|hullgrep/.test(stockHay)) {
+    stockShape = "thumbhole";
+  }
+
+  let metalFinish: RigMetalFinish = "blued";
+  if (
+    /stainless|rustfri|titanium|titan|sako.*85|finnlight|peak/.test(rifleHay)
+  ) {
+    metalFinish = "stainless";
+  } else if (
+    /cerakote.*fde|fde|flat dark|coyote|od green|ral.?8000/.test(rifleHay) ||
+    (stockMaterial === "chassis" && /hunter|hunting|sporter/.test(stockHay))
+  ) {
+    metalFinish = "cerakote-fde";
+  } else if (
+    /cerakote|mdt|chassis|tac[-_ ]?a1|varmint|200\s*str/.test(rifleHay) ||
+    stockMaterial === "chassis"
+  ) {
+    metalFinish = "cerakote-dark";
+  }
+
+  let magStyle: RigMagStyle = "floorplate";
+  if (stockMaterial === "chassis" || /aics|magwell|pmag/.test(stockHay)) {
+    magStyle = "aics";
+  } else if (
+    stockMaterial === "synthetic" ||
+    /detach|avtakbar|tikka|t3x|cz\s*600|remington\s*700/.test(rifleHay)
+  ) {
+    magStyle = "detachable";
+  }
+
+  let bipodStyle: RigBipodStyle = "classic";
+  if (/atlas|accu[- ]?tac|rrs|bt65|fc-/.test(bipodHay)) {
+    bipodStyle = "slim";
+  } else if (
+    /harris|caldwell|utg|jula|game[- ]?on|softgun/.test(bipodHay) ||
+    (opts?.bipod &&
+      isBipodItem(opts.bipod) &&
+      opts.bipod.bipod.weaponCalm <= 4)
+  ) {
+    bipodStyle = "classic";
+  } else if (
+    opts?.bipod &&
+    isBipodItem(opts.bipod) &&
+    opts.bipod.bipod.weaponCalm >= 8
+  ) {
+    bipodStyle = "heavy";
+  } else if (/magpul|spartan|really right/.test(bipodHay)) {
+    bipodStyle = "slim";
+  }
+
   let barrelScale = 1;
   if (
     /carbonwolf|berillium|hnt26|finnlight|peak|\blite\b|hunter light/.test(
@@ -1285,6 +1317,7 @@ function resolveRigLook(
   barrelScale = Math.min(1.2, Math.max(0.85, barrelScale));
 
   let scopeObjScale = 1;
+  let scopeTubeScale = 1;
   if (scope && isScopeItem(scope)) {
     const zoom = scope.scope.maxZoom;
     const tube = scope.scope.tubeDiameterMm;
@@ -1292,12 +1325,379 @@ function resolveRigLook(
     const fromZoom =
       0.9 + ((Math.min(56, Math.max(6, zoom)) - 6) / 50) * 0.26;
     scopeObjScale = Math.min(
-      1.2,
+      1.22,
       Math.max(0.85, fromTube * 0.45 + fromZoom * 0.55),
+    );
+    // Longer / thicker tubes stretch X a touch independently of objective bell.
+    scopeTubeScale = Math.min(
+      1.14,
+      Math.max(0.9, 0.92 + ((tube - 25.4) / (36 - 25.4)) * 0.2),
     );
   }
 
-  return { stockMaterial, barrelScale, scopeObjScale };
+  return {
+    stockMaterial,
+    stockShape,
+    metalFinish,
+    magStyle,
+    bipodStyle,
+    barrelScale,
+    scopeObjScale,
+    scopeTubeScale,
+    fluted: Boolean(opts?.fluting),
+  };
+}
+
+function forendPath(shape: RigStockShape, aftermarket: boolean): string {
+  if (shape === "chassis") {
+    return aftermarket
+      ? "M198 98h98c2 0 5 2 6 5l1 7c0 2-2 4-4 4H196c-2 0-4-2-4-4v-5c0-4 2-7 6-7z"
+      : "M205 99h88c2 0 4 2 5 4l1 5c0 2-2 4-4 4H204c-2 0-4-2-4-4v-4c0-3 2-5 5-5z";
+  }
+  if (shape === "carbon-slim") {
+    return aftermarket
+      ? "M204 100h90c3 0 5 1.5 6 3.5l0.5 5c0 2-1.5 3.5-4 3.5H202c-2.5 0-4-1.5-4-3.5v-3c0-3 2.5-5.5 6-5.5z"
+      : "M208 101h84c2.5 0 4 1.5 4.5 3.5v4c0 1.5-1.5 3-3.5 3H207c-2 0-4-1.5-4-3.5v-2.5c0-2.5 2-4.5 5-4.5z";
+  }
+  if (shape === "polymer") {
+    return aftermarket
+      ? "M200 99h95c4 0 7 2 8 5l1 6c0 3-2 5-5 5H198c-3 0-5-2-5-5v-4c0-4 3-7 7-7z"
+      : "M205 100h88c3 0 5 2 5 4v5c0 2-2 4-4 4H204c-3 0-5-2-5-4v-3c0-3 2-6 6-6z";
+  }
+  if (shape === "thumbhole") {
+    return "M200 99h94c3 0 6 2 7 4.5l1 6c0 2.5-2 4.5-4.5 4.5H198c-3 0-5-2-5-4.5v-4c0-3.5 2.5-6.5 7-6.5z";
+  }
+  return aftermarket
+    ? "M200 99h95c4 0 7 2 8 5l1 6c0 3-2 5-5 5H198c-3 0-5-2-5-5v-4c0-4 3-7 7-7z"
+    : "M205 100h88c3 0 5 2 5 4v5c0 2-2 4-4 4H204c-3 0-5-2-5-4v-3c0-3 2-6 6-6z";
+}
+
+function MagazineSilhouette({ style }: { style: RigMagStyle }) {
+  if (style === "aics") {
+    return (
+      <g className="rig-mag-aics">
+        <path
+          className="rig-fill-metal-dark"
+          d="M328 110h42l3 16H325z"
+        />
+        <rect
+          className="rig-fill-metal"
+          x="332"
+          y="112"
+          width="34"
+          height="4"
+        />
+        <rect
+          className="rig-fill-metal-light"
+          x="336"
+          y="118"
+          width="26"
+          height="2"
+          opacity="0.45"
+        />
+        <path
+          className="rig-fill-accent"
+          d="M340 122h18v2H340z"
+          opacity="0.5"
+        />
+      </g>
+    );
+  }
+  if (style === "detachable") {
+    return (
+      <g className="rig-mag-detach">
+        <path
+          className="rig-fill-metal-dark"
+          d="M332 110h34l1 12h-36z"
+        />
+        <rect
+          className="rig-fill-metal"
+          x="335"
+          y="112"
+          width="28"
+          height="3"
+        />
+        <rect
+          className="rig-fill-metal-light"
+          x="338"
+          y="116"
+          width="8"
+          height="3"
+          rx="0.5"
+          opacity="0.55"
+        />
+      </g>
+    );
+  }
+  return (
+    <g className="rig-mag-floor">
+      <path
+        className="rig-fill-metal-dark"
+        d="M330 110h36l2 10h-40z"
+      />
+      <rect
+        className="rig-fill-metal"
+        x="334"
+        y="112"
+        width="28"
+        height="3"
+      />
+    </g>
+  );
+}
+
+function StockButtSilhouette({
+  shape,
+  stockMain,
+  stockDark,
+  stockLight,
+  snowFill,
+  aftermarket,
+}: {
+  shape: RigStockShape;
+  stockMain: string;
+  stockDark: string;
+  stockLight: string;
+  snowFill: { readonly fill?: string };
+  aftermarket: boolean;
+}) {
+  if (shape === "chassis") {
+    return (
+      <>
+        <path
+          className={stockMain}
+          d={
+            aftermarket
+              ? "M394 84h98c3 0 8 2 10 8l10 28c1 3-1 6-4 6h-32l-6-12H398c-3 0-4-2-4-5V90c0-3 2-6 6-6z"
+              : "M394 86h82c6 0 14 4 18 12l14 26c1 3-1 6-4 6h-22l-6-10H404c-4 0-8-3-8-7V92c0-3 2-6 6-6z"
+          }
+          {...snowFill}
+        />
+        <path
+          className={stockDark}
+          d={
+            aftermarket
+              ? "M408 116h74l8 14h-24l-4-8H412z"
+              : "M412 118h55l8 14h-18l-5-8H416z"
+          }
+        />
+        {aftermarket ? (
+          <path
+            className={stockLight}
+            d="M400 86h40v2.5H400z"
+            opacity="0.4"
+          />
+        ) : null}
+        <path
+          className="rig-fill-accent"
+          d="M430 100h8v14h-8zM450 100h8v14h-8z"
+          opacity="0.35"
+        />
+      </>
+    );
+  }
+  if (shape === "carbon-slim") {
+    return (
+      <>
+        <path
+          className={stockMain}
+          d={
+            aftermarket
+              ? "M396 88h90c5 0 10 3 12 8l6 18c1 3-1 6-4 7h-24c-2.5 0-4-1.5-5-3.5l-3-7H402c-3.5 0-5.5-2.5-5.5-5.5V93c0-2.5 2-5 5.5-5z"
+              : "M396 90h74c6 0 14 5 17 11l9 18c1.5 3 0 6-3.5 7h-16c-2.5 0-4-1.5-5-3.5l-4-8H404c-4 0-7-2.5-7-6V95c0-2.5 2-5 5-5z"
+          }
+          {...snowFill}
+        />
+        <path
+          className={stockDark}
+          d={
+            aftermarket
+              ? "M414 116h62l5 10h-18l-3-5H416z"
+              : "M414 116h48l6 10h-14l-4-6H416z"
+          }
+        />
+      </>
+    );
+  }
+  if (shape === "thumbhole") {
+    return (
+      <>
+        <path
+          className={stockMain}
+          d="M394 86h96c5 0 11 3 13 9l7 20c1 3-1 6-4 7h-26c-2.5 0-4-1.5-5-3.5l-3-7H400c-3.5 0-6-2.5-6-5.5V92c0-3 2.5-6 6-6z"
+          {...snowFill}
+        />
+        <ellipse
+          className="rig-fill-void"
+          cx="430"
+          cy="108"
+          rx="9"
+          ry="7"
+        />
+        <path
+          className={stockDark}
+          d="M412 118h68l5 10h-20l-3-5H414z"
+        />
+      </>
+    );
+  }
+  if (shape === "polymer") {
+    return (
+      <>
+        <path
+          className={stockMain}
+          d={
+            aftermarket
+              ? "M394 86h95c5 0 11 3.5 13 9l7 20c1 3.5-1 7-4.5 8h-26c-2.5 0-4.5-1.5-5.5-3.5l-3.5-8H400c-3.5 0-5.5-2.5-5.5-5.5V92c0-3 2-6 5.5-6z"
+              : "M394 88h78c7 0 16 5 20 12l11 22c1.5 3.5 0 7-3.5 8h-18c-2.5 0-4.5-1.5-5.5-3.5l-5-10H404c-4.5 0-7.5-2.5-7.5-6V94c0-3 2-6 5.5-6z"
+          }
+          {...snowFill}
+        />
+        <path
+          className={stockDark}
+          d={
+            aftermarket
+              ? "M410 118h70l6 12h-22l-4-6H412z"
+              : "M412 118h55l8 14h-18l-5-8H416z"
+          }
+        />
+      </>
+    );
+  }
+  // hunting
+  return (
+    <>
+      <path
+        className={stockMain}
+        d={
+          aftermarket
+            ? "M394 86h95c6 0 12 4 14 10l8 22c1 4-1 8-5 9h-28c-3 0-5-2-6-4l-4-10H400c-4 0-6-3-6-6V92c0-3 2-6 6-6z"
+            : "M394 88h78c8 0 18 6 22 14l12 24c2 4 0 8-4 9h-20c-3 0-5-2-6-4l-6-12H404c-5 0-8-3-8-7V94c0-3 2-6 6-6z"
+        }
+        {...snowFill}
+      />
+      <path
+        className={stockDark}
+        d={
+          aftermarket
+            ? "M410 118h70l6 12h-22l-4-6H412z"
+            : "M412 118h55l8 14h-18l-5-8H416z"
+        }
+      />
+    </>
+  );
+}
+
+function BipodSilhouette({ style }: { style: RigBipodStyle }) {
+  if (style === "slim") {
+    return (
+      <g className="rig-bipod-slim">
+        <rect
+          className="rig-fill-metal"
+          x="220"
+          y="108"
+          width="14"
+          height="4"
+          rx="1"
+        />
+        <path
+          className="rig-fill-metal-dark"
+          d="M224 112l-10 44h3.5l9-40z"
+        />
+        <path
+          className="rig-fill-metal-dark"
+          d="M230 112l10 44h-3.5l-9-40z"
+        />
+        <ellipse
+          className="rig-fill-metal"
+          cx="215"
+          cy="157"
+          rx="6"
+          ry="2.2"
+        />
+        <ellipse
+          className="rig-fill-metal"
+          cx="239"
+          cy="157"
+          rx="6"
+          ry="2.2"
+        />
+        <circle className="rig-fill-metal-light" cx="227" cy="110" r="2" />
+      </g>
+    );
+  }
+  if (style === "heavy") {
+    return (
+      <g className="rig-bipod-heavy">
+        <rect
+          className="rig-fill-metal"
+          x="214"
+          y="107"
+          width="26"
+          height="7"
+          rx="1.5"
+        />
+        <path
+          className="rig-fill-metal-dark"
+          d="M220 114l-18 44h7l14-38z"
+        />
+        <path
+          className="rig-fill-metal-dark"
+          d="M234 114l18 44h-7l-14-38z"
+        />
+        <ellipse
+          className="rig-fill-metal"
+          cx="205"
+          cy="158"
+          rx="12"
+          ry="3.5"
+        />
+        <ellipse
+          className="rig-fill-metal"
+          cx="249"
+          cy="158"
+          rx="12"
+          ry="3.5"
+        />
+        <circle className="rig-fill-metal-light" cx="227" cy="110" r="3" />
+      </g>
+    );
+  }
+  return (
+    <g className="rig-bipod-classic">
+      <rect
+        className="rig-fill-metal"
+        x="218"
+        y="108"
+        width="18"
+        height="5"
+        rx="1"
+      />
+      <path
+        className="rig-fill-metal-dark"
+        d="M222 113l-14 42h5l12-36z"
+      />
+      <path
+        className="rig-fill-metal-dark"
+        d="M232 113l14 42h-5l-12-36z"
+      />
+      <ellipse
+        className="rig-fill-metal"
+        cx="210"
+        cy="156"
+        rx="9"
+        ry="3"
+      />
+      <ellipse
+        className="rig-fill-metal"
+        cx="244"
+        cy="156"
+        rx="9"
+        ry="3"
+      />
+      <circle className="rig-fill-metal-light" cx="227" cy="110" r="2.5" />
+    </g>
+  );
 }
 
 function stockFillClass(

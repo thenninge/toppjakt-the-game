@@ -4479,6 +4479,53 @@ body {
   stroke: #3e464e;
 }
 
+/* Receiver / barrel finish by brand family */
+.rig-detail-ok.rig-metal-blued .rig-fill-metal {
+  fill: #9aa3ae;
+}
+.rig-detail-ok.rig-metal-blued .rig-fill-metal-dark {
+  fill: #4a5560;
+}
+.rig-detail-ok.rig-metal-blued .rig-fill-metal-light {
+  fill: #c8d0d8;
+}
+.rig-detail-ok.rig-metal-stainless .rig-fill-metal {
+  fill: #dce2e8;
+}
+.rig-detail-ok.rig-metal-stainless .rig-fill-metal-dark {
+  fill: #8a949e;
+}
+.rig-detail-ok.rig-metal-stainless .rig-fill-metal-light {
+  fill: #f4f7fa;
+}
+.rig-detail-ok.rig-metal-cerakote-dark .rig-fill-metal {
+  fill: #3a4048;
+}
+.rig-detail-ok.rig-metal-cerakote-dark .rig-fill-metal-dark {
+  fill: #1e2228;
+}
+.rig-detail-ok.rig-metal-cerakote-dark .rig-fill-metal-light {
+  fill: #5a626c;
+}
+.rig-detail-ok.rig-metal-cerakote-fde .rig-fill-metal {
+  fill: #9a8a6e;
+}
+.rig-detail-ok.rig-metal-cerakote-fde .rig-fill-metal-dark {
+  fill: #5e5240;
+}
+.rig-detail-ok.rig-metal-cerakote-fde .rig-fill-metal-light {
+  fill: #c4b498;
+}
+.rig-detail-ok .rig-fill-accent {
+  fill: #c4a45a;
+}
+.rig-detail-ok.rig-metal-cerakote-fde .rig-fill-accent {
+  fill: #6a5a40;
+}
+.rig-detail-ok.rig-metal-cerakote-dark .rig-fill-accent {
+  fill: #7a8490;
+}
+
 /* CB custom camo — frosty metal + snow stock accents */
 .rig-detail-ok.rig-snowcamo .rig-fill-metal {
   fill: #d2d8de;
