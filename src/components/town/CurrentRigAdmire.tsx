@@ -329,24 +329,7 @@ export function CurrentRigAdmire({
                   onClear={clearTip}
                   className="rig-detail-ok"
                 >
-                  <ellipse
-                    className="rig-fill-cloth"
-                    cx="520"
-                    cy="148"
-                    rx="38"
-                    ry="14"
-                  />
-                  <ellipse
-                    className="rig-fill-cloth-dark"
-                    cx="520"
-                    cy="152"
-                    rx="28"
-                    ry="8"
-                  />
-                  <path
-                    className="rig-fill-cloth-light"
-                    d="M492 142c8-6 48-6 56 0c-6 4-18 6-28 6s-22-2-28-6z"
-                  />
+                  <BagriderSilhouette />
                 </RigHotspot>
               ) : null}
 
@@ -1185,6 +1168,73 @@ function CheekRiserHotspot({
         opacity="0.55"
       />
     </RigHotspot>
+  );
+}
+
+/**
+ * L-shaped metal bag rider under the butt — flat rail for rear-bag support.
+ * Inspired by GRS / Spuhr-style hardware (not a soft shooting bag).
+ */
+function BagriderSilhouette() {
+  return (
+    <g className="rig-bagrider" aria-hidden>
+      {/* Clamp block under stock */}
+      <path
+        className="rig-fill-metal-dark"
+        d="M496 122h16c2.2 0 4 1.8 4 4v5c0 2.2-1.8 4-4 4h-16c-2.2 0-4-1.8-4-4v-5c0-2.2 1.8-4 4-4z"
+      />
+      <circle
+        className="rig-fill-metal-light"
+        cx="504"
+        cy="126.5"
+        r="1.5"
+        opacity="0.65"
+      />
+      {/* Vertical bracket */}
+      <path
+        className="rig-fill-metal"
+        d="M502 135h6v11h-6z"
+      />
+      <path
+        className="rig-stroke-metal"
+        fill="none"
+        strokeWidth="0.6"
+        d="M505 135v11"
+        opacity="0.35"
+      />
+      {/* Horizontal rail plate */}
+      <path
+        className="rig-fill-metal-dark"
+        d="M436 146h72c2.5 0 4.5 2 4.5 4.5v4c0 2.5-2 4.5-4.5 4.5H436c-2.5 0-4.5-2-4.5-4.5v-4c0-2.5 2-4.5 4.5-4.5z"
+      />
+      <path
+        className="rig-fill-metal-light"
+        d="M439 147.5h66v1.8"
+        opacity="0.55"
+      />
+      <path
+        className="rig-fill-metal"
+        d="M436 148.5h4v4.5h-4z"
+        opacity="0.8"
+      />
+      {/* Lightening holes along rail */}
+      {[452, 466, 480, 494, 508].map((cx) => (
+        <circle
+          key={cx}
+          className="rig-fill-void"
+          cx={cx}
+          cy="150.5"
+          r="2.3"
+          opacity="0.8"
+        />
+      ))}
+      {/* Underside shadow */}
+      <path
+        className="rig-fill-metal"
+        d="M440 156.5h64v1.2"
+        opacity="0.25"
+      />
+    </g>
   );
 }
 
