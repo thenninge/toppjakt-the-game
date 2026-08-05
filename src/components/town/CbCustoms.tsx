@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { LocationNav } from "@/components/town/LocationNav";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import {
-  BOLT_KNOB_COLOR_PRESETS,
   CUSTOMS_SERVICES,
+  BOLT_KNOB_COLOR_PRESETS,
   DEFAULT_BOLT_KNOB_COLOR,
   HOME_LOAD_AMMO_BY_CALIBER,
   HOME_LOAD_ORDER_ROUNDS,
   HOME_LOAD_PER_ROUND_NOK,
   customsBeddingMoaDelta,
+  customsServiceLocked,
   customsWeightReductionGrams,
   normalizeBoltKnobColor,
   serviceOwned,
@@ -77,6 +78,8 @@ import { formatWeightKg } from "@/lib/shop/weights";
 type CbCustomsProps = {
   balance: number;
   customsMods: CustomsMods;
+  /** Services unlocked outside the shop (e.g. Modgeir → toppjaktspulk). */
+  unlockedCustomsIds?: string[];
   kitItems: ShopItem[];
   inventory: { itemId: string; qty: number }[];
   rifleRoundCounts?: Record<string, number>;
@@ -105,6 +108,7 @@ type CbCustomsProps = {
 export function CbCustoms({
   balance,
   customsMods,
+  unlockedCustomsIds = [],
   kitItems,
   inventory,
   rifleRoundCounts = {},
@@ -264,7 +268,7 @@ export function CbCustoms({
 
   function buy(id: CustomsServiceId) {
     const svc = CUSTOMS_SERVICES.find((s) => s.id === id);
-    if (!svc || svc.comingSoon) return;
+    if (!svc || customsServiceLocked(svc, unlockedCustomsIds)) return;
     if (serviceOwned(customsMods, id)) {
       setStatus("Du har allerede denne jobben.");
       return;
@@ -466,8 +470,14 @@ export function CbCustoms({
       <ul className="cb-customs-list">
         {CUSTOMS_SERVICES.map((svc) => {
           const owned = serviceOwned(customsMods, svc.id);
+          const locked = customsServiceLocked(svc, unlockedCustomsIds);
+          const lockLabel = svc.comingSoon
+            ? "Kommer snart"
+            : svc.requiresUnlock
+              ? "Låst — snakk med Modgeir Rustbank på Rulles"
+              : "Låst";
           const canBuy =
-            !svc.comingSoon &&
+            !locked &&
             !owned &&
             !(svc.id === "bedding" && customsMods.pillarBedding) &&
             balance >= svc.priceNok;
@@ -476,16 +486,14 @@ export function CbCustoms({
             <li
               key={svc.id}
               className={
-                svc.comingSoon
-                  ? "cb-customs-card is-coming-soon"
-                  : "cb-customs-card"
+                locked ? "cb-customs-card is-coming-soon" : "cb-customs-card"
               }
             >
               <div className="cb-customs-card-head">
                 <strong>{svc.name}</strong>
                 <span>
-                  {svc.comingSoon
-                    ? "Kommer snart"
+                  {locked
+                    ? lockLabel
                     : owned
                       ? "Ferdig"
                       : formatPermitFee(svc.priceNok)}
@@ -527,9 +535,9 @@ export function CbCustoms({
                   />
                 </div>
               ) : null}
-              {svc.comingSoon ? (
+              {locked ? (
                 <button type="button" className="intro-button" disabled>
-                  Kommer snart
+                  {svc.comingSoon ? "Kommer snart" : "Låst"}
                 </button>
               ) : (
                 <button

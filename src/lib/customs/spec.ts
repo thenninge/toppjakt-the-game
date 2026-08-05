@@ -124,7 +124,22 @@ export type CustomsService = {
   effect: string;
   /** Coming soon — not purchasable. */
   comingSoon?: boolean;
+  /**
+   * Must appear in {@link PlayerStats.unlockedCustomsIds} (e.g. Modgeir at Rulles)
+   * before the service is orderable.
+   */
+  requiresUnlock?: boolean;
 };
+
+/** True when the shop should treat this service as unavailable to order. */
+export function customsServiceLocked(
+  svc: CustomsService,
+  unlockedCustomsIds: readonly string[],
+): boolean {
+  if (svc.comingSoon) return true;
+  if (svc.requiresUnlock && !unlockedCustomsIds.includes(svc.id)) return true;
+  return false;
+}
 
 export const BEDDING_MOA = 0.04;
 export const PILLAR_BEDDING_MOA = 0.06;
@@ -330,8 +345,8 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     id: "toppjaktspulk",
     name: "CBA toppjaktspulk",
     priceNok: 20_000,
-    comingSoon: true,
-    effect: `Pulke med ferdig montert våpen — +${TOPPJAKTSPULK_SPEED_PCT}% speed, +${Math.round((TOPPJAKTSPULK_CALM_MULT - 1) * 100)}% calm, +${TOPPJAKTSPULK_SNOW_SNEAK_PCT}% sneak i snø. Deploy uten bird nerve (rifla ligger klar).`,
+    requiresUnlock: true,
+    effect: `Pulke med ferdig montert våpen — +${TOPPJAKTSPULK_SPEED_PCT}% speed, +${Math.round((TOPPJAKTSPULK_CALM_MULT - 1) * 100)}% calm, +${TOPPJAKTSPULK_SNOW_SNEAK_PCT}% sneak i snø. Deploy uten bird nerve (rifla ligger klar). Lås opp via Modgeir Rustbank på Rulles.`,
   },
 ];
 

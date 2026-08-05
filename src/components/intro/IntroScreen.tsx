@@ -138,6 +138,7 @@ import {
   HOME_LOAD_PER_ROUND_NOK,
   customsBeddingMoaDelta,
   customsCalmMultiplier,
+  customsServiceLocked,
   customsTriggerPullScale,
   normalizeBoltKnobColor,
   type CustomsServiceId,
@@ -793,6 +794,7 @@ export function IntroScreen() {
     const next = {
       ...prev,
       balance: prev.balance + UGLE_TACO_NOK,
+      soldUgleToRulle: true,
       freezerCarcasses: prev.freezerCarcasses.filter((c) => c.id !== carcassId),
       carcasses: prev.carcasses.filter((c) => c.id !== carcassId),
     };
@@ -821,13 +823,24 @@ export function IntroScreen() {
     });
   }
 
+  function unlockRullesCustoms(serviceId: CustomsServiceId) {
+    setStats((prev) => {
+      if (prev.unlockedCustomsIds.includes(serviceId)) return prev;
+      return {
+        ...prev,
+        unlockedCustomsIds: [...prev.unlockedCustomsIds, serviceId],
+      };
+    });
+  }
+
   function buyCustomsService(
     id: CustomsServiceId,
     opts?: { boltKnobColor?: string },
   ) {
     const svc = CUSTOMS_SERVICES.find((s) => s.id === id);
-    if (!svc || svc.comingSoon) return;
+    if (!svc) return;
     setStats((prev) => {
+      if (customsServiceLocked(svc, prev.unlockedCustomsIds)) return prev;
       if (prev.balance < svc.priceNok) return prev;
       const mods = { ...prev.customsMods };
       if (id === "bedding") {
@@ -1883,6 +1896,7 @@ export function IntroScreen() {
           <CbCustoms
             balance={stats.balance}
             customsMods={stats.customsMods}
+            unlockedCustomsIds={stats.unlockedCustomsIds}
             kitItems={stats.kit
               .map((id) => resolvePlayerItem(id))
               .filter((x): x is ShopItem => x != null)}
@@ -1919,12 +1933,15 @@ export function IntroScreen() {
             nickname={stats.nickname}
             balance={stats.balance}
             unlockedTerrainIds={stats.unlockedTerrainIds}
+            unlockedCustomsIds={stats.unlockedCustomsIds}
+            soldUgleToRulle={stats.soldUgleToRulle}
             hunter={{
               tiur: stats.tiur,
               orrhaner: stats.orrhaner,
               lifetimeTiur: stats.lifetimeTiur,
               lifetimeOrrhaner: stats.lifetimeOrrhaner,
               maxRange: stats.maxRange,
+              lifetimeDistanceM: stats.lifetimeDistanceM,
             }}
             ugleCarcass={
               [...stats.freezerCarcasses, ...stats.carcasses].find(
@@ -1941,6 +1958,7 @@ export function IntroScreen() {
               }));
             }}
             onUnlockTerrain={unlockRullesTerrain}
+            onUnlockCustoms={unlockRullesCustoms}
             onLeave={backToTown}
           />
         )}

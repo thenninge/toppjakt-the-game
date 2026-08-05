@@ -224,6 +224,11 @@ export type PlayerStats = {
   /** Easter-egg owl harvests (never sold at Meat Market). */
   lifetimeUgle: number;
   /**
+   * True after selling at least one ugle to Rulle (Ugletaco).
+   * Unlocks Tui + lun ribbe on Rulle’s public menu.
+   */
+  soldUgleToRulle: boolean;
+  /**
    * Last owl observation milestone offered (26 / 36 / 46…).
    * Prevents re-offering until the next decade after a miss/flush.
    */
@@ -290,6 +295,11 @@ export type PlayerStats = {
   nextHuntDate: string;
   /** Handshake grounds unlocked at Rulles (terrain ids). */
   unlockedTerrainIds: string[];
+  /**
+   * CB Customs services unlocked via Rulles (e.g. Modgeir → toppjaktspulk).
+   * Catalog ids from {@link CustomsServiceId}.
+   */
+  unlockedCustomsIds: string[];
   /**
    * Home inventory: auto-pack mat/snacks (ready + meal) into kit when owned.
    */
@@ -1250,6 +1260,7 @@ export function createInitialStats(): PlayerStats {
     lifetimeTiur: 0,
     lifetimeOrrhaner: 0,
     lifetimeUgle: 0,
+    soldUgleToRulle: false,
     owlLastOfferedMilestone: null,
     carcasses: [],
     freezerCarcasses: [],
@@ -1270,6 +1281,7 @@ export function createInitialStats(): PlayerStats {
     jaktkort: emptyJaktkortBook(),
     nextHuntDate: defaultNextHuntDateIso(),
     unlockedTerrainIds: [],
+    unlockedCustomsIds: [],
     autoSupplyFood: false,
     favoriteKitIds: [],
     gunKits: emptyGunKits(),

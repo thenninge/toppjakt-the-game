@@ -9,10 +9,13 @@ import {
 } from "@/lib/hunt/terrain";
 import {
   checkAudience,
+  modgeirPulkScore,
   RULLES_AUDIENCE,
 } from "@/lib/rulles/audience";
+import type { CustomsServiceId } from "@/lib/customs/spec";
 import type { GameCarcass } from "@/lib/hunt/carcass";
 import { UGLE_TACO_NOK } from "@/lib/hunt/owlEasterEgg";
+import { formatLifetimeDistance } from "@/lib/playerSave";
 
 type HunterRésumé = {
   tiur: number;
@@ -20,6 +23,7 @@ type HunterRésumé = {
   lifetimeTiur: number;
   lifetimeOrrhaner: number;
   maxRange: number;
+  lifetimeDistanceM: number;
 };
 
 type RullesBarProps = {
@@ -27,6 +31,9 @@ type RullesBarProps = {
   nickname: string;
   balance: number;
   unlockedTerrainIds: string[];
+  unlockedCustomsIds: string[];
+  /** After Ugletaco sale — Tui + ribbe on Rulle’s menu. */
+  soldUgleToRulle: boolean;
   hunter: HunterRésumé;
   /** Hidden off-menu bird — only shown as a quiet dialogue option. */
   ugleCarcass?: GameCarcass | null;
@@ -35,6 +42,7 @@ type RullesBarProps = {
   /** Earn cash (e.g. dishwashing). */
   onEarn: (amountNok: number) => void;
   onUnlockTerrain: (terrainId: HuntingTerrainId) => void;
+  onUnlockCustoms: (serviceId: CustomsServiceId) => void;
   onLeave: () => void;
 };
 
@@ -46,10 +54,13 @@ type Step =
   | "kari"
   | "kristian"
   | "lovenskiold"
+  | "modgeir"
   | "enrique"
   | "result";
 
-type DrinkId = "ol" | "pizza" | "champagne" | "kebab" | "whisky";
+type ResultKind = "terrain" | "customs";
+
+type DrinkId = "ol" | "pizza" | "champagne" | "kebab" | "whisky" | "tui" | "ribbe";
 
 const DRINKS: Record<
   DrinkId,
@@ -80,6 +91,17 @@ const DRINKS: Record<
     priceNok: 420,
     blurb: "Til dem som snakker om «tradisjon» før de snakker om pris.",
   },
+  tui: {
+    label: "Tui (TDHNZIPA)",
+    priceNok: 219,
+    blurb:
+      "Triple dry hopped New Zealand IPA. Humle, kiwi-vibes, og null kompromiss.",
+  },
+  ribbe: {
+    label: "Lun ribbe med knusksprø svor",
+    priceNok: 349,
+    blurb: "Modgeirs favoritt. Svoren skal knaske — ellers er det bare kjøtt.",
+  },
 };
 
 function formatKr(n: number): string {
@@ -95,30 +117,39 @@ const DISHWASH_PAY_NOK = 500;
 
 /**
  * Rulles — kebab, pizza, bar & fine dining.
- * Snøvling + påspandering + hunt résumé → handshake-jaktterreng.
+ * Snøvling + påspandering + hunt résumé → handshake-jaktterreng / CB-opplåsinger.
  */
 export function RullesBar({
   playerName,
   nickname,
   balance,
   unlockedTerrainIds,
+  unlockedCustomsIds,
+  soldUgleToRulle,
   hunter,
   ugleCarcass = null,
   onSellUgle,
   onSpend,
   onEarn,
   onUnlockTerrain,
+  onUnlockCustoms,
   onLeave,
 }: RullesBarProps) {
   const [step, setStep] = useState<Step>("welcome");
   const [status, setStatus] = useState("");
+  const [resultKind, setResultKind] = useState<ResultKind>("terrain");
   const [kariRound, setKariRound] = useState(0);
   const [kristianTrust, setKristianTrust] = useState(0);
   const [loveCharm, setLoveCharm] = useState(0);
+  const [modgeirRapport, setModgeirRapport] = useState(0);
 
   const unlocked = useMemo(
     () => new Set(unlockedTerrainIds),
     [unlockedTerrainIds],
+  );
+  const unlockedCustoms = useMemo(
+    () => new Set(unlockedCustomsIds),
+    [unlockedCustomsIds],
   );
 
   const kariGate = useMemo(
@@ -133,8 +164,14 @@ export function RullesBar({
     () => checkAudience(hunter, RULLES_AUDIENCE.lovenskiold),
     [hunter],
   );
+  const modgeirGate = useMemo(
+    () => checkAudience(hunter, RULLES_AUDIENCE.modgeir),
+    [hunter],
+  );
+  const modgeirScore = useMemo(() => modgeirPulkScore(hunter), [hunter]);
 
   const birdsTotal = hunter.lifetimeTiur + hunter.lifetimeOrrhaner;
+  const pulkUnlocked = unlockedCustoms.has("toppjaktspulk");
 
   function buy(drink: DrinkId): boolean {
     const d = DRINKS[drink];
@@ -154,6 +191,7 @@ export function RullesBar({
   function unlock(id: HuntingTerrainId, line: string) {
     if (unlocked.has(id)) {
       setStatus("Du har allerede håndtrykket. Ikke overspill det.");
+      setResultKind("terrain");
       setStep("result");
       return;
     }
@@ -166,6 +204,20 @@ export function RullesBar({
           : ""
       }`,
     );
+    setResultKind("terrain");
+    setStep("result");
+  }
+
+  function unlockCustoms(id: CustomsServiceId, line: string) {
+    if (unlockedCustoms.has(id)) {
+      setStatus("Modgeir Rustbank nikker. «Du er allerede inne. Ikke be om mer enn én pulk.»");
+      setResultKind("customs");
+      setStep("result");
+      return;
+    }
+    onUnlockCustoms(id);
+    setStatus(line);
+    setResultKind("customs");
     setStep("result");
   }
 
@@ -190,7 +242,8 @@ export function RullesBar({
           <p className="intro-hint-balance">
             Konto: {formatKr(balance)} · Lista (livstid): {hunter.lifetimeTiur}{" "}
             tiur / {hunter.lifetimeOrrhaner} orre ({birdsTotal} totalt) · Max
-            range {formatRange(hunter.maxRange)}
+            range {formatRange(hunter.maxRange)} · Gått{" "}
+            {formatLifetimeDistance(hunter.lifetimeDistanceM)}
           </p>
           <button
             type="button"
@@ -208,7 +261,9 @@ export function RullesBar({
           <p className="intro-line">
             Rulle peker diskret. «Stubb vil se ti fugl og 250 m. Kristian Olav
             vil ha tjue fugl og 300 m. Løvenskiold? Tyve tiur, ti orre, og over
-            400 m — ellers er du usynlig.»
+            400 m — ellers er du usynlig. Og Modgeir Rustbank der borte? Han
+            bygger greier hos CB Customs. Han teller tiur, orre, meter — og
+            kilometer. Og han bestiller aldri pils.»
           </p>
           {status ? <p className="shop-row-note">{status}</p> : null}
           <ul className="town-list">
@@ -289,6 +344,25 @@ export function RullesBar({
                 className="town-location"
                 onClick={() => {
                   setStatus("");
+                  setStep("modgeir");
+                }}
+              >
+                <span className="town-location-name">
+                  Modgeir Rustbank {pulkUnlocked ? "✓" : ""}
+                  {!modgeirGate.ok ? " · låst" : ""}
+                </span>
+                <span className="town-location-blurb">
+                  CB Customs · Tui + ribbe · pulk-score{" "}
+                  {modgeirScore.score.toFixed(1)}/{modgeirScore.need}
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                onClick={() => {
+                  setStatus("");
                   setStep("enrique");
                 }}
               >
@@ -326,11 +400,25 @@ export function RullesBar({
           </p>
           <p className="intro-line">
             «Tips: Stubb tar kebab. Kristian Olav tar pils — men ikke for mange,
-            da begynner han om EU. Løvenskiold tar bobler. Og alle tre sjekker
-            lista di før de smiler.»
+            da begynner han om EU. Løvenskiold tar bobler. Modgeir Rustbank tar
+            Tui (TDHNZIPA) og lun ribbe med knusksprø svor — og ærlige tall. Alle
+            sjekker lista di før de smiler — Modgeir sjekker også hvor langt du
+            har gått.»
           </p>
+          {!soldUgleToRulle ? (
+            <p className="shop-row-note">
+              Noe mangler på menyen. Rulle mumler om «spesialvarer for dem som
+              leverer… spesialråvarer.»
+            </p>
+          ) : (
+            <p className="shop-row-note">
+              Hemmelig meny åpen: Tui og lun ribbe. «Du leverte. Jeg serverer.»
+            </p>
+          )}
           <ul className="town-list">
-            {(Object.keys(DRINKS) as DrinkId[]).map((id) => (
+            {(
+              ["ol", "pizza", "kebab", "champagne", "whisky"] as DrinkId[]
+            ).map((id) => (
               <li key={id}>
                 <button
                   type="button"
@@ -351,6 +439,55 @@ export function RullesBar({
                 </button>
               </li>
             ))}
+            {soldUgleToRulle ? (
+              (["tui", "ribbe"] as DrinkId[]).map((id) => (
+                <li key={id}>
+                  <button
+                    type="button"
+                    className="town-location"
+                    onClick={() => {
+                      if (!buy(id)) return;
+                      setStatus(
+                        id === "tui"
+                          ? `Rulle setter fram en Tui. «TDHNZIPA. Modgeir Rustbanks favoritt — og din, nå som vi er… forretningspartnere.»`
+                          : `Rulle setter fram lun ribbe. «Knusksprø svor. Ikke spør hva som er i sausen. Du vet.»`,
+                      );
+                    }}
+                  >
+                    <span className="town-location-name">
+                      Bestill: {DRINKS[id].label}
+                    </span>
+                    <span className="town-location-blurb">
+                      {formatKr(DRINKS[id].priceNok)} — {DRINKS[id].blurb} ·
+                      ugle-meny
+                    </span>
+                  </button>
+                </li>
+              ))
+            ) : (
+              <>
+                <li>
+                  <button type="button" className="town-location" disabled>
+                    <span className="town-location-name">
+                      ??? — Tui (TDHNZIPA) · låst
+                    </span>
+                    <span className="town-location-blurb">
+                      Rulle rister. «Ikke før du har levert noe… nederst i sekken.»
+                    </span>
+                  </button>
+                </li>
+                <li>
+                  <button type="button" className="town-location" disabled>
+                    <span className="town-location-name">
+                      ??? — Lun ribbe · låst
+                    </span>
+                    <span className="town-location-blurb">
+                      «Knusksprø svor er for dem som kan holde kjeft — og levere.»
+                    </span>
+                  </button>
+                </li>
+              </>
+            )}
             {ugleCarcass ? (
               <li>
                 <button
@@ -406,7 +543,7 @@ export function RullesBar({
                   return;
                 }
                 setStatus(
-                  `Rulle stikker ${formatKr(UGLE_TACO_NOK)} i hånda di. «Ugletaco. God appetitt — til noen andre.»`,
+                  `Rulle stikker ${formatKr(UGLE_TACO_NOK)} i hånda di. «Ugletaco. God appetitt — til noen andre. Og… Tui og lun ribbe er på menyen din nå. Ikke på Trustpilot.»`,
                 );
                 setStep("result");
               }}
@@ -803,6 +940,197 @@ export function RullesBar({
         </>
       ) : null}
 
+      {step === "modgeir" && !modgeirGate.ok ? (
+        <>
+          <h2 className="intro-title">Modgeir Rustbank — ikke ennå</h2>
+          <p className="intro-line">
+            En fyr i oljet bukse og CB-genser ser opp fra en skisse på servietten.
+            Foran ham: et tomt Tui-glass og en tallerken med ribbe-rester der
+            svoren har gjort jobben. «Jeg er Modgeir Rustbank. En av dem som
+            starta CB Customs. Jeg lager greier som tåler vinter — ikke
+            Instagram. Kom tilbake når lista di ikke lukter turist.»
+          </p>
+          <ul className="meat-market-facts">
+            {modgeirGate.progress.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="shop-row-note">
+            Mangler: {modgeirGate.missing.join(" · ")}
+          </p>
+          <p className="shop-row-note">
+            Pulk-score (foreløpig): {modgeirScore.score.toFixed(1)}/
+            {modgeirScore.need}
+          </p>
+          <button
+            type="button"
+            className="intro-button"
+            onClick={() => setStep("floor")}
+          >
+            Tilbake — mer jakt først
+          </button>
+        </>
+      ) : null}
+
+      {step === "modgeir" && modgeirGate.ok ? (
+        <>
+          <h2 className="intro-title">Modgeir Rustbank</h2>
+          <p className="intro-line">
+            Han banker lett på bordet med en tommel som har sett for mye sveis.
+            «Åtte tiur. Åtte orre. Nesten tre hundre meter. Tjuefem kilometer under
+            støvlene. Da finnes du. Jeg lager ikke pulk til folk som bare eier
+            kikkert — jeg lager til folk som har gått seg til rettigheter.»
+          </p>
+          <p className="intro-line">
+            «CBA toppjaktspulk: rifla ligger montert. Du trekker, skyter, går.
+            Ingen sekk-drama. Men jeg åpner ikke verkstedet for hvem som helst —
+            jeg scorer deg på tiur, orre, avstand og kilometer. Og jeg spiser ikke
+            kebab med Løvenskiold. Jeg spiser lun ribbe med knusksprø svor. Jeg
+            drikker Tui — TDHNZIPA. Triple dry hopped. New Zealand. Resten er støy.»
+          </p>
+          {pulkUnlocked ? (
+            <p className="shop-row-note">
+              Pulka er grønnlyst. Bestill hos CB Customs når kontoen tåler det.
+            </p>
+          ) : null}
+          <ul className="meat-market-facts">
+            {modgeirScore.parts.map((p) => (
+              <li key={p.id}>
+                {p.label}: {p.points.toFixed(1)}/{p.max} · {p.detail}
+              </li>
+            ))}
+          </ul>
+          <p className="shop-row-note">
+            Pulk-score: {modgeirScore.score.toFixed(1)}/{modgeirScore.need}
+            {modgeirScore.ok ? " — godkjent på tall" : " — for lavt ennå"}
+          </p>
+          <ul className="town-list">
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                onClick={() => {
+                  if (!buy("tui")) return;
+                  setModgeirRapport((r) => r + 1);
+                  setStatus(
+                    "Modgeir lukter på Tui. «TDHNZIPA. Humlen treffer som en god kroning. Du skjønner greia.»",
+                  );
+                }}
+              >
+                <span className="town-location-name">
+                  Spander Tui ({formatKr(DRINKS.tui.priceNok)})
+                </span>
+                <span className="town-location-blurb">
+                  Triple dry hopped NZ IPA. Hans favoritt. Rapport +1.
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                onClick={() => {
+                  if (!buy("ribbe")) return;
+                  setModgeirRapport((r) => r + 1);
+                  setStatus(
+                    "Han knasker svoren. «Lun ribbe. Knusksprø. Dette er fine dining. Pizza er… atmosfære.»",
+                  );
+                }}
+              >
+                <span className="town-location-name">
+                  Spander lun ribbe ({formatKr(DRINKS.ribbe.priceNok)})
+                </span>
+                <span className="town-location-blurb">
+                  Med knusksprø svor — ellers er det bare kjøtt. Rapport +1.
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                onClick={() => {
+                  setModgeirRapport((r) => r + 1);
+                  setStatus(
+                    "Han nikker. «Snø, vektfordeling, våpenfeste foran. Folk tror pulk er «sleping». Det er logistikk.»",
+                  );
+                }}
+              >
+                <span className="town-location-name">
+                  Snakk vinterlogistikk
+                </span>
+                <span className="town-location-blurb">
+                  «Jeg vil ha rifla klar uten å vekke hele skogen.»
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                onClick={() => {
+                  setModgeirRapport((r) => Math.max(0, r - 1));
+                  setStatus(
+                    "Modgeir ler lavt. ««Ultralight hustle»? Da kan du kjøpe sekk på XXL. Ikke kom til meg.»",
+                  );
+                }}
+              >
+                <span className="town-location-name">
+                  Feil snøvl: ultralight-hype
+                </span>
+                <span className="town-location-blurb">
+                  «Jeg vil bare ha mer gramsparing på Instagram…»
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="town-location"
+                disabled={pulkUnlocked}
+                onClick={() => {
+                  if (!modgeirScore.ok) {
+                    setStatus(
+                      `Han blar i tallene. «${modgeirScore.score.toFixed(1)} av ${modgeirScore.need}. Jeg lager ikke toppjaktspulk på nesten. Gå mer. Treff bedre. Kom tilbake.»`,
+                    );
+                    return;
+                  }
+                  if (modgeirRapport < 2) {
+                    setStatus(
+                      "Modgeir lener seg tilbake. «Tallene er der. Men vi er ikke venner ennå. Tui. Ribbe. Snakk. Så snakker vi verksted.»",
+                    );
+                    return;
+                  }
+                  unlockCustoms(
+                    "toppjaktspulk",
+                    "Modgeir Rustbank kniper hånda di — hardt, kort. «Greit. Jeg åpner CBA toppjaktspulk for deg i sjappa. Tjue tusen. Ikke spør om rabatt — spør om snø.»",
+                  );
+                }}
+              >
+                <span className="town-location-name">
+                  Be om CBA toppjaktspulk
+                </span>
+                <span className="town-location-blurb">
+                  Score ≥ {modgeirScore.need} + rapport ≥ 2. Bestilles etterpå
+                  hos CB Customs.
+                </span>
+              </button>
+            </li>
+          </ul>
+          <p className="shop-row-note">
+            Rapport hos Modgeir Rustbank: {modgeirRapport}/2+
+          </p>
+          {status ? <p className="shop-row-note">{status}</p> : null}
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => setStep("floor")}
+          >
+            Tilbake
+          </button>
+        </>
+      ) : null}
+
       {step === "enrique" ? (
         <>
           <h2 className="intro-title">Enrique — kjøkkenet</h2>
@@ -887,10 +1215,14 @@ export function RullesBar({
 
       {step === "result" ? (
         <>
-          <h2 className="intro-title">Handshake</h2>
+          <h2 className="intro-title">
+            {resultKind === "customs" ? "CB-grønt lys" : "Handshake"}
+          </h2>
           <p className="intro-line">{status}</p>
           <p className="intro-hint-balance">
-            Book terrenget under Home → inatur.no når du er klar til å jakte.
+            {resultKind === "customs"
+              ? "Bestill CBA toppjaktspulk under CB Customs når du er klar — den er ikke lenger grået ut for deg."
+              : "Book terrenget under Home → inatur.no når du er klar til å jakte."}
           </p>
           <button
             type="button"
@@ -907,7 +1239,7 @@ export function RullesBar({
             className="intro-button sheriff-secondary"
             onClick={onLeave}
           >
-            Ut i byen
+            Ut i natta
           </button>
         </>
       ) : null}

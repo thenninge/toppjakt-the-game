@@ -171,6 +171,7 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       typeof raw.lifetimeUgle === "number" && Number.isFinite(raw.lifetimeUgle)
         ? Math.max(0, Math.floor(raw.lifetimeUgle))
         : base.lifetimeUgle,
+    soldUgleToRulle: raw.soldUgleToRulle === true,
     owlLastOfferedMilestone:
       typeof raw.owlLastOfferedMilestone === "number" &&
       Number.isFinite(raw.owlLastOfferedMilestone)
@@ -231,6 +232,11 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
         ? raw.nextHuntDate
         : base.nextHuntDate,
     unlockedTerrainIds,
+    unlockedCustomsIds: Array.isArray(raw.unlockedCustomsIds)
+      ? (raw.unlockedCustomsIds as unknown[]).filter(
+          (id): id is string => typeof id === "string" && id.length > 0,
+        )
+      : base.unlockedCustomsIds,
     autoSupplyFood: raw.autoSupplyFood === true,
     favoriteKitIds: Array.isArray(raw.favoriteKitIds)
       ? (raw.favoriteKitIds as unknown[]).filter(
@@ -369,11 +375,15 @@ export function mergeLifetimeProgress(
       secondary.lifetimeOrrhaner,
     ),
     lifetimeUgle: Math.max(primary.lifetimeUgle, secondary.lifetimeUgle),
+    soldUgleToRulle: primary.soldUgleToRulle || secondary.soldUgleToRulle,
     lifetimeDistanceM: Math.max(
       primary.lifetimeDistanceM,
       secondary.lifetimeDistanceM,
     ),
     maxRange: Math.max(primary.maxRange, secondary.maxRange),
+    unlockedCustomsIds: Array.from(
+      new Set([...primary.unlockedCustomsIds, ...secondary.unlockedCustomsIds]),
+    ),
     rifleRoundCounts: mergeMaxCountMap(
       primary.rifleRoundCounts,
       secondary.rifleRoundCounts,
