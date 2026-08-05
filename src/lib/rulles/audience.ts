@@ -4,6 +4,7 @@
 
 import type { PlayerStats } from "@/lib/player";
 import { formatLifetimeDistance } from "@/lib/playerSave";
+import { PINK_MIST_NICKNAME } from "@/lib/hunt/shoot";
 
 export type AudienceRequirement = {
   /** tiur + orrhaner */
@@ -14,6 +15,8 @@ export type AudienceRequirement = {
   minMaxRangeM?: number;
   /** Inclusive minimum lifetime walked distance (m). */
   minLifetimeDistanceM?: number;
+  /** Must hold the Pink Mist nickname (headshot in hunt). */
+  requirePinkMist?: boolean;
 };
 
 export type AudienceCheck = {
@@ -31,12 +34,13 @@ export const RULLES_AUDIENCE: Record<
   kari: { minBirdsTotal: 10, minMaxRangeM: 250 },
   kristian: { minBirdsTotal: 20, minMaxRangeM: 300 },
   lovenskiold: { minTiur: 20, minOrrhaner: 10, minMaxRangeM: 401 },
-  /** Soft gate before Modgeir takes your pulk-score seriously. */
+  /** Hard gate — Modgeir Rustbank will not talk pulk before this résumé. */
   modgeir: {
-    minTiur: 8,
-    minOrrhaner: 8,
-    minMaxRangeM: 280,
-    minLifetimeDistanceM: 25_000,
+    minTiur: 50,
+    minOrrhaner: 50,
+    minMaxRangeM: 406,
+    minLifetimeDistanceM: 100_000,
+    requirePinkMist: true,
   },
 };
 
@@ -48,7 +52,10 @@ export type HuntRésuméStats = Pick<
   | "lifetimeTiur"
   | "lifetimeOrrhaner"
   | "lifetimeDistanceM"
->;
+> & {
+  /** Current display nickname — used for Pink Mist gate. */
+  nickname?: string;
+};
 
 export function checkAudience(
   stats: HuntRésuméStats,
@@ -82,11 +89,11 @@ export function checkAudience(
     }
   }
   if (req.minMaxRangeM != null) {
-    const over400 = req.minMaxRangeM > 400;
+    const over400Flavor = req.minMaxRangeM === 401;
     progress.push(`Max range: ${stats.maxRange} m`);
     if (stats.maxRange < req.minMaxRangeM) {
       missing.push(
-        over400
+        over400Flavor
           ? `Max range over 400 m (din: ${stats.maxRange > 0 ? `${stats.maxRange} m` : "—"})`
           : `Max range minst ${req.minMaxRangeM} m (din: ${stats.maxRange > 0 ? `${stats.maxRange} m` : "—"})`,
       );
@@ -99,6 +106,20 @@ export function checkAudience(
     if (distM < req.minLifetimeDistanceM) {
       missing.push(
         `Minst ${formatLifetimeDistance(req.minLifetimeDistanceM)} gått (din: ${formatLifetimeDistance(distM)})`,
+      );
+    }
+  }
+  if (req.requirePinkMist) {
+    const hasPink =
+      (stats.nickname ?? "").trim() === PINK_MIST_NICKNAME;
+    progress.push(
+      hasPink
+        ? `Nickname: ${PINK_MIST_NICKNAME} ✓`
+        : `Nickname: ${stats.nickname?.trim() || "—"} / ${PINK_MIST_NICKNAME}`,
+    );
+    if (!hasPink) {
+      missing.push(
+        `Nickname «${PINK_MIST_NICKNAME}» (headshot / gul sone i jakt)`,
       );
     }
   }
@@ -118,8 +139,14 @@ function scorePart(value: number, fullAt: number, maxPts: number): number {
 /** Max points per Modgeir pulk-axis (tiur / orre / range / km). */
 export const MODGEIR_AXIS_MAX = 2.5;
 
+/** Full marks on each axis (matches {@link RULLES_AUDIENCE.modgeir}). */
+export const MODGEIR_FULL_TIUR = 50;
+export const MODGEIR_FULL_ORRE = 50;
+export const MODGEIR_FULL_RANGE_M = 406;
+export const MODGEIR_FULL_KM = 100;
+
 /** Total Modgeir pulk-score needed before he will greenlight CBA toppjaktspulk. */
-export const MODGEIR_PULK_SCORE_NEED = 7;
+export const MODGEIR_PULK_SCORE_NEED = 10;
 
 export type ModgeirScorePart = {
   id: "tiur" | "orre" | "range" | "km";
@@ -138,7 +165,7 @@ export type ModgeirPulkScore = {
 
 /**
  * Modgeir’s CBA pulk ledger — weighted hunt résumé (0–10).
- * Full marks: 16 tiur · 12 orre · 350 m · 50 km walked.
+ * Full marks: 50 tiur · 50 orre · 406 m · 100 km walked.
  */
 export function modgeirPulkScore(stats: HuntRésuméStats): ModgeirPulkScore {
   const tiur = stats.lifetimeTiur ?? stats.tiur;
@@ -150,30 +177,30 @@ export function modgeirPulkScore(stats: HuntRésuméStats): ModgeirPulkScore {
     {
       id: "tiur",
       label: "Tiur",
-      points: scorePart(tiur, 16, MODGEIR_AXIS_MAX),
+      points: scorePart(tiur, MODGEIR_FULL_TIUR, MODGEIR_AXIS_MAX),
       max: MODGEIR_AXIS_MAX,
-      detail: `${tiur} / 16`,
+      detail: `${tiur} / ${MODGEIR_FULL_TIUR}`,
     },
     {
       id: "orre",
       label: "Orrhaner",
-      points: scorePart(orr, 12, MODGEIR_AXIS_MAX),
+      points: scorePart(orr, MODGEIR_FULL_ORRE, MODGEIR_AXIS_MAX),
       max: MODGEIR_AXIS_MAX,
-      detail: `${orr} / 12`,
+      detail: `${orr} / ${MODGEIR_FULL_ORRE}`,
     },
     {
       id: "range",
       label: "Max range",
-      points: scorePart(Math.max(0, range - 150), 200, MODGEIR_AXIS_MAX),
+      points: scorePart(range, MODGEIR_FULL_RANGE_M, MODGEIR_AXIS_MAX),
       max: MODGEIR_AXIS_MAX,
-      detail: `${range > 0 ? `${range} m` : "—"} (full ved 350 m)`,
+      detail: `${range > 0 ? `${range} m` : "—"} / ${MODGEIR_FULL_RANGE_M} m`,
     },
     {
       id: "km",
       label: "Km gått",
-      points: scorePart(km, 50, MODGEIR_AXIS_MAX),
+      points: scorePart(km, MODGEIR_FULL_KM, MODGEIR_AXIS_MAX),
       max: MODGEIR_AXIS_MAX,
-      detail: `${km > 0 ? `${km < 10 ? km.toFixed(1) : km.toFixed(0)} km` : "—"} / 50 km`,
+      detail: `${km > 0 ? `${km < 10 ? km.toFixed(1) : km.toFixed(0)} km` : "—"} / ${MODGEIR_FULL_KM} km`,
     },
   ];
 

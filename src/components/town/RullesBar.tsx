@@ -165,8 +165,12 @@ export function RullesBar({
     [hunter],
   );
   const modgeirGate = useMemo(
-    () => checkAudience(hunter, RULLES_AUDIENCE.modgeir),
-    [hunter],
+    () =>
+      checkAudience(
+        { ...hunter, nickname },
+        RULLES_AUDIENCE.modgeir,
+      ),
+    [hunter, nickname],
   );
   const modgeirScore = useMemo(() => modgeirPulkScore(hunter), [hunter]);
 
@@ -261,9 +265,9 @@ export function RullesBar({
           <p className="intro-line">
             Rulle peker diskret. «Stubb vil se ti fugl og 250 m. Kristian Olav
             vil ha tjue fugl og 300 m. Løvenskiold? Tyve tiur, ti orre, og over
-            400 m — ellers er du usynlig. Og Modgeir Rustbank der borte? Han
-            bygger greier hos CB Customs. Han teller tiur, orre, meter — og
-            kilometer. Og han bestiller aldri pils.»
+            400 m — ellers er du usynlig. Og Modgeir Rustbank? Femti tiur, femti
+            orre, fire-null-seks meter, hundre kilometer — og du må hete Pink
+            Mist. Han bestiller aldri pils.»
           </p>
           {status ? <p className="shop-row-note">{status}</p> : null}
           <ul className="town-list">
@@ -352,8 +356,7 @@ export function RullesBar({
                   {!modgeirGate.ok ? " · låst" : ""}
                 </span>
                 <span className="town-location-blurb">
-                  CB Customs · Tui + ribbe · pulk-score{" "}
-                  {modgeirScore.score.toFixed(1)}/{modgeirScore.need}
+                  Krav: 50 tiur · 50 orre · 406 m · 100 km · Pink Mist
                 </span>
               </button>
             </li>
@@ -977,16 +980,18 @@ export function RullesBar({
           <h2 className="intro-title">Modgeir Rustbank</h2>
           <p className="intro-line">
             Han banker lett på bordet med en tommel som har sett for mye sveis.
-            «Åtte tiur. Åtte orre. Nesten tre hundre meter. Tjuefem kilometer under
-            støvlene. Da finnes du. Jeg lager ikke pulk til folk som bare eier
+            «Femti tiur. Femti orre. Fire hundre og seks meter. Hundre kilometer
+            under støvlene. Og Pink Mist på navneskiltet — headshot, ikke
+            hashtag. Da finnes du. Jeg lager ikke pulk til folk som bare eier
             kikkert — jeg lager til folk som har gått seg til rettigheter.»
           </p>
           <p className="intro-line">
             «CBA toppjaktspulk: rifla ligger montert. Du trekker, skyter, går.
             Ingen sekk-drama. Men jeg åpner ikke verkstedet for hvem som helst —
-            jeg scorer deg på tiur, orre, avstand og kilometer. Og jeg spiser ikke
-            kebab med Løvenskiold. Jeg spiser lun ribbe med knusksprø svor. Jeg
-            drikker Tui — TDHNZIPA. Triple dry hopped. New Zealand. Resten er støy.»
+            jeg scorer deg på tiur, orre, avstand, kilometer og om hjernen har
+            vært ute av cranium. Og jeg spiser ikke kebab med Løvenskiold. Jeg
+            spiser lun ribbe med knusksprø svor. Jeg drikker Tui — TDHNZIPA.
+            Triple dry hopped. New Zealand. Resten er støy.»
           </p>
           {pulkUnlocked ? (
             <p className="shop-row-note">
