@@ -386,6 +386,7 @@ export function CbCustoms({
           : customsMods.magCapacity10
             ? " · mag 10"
             : ""}
+        {customsMods.toppjaktspulk ? " · CBA toppjaktspulk" : ""}
         {customsMods.customBoltKnob
           ? ` · bolt knob ${customsMods.boltKnobColor}`
           : ""}
@@ -472,7 +473,14 @@ export function CbCustoms({
             balance >= svc.priceNok;
           const isBoltKnob = svc.id === "custom_bolt_knob";
           return (
-            <li key={svc.id} className="cb-customs-card">
+            <li
+              key={svc.id}
+              className={
+                svc.comingSoon
+                  ? "cb-customs-card is-coming-soon"
+                  : "cb-customs-card"
+              }
+            >
               <div className="cb-customs-card-head">
                 <strong>{svc.name}</strong>
                 <span>

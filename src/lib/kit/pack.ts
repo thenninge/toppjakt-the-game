@@ -197,7 +197,12 @@ export function chestrigOpticsRaiseTransitionSec(kitItems: ShopItem[]): number {
  * Same QR scale as chestrig optics: 10 → 0 %, 1 → +10 %.
  * No backpack → treated as QR 1.
  */
-export function backpackRifleRaiseNerve(kitItems: ShopItem[]): number {
+export function backpackRifleRaiseNerve(
+  kitItems: ShopItem[],
+  customsMods?: CustomsMods | null,
+): number {
+  /** Pulk: rifle is already mounted — no Deploy nerve. */
+  if (customsMods?.toppjaktspulk) return 0;
   const hasRifle = kitItems.some(isRifleItem);
   if (!hasRifle) return 0;
   const pack = backpackFromKit(kitItems);

@@ -38,6 +38,11 @@ export type CustomsMods = {
   magCapacity10: boolean;
   /** CB 15-round magazine (supersedes 10). */
   magCapacity15: boolean;
+  /**
+   * CBA toppjaktspulk — rifle pre-mounted on pulk.
+   * Speed + calm always; snow camo when snow; 0% Deploy nerve.
+   */
+  toppjaktspulk: boolean;
 };
 
 /** Default knob tint when the service is first bought. */
@@ -88,6 +93,7 @@ export const EMPTY_CUSTOMS_MODS: CustomsMods = {
   boltKnobColor: DEFAULT_BOLT_KNOB_COLOR,
   magCapacity10: false,
   magCapacity15: false,
+  toppjaktspulk: false,
 };
 
 export type CustomsServiceId =
@@ -107,7 +113,8 @@ export type CustomsServiceId =
   | "barrel_crown"
   | "custom_bolt_knob"
   | "mag_10"
-  | "mag_15";
+  | "mag_15"
+  | "toppjaktspulk";
 
 export type CustomsService = {
   id: CustomsServiceId;
@@ -186,6 +193,24 @@ export const BASE_BOLT_CYCLE_MS = 1200;
 export const ACTION_TI_RELOAD_MULT = 0.8;
 /** Custom bolt knob — 10 % faster bolt cycle (×0.9). */
 export const BOLT_KNOB_RELOAD_MULT = 0.9;
+
+/** Extra field speed % with CBA toppjaktspulk (shorter cell travel). */
+export const TOPPJAKTSPULK_SPEED_PCT = 22;
+/** Calm multiplier with pulk (rifle already rested on the sled). */
+export const TOPPJAKTSPULK_CALM_MULT = 1.28;
+/** Extra sneak % from pulk snow camo / low silhouette when snow is present. */
+export const TOPPJAKTSPULK_SNOW_SNEAK_PCT = 22;
+
+/**
+ * Snow cover for pulk camo — snowing, or at/below freezing (winter ground).
+ */
+export function huntHasSnowForPulk(opts: {
+  temperatureC: number;
+  precip?: "none" | "rain" | "snow";
+}): boolean {
+  if (opts.precip === "snow") return true;
+  return opts.temperatureC <= 0;
+}
 
 /** Factory / XXL default detachable mag capacity. */
 export const DEFAULT_MAG_CAPACITY = 5;
@@ -301,6 +326,13 @@ export const CUSTOMS_SERVICES: CustomsService[] = [
     priceNok: 5000,
     effect: `15-skudds magasin — erstatter 10-skudds. Færre magasinbytter i konkurranse.`,
   },
+  {
+    id: "toppjaktspulk",
+    name: "CBA toppjaktspulk",
+    priceNok: 20_000,
+    comingSoon: true,
+    effect: `Pulke med ferdig montert våpen — +${TOPPJAKTSPULK_SPEED_PCT}% speed, +${Math.round((TOPPJAKTSPULK_CALM_MULT - 1) * 100)}% calm, +${TOPPJAKTSPULK_SNOW_SNEAK_PCT}% sneak i snø. Deploy uten bird nerve (rifla ligger klar).`,
+  },
 ];
 
 export function normalizeCustomsMods(raw: unknown): CustomsMods {
@@ -325,6 +357,7 @@ export function normalizeCustomsMods(raw: unknown): CustomsMods {
     boltKnobColor: normalizeBoltKnobColor(o.boltKnobColor),
     magCapacity10: o.magCapacity10 === true || o.magCapacity15 === true,
     magCapacity15: o.magCapacity15 === true,
+    toppjaktspulk: o.toppjaktspulk === true,
   };
 }
 
@@ -344,12 +377,32 @@ export function customsBeddingMoaDelta(mods: CustomsMods): number {
   return delta;
 }
 
-/** Multiplier on weapon calm (bagrider × cheek riser). */
+/** Multiplier on weapon calm (bagrider × cheek riser × toppjaktspulk). */
 export function customsCalmMultiplier(mods: CustomsMods): number {
   let m = 1;
   if (mods.bagrider) m *= BAGRIDER_CALM_MULT;
   if (mods.cheekRiser) m *= CHEEK_RISER_CALM_MULT;
+  if (mods.toppjaktspulk) m *= TOPPJAKTSPULK_CALM_MULT;
   return m;
+}
+
+/** Extra travel speed % from CBA toppjaktspulk (0 if not owned). */
+export function customsPulkSpeedPct(mods: CustomsMods): number {
+  return mods.toppjaktspulk ? TOPPJAKTSPULK_SPEED_PCT : 0;
+}
+
+/**
+ * Add pulk snow-camo sneak when snow is present.
+ * Stacks on clothing + custom camo sneak %.
+ */
+export function applyPulkSnowSneakPct(
+  kitSneakPct: number,
+  mods: CustomsMods,
+  conditions: { temperatureC: number; precip?: "none" | "rain" | "snow" },
+): number {
+  if (!mods.toppjaktspulk) return kitSneakPct;
+  if (!huntHasSnowForPulk(conditions)) return kitSneakPct;
+  return kitSneakPct + TOPPJAKTSPULK_SNOW_SNEAK_PCT;
 }
 
 /** Multiplier on recoil damping (bagrider × cheek × buttpad). */
@@ -449,6 +502,7 @@ export function serviceOwned(
   if (id === "custom_bolt_knob") return mods.customBoltKnob;
   if (id === "mag_10") return mods.magCapacity10 || mods.magCapacity15;
   if (id === "mag_15") return mods.magCapacity15;
+  if (id === "toppjaktspulk") return mods.toppjaktspulk;
   return false;
 }
 

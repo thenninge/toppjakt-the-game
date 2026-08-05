@@ -886,6 +886,9 @@ export function IntroScreen() {
         if (mods.magCapacity15) return prev;
         mods.magCapacity15 = true;
         mods.magCapacity10 = true;
+      } else if (id === "toppjaktspulk") {
+        if (mods.toppjaktspulk) return prev;
+        mods.toppjaktspulk = true;
       } else {
         return prev;
       }

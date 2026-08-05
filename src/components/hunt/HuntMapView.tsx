@@ -161,9 +161,11 @@ import {
 import {
   EMPTY_CUSTOMS_MODS,
   applyCustomCamoSneakPct,
+  applyPulkSnowSneakPct,
   customsBeddingMoaDelta,
   customsBoltCycleMs,
   customsCalmMultiplier,
+  customsPulkSpeedPct,
   customsTriggerPullScale,
   type CustomsMods,
 } from "@/lib/customs/spec";
@@ -1183,12 +1185,23 @@ export function HuntMapView({
   );
   const camoSneakPct = useMemo(
     () =>
-      applyCustomCamoSneakPct(kitCamoStatSum(camoPieces, "sneakPct"), customsMods),
-    [camoPieces, customsMods],
+      applyPulkSnowSneakPct(
+        applyCustomCamoSneakPct(
+          kitCamoStatSum(camoPieces, "sneakPct"),
+          customsMods,
+        ),
+        customsMods,
+        {
+          temperatureC: weather.live.temperatureC,
+          precip: hourNow?.precip,
+        },
+      ),
+    [camoPieces, customsMods, weather.live.temperatureC, hourNow?.precip],
   );
   const clothingSpeedPct = useMemo(
-    () => kitCamoStatSum(camoPieces, "speedPct"),
-    [camoPieces],
+    () =>
+      kitCamoStatSum(camoPieces, "speedPct") + customsPulkSpeedPct(customsMods),
+    [camoPieces, customsMods],
   );
   const clothingFocusPct = useMemo(
     () => kitCamoStatSum(camoPieces, "focusPct"),
@@ -5635,7 +5648,7 @@ export function HuntMapView({
         hasBipod={hasBipod}
         hasBagrider={!!customsMods.bagrider}
         bipodWeaponCalm={bipodWeaponCalm}
-        gunDeployNerve={backpackRifleRaiseNerve(kitItems)}
+        gunDeployNerve={backpackRifleRaiseNerve(kitItems, customsMods)}
         onGunDeployed={() => {
           setFieldGunDeployed(true);
           setAwareSession((prev) =>

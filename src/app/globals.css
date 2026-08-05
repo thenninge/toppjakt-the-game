@@ -3306,6 +3306,18 @@ body {
   background: rgba(0, 0, 0, 0.28);
 }
 
+.cb-customs-card.is-coming-soon {
+  opacity: 0.55;
+  filter: grayscale(0.45);
+  border-style: dashed;
+  border-color: #5a5048;
+}
+
+.cb-customs-card.is-coming-soon .intro-button:disabled {
+  opacity: 0.85;
+  cursor: not-allowed;
+}
+
 .cb-customs-card-head {
   display: flex;
   justify-content: space-between;
