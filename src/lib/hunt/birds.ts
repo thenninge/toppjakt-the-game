@@ -484,11 +484,16 @@ export function spawnTiurOnMap(
   opts?: {
     tiurRating?: number;
     orrhaneRating?: number;
+    tiurWeightMult?: number;
+    orrhaneWeightMult?: number;
+    countMult?: number;
   },
 ): HuntBird[] {
   const birds: HuntBird[] = [];
-  const tiurRating = Math.max(0, opts?.tiurRating ?? 3);
-  const orrhaneRating = Math.max(0, opts?.orrhaneRating ?? 2);
+  const tiurRating = Math.max(0, opts?.tiurRating ?? 3) * (opts?.tiurWeightMult ?? 1);
+  const orrhaneRating =
+    Math.max(0, opts?.orrhaneRating ?? 2) * (opts?.orrhaneWeightMult ?? 1);
+  const countMult = opts?.countMult ?? 1;
   const speciesWeight = tiurRating + orrhaneRating;
 
   const pickSpecies = (): "tiur" | "orrhane" => {
@@ -557,7 +562,7 @@ export function spawnTiurOnMap(
     }
   };
 
-  for (let i = 0; i < Math.max(0, count); i++) {
+  for (let i = 0; i < Math.max(0, Math.round(count * countMult)); i++) {
     spawnOne();
   }
   return birds;

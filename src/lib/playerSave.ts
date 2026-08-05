@@ -2,6 +2,7 @@
  * Persist hunter progress in localStorage so deploys / refreshes keep the save.
  */
 
+import { defaultNextHuntDateIso, parseIsoDate } from "@/lib/hunt/calendar";
 import { createInitialStats, type PlayerStats, type ZeroingProfile } from "@/lib/player";
 import { normalizeGameRealism } from "@/lib/optics/turretStyle";
 import { normalizeGameLang } from "@/lib/i18n/lang";
@@ -225,6 +226,10 @@ export function normalizePlayerStats(raw: unknown): PlayerStats {
       }
       return book;
     })(),
+    nextHuntDate:
+      typeof raw.nextHuntDate === "string" && parseIsoDate(raw.nextHuntDate)
+        ? raw.nextHuntDate
+        : base.nextHuntDate,
     unlockedTerrainIds,
     autoSupplyFood: raw.autoSupplyFood === true,
     favoriteKitIds: Array.isArray(raw.favoriteKitIds)

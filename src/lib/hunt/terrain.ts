@@ -37,6 +37,11 @@ export type HuntingTerrain = {
   access: "inatur" | "rulles" | "vip";
   /** Flavor: who shook your hand. */
   landownerName?: string;
+  /** yr.no location label. */
+  yrLocationName?: string;
+  /** Approximate lat/lon for yr.no header. */
+  lat?: number;
+  lon?: number;
 };
 
 /** Base inatur listings + Rulles handshake grounds. */
@@ -221,4 +226,34 @@ export function formatBirdRating(rating: BirdRating): string {
 /** Public image path for a terrain's hunt map. */
 export function terrainMapSrc(terrain: HuntingTerrain): string {
   return getHuntMap(terrain.mapId).src;
+}
+
+/** yr.no header location for a terrain lease. */
+export function terrainYrHeader(terrain: HuntingTerrain): {
+  name: string;
+  lat: number;
+  lon: number;
+} {
+  const table: Partial<
+    Record<HuntingTerrainId, { name: string; lat: number; lon: number }>
+  > = {
+    "ostlandet-budsjett": { name: "Gjøvik", lat: 60.79, lon: 10.69 },
+    "ostlandet-standard": { name: "Lillehammer", lat: 61.12, lon: 10.47 },
+    trondelag: { name: "Meråker", lat: 63.42, lon: 11.75 },
+    "inatur-hogstflate": { name: "Rena", lat: 61.13, lon: 11.37 },
+    "inatur-granskog": { name: "Kongsvinger", lat: 60.19, lon: 12.0 },
+    svenskegrensa: { name: "Trysil", lat: 61.32, lon: 12.26 },
+    finnskogen: { name: "Grue", lat: 60.46, lon: 12.06 },
+    sandbekken: { name: "Hemsedal", lat: 60.86, lon: 8.56 },
+    "rulles-stubb-teig": { name: "Eidsvoll", lat: 60.33, lon: 11.26 },
+    "rulles-kristian-li": { name: "Hamar", lat: 60.79, lon: 11.07 },
+    "rulles-lovenskiold": { name: "Ringerike", lat: 60.17, lon: 10.26 },
+  };
+  return (
+    table[terrain.id] ?? {
+      name: terrain.region,
+      lat: 61.0,
+      lon: 10.0,
+    }
+  );
 }

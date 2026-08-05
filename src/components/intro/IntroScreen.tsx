@@ -97,6 +97,8 @@ import {
   createDayWeather,
   type DayWeather,
 } from "@/lib/weather/spec";
+import { createDayWeatherForHunt } from "@/lib/weather/forecast";
+import { nextHuntDateAfter } from "@/lib/hunt/calendar";
 import { TownHub, type TownLocationId } from "@/components/town/TownHub";
 import { JegerproveView } from "@/components/town/JegerproveView";
 import { isJegerproveCleared } from "@/lib/jegerprove/exam";
@@ -1285,11 +1287,20 @@ export function IntroScreen() {
     });
   }
 
-  function selectHuntingTerrain(terrainId: string, kind: JaktkortKind) {
+  function selectHuntingTerrain(
+    terrainId: string,
+    kind: JaktkortKind,
+    bookedDate: string,
+  ) {
     setStats((prev) => {
       const terrain = getHuntingTerrain(terrainId);
       if (!terrain) return prev;
-      const kort = createJaktkort(terrainId, kind, terrain.pricePerDayNok);
+      const kort = createJaktkort(
+        terrainId,
+        kind,
+        terrain.pricePerDayNok,
+        bookedDate,
+      );
       if (prev.balance < kort.paidNok) return prev;
       const existing = getJaktkortForTerrain(prev.jaktkort, terrainId);
       const sameActive =
@@ -1301,16 +1312,40 @@ export function IntroScreen() {
         ...prev,
         balance: prev.balance - kort.paidNok,
         selectedHuntingTerrainId: terrainId,
-        // Upsert only this terrain — other terrains keep their cards.
         jaktkort: upsertJaktkort(prev.jaktkort, kort),
       };
     });
+  }
+
+  function advanceCalendarAndKort(
+    prev: typeof stats,
+    terrainId: string | null,
+    jaktkortBook: typeof stats.jaktkort,
+    huntedIso: string,
+  ) {
+    const nextIso = nextHuntDateAfter(huntedIso);
+    const stillActive = getJaktkortForTerrain(jaktkortBook, terrainId);
+    let finalBook = jaktkortBook;
+    if (stillActive && terrainId) {
+      finalBook = upsertJaktkort(jaktkortBook, {
+        ...stillActive,
+        bookedDate: nextIso,
+      });
+    }
+    return {
+      jaktkort: finalBook,
+      nextHuntDate: nextIso,
+    };
   }
 
   function startHunt(terrainId?: string) {
     const id = terrainId ?? stats.selectedHuntingTerrainId;
     const kort = getJaktkortForTerrain(stats.jaktkort, id);
     if (!id || !kort || kort.daysRemaining <= 0) return;
+    const huntDateIso = kort.bookedDate ?? stats.nextHuntDate;
+    setWeather(
+      createDayWeatherForHunt(id, huntDateIso) ?? createDayWeather(),
+    );
     // Fresh jaktdag: wipe leftover skuddmarkør / forfeited recoveries.
     clearShotPairsStorage();
     setStats((prev) =>
@@ -1330,14 +1365,24 @@ export function IntroScreen() {
     if (!opts?.skipJaktkortConsume) {
       setStats((prev) => {
         const terrainId = prev.selectedHuntingTerrainId;
+        const kortBefore = getJaktkortForTerrain(prev.jaktkort, terrainId);
+        const huntedIso = kortBefore?.bookedDate ?? prev.nextHuntDate;
         const nextBook = consumeJaktkortOnEndHunt(prev.jaktkort, terrainId);
-        const stillActive = getJaktkortForTerrain(nextBook, terrainId);
+        const advanced = advanceCalendarAndKort(
+          prev,
+          terrainId,
+          nextBook,
+          huntedIso,
+        );
+        const stillActive = getJaktkortForTerrain(
+          advanced.jaktkort,
+          terrainId,
+        );
         return {
           ...prev,
-          jaktkort: nextBook,
+          ...advanced,
           selectedHuntingTerrainId: stillActive ? terrainId : null,
           awareHunt: null,
-          // Pack → freezer when leaving the field.
           freezerCarcasses: [...prev.freezerCarcasses, ...prev.carcasses],
           carcasses: [],
         };
@@ -1359,15 +1404,30 @@ export function IntroScreen() {
   function consumeJaktkortOvernight(): boolean {
     const prev = statsRef.current;
     const terrainId = prev.selectedHuntingTerrainId;
+    const kortBefore = getJaktkortForTerrain(prev.jaktkort, terrainId);
+    const huntedIso = kortBefore?.bookedDate ?? prev.nextHuntDate;
     const nextBook = consumeJaktkortOnOvernight(prev.jaktkort, terrainId);
-    const stillActive = getJaktkortForTerrain(nextBook, terrainId);
+    const advanced = advanceCalendarAndKort(
+      prev,
+      terrainId,
+      nextBook,
+      huntedIso,
+    );
+    const stillActive = getJaktkortForTerrain(advanced.jaktkort, terrainId);
     const updated = {
       ...prev,
-      jaktkort: nextBook,
+      ...advanced,
       selectedHuntingTerrainId: stillActive ? terrainId : null,
     };
     statsRef.current = updated;
     setStats(updated);
+    if (terrainId && stillActive) {
+      const huntDateIso =
+        stillActive.bookedDate ?? advanced.nextHuntDate;
+      setWeather(
+        createDayWeatherForHunt(terrainId, huntDateIso) ?? createDayWeather(),
+      );
+    }
     return stillActive != null && stillActive.daysRemaining > 0;
   }
 
@@ -1898,6 +1958,7 @@ export function IntroScreen() {
             unusedLicenses={unusedLicenseCount(stats)}
             selectedHuntingTerrainId={stats.selectedHuntingTerrainId}
             jaktkort={stats.jaktkort}
+            nextHuntDate={stats.nextHuntDate}
             jegerprovePassed={isJegerproveCleared(stats.jegerprovePassed)}
             unlockedTerrainIds={stats.unlockedTerrainIds}
             isVip={isVipPlayerName(stats.name)}

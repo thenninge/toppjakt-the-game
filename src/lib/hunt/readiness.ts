@@ -22,6 +22,9 @@ import {
 import { isCamcorderMisc, isCamcorderTripodMisc } from "@/lib/misc/spec";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { getHuntMap } from "@/lib/hunt/maps";
+import {
+  seasonOpenForHunting,
+} from "@/lib/hunt/calendar";
 import type { JaktkortBook } from "@/lib/hunt/jaktkort";
 import { getJaktkortForTerrain } from "@/lib/hunt/jaktkort";
 import { isJegerproveCleared } from "@/lib/jegerprove/exam";
@@ -115,6 +118,7 @@ export function huntReadyCheck(input: {
   zeroingProfiles: Record<string, ZeroingProfile>;
   /** Optional exam pass — only blocks hunt when {@link JEGERPROVE_REQUIRED}. */
   jegerprovePassed?: boolean;
+  nextHuntDate?: string;
 }): HuntReadyResult {
   const blockers: string[] = [];
   const terrain = getHuntingTerrain(input.selectedHuntingTerrainId);
@@ -125,6 +129,10 @@ export function huntReadyCheck(input: {
 
   if (!isJegerproveCleared(input.jegerprovePassed ?? false)) {
     blockers.push("Bestå jegerprøven i byen før du kan jakte");
+  }
+
+  if (input.nextHuntDate && !seasonOpenForHunting(input.nextHuntDate)) {
+    blockers.push("Jaktsesongen er over (10. sep – 23. des)");
   }
 
   if (!terrain || !kort || kort.daysRemaining <= 0) {

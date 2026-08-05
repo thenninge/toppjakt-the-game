@@ -28,6 +28,17 @@ export type WeatherSnapshot = {
   windFromDeg: number;
 };
 
+/** In-hunt bird spawn / spotting modifiers from booked-day weather. */
+export type HuntWeatherBias = {
+  tiurWeightMult: number;
+  orrhaneWeightMult: number;
+  birdCountMult: number;
+  spottingMult: number;
+  tiurHint?: string | null;
+  orrhaneHint?: string | null;
+  windHint?: string | null;
+};
+
 export type DayWeather = {
   /** Calendar / hunt day label (for UI). */
   dayLabel: string;
@@ -42,6 +53,10 @@ export type DayWeather = {
   morningWindSpeedMs: number;
   /** Minutes since dawn / mission start. */
   missionMinutes: number;
+  /** Booked hunt calendar day (ISO). */
+  huntDateIso?: string;
+  /** Species / spotting bias from yr.no forecast rules. */
+  huntBias?: HuntWeatherBias;
 };
 
 /** Typical forecast error vs eventual morning truth (before daytime drift). */

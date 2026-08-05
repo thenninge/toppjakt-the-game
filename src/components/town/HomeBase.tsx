@@ -168,6 +168,7 @@ type HomeBaseProps = {
   unusedLicenses: number;
   selectedHuntingTerrainId: string | null;
   jaktkort: JaktkortBook;
+  nextHuntDate: string;
   /** Hunter exam cleared — required to leave for a hunt. */
   jegerprovePassed?: boolean;
   unlockedTerrainIds: string[];
@@ -204,7 +205,11 @@ type HomeBaseProps = {
   onDisarmLoadPlan: () => void;
   /** Sell one unit (or ammo eske) on Finn at ~50% catalog price. */
   onSellOnFinn: (itemId: string) => void;
-  onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
+  onPurchaseJaktkort: (
+    terrainId: string,
+    kind: JaktkortKind,
+    bookedDate: string,
+  ) => void;
   onUpdateDope: (
     id: string,
     patch: Partial<
@@ -242,6 +247,7 @@ export function HomeBase({
   unusedLicenses,
   selectedHuntingTerrainId,
   jaktkort,
+  nextHuntDate,
   jegerprovePassed = false,
   unlockedTerrainIds,
   isVip = false,
@@ -667,6 +673,7 @@ export function HomeBase({
         jaktkort,
         zeroingProfiles,
         jegerprovePassed,
+        nextHuntDate,
       }),
     [
       kitItems,
@@ -675,6 +682,7 @@ export function HomeBase({
       jaktkort,
       zeroingProfiles,
       jegerprovePassed,
+      nextHuntDate,
     ],
   );
 
@@ -686,6 +694,7 @@ export function HomeBase({
       jaktkort,
       zeroingProfiles,
       jegerprovePassed,
+      nextHuntDate,
     });
   }
 
@@ -848,6 +857,7 @@ export function HomeBase({
         balance={balance}
         selectedTerrainId={selectedHuntingTerrainId}
         jaktkort={jaktkort}
+        nextHuntDate={nextHuntDate}
         unlockedTerrainIds={unlockedTerrainIds}
         isVip={isVip}
         isAdmin={isAdmin}

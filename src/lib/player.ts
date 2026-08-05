@@ -1,5 +1,5 @@
 import type { GameCarcass } from "@/lib/hunt/carcass";
-import type { JaktkortBook } from "@/lib/hunt/jaktkort";
+import { defaultNextHuntDateIso } from "@/lib/hunt/calendar";
 import type { GameLang } from "@/lib/i18n/lang";
 import {
   EMPTY_CUSTOMS_MODS,
@@ -69,6 +69,7 @@ import {
   emptyJaktkortBook,
   getJaktkortForTerrain,
   upsertJaktkort,
+  type JaktkortBook,
 } from "@/lib/hunt/jaktkort";
 import { getHuntingTerrain } from "@/lib/hunt/terrain";
 import { sanitizeKitScopeMountIds } from "@/lib/mount/fit";
@@ -282,6 +283,11 @@ export type PlayerStats = {
    * Multiple terrains can hold cards at the same time.
    */
   jaktkort: JaktkortBook;
+  /**
+   * Next bookable hunt calendar day (ISO yyyy-mm-dd).
+   * Advances after each completed hunt / overnight.
+   */
+  nextHuntDate: string;
   /** Handshake grounds unlocked at Rulles (terrain ids). */
   unlockedTerrainIds: string[];
   /**
@@ -1262,6 +1268,7 @@ export function createInitialStats(): PlayerStats {
     customsMods: { ...EMPTY_CUSTOMS_MODS },
     selectedHuntingTerrainId: null,
     jaktkort: emptyJaktkortBook(),
+    nextHuntDate: defaultNextHuntDateIso(),
     unlockedTerrainIds: [],
     autoSupplyFood: false,
     favoriteKitIds: [],

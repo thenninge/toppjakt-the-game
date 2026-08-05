@@ -15,6 +15,8 @@ export type ActiveJaktkort = {
   /** Hunting days left (including the current outing until end/overnight). */
   daysRemaining: number;
   paidNok: number;
+  /** Booked calendar day for the next outing (ISO yyyy-mm-dd). */
+  bookedDate?: string;
 };
 
 /** Active cards keyed by terrain id. */
@@ -63,12 +65,14 @@ export function createJaktkort(
   terrainId: string,
   kind: JaktkortKind,
   pricePerDayNok: number,
+  bookedDate?: string,
 ): ActiveJaktkort {
   return {
     terrainId,
     kind,
     daysRemaining: jaktkortDaysForKind(kind),
     paidNok: jaktkortPriceNok(pricePerDayNok, kind),
+    ...(bookedDate ? { bookedDate } : {}),
   };
 }
 
@@ -180,7 +184,15 @@ export function normalizeJaktkort(raw: unknown): ActiveJaktkort | null {
     typeof o.paidNok === "number" && Number.isFinite(o.paidNok)
       ? Math.max(0, Math.floor(o.paidNok))
       : 0;
-  return { terrainId: o.terrainId, kind, daysRemaining, paidNok };
+  const bookedDate =
+    typeof o.bookedDate === "string" && o.bookedDate ? o.bookedDate : undefined;
+  return {
+    terrainId: o.terrainId,
+    kind,
+    daysRemaining,
+    paidNok,
+    ...(bookedDate ? { bookedDate } : {}),
+  };
 }
 
 /**

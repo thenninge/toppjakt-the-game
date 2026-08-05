@@ -669,6 +669,14 @@ export function HuntMapView({
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
   const tiurSpawnCount = terrain ? tiurSpawnCountForTerrain(terrain) : 20;
+  const huntBias = weather.huntBias;
+  const spawnOpts = {
+    tiurRating: terrain?.tiurRating,
+    orrhaneRating: terrain?.orrhaneRating,
+    tiurWeightMult: huntBias?.tiurWeightMult,
+    orrhaneWeightMult: huntBias?.orrhaneWeightMult,
+    countMult: huntBias?.birdCountMult,
+  };
 
   const [pos, setPos] = useState<HuntGridCell>(() =>
     map ? { ...map.start } : { row: 0, col: 0 },
@@ -836,10 +844,7 @@ export function HuntMapView({
   } | null>(null);
   const [birds, setBirds] = useState<HuntBird[]>(() =>
     map
-      ? spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
-          tiurRating: terrain?.tiurRating,
-          orrhaneRating: terrain?.orrhaneRating,
-        })
+      ? spawnTiurOnMap(map, tiurSpawnCount, Math.random, spawnOpts)
       : [],
   );
   const birdsRef = useRef(birds);
@@ -1371,15 +1376,21 @@ export function HuntMapView({
     setLostCatchReveal(false);
     midnightHandledRef.current = false;
     setBirds(
-      spawnTiurOnMap(map, tiurSpawnCount, Math.random, {
-        tiurRating: terrain?.tiurRating,
-        orrhaneRating: terrain?.orrhaneRating,
-      }),
+      spawnTiurOnMap(map, tiurSpawnCount, Math.random, spawnOpts),
     );
     setFlushQueue([]);
     pendingForcedRestRef.current = false;
     setLog("Du er på parkeringsplassen. Klokka er 08:00 — skuddlys.");
-  }, [terrainId, map, tiurSpawnCount, terrain?.tiurRating, terrain?.orrhaneRating]);
+  }, [
+    terrainId,
+    map,
+    tiurSpawnCount,
+    terrain?.tiurRating,
+    terrain?.orrhaneRating,
+    huntBias?.tiurWeightMult,
+    huntBias?.orrhaneWeightMult,
+    huntBias?.birdCountMult,
+  ]);
 
   const onAwareHuntChangeRef = useRef(onAwareHuntChange);
   onAwareHuntChangeRef.current = onAwareHuntChange;
@@ -2117,10 +2128,9 @@ export function HuntMapView({
     }
 
     setLog(walkLog);
-    const prespotChance = prespotChanceForPace(
-      walkSession.paceId,
-      clothingFocusPct,
-    );
+    const prespotChance =
+      prespotChanceForPace(walkSession.paceId, clothingFocusPct) *
+      (huntBias?.spottingMult ?? 1);
     if (
       !nowDark &&
       prespotChance > 0 &&

@@ -17,6 +17,13 @@ import {
 } from "@/lib/hunt/jaktkort";
 import type { HuntReadyResult } from "@/lib/hunt/readiness";
 import {
+  formatHuntDateNb,
+  isBookableHuntDate,
+  parseIsoDate,
+  seasonOpenForHunting,
+} from "@/lib/hunt/calendar";
+import { YrNoForecastPanel } from "@/components/town/YrNoForecastPanel";
+import {
   formatBirdRating,
   getHuntingTerrain,
   terrainsAvailableForPlayer,
@@ -28,12 +35,17 @@ type InaturNoProps = {
   balance: number;
   selectedTerrainId: string | null;
   jaktkort: JaktkortBook;
+  nextHuntDate: string;
   unlockedTerrainIds: string[];
   /** VIP name package (ivar / tomas / nissik / jørn / einar / konrad / stahl / dyre / mona / hoftun). */
   isVip?: boolean;
   /** Admin PIN session — same VIP Inatur listings. */
   isAdmin?: boolean;
-  onPurchaseJaktkort: (terrainId: string, kind: JaktkortKind) => void;
+  onPurchaseJaktkort: (
+    terrainId: string,
+    kind: JaktkortKind,
+    bookedDate: string,
+  ) => void;
   /** Start hunt for a terrain that already has an active jaktkort. */
   onStartHunt?: (terrainId: string) => void;
   /** Same readiness as Home «Dra på jakt», evaluated per terrain. */
@@ -60,6 +72,7 @@ export function InaturNo({
   balance,
   selectedTerrainId,
   jaktkort,
+  nextHuntDate,
   unlockedTerrainIds,
   isVip = false,
   isAdmin = false,
@@ -72,6 +85,10 @@ export function InaturNo({
   const [previewTerrain, setPreviewTerrain] = useState<HuntingTerrain | null>(
     null,
   );
+  const [yrTerrain, setYrTerrain] = useState<HuntingTerrain | null>(null);
+  const [bookedDates, setBookedDates] = useState<Record<string, string>>({});
+  const seasonOpen = seasonOpenForHunting(nextHuntDate);
+  const defaultBookDate = nextHuntDate;
   const listings = useMemo(
     () =>
       terrainsAvailableForPlayer(unlockedTerrainIds, {
@@ -95,7 +112,20 @@ export function InaturNo({
     return () => window.removeEventListener("keydown", onKey);
   }, [previewTerrain]);
 
+  function bookedDateFor(terrainId: string): string {
+    return bookedDates[terrainId] ?? defaultBookDate;
+  }
+
   function handleBuyPermit(terrain: HuntingTerrain, kind: JaktkortKind) {
+    if (!seasonOpen) {
+      setMessage("Jaktsesongen er over (10. sep – 23. des).");
+      return;
+    }
+    const bookedDate = bookedDateFor(terrain.id);
+    if (!isBookableHuntDate(bookedDate, nextHuntDate)) {
+      setMessage("Velg en gyldig jaktdag i yr.no-varselet (7 dager frem).");
+      return;
+    }
     const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
     const existing = getJaktkortForTerrain(jaktkort, terrain.id);
     const sameActive =
@@ -119,6 +149,7 @@ export function InaturNo({
   function confirmPurchase() {
     if (!pendingPurchase) return;
     const { terrain, kind } = pendingPurchase;
+    const bookedDate = bookedDateFor(terrain.id);
     const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
     if (balance < price) {
       setMessage(
@@ -127,10 +158,18 @@ export function InaturNo({
       setPendingPurchase(null);
       return;
     }
-    onPurchaseJaktkort(terrain.id, kind);
-    const kort = createJaktkort(terrain.id, kind, terrain.pricePerDayNok);
+    onPurchaseJaktkort(terrain.id, kind, bookedDate);
+    const kort = createJaktkort(
+      terrain.id,
+      kind,
+      terrain.pricePerDayNok,
+      bookedDate,
+    );
+    const bookedLabel = parseIsoDate(bookedDate)
+      ? formatHuntDateNb(parseIsoDate(bookedDate)!, { weekday: true })
+      : bookedDate;
     setMessage(
-      `Kjøpt ${jaktkortLabelNb(kind)}: ${terrain.name} (${formatNok(price)} · ${kort.daysRemaining} jaktdag${kort.daysRemaining === 1 ? "" : "er"}).`,
+      `Kjøpt ${jaktkortLabelNb(kind)}: ${terrain.name} for ${bookedLabel} (${formatNok(price)} · ${kort.daysRemaining} jaktdag${kort.daysRemaining === 1 ? "" : "er"}).`,
     );
     setPendingPurchase(null);
   }
@@ -164,6 +203,12 @@ export function InaturNo({
           <p className="intro-line intro-gift">inatur.no — betaling</p>
           <p className="intro-line">
             {jaktkortLabelNb(kind)}: {terrain.name} ({terrain.region})
+          </p>
+          <p className="intro-line">
+            Jaktdag:{" "}
+            {formatHuntDateNb(parseIsoDate(bookedDateFor(terrain.id))!, {
+              weekday: true,
+            })}
           </p>
           <p className="intro-line">
             Kontoen din blir trukket med {amount},-.
@@ -214,6 +259,13 @@ export function InaturNo({
           Lei jaktterreng digitalt. Dagskort gjelder én tur (avslutt jakt eller
           overnatting ute). Uke- og sesongkort tærer én jaktdag per overnatting.
           Du kan ha aktive kort i flere terreng samtidig.
+        </p>
+        <p className="shop-row-note">
+          Jaktsesong 10. sep – 23. des. Neste jaktdag:{" "}
+          {parseIsoDate(nextHuntDate)
+            ? formatHuntDateNb(parseIsoDate(nextHuntDate)!, { weekday: true })
+            : nextHuntDate}
+          {!seasonOpen ? " · sesongen er over" : ""}
         </p>
         {isVip || isAdmin ? (
           <p className="shop-row-note">
@@ -287,9 +339,22 @@ export function InaturNo({
                 {kortHere ? (
                   <span className="shop-row-note">
                     Aktivt: {formatJaktkortStatusNb(kortHere)}
+                    {kortHere.bookedDate
+                      ? ` · ${formatHuntDateNb(
+                          parseIsoDate(kortHere.bookedDate)!,
+                        )}`
+                      : ""}
                   </span>
                 ) : null}
                 <div className="inatur-kort-options">
+                  <button
+                    type="button"
+                    className="intro-button shop-buy yr-no-btn"
+                    onClick={() => setYrTerrain(terrain)}
+                    title="7-dagers værvarsel fra yr.no"
+                  >
+                    yr.no
+                  </button>
                   {JAKTKORT_KINDS.map((kind) => {
                     const price = jaktkortPriceNok(terrain.pricePerDayNok, kind);
                     const canAfford = balance >= price;
@@ -387,6 +452,18 @@ export function InaturNo({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {yrTerrain ? (
+        <YrNoForecastPanel
+          terrain={yrTerrain}
+          nextHuntDate={nextHuntDate}
+          selectedDate={bookedDateFor(yrTerrain.id)}
+          onSelectDate={(iso) =>
+            setBookedDates((prev) => ({ ...prev, [yrTerrain.id]: iso }))
+          }
+          onClose={() => setYrTerrain(null)}
+        />
       ) : null}
     </div>
   );
