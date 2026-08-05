@@ -95,8 +95,8 @@ export function YrNoForecastPanel({
           {formatHuntDateNb(parseIsoDate(nextHuntDate) ?? start, {
             weekday: true,
           })}
-          . Velg dag for jaktkort — været påvirker tiur/orr-sjanse og vind
-          reduserer spotting.
+          . Trykk <strong>Velg</strong> til høyre for dagen du vil jakte — været
+          påvirker tiur/orr-sjanse, og vind reduserer spotting.
         </p>
 
         <ul className="yr-forecast-list">
@@ -111,26 +111,45 @@ export function YrNoForecastPanel({
                   selected ? "yr-forecast-day is-selected" : "yr-forecast-day"
                 }
               >
-                <button
-                  type="button"
-                  className="yr-forecast-day-btn"
-                  onClick={() => {
-                    onSelectDate(day.isoDate);
-                    setExpanded(day.isoDate);
-                  }}
-                >
-                  <span className="yr-forecast-day-label">
-                    {formatForecastRowLabel(day)}
-                  </span>
-                  <span className="yr-forecast-temp">{tempLabel(day.temperatureC)}</span>
-                  <span className="yr-forecast-wind">
-                    {formatForecastWindNb(day)}
-                  </span>
-                  <span className="yr-forecast-sky">{formatCloudNb(day)}</span>
-                  <span className="yr-forecast-precip">
-                    {formatPrecipNb(day.precip)}
-                  </span>
-                </button>
+                <div className="yr-forecast-day-row">
+                  <button
+                    type="button"
+                    className="yr-forecast-day-btn"
+                    onClick={() =>
+                      setExpanded(open ? "" : day.isoDate)
+                    }
+                    title="Vis jakttips for dagen"
+                  >
+                    <span className="yr-forecast-day-label">
+                      {formatForecastRowLabel(day)}
+                    </span>
+                    <span className="yr-forecast-temp">
+                      {tempLabel(day.temperatureC)}
+                    </span>
+                    <span className="yr-forecast-wind">
+                      {formatForecastWindNb(day)}
+                    </span>
+                    <span className="yr-forecast-sky">{formatCloudNb(day)}</span>
+                    <span className="yr-forecast-precip">
+                      {formatPrecipNb(day.precip)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      selected
+                        ? "intro-button shop-buy kit-equipped yr-forecast-pick"
+                        : "intro-button shop-buy yr-forecast-pick"
+                    }
+                    onClick={() => {
+                      onSelectDate(day.isoDate);
+                      setExpanded(day.isoDate);
+                    }}
+                    title={`Jakt ${formatHuntDateNb(day.date)}`}
+                  >
+                    {selected ? "Valgt" : "Velg"}
+                  </button>
+                </div>
                 {open && hints.length > 0 ? (
                   <ul className="yr-forecast-hints">
                     {hints.map((h) => (
