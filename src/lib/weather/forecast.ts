@@ -256,6 +256,7 @@ export function createDayWeatherForHunt(
     missionMinutes: 0,
     huntDateIso: isoDate,
     huntBias: bias,
+    hourly: generateHuntDayHourly(terrainId, isoDate),
   };
 }
 
@@ -265,12 +266,21 @@ export function formatPrecipNb(precip: PrecipKind): string {
   return "Opphold";
 }
 
-export function formatCloudNb(day: HuntWeatherDay): string {
+export function formatCloudNb(day: {
+  foggy: boolean;
+  cloudCoverPct: number;
+  sunny: boolean;
+  precip?: PrecipKind;
+}): string {
   if (day.foggy) return "Tåke";
   if (day.cloudCoverPct >= 75) return "Overskyet";
   if (day.cloudCoverPct >= 45) return "Delvis skyet";
   if (day.sunny) return "Klarvær · Sol";
-  if (day.cloudCoverPct < 45 && day.precip === "none" && !day.foggy) {
+  if (
+    day.cloudCoverPct < 45 &&
+    (day.precip ?? "none") === "none" &&
+    !day.foggy
+  ) {
     return "Klarvær";
   }
   return "Lettskyet";
@@ -284,7 +294,178 @@ export function formatForecastWindNb(day: HuntWeatherDay): string {
   return `${formatWindSpeed(day.windSpeedMs)} ${formatWindCompass(day.windFromDeg)}`;
 }
 
-/** Fallback when no terrain/date — keeps old random day behaviour. */
-export function createFallbackDayWeather(): DayWeather {
-  return createDayWeather();
+export type HuntHourlySlot = {
+  /** Hour of day 8–18 inclusive. */
+  hour: number;
+  temperatureC: number;
+  windSpeedMs: number;
+  windFromDeg: number;
+  cloudCoverPct: number;
+  foggy: boolean;
+  precip: PrecipKind;
+  sunny: boolean;
+};
+
+/**
+ * Wind spotting multiplier — calm ≈ 1, 3 m/s ~0.74, 5 m/s ~0.58.
+ * Used for time-of-day bird spotting (prespot / study-map hint).
+ */
+export function spottingMultFromWindMs(windSpeedMs: number): number {
+  const w = Math.max(0, windSpeedMs);
+  if (w < 3) return 1;
+  if (w >= 4.5) return 0.58;
+  return 0.74;
+}
+
+/** Cloud / fog / snow / sun modifiers on spotting (species-agnostic visibility). */
+export function spottingMultFromSky(opts: {
+  cloudCoverPct: number;
+  foggy: boolean;
+  precip: PrecipKind;
+  sunny: boolean;
+}): number {
+  let m = 1;
+  if (opts.foggy) m *= 0.85;
+  if (opts.precip === "snow") m *= 0.9;
+  if (opts.precip === "rain") m *= 0.92;
+  if (opts.sunny) m *= 1.05;
+  return m;
+}
+
+/**
+ * Hourly timeline 08:00–18:00 for a hunt day.
+ * Wind/temp evolve through the day (deterministic from terrain + date).
+ */
+export function generateHuntDayHourly(
+  terrainId: string,
+  isoDate: string,
+): HuntHourlySlot[] {
+  const morning = getHuntWeatherDay(terrainId, isoDate);
+  if (!morning) return [];
+  const random = seededRandom(`${terrainId}::hourly::${isoDate}`);
+
+  // Afternoon wind path: calm day stays calm, or builds / fades.
+  const pathRoll = random();
+  const afternoonPeak =
+    pathRoll < 0.55
+      ? morning.windSpeedMs * (0.7 + random() * 0.4)
+      : pathRoll < 0.85
+        ? clamp(
+            morning.windSpeedMs + 1.2 + random() * 2.5,
+            0,
+            MAX_WIND_SPEED_MS,
+          )
+        : clamp(morning.windSpeedMs * (0.35 + random() * 0.3), 0, 2);
+
+  const eveningWind = clamp(
+    afternoonPeak * (0.55 + random() * 0.5) + (random() * 0.6 - 0.3),
+    0,
+    MAX_WIND_SPEED_MS,
+  );
+
+  const dirDrift = (random() * 2 - 1) * 40;
+  const slots: HuntHourlySlot[] = [];
+
+  for (let hour = 8; hour <= 18; hour++) {
+    const t = (hour - 8) / 10; // 0 at 08, 1 at 18
+    // Piecewise wind: morning → peak ~14 → evening
+    let wind: number;
+    if (t <= 0.6) {
+      const u = t / 0.6;
+      wind = morning.windSpeedMs + (afternoonPeak - morning.windSpeedMs) * u;
+    } else {
+      const u = (t - 0.6) / 0.4;
+      wind = afternoonPeak + (eveningWind - afternoonPeak) * u;
+    }
+    wind = round1(clamp(wind + (random() * 0.4 - 0.2), 0, MAX_WIND_SPEED_MS));
+
+    // Temp: cool morning, slight midday bump, colder late.
+    const tempBump = Math.sin(Math.PI * Math.min(1, t * 1.15)) * 3.5;
+    const temperatureC = round1(
+      clamp(morning.temperatureC + tempBump - t * 1.5, -22, 18),
+    );
+
+    const cloudCoverPct = Math.round(
+      clamp(
+        morning.cloudCoverPct + (random() * 24 - 12) + (t > 0.5 ? 5 : 0),
+        5,
+        100,
+      ),
+    );
+    const foggy =
+      morning.foggy && hour <= 11
+        ? true
+        : cloudCoverPct >= 55
+          ? random() < 0.12
+          : false;
+
+    let precip: PrecipKind = "none";
+    if (random() < (cloudCoverPct >= 65 ? 0.28 : 0.1)) {
+      precip = temperatureC <= 0 ? "snow" : "rain";
+    } else if (morning.precip !== "none" && hour <= 12 && random() < 0.45) {
+      precip = temperatureC <= 0 ? "snow" : morning.precip;
+    }
+
+    const sunny =
+      precip === "none" && !foggy && cloudCoverPct < 35;
+
+    slots.push({
+      hour,
+      temperatureC,
+      windSpeedMs: wind,
+      windFromDeg: Math.round(
+        ((morning.windFromDeg + dirDrift * t) % 360 + 360) % 360,
+      ),
+      cloudCoverPct,
+      foggy,
+      precip,
+      sunny,
+    });
+  }
+  return slots;
+}
+
+export function sampleHourlyAtClockMinutes(
+  slots: readonly HuntHourlySlot[],
+  clockMinutes: number,
+): HuntHourlySlot | null {
+  if (slots.length === 0) return null;
+  const hour = Math.floor(clockMinutes / 60);
+  const frac = (clockMinutes % 60) / 60;
+  const a =
+    slots.find((s) => s.hour === hour) ??
+    slots.reduce((best, s) =>
+      Math.abs(s.hour - hour) < Math.abs(best.hour - hour) ? s : best,
+    );
+  const b = slots.find((s) => s.hour === hour + 1) ?? a;
+  if (a === b) return a;
+  const lerp = (x: number, y: number) => round1(x + (y - x) * frac);
+  return {
+    hour: a.hour,
+    temperatureC: lerp(a.temperatureC, b.temperatureC),
+    windSpeedMs: lerp(a.windSpeedMs, b.windSpeedMs),
+    windFromDeg: a.windFromDeg,
+    cloudCoverPct: Math.round(
+      a.cloudCoverPct + (b.cloudCoverPct - a.cloudCoverPct) * frac,
+    ),
+    foggy: frac < 0.5 ? a.foggy : b.foggy,
+    precip: frac < 0.5 ? a.precip : b.precip,
+    sunny: frac < 0.5 ? a.sunny : b.sunny,
+  };
+}
+
+export function spottingMultAtHour(slot: HuntHourlySlot): number {
+  return (
+    spottingMultFromWindMs(slot.windSpeedMs) *
+    spottingMultFromSky({
+      cloudCoverPct: slot.cloudCoverPct,
+      foggy: slot.foggy,
+      precip: slot.precip,
+      sunny: slot.sunny,
+    })
+  );
+}
+
+export function formatHourLabel(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`;
 }

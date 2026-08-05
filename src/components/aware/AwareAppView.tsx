@@ -2721,59 +2721,59 @@ export function AwareAppView({
                 type="button"
                 className={
                   gunDeployed
-                    ? "intro-button sheriff-secondary is-active"
-                    : "intro-button sheriff-secondary"
+                    ? "intro-button sheriff-secondary is-active aware-action-btn"
+                    : "intro-button sheriff-secondary aware-action-btn"
                 }
                 disabled={gunDeployed}
                 onClick={deployGun}
                 title={
                   gunPrepOnly
                     ? "Ta rifla frem for tårn-prep"
-                    : `Deploy gun — backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → 0 %, 1 QR → +10 %)`
+                    : `Deploy gun from backpack — backpack QR: +${Math.round(gunDeployNerve * 100)}% bird nerve (10 QR → 0 %, 1 QR → +10 %)`
                 }
               >
-                {gunDeployed ? "Deployed" : "Deploy"}
+                <span className="aware-btn-title">
+                  {gunDeployed ? "Deployed" : "Deploy gun from backpack"}
+                </span>
+                <span className="aware-btn-fx">
+                  {gunDeployed
+                    ? "(klar)"
+                    : zenMode
+                      ? "(Zen · 0% nerve)"
+                      : `(+${Math.round(gunDeployNerve * 100)}% nerve)`}
+                </span>
               </button>
-              {gunDeployed ? (
-                <button
-                  type="button"
-                  className="intro-button sheriff-secondary"
-                  onClick={mountGun}
-                  title="Sett rifla tilbake i sekken. Uspottede fugler i feltet +30% bird nerve."
-                >
-                  Mount
-                </button>
-              ) : null}
               {hasBackpack ? (
                 <button
                   type="button"
                   className={
                     rest === "backpack"
-                      ? "intro-button sheriff-secondary is-active"
-                      : "intro-button sheriff-secondary"
+                      ? "intro-button sheriff-secondary is-active aware-action-btn"
+                      : "intro-button sheriff-secondary aware-action-btn"
                   }
                   aria-pressed={rest === "backpack"}
                   disabled={!gunDeployed}
                   onClick={() => applyRestChoice("backpack")}
                   title={
                     gunDeployed
-                      ? rest === "backpack"
-                        ? bagriderOn
-                          ? "Sekk-anlegg + bagrider aktiv"
-                          : "Sekk-anlegg aktiv — dobbelt calm vs beste bipod (+25% bird nerve)"
-                        : rest === "bipod"
-                          ? `Bytt til sekk (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`
-                          : `Bruk sekk som anlegg (+${Math.round(BAG_REST_NERVE * 100)}% nervøsitet)`
+                      ? `Use backpack as rest (+${Math.round(BAG_REST_NERVE * 100)}% nerve, max calm)`
                       : "Deploy gun først"
                   }
                 >
-                  {rest === "backpack"
-                    ? bagriderOn
-                      ? "Sekk + bag"
-                      : "Sekk på"
-                    : rest === "bipod"
-                      ? "→ Sekk"
-                      : "Sekk"}
+                  <span className="aware-btn-title">
+                    {rest === "backpack"
+                      ? bagriderOn
+                        ? "Backpack rest + bagrider"
+                        : "Backpack rest (on)"
+                      : "Use backpack as rest"}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {!gunDeployed
+                      ? "(deploy first)"
+                      : zenMode
+                        ? "(Zen · 0% nerve, max calm)"
+                        : `(+${Math.round(BAG_REST_NERVE * 100)}% nerve, max calm)`}
+                  </span>
                 </button>
               ) : null}
               {hasBipod ? (
@@ -2781,31 +2781,32 @@ export function AwareAppView({
                   type="button"
                   className={
                     rest === "bipod"
-                      ? "intro-button sheriff-secondary is-active"
-                      : "intro-button sheriff-secondary"
+                      ? "intro-button sheriff-secondary is-active aware-action-btn"
+                      : "intro-button sheriff-secondary aware-action-btn"
                   }
                   aria-pressed={rest === "bipod"}
                   disabled={!gunDeployed}
                   onClick={() => applyRestChoice("bipod")}
                   title={
                     gunDeployed
-                      ? rest === "bipod"
-                        ? bagriderOn
-                          ? "Bipod + bagrider aktiv"
-                          : "Bipod deployet — calm fra tofot"
-                        : rest === "backpack"
-                          ? `Bytt til bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`
-                          : `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nervøsitet)`
+                      ? `Deploy bipod (+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nerve, +${Math.round(bipodWeaponCalm * 2.5)}% calm)`
                       : "Deploy gun først"
                   }
                 >
-                  {rest === "bipod"
-                    ? bagriderOn
-                      ? "Bipod + bag"
-                      : "Bipod på"
-                    : rest === "backpack"
-                      ? "→ Bipod"
-                      : "Bipod"}
+                  <span className="aware-btn-title">
+                    {rest === "bipod"
+                      ? bagriderOn
+                        ? "Bipod + bagrider (on)"
+                        : "Bipod (on)"
+                      : "Deploy bipod"}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {!gunDeployed
+                      ? "(deploy first)"
+                      : zenMode
+                        ? `(Zen · 0% nerve, +${Math.round(bipodWeaponCalm * 2.5)}% calm)`
+                        : `(+${Math.round(bipodDeployNerve(bipodWeaponCalm) * 100)}% nerve, +${Math.round(bipodWeaponCalm * 2.5)}% calm)`}
+                  </span>
                 </button>
               ) : null}
               {hasBagrider && (hasBackpack || hasBipod) ? (
@@ -2813,8 +2814,8 @@ export function AwareAppView({
                   type="button"
                   className={
                     bagriderOn
-                      ? "intro-button sheriff-secondary is-active"
-                      : "intro-button sheriff-secondary"
+                      ? "intro-button sheriff-secondary is-active aware-action-btn"
+                      : "intro-button sheriff-secondary aware-action-btn"
                   }
                   aria-pressed={bagriderOn}
                   disabled={
@@ -2826,80 +2827,136 @@ export function AwareAppView({
                       ? "Deploy gun først"
                       : rest !== "backpack" && rest !== "bipod"
                         ? "Aktiver sekk eller bipod først — bagrider brukes sammen med anlegg"
-                        : `+${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm oppå ${rest === "backpack" ? "sekk" : "bipod"} — +${Math.round(BAGRIDER_REST_NERVE * 100)}% bird nerve`
+                        : `Adjust bagrider (+${Math.round(BAGRIDER_REST_NERVE * 100)}% nerve, +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm)`
                   }
                 >
-                  {bagriderOn ? "Bagrider på" : "Bagrider"}
+                  <span className="aware-btn-title">
+                    {bagriderOn ? "Bagrider (on)" : "Adjust bagrider"}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {!gunDeployed || (rest !== "backpack" && rest !== "bipod")
+                      ? "(needs rest first)"
+                      : zenMode
+                        ? `(Zen · 0% nerve, +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm)`
+                        : `(+${Math.round(BAGRIDER_REST_NERVE * 100)}% nerve, +${Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm)`}
+                  </span>
                 </button>
               ) : null}
               {hasBackpack || hasBipod || hasBagrider ? (
                 <p className="shop-row-note ui-hide-sm">
-                  Anlegg krever Deploy gun. Sekk = maks calm (+25% nerve). Bipod
-                  = tofot-calm (nerve 5–15% etter kvalitet). Bagrider = +
+                  Anlegg krever Deploy. Sekk = maks calm. Bipod = tofot-calm
+                  (nerve 5–15% etter kvalitet). Bagrider = +
                   {Math.round((BAGRIDER_REST_CALM_MULT - 1) * 100)}% calm{" "}
-                  <em>sammen med</em> sekk eller bipod (+10% nerve) — ikke et
-                  eget bytte. Bytt sekk↔bipod = full nerve-kost på nytt
-                  (faffing). Uten valg: ingen bipod/sekk-calm i skuddet.
+                  <em>sammen med</em> sekk eller bipod — ikke et eget bytte.
                 </p>
               ) : null}
               {hasKestrel ? (
                 <button
                   type="button"
-                  className="intro-button sheriff-secondary"
+                  className="intro-button sheriff-secondary aware-action-btn"
                   disabled={kestrelEnviroReady}
                   onClick={measureKestrelEnviro}
                   title={
                     kestrelEnviroReady
                       ? "Kestrel enviro målt"
-                      : "Mål enviro med Kestrel (+5% nervøsitet)"
+                      : `Kestrel (+${Math.round(KESTREL_MEASURE_NERVE * 100)}% nerve)`
                   }
                 >
-                  {kestrelEnviroReady ? "Kestrel OK" : "Kestrel"}
+                  <span className="aware-btn-title">
+                    {kestrelEnviroReady ? "Kestrel OK" : "Kestrel"}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {kestrelEnviroReady
+                      ? "(klar)"
+                      : zenMode
+                        ? "(Zen · 0% nerve)"
+                        : `(+${Math.round(KESTREL_MEASURE_NERVE * 100)}% nerve)`}
+                  </span>
                 </button>
               ) : null}
               {hasTriggercam ? (
                 <button
                   type="button"
-                  className="intro-button sheriff-secondary"
+                  className="intro-button sheriff-secondary aware-action-btn"
                   disabled={triggercamReady}
                   onClick={startTriggercam}
                   title={
                     triggercamReady
                       ? `${shotCamName} aktiv`
-                      : `Start ${shotCamName} (+${shotCamNervePct}% nervøsitet)`
+                      : `${shotCamName} (+${shotCamNervePct}% nerve)`
                   }
                 >
-                  {triggercamReady ? `${shotCamName} på` : shotCamName}
+                  <span className="aware-btn-title">
+                    {triggercamReady ? `${shotCamName} på` : shotCamName}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {triggercamReady
+                      ? "(klar)"
+                      : zenMode
+                        ? "(Zen · 0% nerve)"
+                        : `(+${shotCamNervePct}% nerve)`}
+                  </span>
                 </button>
               ) : null}
               {hasCamcorder ? (
                 <button
                   type="button"
-                  className="intro-button sheriff-secondary"
+                  className="intro-button sheriff-secondary aware-action-btn"
                   disabled={camcorderReady}
                   onClick={deployCamcorder}
                   title={
                     camcorderReady
                       ? "Camcorder klar"
-                      : `Sett opp camcorder (+${Math.round(camcorderSetupNerve * 100)}% nervøsitet)`
+                      : `Camcorder (+${Math.round(camcorderSetupNerve * 100)}% nerve)`
                   }
                 >
-                  {camcorderReady ? "Cam klar" : "Camcorder"}
+                  <span className="aware-btn-title">
+                    {camcorderReady ? "Cam klar" : "Camcorder"}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {camcorderReady
+                      ? "(klar)"
+                      : zenMode
+                        ? "(Zen · 0% nerve)"
+                        : `(+${Math.round(camcorderSetupNerve * 100)}% nerve)`}
+                  </span>
                 </button>
               ) : null}
               {hasChronograph ? (
                 <button
                   type="button"
-                  className="intro-button sheriff-secondary"
+                  className="intro-button sheriff-secondary aware-action-btn"
                   disabled={chronoReady}
                   onClick={deployChrono}
                   title={
                     chronoReady
                       ? "Chrono klar"
-                      : "Sett opp Chrono (+5% nervøsitet)"
+                      : `Chrono (+${Math.round(CHRONO_SETUP_NERVE * 100)}% nerve)`
                   }
                 >
-                  {chronoReady ? "Chrono OK" : "Chrono"}
+                  <span className="aware-btn-title">
+                    {chronoReady ? "Chrono OK" : "Chrono"}
+                  </span>
+                  <span className="aware-btn-fx">
+                    {chronoReady
+                      ? "(klar)"
+                      : zenMode
+                        ? "(Zen · 0% nerve)"
+                        : `(+${Math.round(CHRONO_SETUP_NERVE * 100)}% nerve)`}
+                  </span>
+                </button>
+              ) : null}
+              {gunDeployed ? (
+                <button
+                  type="button"
+                  className="intro-button sheriff-secondary aware-action-btn aware-remount-btn"
+                  onClick={mountGun}
+                  title="Remount gun — sett rifla tilbake i sekken. Uspottede fugler i feltet +30% bird nerve."
+                >
+                  <span className="aware-btn-title">Remount gun</span>
+                  <span className="aware-btn-fx">
+                    (pack rifle · unspotted +30% nerve)
+                  </span>
                 </button>
               ) : null}
               <p className="shop-row-note ui-hide-sm">
@@ -2907,7 +2964,7 @@ export function AwareAppView({
                 retning/bredde · skuddlinje følger).
                 Hold piltaster for å gå. Grønn linje = klar sektor; rød = fare.
                 {gunDeployed
-                  ? " Gun deployed — Mount gun for å legge den i sekken."
+                  ? " Gun deployed — Remount gun for å legge den i sekken."
                   : " Deploy gun før tårn / skudd / anlegg."}
                 {hasKestrel
                   ? kestrelEnviroReady

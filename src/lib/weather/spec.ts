@@ -57,7 +57,21 @@ export type DayWeather = {
   huntDateIso?: string;
   /** Species / spotting bias from yr.no forecast rules. */
   huntBias?: HuntWeatherBias;
+  /** Hourly 08–18 timeline for map Weather panel + time-of-day spotting. */
+  hourly?: HuntHourlyTimeline;
 };
+
+/** One hour slot — kept structural here; filled by forecast.ts. */
+export type HuntHourlyTimeline = Array<{
+  hour: number;
+  temperatureC: number;
+  windSpeedMs: number;
+  windFromDeg: number;
+  cloudCoverPct: number;
+  foggy: boolean;
+  precip: "none" | "rain" | "snow";
+  sunny: boolean;
+}>;
 
 /** Typical forecast error vs eventual morning truth (before daytime drift). */
 export const FORECAST_WIND_SPEED_ERROR_PERCENT = 18;

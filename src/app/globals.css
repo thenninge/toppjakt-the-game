@@ -5040,6 +5040,24 @@ body {
   align-items: start;
 }
 
+/** Study map / Weather: full-width panel under the map (not cramped sidebar). */
+.hunt-map-layout-below {
+  grid-template-columns: 1fr;
+}
+
+.hunt-map-layout-below .hunt-side-panel {
+  max-height: none;
+  width: 100%;
+}
+
+.hunt-map-layout-below .hunt-weather-hours {
+  max-height: min(42vh, 22rem);
+}
+
+.hunt-map-layout-below .hunt-pace-fieldset {
+  max-width: 28rem;
+}
+
 .hunt-map-main {
   display: flex;
   flex-direction: column;
@@ -5109,6 +5127,57 @@ body {
 
 .hunt-side-actions-stack {
   flex-direction: column;
+}
+
+.hunt-weather-hours {
+  list-style: none;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: min(52vh, 28rem);
+  overflow: auto;
+}
+
+.hunt-weather-hour {
+  display: grid;
+  grid-template-columns: 3rem 2.6rem 1fr 1fr 3.2rem 2.6rem;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.28rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: #b8c6d4;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hunt-weather-hour.is-now {
+  background: rgba(74, 159, 216, 0.18);
+  color: #e8f2fa;
+  outline: 1px solid rgba(74, 159, 216, 0.45);
+}
+
+.hunt-weather-hour-time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hunt-weather-hour-temp {
+  font-variant-numeric: tabular-nums;
+}
+
+.hunt-weather-hour-spot {
+  text-align: right;
+  color: #8fbf9a;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .hunt-weather-hour {
+    grid-template-columns: 2.8rem 2.4rem 1fr;
+    grid-template-rows: auto auto;
+  }
 }
 
 .hunt-pace-fieldset {
@@ -12937,6 +13006,43 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.aware-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  text-align: left;
+  line-height: 1.25;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.aware-btn-title {
+  font-weight: 600;
+}
+
+.aware-btn-fx {
+  font-size: 0.78em;
+  font-weight: 500;
+  opacity: 0.82;
+  color: #9eb8a8;
+  font-variant-numeric: tabular-nums;
+}
+
+.aware-remount-btn {
+  margin-top: 0.35rem;
+  border-style: dashed !important;
+  border-width: 1.5px !important;
+  border-color: #6a7a88 !important;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.aware-remount-btn:hover,
+.aware-remount-btn:focus-visible {
+  border-color: #9ab0c2 !important;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .aware-track-pick {

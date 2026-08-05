@@ -241,7 +241,22 @@ import {
   realismEttersokFindMult,
   realismNerveRateMult,
 } from "@/lib/range/realismGameplay";
-import { crosswindMs, fullValueWindageMs, type DayWeather } from "@/lib/weather/spec";
+import {
+  crosswindMs,
+  fullValueWindageMs,
+  formatWindCompass,
+  formatWindSpeed,
+  type DayWeather,
+} from "@/lib/weather/spec";
+import {
+  formatCloudNb,
+  formatHourLabel,
+  formatPrecipNb,
+  generateHuntDayHourly,
+  sampleHourlyAtClockMinutes,
+  spottingMultAtHour,
+  type HuntHourlySlot,
+} from "@/lib/weather/forecast";
 import {
   ENCOUNTER_NERVE,
   initialEncounterNerve,
@@ -364,7 +379,7 @@ type HuntMapViewProps = {
   isAdmin?: boolean;
 };
 
-type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study";
+type PanelMode = "idle" | "inspect" | "arrived" | "eat" | "study" | "weather";
 
 type WalkSession = {
   imageSrc: string;
@@ -643,7 +658,7 @@ export function HuntMapView({
   focusTriggerBarLength = DEFAULT_FOCUS_TRIGGER_BAR_LENGTH,
   zenMode = DEFAULT_ZEN_MODE,
   customsMods = EMPTY_CUSTOMS_MODS,
-  weather,
+  weather: dayWeatherProp,
   onAffinitiesChange,
   onConsumeAmmo,
   onEnsureZeroing,
@@ -669,14 +684,16 @@ export function HuntMapView({
   const terrain = getHuntingTerrain(terrainId);
   const map = terrain ? getHuntMap(terrain.mapId) : null;
   const tiurSpawnCount = terrain ? tiurSpawnCountForTerrain(terrain) : 20;
-  const huntBias = weather.huntBias;
-  const spawnOpts = {
-    tiurRating: terrain?.tiurRating,
-    orrhaneRating: terrain?.orrhaneRating,
-    tiurWeightMult: huntBias?.tiurWeightMult,
-    orrhaneWeightMult: huntBias?.orrhaneWeightMult,
-    countMult: huntBias?.birdCountMult,
-  };
+
+  const hourlySlots: HuntHourlySlot[] = useMemo(() => {
+    if (dayWeatherProp.hourly && dayWeatherProp.hourly.length > 0) {
+      return dayWeatherProp.hourly as HuntHourlySlot[];
+    }
+    if (dayWeatherProp.huntDateIso) {
+      return generateHuntDayHourly(terrainId, dayWeatherProp.huntDateIso);
+    }
+    return [];
+  }, [dayWeatherProp.hourly, dayWeatherProp.huntDateIso, terrainId]);
 
   const [pos, setPos] = useState<HuntGridCell>(() =>
     map ? { ...map.start } : { row: 0, col: 0 },
@@ -693,6 +710,37 @@ export function HuntMapView({
   );
   const clockSecondsRef = useRef(HUNT_DAY_START_MINUTES * 60);
   const [clockMinutes, setClockMinutes] = useState(HUNT_DAY_START_MINUTES);
+
+  const hourNow = useMemo(
+    () => sampleHourlyAtClockMinutes(hourlySlots, clockMinutes),
+    [hourlySlots, clockMinutes],
+  );
+
+  const weather: DayWeather = useMemo(() => {
+    if (!hourNow) return dayWeatherProp;
+    return {
+      ...dayWeatherProp,
+      live: {
+        temperatureC: hourNow.temperatureC,
+        windSpeedMs: hourNow.windSpeedMs,
+        windFromDeg: hourNow.windFromDeg,
+      },
+    };
+  }, [dayWeatherProp, hourNow]);
+
+  const huntBias = weather.huntBias;
+  const timeSpottingMult = hourNow
+    ? spottingMultAtHour(hourNow)
+    : (huntBias?.spottingMult ?? 1);
+
+  const spawnOpts = {
+    tiurRating: terrain?.tiurRating,
+    orrhaneRating: terrain?.orrhaneRating,
+    tiurWeightMult: huntBias?.tiurWeightMult,
+    orrhaneWeightMult: huntBias?.orrhaneWeightMult,
+    countMult: huntBias?.birdCountMult,
+  };
+
   const [distanceTravelledM, setDistanceTravelledM] = useState(0);
   const [mentalFatigue, setMentalFatigue] = useState(0);
   const [physicalFatigue, setPhysicalFatigue] = useState(0);
@@ -1498,6 +1546,12 @@ export function HuntMapView({
         setSelected(null);
         setPanel("study");
         setLog("Study map — klikk rundt på ruter. Go back avslutter.");
+        return;
+      }
+      if (k === "w") {
+        e.preventDefault();
+        setPanel("weather");
+        setLog("Weather — værmelding 08–18 for dagens jakt.");
       }
     }
     window.addEventListener("keydown", onKey);
@@ -2130,7 +2184,7 @@ export function HuntMapView({
     setLog(walkLog);
     const prespotChance =
       prespotChanceForPace(walkSession.paceId, clothingFocusPct) *
-      (huntBias?.spottingMult ?? 1);
+      timeSpottingMult;
     if (
       !nowDark &&
       prespotChance > 0 &&
@@ -5146,11 +5200,16 @@ export function HuntMapView({
     : null;
   const selectedBirdChance =
     selected && map && terrain
-      ? estimatedBirdChancePct(
-          map.id,
-          selected,
-          (terrain.tiurRating + terrain.orrhaneRating) / 2,
-          isAtParking(selected, map),
+      ? Math.max(
+          1,
+          Math.round(
+            estimatedBirdChancePct(
+              map.id,
+              selected,
+              (terrain.tiurRating + terrain.orrhaneRating) / 2,
+              isAtParking(selected, map),
+            ) * timeSpottingMult,
+          ),
         )
       : null;
   const selectedSeatCounts =
@@ -5824,7 +5883,13 @@ export function HuntMapView({
         </button>
       </header>
 
-      <div className="hunt-map-layout">
+      <div
+        className={
+          panel === "study" || panel === "weather"
+            ? "hunt-map-layout hunt-map-layout-below"
+            : "hunt-map-layout"
+        }
+      >
         <div className="hunt-map-main">
           <div
             className="hunt-map-stage"
@@ -6114,6 +6179,19 @@ export function HuntMapView({
                     >
                       Study map
                     </button>
+                    <button
+                      type="button"
+                      className="intro-button"
+                      onClick={() => {
+                        setPanel("weather");
+                        setLog(
+                          "Weather — detaljert værmelding 08–18. Vind påvirker sjanse for å se fugl.",
+                        );
+                      }}
+                      title="W"
+                    >
+                      Weather
+                    </button>
                   </div>
                   {unfinishedShotPairs.length > 0 ? (
                     <div className="hunt-side-actions hunt-side-actions-stack ui-compact-actions">
@@ -6272,6 +6350,72 @@ export function HuntMapView({
                   setSelected(null);
                   setPanel("arrived");
                 }}
+              >
+                Go back
+              </button>
+            </>
+          ) : null}
+
+          {panel === "weather" ? (
+            <>
+              <p className="intro-line intro-gift">Weather · 08–18</p>
+              <p className="shop-row-note">
+                Nå: {formatHuntClock(clockMinutes)}
+                {hourNow
+                  ? ` · ${hourNow.temperatureC.toFixed(0)}° · ${formatWindSpeed(hourNow.windSpeedMs)} ${formatWindCompass(hourNow.windFromDeg)} · ${formatCloudNb(hourNow)} · ${formatPrecipNb(hourNow.precip)}`
+                  : ""}
+                {timeSpottingMult < 0.95
+                  ? ` · fuglesjanse ×${timeSpottingMult.toFixed(2)} (vind/vær)`
+                  : ""}
+              </p>
+              {hourlySlots.length > 0 ? (
+                <ul className="hunt-weather-hours" aria-label="Værmelding 08–18">
+                  {hourlySlots.map((slot) => {
+                    const currentHour = Math.floor(clockMinutes / 60);
+                    const isNow = slot.hour === currentHour;
+                    return (
+                      <li
+                        key={slot.hour}
+                        className={
+                          isNow
+                            ? "hunt-weather-hour is-now"
+                            : "hunt-weather-hour"
+                        }
+                      >
+                        <span className="hunt-weather-hour-time">
+                          {formatHourLabel(slot.hour)}
+                        </span>
+                        <span className="hunt-weather-hour-temp">
+                          {slot.temperatureC > 0 ? "+" : ""}
+                          {slot.temperatureC.toFixed(0)}°
+                        </span>
+                        <span className="hunt-weather-hour-wind">
+                          {formatWindSpeed(slot.windSpeedMs)}{" "}
+                          {formatWindCompass(slot.windFromDeg)}
+                        </span>
+                        <span className="hunt-weather-hour-sky">
+                          {formatCloudNb(slot)}
+                        </span>
+                        <span className="hunt-weather-hour-precip">
+                          {formatPrecipNb(slot.precip)}
+                        </span>
+                        <span className="hunt-weather-hour-spot">
+                          ×{spottingMultAtHour(slot).toFixed(2)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="shop-row-note">
+                  Ingen timesvarsel — bruk morgenvær. Vind nå:{" "}
+                  {formatWindSpeed(weather.live.windSpeedMs)}.
+                </p>
+              )}
+              <button
+                type="button"
+                className="intro-button"
+                onClick={() => setPanel("arrived")}
               >
                 Go back
               </button>
