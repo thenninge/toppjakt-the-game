@@ -95,8 +95,9 @@ export function YrNoForecastPanel({
           {formatHuntDateNb(parseIsoDate(nextHuntDate) ?? start, {
             weekday: true,
           })}
-          . Trykk <strong>Velg</strong> til høyre for dagen du vil jakte — været
-          påvirker tiur/orr-sjanse, og vind reduserer spotting.
+          . Trykk <strong>Velg</strong> til høyre for dagen du vil jakte — da
+          går du tilbake til inatur.no for å kjøpe jaktkort. Været påvirker
+          tiur/orr-sjanse, og vind reduserer spotting.
         </p>
 
         <ul className="yr-forecast-list">
@@ -143,7 +144,7 @@ export function YrNoForecastPanel({
                     }
                     onClick={() => {
                       onSelectDate(day.isoDate);
-                      setExpanded(day.isoDate);
+                      onClose();
                     }}
                     title={`Jakt ${formatHuntDateNb(day.date)}`}
                   >

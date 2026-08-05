@@ -346,6 +346,15 @@ export function InaturNo({
                       : ""}
                   </span>
                 ) : null}
+                {bookedDates[terrain.id] ? (
+                  <span className="shop-row-note">
+                    Valgt jaktdag:{" "}
+                    {formatHuntDateNb(parseIsoDate(bookedDates[terrain.id])!, {
+                      weekday: true,
+                    })}{" "}
+                    — kjøp jaktkort nedenfor
+                  </span>
+                ) : null}
                 <div className="inatur-kort-options">
                   <button
                     type="button"
@@ -459,9 +468,16 @@ export function InaturNo({
           terrain={yrTerrain}
           nextHuntDate={nextHuntDate}
           selectedDate={bookedDateFor(yrTerrain.id)}
-          onSelectDate={(iso) =>
-            setBookedDates((prev) => ({ ...prev, [yrTerrain.id]: iso }))
-          }
+          onSelectDate={(iso) => {
+            const terrainId = yrTerrain.id;
+            const label = parseIsoDate(iso)
+              ? formatHuntDateNb(parseIsoDate(iso)!, { weekday: true })
+              : iso;
+            setBookedDates((prev) => ({ ...prev, [terrainId]: iso }));
+            setMessage(
+              `Jaktdag valgt: ${label} for ${yrTerrain.name}. Kjøp jaktkort for den dagen.`,
+            );
+          }}
           onClose={() => setYrTerrain(null)}
         />
       ) : null}
