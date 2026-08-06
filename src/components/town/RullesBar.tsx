@@ -55,12 +55,50 @@ type Step =
   | "kristian"
   | "lovenskiold"
   | "modgeir"
+  | "modgeir-quiz"
   | "enrique"
   | "result";
 
 type ResultKind = "terrain" | "customs";
 
 type DrinkId = "ol" | "pizza" | "champagne" | "kebab" | "whisky" | "tui" | "ribbe";
+
+type ModgeirVehicleChoice = {
+  id: "lr110" | "mbFelt" | "landCruiser";
+  label: string;
+  correct: boolean;
+};
+
+const MODGEIR_VEHICLE_CHOICES: ModgeirVehicleChoice[] = [
+  {
+    id: "lr110",
+    label: "Land Rover 110 Serie 3",
+    correct: false,
+  },
+  {
+    id: "mbFelt",
+    label: "MB Feltvogn triple locked diff",
+    correct: false,
+  },
+  {
+    id: "landCruiser",
+    label: "40, 60, eller 80 serie Land Cruiser",
+    correct: true,
+  },
+];
+
+function shuffleModgeirChoices(
+  choices: ModgeirVehicleChoice[],
+): ModgeirVehicleChoice[] {
+  const next = [...choices];
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = next[i]!;
+    next[i] = next[j]!;
+    next[j] = tmp;
+  }
+  return next;
+}
 
 const DRINKS: Record<
   DrinkId,
@@ -142,6 +180,9 @@ export function RullesBar({
   const [kristianTrust, setKristianTrust] = useState(0);
   const [loveCharm, setLoveCharm] = useState(0);
   const [modgeirRapport, setModgeirRapport] = useState(0);
+  const [modgeirQuizOpts, setModgeirQuizOpts] = useState<
+    ModgeirVehicleChoice[] | null
+  >(null);
 
   const unlocked = useMemo(
     () => new Set(unlockedTerrainIds),
@@ -1106,18 +1147,18 @@ export function RullesBar({
                     );
                     return;
                   }
-                  unlockCustoms(
-                    "toppjaktspulk",
-                    "Modgeir Rustbank kniper hånda di — hardt, kort. «Greit. Jeg åpner CBA toppjaktspulk for deg i sjappa. Tjue tusen. Ikke spør om rabatt — spør om snø.»",
+                  setStatus("");
+                  setModgeirQuizOpts(
+                    shuffleModgeirChoices(MODGEIR_VEHICLE_CHOICES),
                   );
+                  setStep("modgeir-quiz");
                 }}
               >
                 <span className="town-location-name">
                   Be om CBA toppjaktspulk
                 </span>
                 <span className="town-location-blurb">
-                  Score ≥ {modgeirScore.need} + rapport ≥ 2. Bestilles etterpå
-                  hos CB Customs.
+                  Score ≥ {modgeirScore.need} + rapport ≥ 2 + ett siste spørsmål
                 </span>
               </button>
             </li>
@@ -1132,6 +1173,64 @@ export function RullesBar({
             onClick={() => setStep("floor")}
           >
             Tilbake
+          </button>
+        </>
+      ) : null}
+
+      {step === "modgeir-quiz" && modgeirQuizOpts ? (
+        <>
+          <h2 className="intro-title">Modgeir Rustbank — siste spørsmål</h2>
+          <p className="intro-line">
+            Han setter glasset hardt i bordet. «Tallene er der. Rapporten er der.
+            Pink Mist er der. Nå: bil. Velg én, tenk kjapt. Hva kjører du til
+            feltet når det betyr noe?»
+          </p>
+          <ul className="town-list">
+            {modgeirQuizOpts.map((opt) => (
+              <li key={opt.id}>
+                <button
+                  type="button"
+                  className="town-location"
+                  onClick={() => {
+                    if (opt.correct) {
+                      unlockCustoms(
+                        "toppjaktspulk",
+                        "Modgeir Rustbank kniper hånda di — hardt, kort. «Land Cruiser. 40, 60 eller 80. Resten er hobby. Greit — jeg åpner CBA toppjaktspulk for deg i sjappa. Tjue tusen. Ikke spør om rabatt — spør om snø.»",
+                      );
+                      setModgeirQuizOpts(null);
+                      return;
+                    }
+                    if (opt.id === "lr110") {
+                      setStatus(
+                        "Han rister på hodet. «Serie 3? Koselig på Instagram. Ikke når du skal hente tiur i mørket. Prøv igjen når du har tenkt.»",
+                      );
+                    } else {
+                      setStatus(
+                        "Han ler kort. «Triple locked diff er fint — i Forsvarets brosjyre. Jeg spør om jaktbil, ikke parade. Tenk om.»",
+                      );
+                    }
+                    setModgeirQuizOpts(
+                      shuffleModgeirChoices(MODGEIR_VEHICLE_CHOICES),
+                    );
+                  }}
+                >
+                  <span className="town-location-name">{opt.label}</span>
+                  <span className="town-location-blurb">Velg én.</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {status ? <p className="shop-row-note">{status}</p> : null}
+          <button
+            type="button"
+            className="intro-button sheriff-secondary"
+            onClick={() => {
+              setModgeirQuizOpts(null);
+              setStatus("");
+              setStep("modgeir");
+            }}
+          >
+            Tilbake til Modgeir
           </button>
         </>
       ) : null}

@@ -5404,6 +5404,17 @@ body {
   gap: 0.65rem;
   width: 100%;
   min-height: min(78vh, 860px);
+  touch-action: none;
+}
+
+/* While panning binos/thermal — stop intro-root scroll stealing the gesture. */
+body.spot-optic-pan-active {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+body.spot-optic-pan-active .intro-root {
+  overflow: hidden;
 }
 
 .spot-view-hud {

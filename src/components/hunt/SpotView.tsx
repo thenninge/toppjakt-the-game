@@ -307,6 +307,9 @@ const BIRD_HIT_MIN_PCT = 4.5;
  */
 const BIRD_SPRITE_MIN_PCT = 0.5;
 
+/** Max finger travel (CSS px) to count as tap-to-lock on a bird in binos. */
+const OPTIC_BIRD_TAP_PX = 14;
+
 /**
  * Visual-only shrink vs angular size.
  * Scope-admin scales feed widthPct (Gun looks right). Spotting binos/thermal
@@ -555,6 +558,8 @@ export function SpotView({
    */
   const [opticRevealGen, setOpticRevealGen] = useState(0);
   const [opticRevealing, setOpticRevealing] = useState(false);
+  const opticRevealingRef = useRef(false);
+  opticRevealingRef.current = opticRevealing;
   const opticRaiseGenRef = useRef(0);
   const opticAudioHandlesRef = useRef<SpotAudioHandle[]>([]);
   /** Photo aspect (w/h) so the frame does not squash landscapes into one box. */
@@ -626,6 +631,10 @@ export function SpotView({
   }
   const binosWorldRef = useRef<HTMLDivElement | null>(null);
   const thermalCanvasRef = useRef<ThermalCanvasHandle | null>(null);
+  /** Binos-without-LRF: short tap locks bird (birds themselves are non-interactive). */
+  const birdTapLockRef = useRef(false);
+  const birdsOnFrameRef = useRef<BirdVisualPlacement[]>([]);
+  const onBirdClickRef = useRef<(p: BirdVisualPlacement) => void>(() => {});
   const keysRef = useRef<PanKeys>({
     up: null,
     down: null,
@@ -701,6 +710,27 @@ export function SpotView({
       setPan(next);
     }
   }, [zoom, opticAperture]);
+
+  /** Block page scroll while dragging the optic glass (Android Chrome). */
+  useEffect(() => {
+    if (!panDragging) return;
+    document.body.classList.add("spot-optic-pan-active");
+    return () => document.body.classList.remove("spot-optic-pan-active");
+  }, [panDragging]);
+
+  /**
+   * Non-passive touchmove on the glass — prevents the browser from stealing
+   * the gesture as page scroll / pinch before pointer capture delivers moves.
+   */
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || (mode !== "binos" && mode !== "thermal")) return;
+    const blockScroll = (e: TouchEvent) => {
+      e.preventDefault();
+    };
+    el.addEventListener("touchmove", blockScroll, { passive: false });
+    return () => el.removeEventListener("touchmove", blockScroll);
+  }, [mode]);
 
   const [lrfReading, setLrfReading] = useState<string | null>(null);
   const [zeissPhase, setZeissPhase] = useState<ZeissVictoryLrfPhase>("idle");
@@ -1076,6 +1106,7 @@ export function SpotView({
   function abortOpticRaise() {
     opticRaiseGenRef.current += 1;
     stopOpticRaiseAudio();
+    opticRevealingRef.current = false;
     setOpticRevealing(false);
   }
 
@@ -1118,6 +1149,7 @@ export function SpotView({
     opticRaiseGenRef.current = gen;
     stopOpticRaiseAudio();
 
+    opticRevealingRef.current = true;
     setOpticRevealing(true);
     setOpticRevealGen((g) => g + 1);
 
@@ -1130,6 +1162,19 @@ export function SpotView({
         Math.min(OPTICS_RAISE_TRANSITION_SEC_SLOW, opticsRaiseTransitionSec),
       ) * 1000,
     );
+
+    /** Android/WebView: backgrounded tabs can stall setTimeout — force-open optic. */
+    const safetyMs = transitionMs + 800;
+    const safetyTimer = window.setTimeout(() => {
+      if (gen !== opticRaiseGenRef.current) return;
+      if (!opticRevealingRef.current) return;
+      stopOpticRaiseAudio();
+      if (modeRef.current !== targetMode) {
+        applyOpticMode(targetMode);
+      }
+      opticRevealingRef.current = false;
+      setOpticRevealing(false);
+    }, safetyMs);
 
     void (async () => {
       try {
@@ -1151,13 +1196,17 @@ export function SpotView({
         });
         if (gen !== opticRaiseGenRef.current) return;
 
+        window.clearTimeout(safetyTimer);
         stopOpticRaiseAudio();
         applyOpticMode(targetMode);
+        opticRevealingRef.current = false;
         setOpticRevealing(false);
       } catch {
         if (gen !== opticRaiseGenRef.current) return;
+        window.clearTimeout(safetyTimer);
         stopOpticRaiseAudio();
         applyOpticMode(targetMode);
+        opticRevealingRef.current = false;
         setOpticRevealing(false);
       }
     })();
@@ -1240,14 +1289,38 @@ export function SpotView({
     }
   }
 
+  /** Frame % → landscape % under current optic pan/zoom. */
+  function frameClientToLandscapePct(
+    clientX: number,
+    clientY: number,
+    frame: HTMLDivElement,
+  ): { x: number; y: number } | null {
+    const rect = frame.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const fx = ((clientX - rect.left) / rect.width) * 100;
+    const fy = ((clientY - rect.top) / rect.height) * 100;
+    const z = zoomRef.current;
+    const p = panRef.current;
+    if (!(z > 1e-6)) return { x: fx, y: fy };
+    return {
+      x: (fx - (1 - z) * p.x) / z,
+      y: (fy - (1 - z) * p.y) / z,
+    };
+  }
+
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
-    if (mode !== "binos" && mode !== "thermal") return;
-    if (opticRevealing) return;
-    // Ignore non-primary mouse (right-click) and multi-touch extras.
+    const m = modeRef.current;
+    if (m !== "binos" && m !== "thermal") return;
+    if (opticRevealingRef.current) return;
+    // Ignore non-primary mouse (right-click). Touch: no isPrimary gate — Android
+    // WebViews sometimes report isPrimary=false on the first finger.
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    if (e.pointerType === "touch" && !e.isPrimary) return;
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* implicit capture may already be active */
+    }
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -1266,6 +1339,9 @@ export function SpotView({
       endPanDrag(e.currentTarget, e.pointerId);
       return;
     }
+    if (e.pointerType === "touch") {
+      e.preventDefault();
+    }
     // Same local-CSS conversion as rifle scope (ancestors with transform: scale).
     const local = clientDeltaToLocalCssPx(
       e.clientX - drag.startX,
@@ -1283,6 +1359,31 @@ export function SpotView({
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    const wasTap =
+      !!drag &&
+      drag.pointerId === e.pointerId &&
+      Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <
+        OPTIC_BIRD_TAP_PX;
+    endPanDrag(e.currentTarget, e.pointerId);
+    /**
+     * Binos without LRF: birds are non-interactive (so they never steal pan).
+     * Short tap still locks via landscape hit-test — same as eyes click.
+     */
+    if (!wasTap) return;
+    if (modeRef.current !== "binos") return;
+    if (!birdTapLockRef.current) return;
+    const pt = frameClientToLandscapePct(
+      e.clientX,
+      e.clientY,
+      e.currentTarget,
+    );
+    if (!pt) return;
+    const hit = findBirdNearLandscapePoint(birdsOnFrameRef.current, pt.x, pt.y);
+    if (hit) onBirdClickRef.current(hit);
+  }
+
+  function onPointerCancel(e: PointerEvent<HTMLDivElement>) {
     endPanDrag(e.currentTarget, e.pointerId);
   }
 
@@ -1479,6 +1580,7 @@ export function SpotView({
     .sort((a, b) => b.distanceM - a.distanceM);
   /** Never mount bird sprites until the landscape has painted. */
   const birdsOnFrame = landscapeReady ? visibleBirds : [];
+  birdsOnFrameRef.current = birdsOnFrame;
   /** Fusion: day-optic birds always; red outline only when Habrok zoom rules pass. */
   const fusionOutlineBirds =
     mode === "thermal" && thermalPolarity === "fusion" && isThermalBinocular
@@ -1510,15 +1612,24 @@ export function SpotView({
   fireLrfRef.current = fireLrf;
   activeLrfRef.current = activeLrf;
 
-  /** Eyes always; binos only without LRF reticle. Never with LRF / thermal. */
+  /**
+   * Eyes: clickable bird hit targets.
+   * Binos without LRF: same lock via short tap on the glass (birds stay
+   * pointer-events:none so they never steal optic pan — Android hang).
+   * Never with LRF / thermal.
+   */
   const birdClickEnabled =
     landscapeReady &&
     (mode === "eyes" || (mode === "binos" && !showLrf));
+  /** Only eyes uses interactive bird buttons; optic uses tap-on-glass. */
+  const birdButtonsEnabled = landscapeReady && mode === "eyes";
+  birdTapLockRef.current = landscapeReady && mode === "binos" && !showLrf;
 
   function onBirdClick(placement: BirdVisualPlacement) {
     if (!birdClickEnabled) return;
     observeBird(placement, activeLrf);
   }
+  onBirdClickRef.current = onBirdClick;
 
   // Native non-passive wheel so trackpad/mouse scroll can prevent page scroll.
   useEffect(() => {
@@ -1958,7 +2069,7 @@ export function SpotView({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onLostPointerCapture={onPointerUp}
         onClick={onFrameClick}
       >
@@ -2024,7 +2135,7 @@ export function SpotView({
                   placement={p}
                   visualScale={birdVisualScale}
                   showPerchLabel={showPerchLabels}
-                  onSelect={birdClickEnabled ? onBirdClick : undefined}
+                  onSelect={birdButtonsEnabled ? onBirdClick : undefined}
                 />
               ))}
               {worldOverlay}
@@ -2054,7 +2165,7 @@ export function SpotView({
                     placement={p}
                     visualScale={birdVisualScale}
                     showPerchLabel={showPerchLabels}
-                    onSelect={birdClickEnabled ? onBirdClick : undefined}
+                    onSelect={undefined}
                   />
                 ))}
                 {worldOverlay}
