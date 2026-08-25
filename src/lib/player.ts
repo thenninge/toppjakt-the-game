@@ -395,6 +395,7 @@ export const VIP_NAME_TOKENS = [
   "jørn",
   "ivar",
   "tomas",
+  "thomas",
   "nissik",
   "einar",
   "eirik",
@@ -820,7 +821,7 @@ export function isCheatPlayerName(name: string): boolean {
 
 /**
  * True when any word in the name matches a VIP first-name token
- * (Jørn / Ivar / Tomas / Nissik / Einar / Eirik / Konrad / Stahl / Dyre / Mona),
+ * (Jørn / Ivar / Tomas / Thomas / Nissik / Einar / Eirik / Konrad / Stahl / Dyre / Mona),
  * or the name contains «Hoftun» (family VIP).
  */
 export function isVipPlayerName(name: string): boolean {
@@ -836,8 +837,14 @@ export function isHoftunPlayerName(name: string): boolean {
 export function vipKitProfileIdForName(name: string): KitProfileId | null {
   const normalized = name.trim().toLowerCase().normalize("NFC");
   const words = normalized.split(/[\s\-_/.,]+/).filter(Boolean);
-  // Nissik shares Tomas’s Sauer 200 STR + ZCO loadout.
-  if (words.includes("tomas") || words.includes("nissik")) return "tomas";
+  // Thomas / Nissik share Tomas’s Sauer 200 STR + ZCO loadout.
+  if (
+    words.includes("tomas") ||
+    words.includes("thomas") ||
+    words.includes("nissik")
+  ) {
+    return "tomas";
+  }
   if (words.includes("ivar")) return "ivar";
   if (words.includes("jørn") || words.includes("jorn")) return "jorn";
   // Konrad / Hoftun / Eirik / Stahl share Einar’s Sauer 200 + ZCO 527 + High realism.

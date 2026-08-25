@@ -37,7 +37,7 @@ type InaturNoProps = {
   jaktkort: JaktkortBook;
   nextHuntDate: string;
   unlockedTerrainIds: string[];
-  /** VIP name package (ivar / tomas / nissik / jørn / einar / konrad / stahl / dyre / mona / hoftun). */
+  /** VIP name package (ivar / tomas / thomas / nissik / jørn / einar / konrad / stahl / dyre / mona / hoftun). */
   isVip?: boolean;
   /** Admin PIN session — same VIP Inatur listings. */
   isAdmin?: boolean;
